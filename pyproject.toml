@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ado2gh"
+version = "5.0.0"
+description = "Azure DevOps to GitHub Enterprise Migration Accelerator"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.1.0",
+    "requests>=2.31.0",
+    "PyYAML>=6.0",
+    "rich>=13.0.0",
+    "urllib3>=2.0.0",
+]
+
+[project.optional-dependencies]
+app-auth = [
+    "cryptography>=41.0.7",
+    "PyJWT>=2.8.0",
+]
+
+[project.scripts]
+ado2gh = "ado2gh.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["ado2gh*"]

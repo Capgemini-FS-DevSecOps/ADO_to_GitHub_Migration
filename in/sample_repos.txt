@@ -1,0 +1,8 @@
+# Repos to migrate — one per line
+# Format: project/repo  or  project/repo::gh_org/gh_repo
+# Generate from: ado2gh discover -c migration.yaml → output/discovery/repos_template.txt
+
+# MyProject/backend-api
+# MyProject/frontend-app
+# SharedInfra/terraform-modules
+# MyProject/old-name::my-gh-org/new-name

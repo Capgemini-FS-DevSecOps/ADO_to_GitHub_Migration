@@ -1,0 +1,4 @@
+ado_project,ado_repo,gh_org,gh_repo,scopes
+# MyProject,backend-api,my-gh-org,backend-api,repo|pipelines|branch_policies
+# MyProject,frontend-app,my-gh-org,frontend-app,repo|pipelines|work_items
+# SharedInfra,terraform-modules,my-gh-org,terraform-modules,repo|pipelines
