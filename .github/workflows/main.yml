@@ -1,0 +1,65 @@
+name: Transfer Repository Contents
+
+on:
+  workflow_dispatch:
+    inputs:
+      destination_repo:
+        description: 'Destination repository (owner/repo)'
+        required: false
+        default: 'Capgemini-Innersource/ptr_ado_to_gha_migration'
+      destination_branch:
+        description: 'Destination branch (defaults to main)'
+        required: false
+        default: 'main'
+  schedule:
+    - cron: '0 0 1,16 * *'
+
+jobs:
+  transfer_main_branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source with full history
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set destination variables with fallback
+        run: |
+          DEST_REPO="${{ github.event.inputs.destination_repo }}"
+          DEST_BRANCH="${{ github.event.inputs.destination_branch }}"
+          [ -z "$DEST_REPO" ] && DEST_REPO="Capgemini-Innersource/ptr_ado_to_gha_migration"
+          [ -z "$DEST_BRANCH" ] && DEST_BRANCH="main"
+          echo "DEST_REPO=$DEST_REPO" >> $GITHUB_ENV
+          echo "DEST_BRANCH=$DEST_BRANCH" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Clone destination repository (no branch)
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git clone https://x-access-token:${GH_PAT}@github.com/${DEST_REPO} dest-repo
+
+      - name: Create destination branch if missing
+        run: |
+          cd dest-repo
+          git checkout -b "$DEST_BRANCH" || git checkout "$DEST_BRANCH"
+
+      - name: Configure Git user in destination repo
+        run: |
+          cd dest-repo
+          git config user.name "${{ github.actor }}"
+          git config user.email "david.b.lee@capgemini.com"
+
+      - name: Copy source contents into destination
+        run: |
+          rsync -av --exclude='.git' ./ dest-repo/
+
+      - name: Commit and push to destination
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          cd dest-repo
+          git add .
+          git commit -m "Sync from source repo: $GITHUB_REPOSITORY" || echo "Nothing to commit"
+          git push https://x-access-token:${GH_PAT}@github.com/${DEST_REPO} "$DEST_BRANCH"
