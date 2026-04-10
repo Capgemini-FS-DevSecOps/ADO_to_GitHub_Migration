@@ -70,6 +70,23 @@ class ADOClient:
         except Exception:
             return []
 
+    def get_repo_by_name(self, project: str, repo_name: str) -> dict:
+        """Return repo info for a repo name in a project (best-effort)."""
+        try:
+            for r in self.list_repos(project):
+                if r.get("name", "").lower() == repo_name.lower():
+                    return r
+        except Exception:
+            pass
+        return {}
+
+    def get_yaml_from_repo_name(self, project: str, repo_name: str, yaml_path: str, branch: str = "main") -> str:
+        repo = self.get_repo_by_name(project, repo_name)
+        repo_id = repo.get("id", "")
+        if not repo_id:
+            return ""
+        return self.get_pipeline_yaml_from_git(project, repo_id, yaml_path, branch=branch)
+
     # ── Build Pipelines ─────────────────────────────────────────────────────
 
     def list_all_pipelines(self, project: str) -> Iterator[dict]:

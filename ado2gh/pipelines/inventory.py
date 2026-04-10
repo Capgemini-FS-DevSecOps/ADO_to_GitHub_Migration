@@ -17,6 +17,7 @@ from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import PipelineMetadata
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
+from ado2gh.pipelines.resource_fetcher import AdoTemplateFetcher
 from ado2gh.state.db import StateDB
 
 
@@ -34,6 +35,9 @@ class PipelineInventoryBuilder:
         self.parallel  = parallel
         self.dry_run   = dry_run
         self.extractor = PipelineMetadataExtractor()
+
+        # Allow extractor/template resolver to fetch additional YAML files from the repo.
+        self.extractor._fetch_yaml_from_repo = self.ado.get_pipeline_yaml_from_git  # type: ignore[attr-defined]
 
     def build_for_projects(self, projects: list[str],
                            include_releases: bool = True) -> dict:
@@ -135,10 +139,23 @@ class PipelineInventoryBuilder:
             build_def  = self.ado.get_build_definition_full(project, pipe_id)
             repo       = definition.get("configuration", {}).get("repository", {})
             yaml_path  = definition.get("configuration", {}).get("path", "azure-pipelines.yml")
+            branch = repo.get("defaultBranch", "main").replace("refs/heads/", "")
+
             yaml_content = self.ado.get_pipeline_yaml_from_git(
                 project, repo.get("id", ""), yaml_path,
-                branch=repo.get("defaultBranch", "main").replace("refs/heads/", ""),
+                branch=branch,
             )
+
+            # Provide alias-aware YAML fetcher for template resolution.
+            fetcher = AdoTemplateFetcher(
+                self.ado,
+                default_project=project,
+                default_repo_id=repo.get("id", ""),
+                default_branch=branch,
+            )
+            self.extractor._fetch_yaml_from_repo = lambda proj, repo_id, p, br: self.ado.get_pipeline_yaml_from_git(proj, repo_id, p, branch=br)  # type: ignore[attr-defined]
+            self.extractor._fetch_yaml_with_alias = lambda alias, p: fetcher.fetch_from_alias(alias=alias, path=p)  # type: ignore[attr-defined]
+
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             return self.extractor.extract_yaml_pipeline(
                 project, stub, definition, build_def, yaml_content, runs, var_groups

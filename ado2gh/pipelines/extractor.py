@@ -6,7 +6,6 @@ from datetime import datetime
 
 import yaml
 
-from ado2gh.logging_config import log
 from ado2gh.models import (
     PipelineComplexity,
     PipelineEnvironment,
@@ -15,6 +14,9 @@ from ado2gh.models import (
     PipelineType,
     PipelineVariable,
 )
+from ado2gh.pipelines.detectors import detect_pipeline_signals
+from ado2gh.pipelines.template_resolver import resolve_templates
+from ado2gh.pipelines.ado_yaml_compiler import compile_ado_yaml
 
 
 class PipelineMetadataExtractor:
@@ -64,7 +66,80 @@ class PipelineMetadataExtractor:
 
         # Parse stages from YAML content
         if yaml_content:
-            self._extract_yaml_structure(meta, yaml_content, var_groups)
+            # Expand templates first (best-effort) so downstream structure extraction
+            # can “see” the actual steps/jobs/stages.
+            try:
+                repo_id = meta.repo_id
+                branch = meta.repo_branch or "main"
+
+                # Local import to avoid circular client deps.
+                from ado2gh.clients.ado_client import ADOClient  # noqa: F401
+
+                def _fetch(path: str) -> str:
+                    # NOTE: The inventory builder already has access to an ADOClient.
+                    # Here we do not have it, so we only expand using already-embedded
+                    # YAML when available. Actual fetch wiring is done in inventory.
+                    return ""
+
+                # If extractor is used via PipelineInventoryBuilder, it will monkey-patch
+                # `self._fetch_yaml_from_repo` (see inventory.py enhancement).
+                fetcher = getattr(self, "_fetch_yaml_from_repo", None)
+                if callable(fetcher):
+                    _fetch = lambda p: fetcher(project, repo_id, p, branch)  # type: ignore
+
+                def _fetch_with_alias(alias: dict, path: str) -> str:
+                    return ""
+
+                alias_fetcher = getattr(self, "_fetch_yaml_with_alias", None)
+                if callable(alias_fetcher):
+                    _fetch_with_alias = lambda a, p: alias_fetcher(a, p)  # type: ignore
+
+                compiled = compile_ado_yaml(
+                    root_yaml_text=yaml_content,
+                    root_path=meta.yaml_path or "azure-pipelines.yml",
+                    fetch_text=_fetch,
+                    fetch_text_with_alias=_fetch_with_alias,
+                )
+
+                if compiled.template_units:
+                    meta.template_nodes = [
+                        {
+                            "name": u.name,
+                            "path": u.path,
+                            "kind": u.kind,
+                            "resolved_doc": u.resolved_doc,
+                        }
+                        for u in compiled.template_units
+                    ]
+                meta.resolved_yaml = compiled.resolved_yaml
+                for w in compiled.warnings:
+                    meta.migration_notes.append(f"Template resolve warning: {w}")
+
+            except Exception as exc:
+                meta.migration_notes.append(f"Template resolution failed: {exc}")
+
+            yaml_for_structure = meta.resolved_yaml or yaml_content
+            self._extract_yaml_structure(meta, yaml_for_structure, var_groups)
+
+            signals = detect_pipeline_signals(yaml_content)
+            if signals.uses_templates:
+                meta.migration_notes.append(
+                    "ADO YAML templates detected (template:). Templates are expanded best-effort by inlining referenced YAML files; "
+                    "ADO expressions, multi-repo resources, and runtime template logic may still require manual review."
+                )
+                if signals.template_refs:
+                    meta.migration_notes.append(
+                        "Template references: " + ", ".join(f"`{t}`" for t in signals.template_refs)
+                    )
+            if signals.uses_bicep:
+                meta.migration_notes.append(
+                    "Bicep usage detected. Ensure GitHub Actions installs Bicep or uses Azure CLI with the Bicep component, "
+                    "and add authentication (azure/login) before deployments."
+                )
+                if signals.bicep_refs:
+                    meta.migration_notes.append(
+                        "Bicep file references: " + ", ".join(f"`{b}`" for b in signals.bicep_refs)
+                    )
 
         # Run history stats
         self._extract_run_stats(meta, runs)

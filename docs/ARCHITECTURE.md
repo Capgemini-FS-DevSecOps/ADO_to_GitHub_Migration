@@ -2,6 +2,10 @@
 
 Technical architecture and design decisions for the ado2gh migration accelerator.
 
+> For an agent-oriented decomposition (tool-like capability boundaries, contracts, and composition recipes), see:
+> - `docs/DESIGN_AGENTIC.md`
+> - `docs/ARCHITECTURE_DIAGRAM.mmd`
+
 ---
 
 ## System Overview

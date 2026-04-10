@@ -16,6 +16,17 @@ global:
     - secrets
     - branch_policies
 
+  # Optional: commit generated workflows into the target GitHub repo
+  # after pipeline transformation.
+  #
+  # enabled: true|false
+  # branch:  target branch name (default: repo default branch)
+  # commit_message: commit message to use
+  workflow_publish:
+    enabled: false
+    branch: ""               # empty => repo default branch
+    commit_message: "chore: add migrated GitHub Actions workflows"
+
 phases:
   poc:
     repo_cap: 10

@@ -38,13 +38,22 @@ class MigrationEngine:
         # Migration strategy: "mirror" (default) or "gei"
         self.strategy = global_cfg.get("migration_strategy", "mirror")
 
+        # Optional: publish generated workflows into the GitHub repo.
+        # If enabled, we commit to the repo's default branch or a specified branch.
+        wf_cfg = global_cfg.get("workflow_publish", {}) or {}
+        self.publish_workflows = bool(wf_cfg.get("enabled", False))
+        self.publish_branch = str(wf_cfg.get("branch", ""))  # empty => use repo default
+        self.publish_commit_message = str(
+            wf_cfg.get("commit_message", "chore: add migrated GitHub Actions workflows")
+        )
+
     def migrate_repo(self, wave_id: int, repo: RepoConfig,
                      progress: Any = None, task_id: Any = None,
                      pipeline_parallel: int = 8) -> dict:
         results: dict[str, dict] = {}
         requested = repo.scopes or self.SCOPES
 
-        scope_handlers = {
+        scope_handlers: dict[str, Any] = {
             MigrationScope.REPO.value: self._migrate_git,
             MigrationScope.WORK_ITEMS.value: self._migrate_work_items,
             MigrationScope.PIPELINES.value: self._migrate_pipelines,
@@ -71,6 +80,7 @@ class MigrationEngine:
                     kwargs["pipeline_parallel"] = pipeline_parallel
                     kwargs["wave_id"] = wave_id
 
+                # Dynamic dispatch: handler signature varies by scope.
                 scope_result = handler(repo, **kwargs)
                 results[scope] = {"status": "completed", "detail": scope_result}
                 self.db.upsert_migration(
@@ -357,20 +367,35 @@ class MigrationEngine:
             stats["dry_run"] = True
             return stats
 
+        # Where we write workflow artifacts for this repo.
+        out_dir = Path("output") / "workflows" / repo.gh_org / repo.gh_repo
+
         def _transform_one(pipe: PipelineMetadata) -> dict:
             self.db.upsert_pipeline_migration(
                 wave_id, pipe, repo.gh_org, repo.gh_repo,
                 MigrationStatus.IN_PROGRESS,
             )
             try:
-                result = self.transformer.transform(pipe)
+                if pipe.template_nodes:
+                    result = self.transformer.transform_many(pipe, out_dir)
+                    workflow_file = (result.get("workflow_files") or [""])[0]
+                    warnings = result.get("warnings", [])
+                    unsupported = result.get("unsupported_tasks", [])
+                    metrics = result.get("metrics")
+                else:
+                    result = self.transformer.transform(pipe, out_dir)
+                    workflow_file = result.get("workflow_file", "")
+                    warnings = result.get("warnings", [])
+                    unsupported = result.get("unsupported_tasks", [])
+                    metrics = result.get("metrics")
+
                 self.db.upsert_pipeline_migration(
                     wave_id, pipe, repo.gh_org, repo.gh_repo,
                     MigrationStatus.COMPLETED,
-                    workflow_file=result.get("workflow_yaml", ""),
-                    warnings=result.get("warnings", []),
-                    unsupported=result.get("unsupported_tasks", []),
-                    transform_stats=result.get("stats"),
+                    workflow_file=workflow_file,
+                    warnings=warnings,
+                    unsupported=unsupported,
+                    transform_stats=metrics,
                 )
                 return {"pipeline_id": pipe.pipeline_id, "status": "completed"}
             except Exception as exc:
@@ -391,7 +416,51 @@ class MigrationEngine:
                     stats["failed"] += 1
                     stats["warnings"].append(res.get("error", "unknown"))
 
+        stats["output_dir"] = str(out_dir)
+
+        # Optionally publish workflows to the GitHub repo (commit/push).
+        if self.publish_workflows and not self.dry_run:
+            try:
+                stats["publish"] = self._publish_workflows(repo, artifacts_dir=out_dir)
+            except Exception as exc:
+                log.warning("workflow publish failed for %s/%s: %s", repo.gh_org, repo.gh_repo, exc)
+                stats["publish"] = {"status": "failed", "error": str(exc)}
+
         return stats
+
+    def _publish_workflows(self, repo: RepoConfig, *, artifacts_dir: Path) -> dict[str, Any]:
+        """Commit generated workflows into the target GitHub repo.
+
+        Uses git CLI with an authenticated remote URL.
+        """
+        from ado2gh.tools.git_publisher import publish_workflows_via_git
+
+        # Determine target branch.
+        branch = self.publish_branch
+        if not branch:
+            try:
+                info = self.gh.get_repo(repo.gh_org, repo.gh_repo)
+                branch = info.get("default_branch", "main")
+            except Exception:
+                branch = "main"
+
+        gh_token = self.gh.token_manager.get_token()
+        remote_url = f"https://x-access-token:{gh_token}@github.com/{repo.gh_org}/{repo.gh_repo}.git"
+
+        res = publish_workflows_via_git(
+            remote_url=remote_url,
+            artifacts_dir=artifacts_dir,
+            branch=branch,
+            commit_message=self.publish_commit_message,
+        )
+        return {
+            "status": "committed" if res.committed else "skipped",
+            "branch": res.branch,
+            "commit_sha": res.commit_sha,
+            "files_added": res.files_added,
+            "files_updated": res.files_updated,
+            "message": res.message,
+        }
 
     # ── WIKI ────────────────────────────────────────────────────────────────
 
@@ -425,7 +494,7 @@ class MigrationEngine:
     def _migrate_secrets(self, repo: RepoConfig, **_kw: Any) -> dict:
         var_groups = self.ado.list_variable_groups(repo.ado_project)
         svc_conns = self.ado.list_service_connections(repo.ado_project)
-        stats = {"variable_groups": len(var_groups),
+        stats: dict[str, Any] = {"variable_groups": len(var_groups),
                  "service_connections": len(svc_conns)}
         if self.dry_run:
             stats["dry_run"] = True

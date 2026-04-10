@@ -12,10 +12,6 @@ import yaml
 from ado2gh.models import (
     PipelineMetadata,
     PipelineType,
-    PipelineComplexity,
-    PipelineStage,
-    PipelineVariable,
-    PipelineEnvironment,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,31 +73,26 @@ _DOW_BITS  = [1, 2, 4, 8, 16, 32, 64]
 
 
 class PipelineTransformer:
-    """Convert an ADO ``PipelineMetadata`` object into a GitHub Actions
-    workflow YAML file together with a companion migration-notes document."""
+    """Convert an ADO ``PipelineMetadata`` object into a GitHub Actions workflow.
 
-    # ── public API ────────────────────────────────────────────────────────
+    Agent-friendly design:
+    - `transform_to_spec()` produces a pure(ish) spec (dict + warnings + notes).
+    - `render_workflow_yaml()` serializes spec.workflow to YAML.
+    - `write_spec()` writes workflow + notes to disk.
 
-    def transform(
-        self,
-        meta: PipelineMetadata,
-        output_dir: Path,
-    ) -> dict[str, Any]:
-        """Main entry-point.
+    The legacy `transform()` API is preserved for compatibility.
+    """
 
-        Returns a dict with keys:
-            workflow_file  – Path to the generated ``.yml`` file.
-            notes_file     – Path to the markdown migration-notes file.
-            warnings       – list[str] of conversion warnings.
-            unsupported_tasks – list[str] of ADO tasks without a direct mapping.
+    # ── agent-friendly public API ─────────────────────────────────────────
+
+    def transform_to_spec(self, meta: PipelineMetadata):
+        """Build a workflow spec and notes content from PipelineMetadata.
+
+        Returns an instance compatible with `ado2gh.tools.pipeline_migration.PipelineTransformSpec`.
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
         warnings: list[str] = []
         unsupported: list[str] = list(meta.unsupported_tasks)
 
-        # Build the workflow dict depending on pipeline type.
         if meta.pipeline_type == PipelineType.YAML:
             workflow = self._build_yaml_workflow(meta, warnings, unsupported)
         elif meta.pipeline_type == PipelineType.RELEASE:
@@ -109,7 +100,23 @@ class PipelineTransformer:
         else:
             workflow = self._build_classic_workflow(meta, warnings, unsupported)
 
-        # Serialise to YAML with a header comment.
+        metrics = self._compute_metrics(workflow)
+        notes_md = self.render_notes_markdown(meta, warnings, unsupported)
+
+        # Local import to avoid a hard dependency loop.
+        from ado2gh.tools.pipeline_migration import PipelineTransformSpec
+
+        return PipelineTransformSpec(
+            workflow=workflow,
+            warnings=warnings,
+            unsupported_tasks=unsupported,
+            notes_markdown=notes_md,
+            metrics=metrics,
+        )
+
+    @staticmethod
+    def render_workflow_yaml(*, meta: PipelineMetadata, workflow: dict[str, Any]) -> str:
+        """Serialize a workflow dict to YAML text with a standard header."""
         header = (
             f"# ---------------------------------------------------------\n"
             f"# Auto-generated GitHub Actions workflow\n"
@@ -119,7 +126,7 @@ class PipelineTransformer:
             f"# Generated: {datetime.now(timezone.utc).isoformat()}\n"
             f"# ---------------------------------------------------------\n\n"
         )
-        yaml_text = header + yaml.dump(
+        return header + yaml.dump(
             workflow,
             default_flow_style=False,
             sort_keys=False,
@@ -127,29 +134,277 @@ class PipelineTransformer:
             width=120,
         )
 
+    @staticmethod
+    def render_notes_markdown(
+        meta: PipelineMetadata,
+        warnings: list[str],
+        unsupported: list[str],
+    ) -> str:
+        """Render migration notes as markdown text."""
+        lines: list[str] = [
+            f"# Migration Notes – {meta.pipeline_name}",
+            "",
+            "## Pipeline Information",
+            "",
+            "| Field | Value |",
+            "|-------|-------|",
+            f"| Pipeline ID | {meta.pipeline_id} |",
+            f"| Pipeline Name | {meta.pipeline_name} |",
+            f"| Type | {meta.pipeline_type.value} |",
+            f"| Project | {meta.project} |",
+            f"| Repository | {meta.repo_name} |",
+            f"| Complexity | {meta.complexity.value} |",
+            f"| Avg Duration | {meta.avg_duration_min:.1f} min |",
+            f"| Runs (last 30 days) | {meta.total_runs_30d} |",
+            "",
+        ]
+
+        if meta.service_connections:
+            lines += [
+                "## Service Connections",
+                "",
+                "The following ADO service connections must be replaced with GitHub secrets or OIDC federation:",
+                "",
+            ]
+            for sc in meta.service_connections:
+                sc_name = sc.get("name", sc) if isinstance(sc, dict) else str(sc)
+                lines.append(f"- `{sc_name}`")
+            lines.append("")
+
+        if meta.variable_groups:
+            lines += [
+                "## Variable Groups",
+                "",
+                "ADO variable groups must be migrated to GitHub Actions secrets / variables or environment-level settings:",
+                "",
+            ]
+            for vg in meta.variable_groups:
+                vg_name = vg.get("name", vg) if isinstance(vg, dict) else str(vg)
+                lines.append(f"- `{vg_name}`")
+            lines.append("")
+
+        if meta.environments:
+            lines += [
+                "## Environments",
+                "",
+                "Create matching GitHub environments with appropriate protection rules:",
+                "",
+            ]
+            for env in meta.environments:
+                approvers = ", ".join(env.required_approvers) or "none"
+                lines.append(
+                    f"- **{env.name}** – approvers: {approvers}, timeout: {env.approval_timeout_min} min"
+                )
+            lines.append("")
+
+        if unsupported:
+            lines += [
+                "## Unsupported Tasks",
+                "",
+                "The following ADO tasks have no direct GitHub Actions equivalent and require manual migration:",
+                "",
+            ]
+            for task in sorted(set(unsupported)):
+                lines.append(f"- `{task}`")
+            lines.append("")
+
+        if warnings:
+            lines += ["## Warnings", ""]
+            for w in warnings:
+                lines.append(f"- {w}")
+            lines.append("")
+
+        if meta.migration_notes:
+            lines += ["## Additional Notes", ""]
+            for note in meta.migration_notes:
+                lines.append(f"- {note}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def write_spec(self, spec, *, output_dir: Path, file_stem: str) -> tuple[Path, Path]:
+        """Write workflow YAML + notes markdown to output_dir.
+
+        Returns: (workflow_path, notes_path)
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # spec.workflow is in-memory; spec.notes_markdown is already rendered.
+        # We need meta for the YAML header; the notes already include it.
+        # So we accept meta not here; header omitted if unknown.
+        # Callers should prefer `transform()` or use `render_workflow_yaml(meta=..., ...)`.
+
+        workflow_file = output_dir / f"{file_stem}.yml"
+        notes_file = output_dir / f"{file_stem}_migration_notes.md"
+
+        # Best-effort YAML rendering without header if meta isn't provided.
+        yaml_text = yaml.dump(
+            spec.workflow,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+            width=120,
+        )
+        workflow_file.write_text(yaml_text, encoding="utf-8")
+        notes_file.write_text(spec.notes_markdown, encoding="utf-8")
+        return workflow_file, notes_file
+
+    @staticmethod
+    def _compute_metrics(workflow: dict[str, Any]) -> dict[str, Any]:
+        jobs = workflow.get("jobs") or {}
+        job_count = len(jobs) if isinstance(jobs, dict) else 0
+        step_count = 0
+        if isinstance(jobs, dict):
+            for j in jobs.values():
+                steps = j.get("steps") if isinstance(j, dict) else None
+                if isinstance(steps, list):
+                    step_count += len(steps)
+        return {"job_count": job_count, "step_count": step_count}
+
+    # ── legacy public API (compatible) ─────────────────────────────────────
+
+    def transform(self, meta: PipelineMetadata, output_dir: Path) -> dict[str, Any]:
+        """Legacy entry-point: generates workflow + notes files.
+
+        Kept for compatibility with existing CLI workflows.
+        Returns JSON-serializable paths as strings.
+        """
+        output_dir = Path(output_dir)
         safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", meta.pipeline_name).lower()
+
+        spec = self.transform_to_spec(meta)
+
+        yaml_text = self.render_workflow_yaml(meta=meta, workflow=spec.workflow)
         workflow_file = output_dir / f"{safe_name}.yml"
+        output_dir.mkdir(parents=True, exist_ok=True)
         workflow_file.write_text(yaml_text, encoding="utf-8")
 
-        notes_file = self._write_migration_notes(
-            meta, output_dir, safe_name, warnings, unsupported,
-        )
+        notes_file = output_dir / f"{safe_name}_migration_notes.md"
+        notes_file.write_text(spec.notes_markdown, encoding="utf-8")
 
         logger.info(
             "Transformed pipeline %s (%s) -> %s  (%d warnings, %d unsupported)",
             meta.pipeline_name,
             meta.pipeline_type.value,
             workflow_file,
-            len(warnings),
-            len(unsupported),
+            len(spec.warnings),
+            len(spec.unsupported_tasks),
         )
 
         return {
-            "workflow_file": workflow_file,
-            "notes_file": notes_file,
-            "warnings": warnings,
-            "unsupported_tasks": unsupported,
+            "workflow_file": str(workflow_file),
+            "notes_file": str(notes_file),
+            "warnings": spec.warnings,
+            "unsupported_tasks": spec.unsupported_tasks,
+            "metrics": spec.metrics,
         }
+
+    def transform_many(self, meta: PipelineMetadata, output_dir: Path) -> dict[str, Any]:
+        """Generate one workflow per template plus the root workflow.
+
+        Output naming:
+        - root: <pipeline_name>.yml
+        - templates: <pipeline_name>__<template_stem>.yml
+
+        Returns a dict with `workflow_files` list.
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_root = re.sub(r"[^a-zA-Z0-9_-]", "_", meta.pipeline_name).lower()
+
+        results: dict[str, Any] = {"workflow_files": [], "notes_files": []}
+
+        # Root workflow uses resolved YAML if present.
+        root_result = self.transform(meta, output_dir)
+        results["workflow_files"].append(root_result["workflow_file"])
+        results["notes_files"].append(root_result["notes_file"])
+        results["warnings"] = root_result.get("warnings", [])
+        results["unsupported_tasks"] = root_result.get("unsupported_tasks", [])
+
+        # For each template node, create a workflow from the template unit's resolved_doc.
+        for node in meta.template_nodes or []:
+            stem = re.sub(r"[^a-zA-Z0-9_-]", "_", str(node.get("name") or "template")).lower()
+            file_stem = f"{safe_root}__{stem}"
+
+            kind = node.get("kind", "")
+            tpl_doc = node.get("resolved_doc") if isinstance(node, dict) else None
+            if not isinstance(tpl_doc, dict):
+                tpl_doc = {}
+
+            workflow = {
+                "name": f"{meta.pipeline_name} / {node.get('name', 'template')}",
+                "on": {"workflow_dispatch": {}},
+                "jobs": {},
+            }
+
+            # Build jobs from template doc based on its kind.
+            warnings = results.setdefault("warnings", [])
+            unsupported = results.setdefault("unsupported_tasks", [])
+
+            def build_steps(raw_steps: list[Any]) -> list[dict[str, Any]]:
+                steps: list[dict[str, Any]] = [{"uses": "actions/checkout@v4"}]
+                for rs in raw_steps:
+                    mapped = self._map_step(rs, warnings, unsupported) if isinstance(rs, dict) else None
+                    if mapped:
+                        steps.append(mapped)
+                # If bicep is referenced, bootstrap Azure auth + bicep.
+                if self._job_uses_bicep(steps):
+                    steps = [{"uses": "actions/checkout@v4"}] + self._bicep_bootstrap_steps() + [s for s in steps if s.get("uses") != "actions/checkout@v4"]
+                return steps
+
+            if kind == "steps" and isinstance(tpl_doc.get("steps"), list):
+                workflow["jobs"]["template"] = {
+                    "runs-on": "ubuntu-latest",
+                    "steps": build_steps(tpl_doc.get("steps", [])),
+                }
+            elif kind == "jobs" and isinstance(tpl_doc.get("jobs"), list):
+                # Convert each ADO job to a GHA job.
+                for idx, raw_job in enumerate(tpl_doc.get("jobs", [])):
+                    if not isinstance(raw_job, dict):
+                        continue
+                    job_body = raw_job.get("job", raw_job)
+                    job_name = job_body.get("job", job_body.get("displayName", f"job{idx}"))
+                    job_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(job_name)).lower()
+                    raw_steps = job_body.get("steps", []) if isinstance(job_body.get("steps"), list) else []
+                    workflow["jobs"][job_id] = {
+                        "name": str(job_name),
+                        "runs-on": "ubuntu-latest",
+                        "steps": build_steps(raw_steps),
+                    }
+            elif kind == "stages" and isinstance(tpl_doc.get("stages"), list):
+                # Flatten stages to jobs with needs ignored (template-only view).
+                for idx, st in enumerate(tpl_doc.get("stages", [])):
+                    if not isinstance(st, dict):
+                        continue
+                    stage_name = st.get("stage", st.get("displayName", f"stage{idx}"))
+                    job_id = re.sub(r"[^a-zA-Z0-9_]", "_", str(stage_name)).lower()
+                    steps_accum: list[Any] = []
+                    for j in st.get("jobs", []) if isinstance(st.get("jobs"), list) else []:
+                        if isinstance(j, dict) and isinstance(j.get("steps"), list):
+                            steps_accum.extend(j.get("steps", []))
+                    workflow["jobs"][job_id] = {
+                        "name": str(stage_name),
+                        "runs-on": "ubuntu-latest",
+                        "steps": build_steps(steps_accum),
+                    }
+            else:
+                workflow["jobs"]["template"] = {
+                    "runs-on": "ubuntu-latest",
+                    "steps": [
+                        {"uses": "actions/checkout@v4"},
+                        {"name": "Template origin", "run": f"echo 'ADO template: {node.get('path', '')}'"},
+                        {"name": "TODO", "run": "echo 'Template content could not be mapped automatically'"},
+                    ],
+                }
+
+            yaml_text = self.render_workflow_yaml(meta=meta, workflow=workflow)
+            wf_path = output_dir / f"{file_stem}.yml"
+            wf_path.write_text(yaml_text, encoding="utf-8")
+            results["workflow_files"].append(str(wf_path))
+
+        return results
 
     # ── workflow builders ─────────────────────────────────────────────────
 
@@ -390,8 +645,9 @@ class PipelineTransformer:
     ) -> dict:
         """Attempt to parse steps from embedded YAML content."""
         jobs: dict[str, Any] = {}
+        yaml_text = meta.resolved_yaml or meta.yaml_content
         try:
-            parsed = yaml.safe_load(meta.yaml_content)
+            parsed = yaml.safe_load(yaml_text)
         except Exception:
             warnings.append(
                 "Failed to parse embedded YAML content – falling back to "
@@ -734,7 +990,7 @@ class PipelineTransformer:
 
         # Variable references: variables['foo'] or variables.foo
         c = re.sub(
-            r"variables\[(['\"])(.+?)\1\]",
+            r"variables\[(['\"])(.+?)\1]",
             r"env.\2",
             c,
         )
@@ -878,3 +1134,38 @@ class PipelineTransformer:
 
         notes_file.write_text("\n".join(lines), encoding="utf-8")
         return notes_file
+
+    def _bicep_bootstrap_steps(self) -> list[dict[str, Any]]:
+        """Bootstrap steps needed for most Bicep deployments."""
+        return [
+            {
+                "name": "Azure login (OIDC recommended)",
+                "uses": "azure/login@v2",
+                "with": {
+                    "client-id": "${{ secrets.AZURE_CLIENT_ID }}",
+                    "tenant-id": "${{ secrets.AZURE_TENANT_ID }}",
+                    "subscription-id": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+                },
+            },
+            {
+                "name": "Ensure Bicep available",
+                "shell": "bash",
+                "run": """set -euo pipefail
+if az bicep install --upgrade; then
+  echo "Bicep installed"
+else
+  az bicep version
+fi
+""",
+            },
+        ]
+
+    @staticmethod
+    def _job_uses_bicep(steps: list[dict[str, Any]]) -> bool:
+        for s in steps:
+            if not isinstance(s, dict):
+                continue
+            run = s.get("run")
+            if isinstance(run, str) and (".bicep" in run.lower() or " bicep " in f" {run.lower()} "):
+                return True
+        return False

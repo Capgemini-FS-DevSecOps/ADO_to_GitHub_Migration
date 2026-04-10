@@ -173,6 +173,10 @@ class PipelineMetadata:
     repo_branch:         str              = "main"
     yaml_path:           str              = ""
     yaml_content:        str              = ""
+    # Expanded YAML with templates inlined (best-effort). If empty, use yaml_content.
+    resolved_yaml:       str              = ""
+    # Template nodes extracted during resolution (repo-relative paths).
+    template_nodes:      list[dict]       = field(default_factory=list)
     trigger_branches:    list[str]        = field(default_factory=list)
     trigger_pr_branches: list[str]        = field(default_factory=list)
     trigger_schedules:   list[dict]       = field(default_factory=list)
@@ -204,6 +208,9 @@ class PipelineMetadata:
             "repo_type":           self.repo_type,
             "repo_branch":         self.repo_branch,
             "yaml_path":           self.yaml_path,
+            "yaml_content":        self.yaml_content,
+            "resolved_yaml":       self.resolved_yaml,
+            "template_nodes":      self.template_nodes,
             "trigger_branches":    self.trigger_branches,
             "trigger_pr_branches": self.trigger_pr_branches,
             "trigger_schedules":   self.trigger_schedules,
@@ -249,7 +256,7 @@ class PipelineMetadata:
             repo_type      = d.get("repo_type", "TfsGit"),
             repo_branch    = d.get("repo_branch", "main"),
             yaml_path      = d.get("yaml_path", ""),
-            yaml_content   = "",
+            yaml_content   = d.get("yaml_content", d.get("yaml_content", "")) if isinstance(d.get("yaml_content"), str) else "",
             trigger_branches     = d.get("trigger_branches", []),
             trigger_pr_branches  = d.get("trigger_pr_branches", []),
             trigger_schedules    = d.get("trigger_schedules", []),
@@ -266,6 +273,8 @@ class PipelineMetadata:
             migration_notes      = d.get("migration_notes", []),
             unsupported_tasks    = d.get("unsupported_tasks", []),
         )
+        m.resolved_yaml = d.get("resolved_yaml", "")
+        m.template_nodes = d.get("template_nodes", []) or []
         m.variables = [PipelineVariable(**v) for v in d.get("variables", [])]
         m.stages = [
             PipelineStage(
