@@ -1,1 +1,1 @@
-Demos/ado_to_github_migration_demo::destination-org-test/ado_to_github_migration_demo
+Migration-Demo/azure-pipelines-migration::destination-org-test/azure-pipelines-migration

@@ -1,0 +1,43 @@
+[
+  {
+    "ado_project": "Migration-Demo",
+    "ado_repo": "azure-pipelines-migration",
+    "gh_target": "destination-org-test/azure-pipelines-migration",
+    "validated_at": "2026-04-29T22:07:07.004346+00:00",
+    "overall": "WARN",
+    "checks": {
+      "repo_exists": {
+        "verdict": "PASS",
+        "detail": "GitHub repo exists"
+      },
+      "default_branch": {
+        "verdict": "PASS",
+        "ado_branch": "main",
+        "gh_branch": "main",
+        "detail": "Default branch matches"
+      },
+      "head_commit": {
+        "verdict": "PASS",
+        "ado_sha": "c6c73ef23534",
+        "gh_sha": "c6c73ef23534",
+        "detail": "HEAD commit SHA matches \u2014 code verified"
+      },
+      "branches": {
+        "verdict": "PASS",
+        "ado_count": 1,
+        "gh_count": 1,
+        "detail": "All branches present"
+      },
+      "workflows": {
+        "verdict": "PASS",
+        "ado_pipelines": 0,
+        "gh_workflows": 0,
+        "detail": "No pipelines to convert"
+      },
+      "branch_protection": {
+        "verdict": "WARN",
+        "detail": "No branch protection on default branch (may be intentional)"
+      }
+    }
+  }
+]
