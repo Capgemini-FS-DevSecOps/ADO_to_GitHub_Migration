@@ -16,8 +16,12 @@ class WaveAssigner:
         sorted_scores = sorted(scores, key=lambda s: s.total_score)
         result = {p: [] for p in PHASE_ORDER}
         for score in sorted_scores:
-            score.gh_org = gh_org
-            score.gh_repo = re.sub(r"[^a-zA-Z0-9\-_.]", "-", score.repo_name)
+            # Preserve any per-repo override already set on the score
+            # (e.g. from the project/repo::gh_org/gh_repo input syntax).
+            if not score.gh_org:
+                score.gh_org = gh_org
+            if not score.gh_repo:
+                score.gh_repo = re.sub(r"[^a-zA-Z0-9\-_.]", "-", score.repo_name)
             assigned = False
             for phase_type in PHASE_ORDER:
                 cfg = self.phases[phase_type]

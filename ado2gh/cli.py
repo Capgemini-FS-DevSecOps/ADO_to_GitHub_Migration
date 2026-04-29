@@ -526,21 +526,27 @@ def phase_assign(config, input_file, gh_org, dry_run, output, db):
         console.print("[red]No repos to score. Use --input <file>[/red]")
         sys.exit(1)
 
-    all_repo_keys: dict = {}
+    # Preserve per-repo gh_org/gh_repo overrides (e.g. from the
+    # project/repo::gh_org/gh_repo text input syntax) by keying the first
+    # RepoConfig per (project, repo) and applying its target back onto the
+    # RiskScore after scoring.
+    all_repo_cfgs: dict = {}
     for r in repos:
         key = (r.ado_project, r.ado_repo)
-        if key not in all_repo_keys:
-            all_repo_keys[key] = {"project": r.ado_project, "repo": r.ado_repo}
+        if key not in all_repo_cfgs:
+            all_repo_cfgs[key] = r
 
-    console.print(f"Scoring {len(all_repo_keys)} repos...")
+    console.print(f"Scoring {len(all_repo_cfgs)} repos...")
     from ado2gh.models import RiskScore
     all_scores: list[RiskScore] = []
 
     with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                   MofNCompleteColumn(), BarColumn(), TimeElapsedColumn(),
                   console=console, transient=True) as progress:
-        task = progress.add_task("Scoring", total=len(all_repo_keys))
-        for (project, repo_name), _ in all_repo_keys.items():
+        task = progress.add_task("Scoring", total=len(all_repo_cfgs))
+        for (project, repo_name), repo_cfg in all_repo_cfgs.items():
+            target_org = repo_cfg.gh_org or gh_org
+            target_repo = repo_cfg.gh_repo or repo_name
             try:
                 ado_repo = ado.get_repo(project, repo_name)
                 repo_stats = ado.get_repo_stats(project, ado_repo.get("id", ""))
@@ -552,15 +558,17 @@ def phase_assign(config, input_file, gh_org, dry_run, output, db):
                     project=project,
                     repo_meta={"name": repo_name, "size": ado_repo.get("size", 0)},
                     pipelines=pipelines, repo_stats=repo_stats,
-                    commits=commits, var_groups=vgs, svc_conns=svc, gh_org=gh_org,
+                    commits=commits, var_groups=vgs, svc_conns=svc, gh_org=target_org,
                 )
+                rs.gh_org = target_org
+                rs.gh_repo = target_repo
                 all_scores.append(rs)
                 if not dry_run:
                     state.upsert_risk_score(rs)
             except Exception as e:
                 log.warning(f"  Score failed [{repo_name}]: {e}")
                 fb = RiskScore(project=project, repo_name=repo_name,
-                               gh_org=gh_org, gh_repo=repo_name, total_score=50.0)
+                               gh_org=target_org, gh_repo=target_repo, total_score=50.0)
                 all_scores.append(fb)
                 if not dry_run:
                     state.upsert_risk_score(fb)
