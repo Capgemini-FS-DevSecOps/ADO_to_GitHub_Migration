@@ -308,6 +308,13 @@ class PipelineMetadataExtractor:
                 name    = "build",
                 jobs    = doc.get("jobs", []),
             ))
+        elif doc.get("steps"):
+            # Bare-steps pipeline — wrap them in a synthetic single job so
+            # the transformer can map them just like a regular jobs block.
+            meta.stages.append(PipelineStage(
+                name = "build",
+                jobs = [{"job": "build", "steps": doc.get("steps", [])}],
+            ))
         else:
             # Implicit single stage
             meta.stages.append(PipelineStage(name="build", jobs=[]))

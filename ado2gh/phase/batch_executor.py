@@ -28,7 +28,8 @@ class BatchExecutor:
         phase_waves = [w for w in waves if w.phase == phase.value]
         if not phase_waves:
             console.print(f"[yellow]No waves for phase {phase.value}[/yellow]")
-            return {"phase": phase.value, "completed": 0, "failed": 0}
+            return {"phase": phase.value, "completed": 0, "failed": 0,
+                    "batches_run": 0, "batches_skipped": 0}
 
         cfg = DEFAULT_PHASES[phase]
         all_repos = [r for w in phase_waves for r in w.repos]
@@ -61,7 +62,10 @@ class BatchExecutor:
                 repos_done=0, repos_total=len(batch_repos), status="running",
                 started_at=datetime.now(timezone.utc).isoformat(),
             )
-            self.db.upsert_batch_checkpoint(cp)
+            # Don't persist checkpoints during a dry-run — otherwise a
+            # subsequent real run would skip the phase as already completed.
+            if not dry_run:
+                self.db.upsert_batch_checkpoint(cp)
 
             wave_cfg = WaveConfig(
                 wave_id=base_wid + batch_num,
@@ -83,7 +87,8 @@ class BatchExecutor:
             cp.status = "completed" if b["failed"] == 0 else "partial"
             cp.repos_done = b["completed"]
             cp.completed_at = datetime.now(timezone.utc).isoformat()
-            self.db.upsert_batch_checkpoint(cp)
+            if not dry_run:
+                self.db.upsert_batch_checkpoint(cp)
 
             snap = self.tracker.snapshot(self.db)
             eta = snap['eta_str'] or 'calculating...'

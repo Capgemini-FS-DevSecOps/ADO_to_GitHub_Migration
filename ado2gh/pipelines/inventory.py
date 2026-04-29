@@ -130,22 +130,49 @@ class PipelineInventoryBuilder:
         config  = stub.get("configuration", {})
         is_yaml = config.get("type") == "yaml"
 
+        # The Pipelines API can return an empty `configuration` block even
+        # for YAML-driven pipelines (observed on classic-style pipelines that
+        # reference an in-repo YAML file). Fall back to the Build Definitions
+        # API's `process.type == 2` flag, which is the source of truth.
+        build_def = self.ado.get_build_definition_full(project, pipe_id)
+        process = build_def.get("process", {}) if build_def else {}
+        yaml_path_from_build = ""
+        if not is_yaml and process.get("type") == 2:
+            is_yaml = True
+            yaml_path_from_build = process.get("yamlFilename", "")
+
         if is_yaml:
-            definition = self.ado.get_pipeline_definition(project, pipe_id)
-            build_def  = self.ado.get_build_definition_full(project, pipe_id)
-            repo       = definition.get("configuration", {}).get("repository", {})
-            yaml_path  = definition.get("configuration", {}).get("path", "azure-pipelines.yml")
+            if yaml_path_from_build:
+                # Source-of-truth was the Build Definitions API; synthesise the
+                # definition shape that extract_yaml_pipeline expects.
+                build_repo = build_def.get("repository", {})
+                yaml_path = yaml_path_from_build
+                branch = build_repo.get("defaultBranch", "main").replace(
+                    "refs/heads/", "")
+                definition = {
+                    "configuration": {
+                        "type": "yaml",
+                        "repository": build_repo,
+                        "path": yaml_path,
+                    },
+                }
+                repo = build_repo
+            else:
+                definition = self.ado.get_pipeline_definition(project, pipe_id)
+                repo = definition.get("configuration", {}).get("repository", {})
+                yaml_path = definition.get("configuration", {}).get(
+                    "path", "azure-pipelines.yml")
+                branch = repo.get("defaultBranch", "main").replace(
+                    "refs/heads/", "")
             yaml_content = self.ado.get_pipeline_yaml_from_git(
-                project, repo.get("id", ""), yaml_path,
-                branch=repo.get("defaultBranch", "main").replace("refs/heads/", ""),
+                project, repo.get("id", ""), yaml_path, branch=branch,
             )
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             return self.extractor.extract_yaml_pipeline(
                 project, stub, definition, build_def, yaml_content, runs, var_groups
             )
         else:
-            build_def = self.ado.get_build_definition_full(project, pipe_id)
-            runs      = self.ado.get_pipeline_runs(project, pipe_id, top=10)
+            runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             return self.extractor.extract_classic_build_pipeline(
                 project, stub, build_def, runs, var_groups
             )

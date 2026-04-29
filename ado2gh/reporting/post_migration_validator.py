@@ -329,5 +329,12 @@ class PostMigrationValidator:
 
         console.print(t)
         passed = sum(1 for r in results if r.get("overall") == PASS)
+        warned = sum(1 for r in results if r.get("overall") == WARN)
+        failed = sum(1 for r in results if r.get("overall") == FAIL)
         total = len(results)
-        console.print(f"\n[bold]{passed}/{total} repos passed validation[/bold]")
+        parts = [f"[bold green]{passed} pass[/bold green]"]
+        if warned:
+            parts.append(f"[bold yellow]{warned} warn[/bold yellow]")
+        if failed:
+            parts.append(f"[bold red]{failed} fail[/bold red]")
+        console.print(f"\n[bold]Validation result:[/bold] " + ", ".join(parts) + f" out of {total}")

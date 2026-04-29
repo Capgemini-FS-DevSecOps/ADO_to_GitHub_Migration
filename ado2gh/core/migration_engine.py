@@ -63,7 +63,7 @@ class MigrationEngine:
             self.db.upsert_migration(wave_id, repo, scope, MigrationStatus.IN_PROGRESS)
 
             if progress and task_id is not None:
-                progress.update(task_id, description=f"[cyan]{repo.ado_repo}[/] → {scope}")
+                progress.update(task_id, description=f"[cyan]{repo.ado_repo}[/] -> {scope}")
 
             try:
                 kwargs: dict[str, Any] = {}
@@ -72,11 +72,22 @@ class MigrationEngine:
                     kwargs["wave_id"] = wave_id
 
                 scope_result = handler(repo, **kwargs)
-                results[scope] = {"status": "completed", "detail": scope_result}
-                self.db.upsert_migration(
-                    wave_id, repo, scope, MigrationStatus.COMPLETED,
-                    stats=scope_result,
-                )
+                # Honour inner-failure counts so the scope-level row matches
+                # the per-item rows (e.g. pipeline_migrations).
+                inner_failed = isinstance(scope_result, dict) and int(scope_result.get("failed", 0)) > 0
+                if inner_failed:
+                    results[scope] = {"status": "failed", "detail": scope_result}
+                    self.db.upsert_migration(
+                        wave_id, repo, scope, MigrationStatus.FAILED,
+                        stats=scope_result,
+                        error=f"{scope_result.get('failed', 0)}/{scope_result.get('total', '?')} item(s) failed",
+                    )
+                else:
+                    results[scope] = {"status": "completed", "detail": scope_result}
+                    self.db.upsert_migration(
+                        wave_id, repo, scope, MigrationStatus.COMPLETED,
+                        stats=scope_result,
+                    )
             except Exception as exc:
                 log.error("scope %s failed for %s/%s: %s",
                           scope, repo.ado_project, repo.ado_repo, exc)
@@ -101,7 +112,7 @@ class MigrationEngine:
 
     def _migrate_git(self, repo: RepoConfig, **_kw: Any) -> dict:
         """Actually migrate git content via mirror clone + push, or gh gei."""
-        log.info("git: %s/%s → %s/%s [strategy=%s]%s",
+        log.info("git: %s/%s -> %s/%s [strategy=%s]%s",
                  repo.ado_project, repo.ado_repo,
                  repo.gh_org, repo.gh_repo, self.strategy,
                  " [DRY RUN]" if self.dry_run else "")
@@ -141,7 +152,7 @@ class MigrationEngine:
             try:
                 self.gh.add_team_to_repo(repo.gh_org, gh_team, repo.gh_repo)
             except Exception as exc:
-                log.warning("team mapping %s → %s failed: %s", ado_team, gh_team, exc)
+                log.warning("team mapping %s -> %s failed: %s", ado_team, gh_team, exc)
 
         # Verify: check that the default branch exists on target
         try:
@@ -157,6 +168,15 @@ class MigrationEngine:
 
     def _run_mirror_migration(self, repo: RepoConfig, clone_url: str) -> dict:
         """Execute git clone --mirror && git push --mirror."""
+        # ADO's remoteUrl arrives with the org as userinfo (e.g.
+        # "https://cloud-sre@dev.azure.com/..."). Strip it before injecting the PAT
+        # so we don't end up with two @ signs and a bad-hostname parse failure.
+        if "://" in clone_url:
+            scheme, rest = clone_url.split("://", 1)
+            host_and_path = rest.split("/", 1)
+            if "@" in host_and_path[0]:
+                host_and_path[0] = host_and_path[0].split("@", 1)[1]
+            clone_url = f"{scheme}://{'/'.join(host_and_path)}"
         auth_url = clone_url.replace("https://", f"https://:{self.ado.pat}@")
         gh_token = self.gh.token_manager.get_token()
         target_url = f"https://x-access-token:{gh_token}@github.com/{repo.gh_org}/{repo.gh_repo}.git"
@@ -250,7 +270,7 @@ class MigrationEngine:
             "GH_PAT": gh_token,
         }
 
-        log.info("Running: gh gei migrate-repo %s/%s → %s/%s",
+        log.info("Running: gh gei migrate-repo %s/%s -> %s/%s",
                  repo.ado_project, repo.ado_repo, repo.gh_org, repo.gh_repo)
 
         result = subprocess.run(
@@ -268,7 +288,7 @@ class MigrationEngine:
     # ── WORK ITEMS ──────────────────────────────────────────────────────────
 
     def _migrate_work_items(self, repo: RepoConfig, **_kw: Any) -> dict:
-        log.info("work_items: %s/%s → %s/%s%s",
+        log.info("work_items: %s/%s -> %s/%s%s",
                  repo.ado_project, repo.ado_repo,
                  repo.gh_org, repo.gh_repo,
                  " [DRY RUN]" if self.dry_run else "")
@@ -357,17 +377,19 @@ class MigrationEngine:
             stats["dry_run"] = True
             return stats
 
+        output_root = Path("output") / "workflows" / repo.gh_org / repo.gh_repo / ".github" / "workflows"
+
         def _transform_one(pipe: PipelineMetadata) -> dict:
             self.db.upsert_pipeline_migration(
                 wave_id, pipe, repo.gh_org, repo.gh_repo,
                 MigrationStatus.IN_PROGRESS,
             )
             try:
-                result = self.transformer.transform(pipe)
+                result = self.transformer.transform(pipe, output_root)
                 self.db.upsert_pipeline_migration(
                     wave_id, pipe, repo.gh_org, repo.gh_repo,
                     MigrationStatus.COMPLETED,
-                    workflow_file=result.get("workflow_yaml", ""),
+                    workflow_file=str(result.get("workflow_file", "")),
                     warnings=result.get("warnings", []),
                     unsupported=result.get("unsupported_tasks", []),
                     transform_stats=result.get("stats"),
