@@ -265,12 +265,13 @@ def rollback(config, wave, dry_run, db, scopes):
 @cli.command("export-failed")
 @click.option("--db", default="migration_state.db", show_default=True)
 @click.option("--phase", "-p", default=None)
-@click.option("--output", "-o", default="failed_repos.txt", show_default=True)
+@click.option("--output", "-o", default="output/failed_repos.txt", show_default=True)
 def export_failed(db, phase, output):
     """Export failed repos as a text file for targeted retries."""
     from ado2gh.reporting.csv_exporter import CSVExporter
     from ado2gh.state.db import StateDB
     state = StateDB(db)
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     CSVExporter.export_failed_repos(state, output, phase=phase)
     console.print(f"[green]Failed repos -> {output}[/green]")
 
@@ -734,9 +735,12 @@ def phase_run(config, phase, dry_run, force, db):
         border_style="green" if summary["failed"] == 0 else "yellow",
     ))
 
-    # Auto-generate failed repos list
+    # Auto-generate failed repos list under output/ so the project root
+    # stays clean across runs.
     from ado2gh.reporting.csv_exporter import CSVExporter
-    CSVExporter.export_failed_repos(state, f"failed_repos_{phase}.txt", phase=phase)
+    failed_path = Path("output") / f"failed_repos_{phase}.txt"
+    failed_path.parent.mkdir(parents=True, exist_ok=True)
+    CSVExporter.export_failed_repos(state, str(failed_path), phase=phase)
 
     gate = checker.check(phase_t)
     _print_gate_result(gate, phase)
