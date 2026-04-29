@@ -1,6 +1,7 @@
 """Per-repo migration engine — git mirror/GEI + scope handlers."""
 from __future__ import annotations
 
+import base64
 import os
 import re
 import shutil
@@ -46,6 +47,17 @@ class MigrationEngine:
         self.publish_commit_message = str(
             wf_cfg.get("commit_message", "chore: add migrated GitHub Actions workflows")
         )
+
+        # Pipeline workflow publishing (optional)
+        pipe_cfg = (global_cfg.get("pipelines", {}) or {})
+        self.publish_workflows: bool = bool(pipe_cfg.get("publish_workflows", False))
+        # "pr" (default) creates/updates a branch and opens a PR; "push" writes to base branch
+        self.publish_mode: str = str(pipe_cfg.get("publish_mode", "pr")).lower()
+        self.publish_branch: str = str(pipe_cfg.get("publish_branch", "ado2gh/migrated-workflows"))
+        self.publish_base: str = str(pipe_cfg.get("publish_base", ""))
+        self.publish_pr_title: str = str(pipe_cfg.get(
+            "publish_pr_title", "Add migrated GitHub Actions workflows"
+        ))
 
     def migrate_repo(self, wave_id: int, repo: RepoConfig,
                      progress: Any = None, task_id: Any = None,
@@ -322,9 +334,84 @@ class MigrationEngine:
 
     # ── PIPELINES ───────────────────────────────────────────────────────────
 
+    def _publish_workflows_for_repo(self, repo: RepoConfig, workflow_dir: Path) -> dict[str, Any]:
+        """Publish generated workflows from *workflow_dir* into the target repo.
+
+        Uses the same GitHub Contents API path as the `push-workflows` CLI command.
+        Returns stats dict: {"published": int, "branch": str, "base": str, "pr": url?}
+        """
+        wf_files = sorted(list(workflow_dir.glob("*.yml")) + list(workflow_dir.glob("*.yaml")))
+        if not wf_files:
+            return {"published": 0, "skipped": True, "reason": "no workflow files"}
+
+        base_branch = self.publish_base or self.gh.get_default_branch(repo.gh_org, repo.gh_repo)
+        target_branch = base_branch if self.publish_mode == "push" else self.publish_branch
+
+        # Ensure branch exists for PR mode
+        if self.publish_mode != "push":
+            base_sha = self.gh.get_branch_sha(repo.gh_org, repo.gh_repo, base_branch)
+            try:
+                self.gh.create_branch(repo.gh_org, repo.gh_repo, target_branch, base_sha)
+            except Exception:
+                # Branch may already exist; continue and update files
+                pass
+
+        published = 0
+        for f in wf_files:
+            rel_path = f".github/workflows/{f.name}"
+            existing_sha = self.gh.get_file_sha(repo.gh_org, repo.gh_repo, rel_path, target_branch)
+            content_b64 = base64.b64encode(f.read_bytes()).decode("ascii")
+            self.gh.put_file(
+                repo.gh_org,
+                repo.gh_repo,
+                rel_path,
+                content_b64,
+                target_branch,
+                f"Add migrated workflow: {f.name}",
+                sha=existing_sha,
+            )
+            published += 1
+
+        stats: dict[str, Any] = {
+            "published": published,
+            "mode": self.publish_mode,
+            "branch": target_branch,
+            "base": base_branch,
+        }
+
+        if self.publish_mode != "push":
+            pr_body = (
+                "Auto-generated GitHub Actions workflows migrated from ADO pipelines via `ado2gh`.\n\n"
+                "**Review needed** — generated YAML may contain `TODO` placeholders for classic-pipeline conversions. "
+                "See the `*_migration_notes.md` sidecar files in the local migration output for conversion warnings "
+                "and unsupported tasks.\n"
+            )
+            try:
+                pr = self.gh.create_pull_request(
+                    repo.gh_org,
+                    repo.gh_repo,
+                    self.publish_pr_title,
+                    pr_body,
+                    head=target_branch,
+                    base=base_branch,
+                )
+                stats["pr_url"] = pr.get("html_url", "")
+            except Exception:
+                # PR may already exist; treat as non-fatal
+                stats["pr_url"] = ""
+                stats["pr_already_exists"] = True
+
+        return stats
+
     def _migrate_pipelines(self, repo: RepoConfig, *,
                            pipeline_parallel: int = 8,
-                           wave_id: int = 0, **_kw: Any) -> dict:
+                           wave_id: int = 0,
+                           publish_workflows: bool | None = None,
+                           publish_mode: str | None = None,
+                           publish_branch: str | None = None,
+                           publish_base: str | None = None,
+                           publish_pr_title: str | None = None,
+                           **_kw: Any) -> dict:
         pipelines = self.db.get_pipelines_for_repo(repo.ado_project, repo.ado_repo)
         if repo.pipeline_filter:
             pat = re.compile(repo.pipeline_filter)
@@ -369,6 +456,17 @@ class MigrationEngine:
 
         # Where we write workflow artifacts for this repo.
         out_dir = Path("output") / "workflows" / repo.gh_org / repo.gh_repo
+
+        # Resolve publishing options (CLI can override config)
+        do_publish = self.publish_workflows if publish_workflows is None else bool(publish_workflows)
+        if publish_mode:
+            self.publish_mode = publish_mode.lower()
+        if publish_branch:
+            self.publish_branch = publish_branch
+        if publish_base is not None:
+            self.publish_base = publish_base
+        if publish_pr_title:
+            self.publish_pr_title = publish_pr_title
 
         def _transform_one(pipe: PipelineMetadata) -> dict:
             self.db.upsert_pipeline_migration(
@@ -425,6 +523,15 @@ class MigrationEngine:
             except Exception as exc:
                 log.warning("workflow publish failed for %s/%s: %s", repo.gh_org, repo.gh_repo, exc)
                 stats["publish"] = {"status": "failed", "error": str(exc)}
+
+        # Optionally publish workflow files into the destination repo
+        if do_publish and not self.dry_run:
+            try:
+                pub = self._publish_workflows_for_repo(repo, output_root)
+                stats["publish"] = pub
+            except Exception as exc:
+                stats.setdefault("warnings", []).append(f"workflow publish failed: {exc}")
+                stats["publish"] = {"published": 0, "error": str(exc)}
 
         return stats
 

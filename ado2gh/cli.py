@@ -59,7 +59,7 @@ def _load_clients(cfg_global: dict):
     return ADOClient(ado_url, ado_pat), GHClient(tm)
 
 
-def _load_repos(input_path: str, global_cfg: dict,
+def _load_repos(input_path: str | None, global_cfg: dict,
                 waves: list = None) -> list:
     """Load repos from --input file, or fall back to waves in config.
 
@@ -67,7 +67,6 @@ def _load_repos(input_path: str, global_cfg: dict,
     --input takes priority over waves defined in migration_phase.yaml.
     """
     from ado2gh.core.config_loader import ConfigLoader
-    from ado2gh.models import RepoConfig
 
     if input_path:
         gh_org = global_cfg.get("gh_org", "")
@@ -145,22 +144,77 @@ def plan(config):
 
 @cli.command()
 @click.option("--config", "-c", required=True)
-@click.option("--wave", "-w", type=int, default=None)
+@click.option("--wave", "-w", type=int, default=None,
+              help="Wave id from config (if config defines waves). If config has no waves, use --input instead.")
+@click.option("--input", "-i", "input_file", default=None,
+              help="Input file with repos to migrate (text or CSV). Required when config has no waves.")
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--db", default="migration_state.db", show_default=True)
-def run(config, wave, dry_run, db):
-    """Execute migration wave(s). Idempotent — skips completed scopes."""
+@click.option("--publish-workflows", is_flag=True, default=False,
+              help="When migrating pipelines, also commit generated GitHub Actions workflows into the destination repo")
+@click.option("--workflow-mode", default="pr", show_default=True,
+              type=click.Choice(["pr", "push"]),
+              help="How to publish workflows: 'pr' creates/updates a feature branch + opens a PR; 'push' writes directly to base branch")
+@click.option("--workflow-branch", default="ado2gh/migrated-workflows", show_default=True,
+              help="Branch name to create/update on the destination repo (PR mode)")
+@click.option("--workflow-base", default=None,
+              help="Base branch to fork from / push to (defaults to repo default branch)")
+@click.option("--workflow-pr-title", default="Add migrated GitHub Actions workflows",
+              show_default=True)
+def run(config, wave, input_file, dry_run, db,
+        publish_workflows, workflow_mode, workflow_branch, workflow_base, workflow_pr_title):
+    """Execute migration wave(s) or an explicit repo list.
+
+    - If your config has waves: use --wave (or omit to run all waves)
+    - If your config has NO waves (settings-only migration.yaml): use --input
+    """
     from ado2gh.core.config_loader import ConfigLoader
     from ado2gh.core.migration_engine import MigrationEngine
     from ado2gh.core.wave_runner import WaveRunner
     from ado2gh.reporting.reporter import Reporter
     from ado2gh.state.db import StateDB
+    from ado2gh.models import WaveConfig
 
     global_cfg, waves = ConfigLoader.load(config)
+
+    # Configure workflow publishing for this run (engine reads global_cfg["pipelines"]).
+    global_cfg.setdefault("pipelines", {})
+    if publish_workflows:
+        global_cfg["pipelines"]["publish_workflows"] = True
+    global_cfg["pipelines"]["publish_mode"] = workflow_mode
+    global_cfg["pipelines"]["publish_branch"] = workflow_branch
+    global_cfg["pipelines"]["publish_base"] = workflow_base or ""
+    global_cfg["pipelines"]["publish_pr_title"] = workflow_pr_title
+
     ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
+
+    if not waves:
+        # Settings-only config: build a single synthetic wave from --input.
+        repos = _load_repos(input_file, global_cfg)
+        if not repos:
+            console.print("[red]No repos. With a settings-only config, use --input <file>.[/red]")
+            sys.exit(1)
+        par = int(global_cfg.get("parallel", 4))
+        pipe_par = int(global_cfg.get("pipeline_parallel", 8))
+        waves = [WaveConfig(
+            wave_id=1,
+            name="input",
+            description="Repos loaded from --input",
+            repos=repos,
+            parallel=par,
+            retry_max=3,
+            timeout_sec=1800,
+            pipeline_parallel=pipe_par,
+            phase="",
+        )]
+        # If user supplied --wave, only accept wave=1 here.
+        if wave is not None and wave != 1:
+            console.print(f"[red]Wave {wave} not found.[/red]")
+            sys.exit(1)
+
     engine = MigrationEngine(global_cfg, ado, gh, state, dry_run=dry_run)
-    runner = WaveRunner(engine, state)
+    runner = WaveRunner(global_cfg, ado, gh, state)
 
     targets = [w for w in waves if wave is None or w.wave_id == wave]
     if not targets:
@@ -475,7 +529,7 @@ def pipelines_retry_failed(config, wave, dry_run, db):
     if not dry_run:
         state.reset_failed_pipeline_migrations(wave)
     engine = MigrationEngine(global_cfg, ado, gh, state, dry_run=dry_run)
-    runner = WaveRunner(engine, state)
+    runner = WaveRunner(global_cfg, ado, gh, state)
     runner.run_wave(target, dry_run=dry_run)
     Reporter(state).print_pipeline_status(wave)
 
@@ -678,7 +732,16 @@ def phase_plan(config, phase, db):
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--force", is_flag=True, default=False)
 @click.option("--db", default="migration_state.db", show_default=True)
-def phase_run(config, phase, dry_run, force, db):
+@click.option("--publish-workflows", is_flag=True, default=False,
+              help="When migrating pipelines, also commit generated GitHub Actions workflows into the destination repo")
+@click.option("--workflow-mode", default="pr", show_default=True,
+              type=click.Choice(["pr", "push"]))
+@click.option("--workflow-branch", default="ado2gh/migrated-workflows", show_default=True)
+@click.option("--workflow-base", default=None)
+@click.option("--workflow-pr-title", default="Add migrated GitHub Actions workflows",
+              show_default=True)
+def phase_run(config, phase, dry_run, force, db,
+              publish_workflows, workflow_mode, workflow_branch, workflow_base, workflow_pr_title):
     """Execute a phase with sub-batch checkpointing and gate enforcement."""
     from ado2gh.core.config_loader import ConfigLoader
     from ado2gh.core.migration_engine import MigrationEngine
@@ -689,8 +752,19 @@ def phase_run(config, phase, dry_run, force, db):
     from rich.panel import Panel
 
     global_cfg, waves = ConfigLoader.load(config)
+
+    # Initialize clients + state DB
     ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
+
+    global_cfg.setdefault("pipelines", {})
+    if publish_workflows:
+        global_cfg["pipelines"]["publish_workflows"] = True
+    global_cfg["pipelines"]["publish_mode"] = workflow_mode
+    global_cfg["pipelines"]["publish_branch"] = workflow_branch
+    global_cfg["pipelines"]["publish_base"] = workflow_base or ""
+    global_cfg["pipelines"]["publish_pr_title"] = workflow_pr_title
+
     phase_t = PhaseType(phase)
     checker = PhaseGateChecker(state)
 
