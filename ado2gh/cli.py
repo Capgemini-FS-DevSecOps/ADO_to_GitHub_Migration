@@ -968,7 +968,19 @@ def push_workflows(config, input_file, branch, base, pr_title,
 
         try:
             base_branch = base or gh.get_default_branch(r.gh_org, r.gh_repo)
-            base_sha = gh.get_branch_sha(r.gh_org, r.gh_repo, base_branch)
+            try:
+                base_sha = gh.get_branch_sha(r.gh_org, r.gh_repo, base_branch)
+            except requests.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 409:
+                    console.print(
+                        f"[red]  failed: destination repo "
+                        f"{r.gh_org}/{r.gh_repo} is empty (no commits on "
+                        f"{base_branch}). Run 'phase run' first to mirror "
+                        f"the source code, or push an initial commit "
+                        f"manually before retrying.[/red]"
+                    )
+                    continue
+                raise
             try:
                 gh.create_branch(r.gh_org, r.gh_repo, branch, base_sha)
                 console.print(f"[green]  branch {branch} created off "
