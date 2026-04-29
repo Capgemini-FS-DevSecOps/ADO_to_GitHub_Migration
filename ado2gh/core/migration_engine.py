@@ -63,7 +63,7 @@ class MigrationEngine:
             self.db.upsert_migration(wave_id, repo, scope, MigrationStatus.IN_PROGRESS)
 
             if progress and task_id is not None:
-                progress.update(task_id, description=f"[cyan]{repo.ado_repo}[/] → {scope}")
+                progress.update(task_id, description=f"[cyan]{repo.ado_repo}[/] -> {scope}")
 
             try:
                 kwargs: dict[str, Any] = {}
@@ -112,7 +112,7 @@ class MigrationEngine:
 
     def _migrate_git(self, repo: RepoConfig, **_kw: Any) -> dict:
         """Actually migrate git content via mirror clone + push, or gh gei."""
-        log.info("git: %s/%s → %s/%s [strategy=%s]%s",
+        log.info("git: %s/%s -> %s/%s [strategy=%s]%s",
                  repo.ado_project, repo.ado_repo,
                  repo.gh_org, repo.gh_repo, self.strategy,
                  " [DRY RUN]" if self.dry_run else "")
@@ -152,7 +152,7 @@ class MigrationEngine:
             try:
                 self.gh.add_team_to_repo(repo.gh_org, gh_team, repo.gh_repo)
             except Exception as exc:
-                log.warning("team mapping %s → %s failed: %s", ado_team, gh_team, exc)
+                log.warning("team mapping %s -> %s failed: %s", ado_team, gh_team, exc)
 
         # Verify: check that the default branch exists on target
         try:
@@ -270,7 +270,7 @@ class MigrationEngine:
             "GH_PAT": gh_token,
         }
 
-        log.info("Running: gh gei migrate-repo %s/%s → %s/%s",
+        log.info("Running: gh gei migrate-repo %s/%s -> %s/%s",
                  repo.ado_project, repo.ado_repo, repo.gh_org, repo.gh_repo)
 
         result = subprocess.run(
@@ -288,7 +288,7 @@ class MigrationEngine:
     # ── WORK ITEMS ──────────────────────────────────────────────────────────
 
     def _migrate_work_items(self, repo: RepoConfig, **_kw: Any) -> dict:
-        log.info("work_items: %s/%s → %s/%s%s",
+        log.info("work_items: %s/%s -> %s/%s%s",
                  repo.ado_project, repo.ado_repo,
                  repo.gh_org, repo.gh_repo,
                  " [DRY RUN]" if self.dry_run else "")
