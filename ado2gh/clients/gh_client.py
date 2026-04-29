@@ -8,7 +8,6 @@ import requests
 
 from ado2gh.clients.token_manager import TokenManager
 from ado2gh.http_utils import make_session
-from ado2gh.logging_config import log
 
 
 class GHClient:
@@ -218,6 +217,79 @@ class GHClient:
             ).get("workflows", [])
         except Exception:
             return []
+
+    # ── Branch / contents helpers (workflow publishing) ─────────────────────
+
+    def get_default_branch(self, org: str, repo: str) -> str:
+        info = self.get_repo(org, repo)
+        return str(info.get("default_branch", "main"))
+
+    def get_branch_sha(self, org: str, repo: str, branch: str) -> str:
+        ref = self._get(f"/repos/{org}/{repo}/git/ref/heads/{quote(branch, safe='')}")
+        return str((ref.get("object") or {}).get("sha", ""))
+
+    def create_branch(self, org: str, repo: str, branch: str, base_sha: str) -> dict:
+        # Create refs/heads/<branch>
+        return self._post(f"/repos/{org}/{repo}/git/refs", {
+            "ref": f"refs/heads/{branch}",
+            "sha": base_sha,
+        })
+
+    def get_file_sha(self, org: str, repo: str, path: str, ref: str) -> str | None:
+        try:
+            # GET contents returns either a file dict or a list for directories
+            data = self._get(
+                f"/repos/{org}/{repo}/contents/{quote(path, safe='')}",
+                params={"ref": ref},
+            )
+            if isinstance(data, dict):
+                return data.get("sha")
+            return None
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return None
+            raise
+
+    def put_file(
+        self,
+        org: str,
+        repo: str,
+        path: str,
+        content_b64: str,
+        branch: str,
+        message: str,
+        *,
+        sha: str | None = None,
+    ) -> dict:
+        body: dict[str, Any] = {
+            "message": message,
+            "content": content_b64,
+            "branch": branch,
+        }
+        if sha:
+            body["sha"] = sha
+        return self._put(
+            f"/repos/{org}/{repo}/contents/{quote(path, safe='')}",
+            body,
+        ).json()
+
+    def create_pull_request(
+        self,
+        org: str,
+        repo: str,
+        title: str,
+        body: str,
+        *,
+        head: str,
+        base: str,
+    ) -> dict:
+        return self._post(f"/repos/{org}/{repo}/pulls", {
+            "title": title,
+            "body": body,
+            "head": head,
+            "base": base,
+            "maintainer_can_modify": True,
+        })
 
     @property
     def token_manager(self) -> TokenManager:
