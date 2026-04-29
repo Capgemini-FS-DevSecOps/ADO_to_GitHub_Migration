@@ -3,8 +3,8 @@
 # Run: ado2gh discover -c migration.yaml → then select repos into in/repos.txt
 
 global:
-  ado_org_url: "https://dev.azure.com/YOUR_ORG"
-  gh_org: "your-github-org"
+  ado_org_url: "https://dev.azure.com/cloud-sre"
+  gh_org: "destination-org-test"
   migration_strategy: mirror    # "mirror" or "gei"
   parallel: 4
   pipeline_parallel: 12
