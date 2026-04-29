@@ -908,6 +908,119 @@ def service_connections(config, input_file, output):
     manifest.print_summary(summary)
 
 
+@cli.command("push-workflows")
+@click.option("--config", "-c", required=True)
+@click.option("--input", "-i", "input_file", default=None,
+              help="Input file with repos. The local YAML at "
+                   "output/workflows/{gh_org}/{gh_repo}/.github/workflows/ "
+                   "is committed to the destination GitHub repo on a new branch.")
+@click.option("--branch", default="ado2gh/migrated-workflows", show_default=True,
+              help="Branch name to create on the destination repo")
+@click.option("--base", default=None,
+              help="Base branch to fork from (defaults to repo default branch)")
+@click.option("--pr-title", default="Add migrated GitHub Actions workflows",
+              show_default=True)
+@click.option("--workflows-dir", default="output/workflows", show_default=True,
+              help="Local root that holds the generated workflow tree")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="List what would be pushed without making any GitHub writes")
+def push_workflows(config, input_file, branch, base, pr_title,
+                    workflows_dir, dry_run):
+    """Commit generated workflow YAML to destination repos as a PR.
+
+    The migration engine writes generated GitHub Actions YAML to the local
+    filesystem only; this command takes that output and lands it on the
+    destination repo via a feature branch + PR so the team can review.
+    """
+    import base64
+    import requests
+    from ado2gh.core.config_loader import ConfigLoader
+
+    global_cfg, waves = ConfigLoader.load(config)
+    _, gh = _load_clients(global_cfg)
+    repos = _load_repos(input_file, global_cfg, waves)
+    if not repos:
+        console.print("[red]No repos. Use --input <file>[/red]")
+        sys.exit(1)
+
+    pushed_repos = 0
+    for r in repos:
+        wf_root = (Path(workflows_dir) / r.gh_org / r.gh_repo
+                   / ".github" / "workflows")
+        if not wf_root.exists():
+            console.print(f"[yellow]skip {r.gh_org}/{r.gh_repo}: "
+                          f"no local workflows at {wf_root}[/yellow]")
+            continue
+        wf_files = sorted(list(wf_root.glob("*.yml"))
+                          + list(wf_root.glob("*.yaml")))
+        if not wf_files:
+            console.print(f"[yellow]skip {r.gh_org}/{r.gh_repo}: "
+                          f"no .yml files in {wf_root}[/yellow]")
+            continue
+
+        console.print(f"\n[bold]{r.gh_org}/{r.gh_repo}[/bold] "
+                      f"({len(wf_files)} workflow(s))")
+        for f in wf_files:
+            console.print(f"  - {f.name}")
+        if dry_run:
+            console.print("[yellow]  [DRY RUN] not pushed[/yellow]")
+            continue
+
+        try:
+            base_branch = base or gh.get_default_branch(r.gh_org, r.gh_repo)
+            base_sha = gh.get_branch_sha(r.gh_org, r.gh_repo, base_branch)
+            try:
+                gh.create_branch(r.gh_org, r.gh_repo, branch, base_sha)
+                console.print(f"[green]  branch {branch} created off "
+                              f"{base_branch}@{base_sha[:7]}[/green]")
+            except requests.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 422:
+                    console.print(f"[yellow]  branch {branch} already exists; "
+                                  f"updating files[/yellow]")
+                else:
+                    raise
+
+            for f in wf_files:
+                rel_path = f".github/workflows/{f.name}"
+                existing_sha = gh.get_file_sha(r.gh_org, r.gh_repo,
+                                               rel_path, branch)
+                content_b64 = base64.b64encode(f.read_bytes()).decode("ascii")
+                gh.put_file(
+                    r.gh_org, r.gh_repo, rel_path, content_b64, branch,
+                    f"Add migrated workflow: {f.name}",
+                    sha=existing_sha,
+                )
+                console.print(f"  pushed {rel_path}")
+
+            pr_body = (
+                "Auto-generated GitHub Actions workflows migrated from ADO "
+                "pipelines via `ado2gh`.\n\n"
+                "**Review needed** — generated YAML may contain `TODO` "
+                "placeholders for classic-pipeline conversions. See the "
+                "`*_migration_notes.md` sidecar files in the local migration "
+                "output for conversion warnings and unsupported tasks.\n"
+            )
+            try:
+                pr = gh.create_pull_request(
+                    r.gh_org, r.gh_repo, pr_title, pr_body,
+                    head=branch, base=base_branch,
+                )
+                console.print(f"[green]  PR opened: {pr['html_url']}[/green]")
+                pushed_repos += 1
+            except requests.HTTPError as exc:
+                if exc.response is not None and exc.response.status_code == 422:
+                    console.print(f"[yellow]  PR already open for "
+                                  f"{branch} -> {base_branch}[/yellow]")
+                    pushed_repos += 1
+                else:
+                    raise
+        except Exception as exc:
+            console.print(f"[red]  failed: {exc}[/red]")
+
+    console.print(f"\n[bold]{pushed_repos}/{len(repos)} repo(s) "
+                  f"workflows pushed[/bold]")
+
+
 @cli.command("ado-cleanup")
 @click.option("--config", "-c", required=True)
 @click.option("--input", "-i", "input_file", default=None,

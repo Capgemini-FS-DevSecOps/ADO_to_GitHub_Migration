@@ -219,6 +219,45 @@ class GHClient:
         except Exception:
             return []
 
+    # ── Branch + content operations (used by push-workflows) ────────────────
+
+    def get_default_branch(self, org: str, repo: str) -> str:
+        return self._get(f"/repos/{org}/{repo}").get("default_branch", "main")
+
+    def get_branch_sha(self, org: str, repo: str, branch: str) -> str:
+        data = self._get(f"/repos/{org}/{repo}/git/ref/heads/{branch}")
+        return data["object"]["sha"]
+
+    def create_branch(self, org: str, repo: str, branch: str, sha: str) -> dict:
+        return self._post(
+            f"/repos/{org}/{repo}/git/refs",
+            {"ref": f"refs/heads/{branch}", "sha": sha},
+        )
+
+    def get_file_sha(self, org: str, repo: str, path: str, ref: str) -> str:
+        try:
+            data = self._get(f"/repos/{org}/{repo}/contents/{path}",
+                             params={"ref": ref})
+            return data.get("sha", "") if isinstance(data, dict) else ""
+        except Exception:
+            return ""
+
+    def put_file(self, org: str, repo: str, path: str, content_b64: str,
+                 branch: str, message: str, sha: str = "") -> dict:
+        body: dict = {"message": message, "content": content_b64, "branch": branch}
+        if sha:
+            body["sha"] = sha
+        r = self._put(f"/repos/{org}/{repo}/contents/{path}", body)
+        r.raise_for_status()
+        return r.json()
+
+    def create_pull_request(self, org: str, repo: str, title: str, body: str,
+                             head: str, base: str) -> dict:
+        return self._post(
+            f"/repos/{org}/{repo}/pulls",
+            {"title": title, "body": body, "head": head, "base": base},
+        )
+
     @property
     def token_manager(self) -> TokenManager:
         return self._tm
