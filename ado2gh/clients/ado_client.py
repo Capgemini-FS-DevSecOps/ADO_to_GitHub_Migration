@@ -111,6 +111,38 @@ class ADOClient:
         except Exception:
             return ""
 
+    def list_repo_yaml_files(self, project: str, repo_id: str,
+                              branch: str = "main",
+                              max_results: int = 50) -> list[str]:
+        """List *.yml/*.yaml file paths in a repo on the given branch.
+
+        Used to suggest candidates when an ADO pipeline references a YAML
+        file that is empty or missing in the source.
+        """
+        if not repo_id:
+            return []
+        url = (f"{self.org_url}/{self._p(project)}/_apis/git/repositories"
+               f"/{repo_id}/items?recursionLevel=Full"
+               f"&versionDescriptor.version={quote(branch, safe='')}"
+               f"&versionDescriptor.versionType=branch"
+               f"&{self.API}")
+        try:
+            r = self.session.get(url, timeout=30)
+            r.raise_for_status()
+            items = r.json().get("value", [])
+        except Exception:
+            return []
+        yaml_paths: list[str] = []
+        for it in items:
+            if it.get("gitObjectType") != "blob":
+                continue
+            p = it.get("path", "")
+            if p.lower().endswith((".yml", ".yaml")):
+                yaml_paths.append(p)
+                if len(yaml_paths) >= max_results:
+                    break
+        return yaml_paths
+
     def get_pipeline_runs(self, project: str, pipeline_id: int,
                            top: int = 10) -> list[dict]:
         url = (f"{self.org_url}/{self._p(project)}/_apis/pipelines"

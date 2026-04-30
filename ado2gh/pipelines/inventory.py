@@ -168,9 +168,33 @@ class PipelineInventoryBuilder:
                 project, repo.get("id", ""), yaml_path, branch=branch,
             )
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
-            return self.extractor.extract_yaml_pipeline(
+            meta = self.extractor.extract_yaml_pipeline(
                 project, stub, definition, build_def, yaml_content, runs, var_groups
             )
+            # If the configured YAML was empty or missing, the extractor
+            # has nothing to work with and the transformer will fall back
+            # to a TODO skeleton. Surface the real cause + repo candidates
+            # so the operator can fix the ADO pipeline definition.
+            if meta and not (yaml_content or "").strip():
+                candidates = self.ado.list_repo_yaml_files(
+                    project, repo.get("id", ""), branch,
+                )
+                cand_str = ", ".join(candidates) if candidates else "(none found)"
+                note = (
+                    f"Configured YAML path '{yaml_path}' was empty or missing "
+                    f"in source repo '{repo.get('name', '?')}' on branch "
+                    f"'{branch}'. Available YAML files in repo: {cand_str}. "
+                    f"Update the ADO pipeline definition to point at the "
+                    f"correct file, or rename one of the available files "
+                    f"to match before re-running the migration."
+                )
+                meta.migration_notes.insert(0, note)
+                log.warning(
+                    "  Pipeline %d (%s) configured YAML '%s' empty/missing; "
+                    "candidates in repo: %s",
+                    pipe_id, stub.get("name", "?"), yaml_path, cand_str,
+                )
+            return meta
         else:
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             return self.extractor.extract_classic_build_pipeline(
