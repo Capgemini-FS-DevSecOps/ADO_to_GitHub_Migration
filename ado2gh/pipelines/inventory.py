@@ -1,6 +1,7 @@
 """Pipeline inventory builder — scans all ADO pipelines and stores in StateDB."""
 from __future__ import annotations
 
+import difflib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
@@ -18,6 +19,36 @@ from ado2gh.logging_config import console, log
 from ado2gh.models import PipelineMetadata
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
 from ado2gh.state.db import StateDB
+
+
+def _pick_best_yaml(configured_path: str, repo_name: str,
+                    candidates: list[str], min_score: float = 0.4) -> str:
+    """Pick the most likely intended YAML when the configured one is missing.
+
+    Strategy:
+      - Single candidate: just use it.
+      - Multiple candidates: score each by max similarity between its
+        basename and (a) the configured path's basename, (b) the repo
+        name. Highest score wins, but only if it clears ``min_score`` so
+        wildly-different files aren't auto-picked.
+    """
+    if not candidates:
+        return ""
+    if len(candidates) == 1:
+        return candidates[0]
+
+    cfg_base = configured_path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+    repo_norm = repo_name.lower().replace("-migration", "").replace("migration-", "")
+
+    def _score(path: str) -> float:
+        base = path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+        return max(
+            difflib.SequenceMatcher(None, base, cfg_base).ratio(),
+            difflib.SequenceMatcher(None, base, repo_norm).ratio(),
+        )
+
+    best = max(candidates, key=_score)
+    return best if _score(best) >= min_score else ""
 
 
 class PipelineInventoryBuilder:
@@ -167,32 +198,79 @@ class PipelineInventoryBuilder:
             yaml_content = self.ado.get_pipeline_yaml_from_git(
                 project, repo.get("id", ""), yaml_path, branch=branch,
             )
+
+            # Fallback: if the configured YAML is empty or missing in the
+            # source repo, try to auto-pick the closest-named candidate so
+            # the conversion still produces a usable workflow. Operators
+            # always review the destination PR, and the migration_note below
+            # makes the substitution explicit.
+            fallback_used = ""
+            other_candidates: list[str] = []
+            if not (yaml_content or "").strip():
+                candidates = self.ado.list_repo_yaml_files(
+                    project, repo.get("id", ""), branch,
+                )
+                picked = _pick_best_yaml(
+                    yaml_path, repo.get("name", ""), candidates,
+                )
+                if picked:
+                    new_content = self.ado.get_pipeline_yaml_from_git(
+                        project, repo.get("id", ""), picked, branch=branch,
+                    )
+                    if (new_content or "").strip():
+                        yaml_content = new_content
+                        fallback_used = picked
+                        other_candidates = [c for c in candidates if c != picked]
+                        # Update the synthesised definition so the metadata
+                        # records which file actually drove the conversion.
+                        if isinstance(definition, dict):
+                            cfg = definition.setdefault("configuration", {})
+                            cfg["path"] = picked
+
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             meta = self.extractor.extract_yaml_pipeline(
                 project, stub, definition, build_def, yaml_content, runs, var_groups
             )
-            # If the configured YAML was empty or missing, the extractor
-            # has nothing to work with and the transformer will fall back
-            # to a TODO skeleton. Surface the real cause + repo candidates
-            # so the operator can fix the ADO pipeline definition.
-            if meta and not (yaml_content or "").strip():
+
+            if meta and fallback_used:
+                others = (", ".join(other_candidates)
+                          if other_candidates else "(none)")
+                meta.yaml_path = fallback_used
+                meta.migration_notes.insert(0, (
+                    f"Configured YAML '{yaml_path}' was missing in source "
+                    f"repo '{repo.get('name', '?')}' on branch '{branch}'. "
+                    f"Auto-selected '{fallback_used}' based on name "
+                    f"similarity to the configured path and the repo name. "
+                    f"Other candidates in repo: {others}. Review the "
+                    f"generated workflow against the chosen source to "
+                    f"confirm this matches the pipeline's intent."
+                ))
+                log.warning(
+                    "  Pipeline %d (%s) configured YAML '%s' missing — "
+                    "auto-selected '%s' (other candidates: %s)",
+                    pipe_id, stub.get("name", "?"), yaml_path,
+                    fallback_used, others,
+                )
+            elif meta and not (yaml_content or "").strip():
+                # No candidates available (or all were also empty) — keep
+                # the operator-facing diagnostic so they can fix the ADO
+                # pipeline definition manually.
                 candidates = self.ado.list_repo_yaml_files(
                     project, repo.get("id", ""), branch,
                 )
                 cand_str = ", ".join(candidates) if candidates else "(none found)"
-                note = (
-                    f"Configured YAML path '{yaml_path}' was empty or missing "
-                    f"in source repo '{repo.get('name', '?')}' on branch "
-                    f"'{branch}'. Available YAML files in repo: {cand_str}. "
-                    f"Update the ADO pipeline definition to point at the "
-                    f"correct file, or rename one of the available files "
-                    f"to match before re-running the migration."
-                )
-                meta.migration_notes.insert(0, note)
+                meta.migration_notes.insert(0, (
+                    f"Configured YAML path '{yaml_path}' was empty or "
+                    f"missing in source repo '{repo.get('name', '?')}' on "
+                    f"branch '{branch}'. Available YAML files in repo: "
+                    f"{cand_str}. Update the ADO pipeline definition to "
+                    f"point at the correct file, or rename one of the "
+                    f"available files to match, then re-run the migration."
+                ))
                 log.warning(
-                    "  Pipeline %d (%s) configured YAML '%s' empty/missing; "
-                    "candidates in repo: %s",
-                    pipe_id, stub.get("name", "?"), yaml_path, cand_str,
+                    "  Pipeline %d (%s) configured YAML '%s' empty/missing "
+                    "and no usable candidates found",
+                    pipe_id, stub.get("name", "?"), yaml_path,
                 )
             return meta
         else:
