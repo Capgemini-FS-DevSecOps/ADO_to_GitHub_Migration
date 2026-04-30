@@ -165,7 +165,9 @@ class PostMigrationValidator:
                            .replace("refs/heads/", ""))
             repo_id = ado_repo.get("id", "")
 
-            commits = self.ado.get_repo_commits(repo.ado_project, repo_id, top=1)
+            commits = self.ado.get_repo_commits(
+                repo.ado_project, repo_id, top=1, branch=ado_default,
+            )
             ado_sha = commits[0].get("commitId", "") if commits else ""
         except Exception:
             return {"verdict": WARN, "detail": "Cannot read ADO HEAD commit",
