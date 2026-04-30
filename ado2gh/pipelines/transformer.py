@@ -109,6 +109,14 @@ class PipelineTransformer:
         else:
             workflow = self._build_classic_workflow(meta, warnings, unsupported)
 
+        # ADO syntax -> GitHub Actions syntax in every string value:
+        #   ${{ parameters.X }}  ->  ${{ inputs.X }}
+        #   $(X)                 ->  ${{ env.X }}
+        # Without this the generated workflow fails GitHub's validator with
+        # "Unrecognized named-value: 'parameters'" or doesn't expand $() macros.
+        env_keys = set(workflow.get("env", {}).keys())
+        self._rewrite_ado_expressions_inplace(workflow, env_keys)
+
         # Serialise to YAML with a header comment.
         header = (
             f"# ---------------------------------------------------------\n"
@@ -286,11 +294,40 @@ class PipelineTransformer:
             if crons:
                 on["schedule"] = crons
 
-        # Always include workflow_dispatch for manual runs.
-        on["workflow_dispatch"] = {}
+        # Always include workflow_dispatch for manual runs. If the source
+        # pipeline declared template `parameters:`, expose them as
+        # workflow_dispatch.inputs so `${{ inputs.X }}` references resolve.
+        wd: dict = {}
+        if getattr(meta, "parameters", None):
+            inputs: dict = {}
+            for p in meta.parameters:
+                name = p.get("name")
+                if not name:
+                    continue
+                p_type = (p.get("type") or "string").lower()
+                values = p.get("values")
+                gha_input: dict = {"required": p.get("default") is None}
+                if isinstance(values, list) and values:
+                    gha_input["type"] = "choice"
+                    gha_input["options"] = [str(v) for v in values]
+                elif p_type in ("boolean", "bool"):
+                    gha_input["type"] = "boolean"
+                elif p_type == "number":
+                    gha_input["type"] = "number"
+                else:
+                    gha_input["type"] = "string"
+                if p.get("default") is not None:
+                    gha_input["default"] = (
+                        str(p["default"]) if gha_input["type"] != "boolean"
+                        else bool(p["default"])
+                    )
+                inputs[name] = gha_input
+            if inputs:
+                wd["inputs"] = inputs
+        on["workflow_dispatch"] = wd
 
         if not on:
-            on["workflow_dispatch"] = {}
+            on["workflow_dispatch"] = wd
 
         return {"on": on}
 
@@ -767,6 +804,45 @@ class PipelineTransformer:
         return "ubuntu-latest"
 
     # ── environment block helper ──────────────────────────────────────────
+
+    # ── ADO -> GHA expression rewriter ────────────────────────────────────
+
+    # ${{ parameters.X }}  ->  ${{ inputs.X }}
+    _RE_ADO_PARAM = re.compile(r"\$\{\{\s*parameters\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
+    # $(X) macro  ->  ${{ env.X }}  (only for word-shaped names; leave shell
+    # command substitutions like $(date) alone by checking against env keys).
+    _RE_ADO_MACRO = re.compile(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)")
+
+    @classmethod
+    def _rewrite_ado_expression_string(cls, s: str, env_keys: set) -> str:
+        if not isinstance(s, str) or "$" not in s:
+            return s
+        s = cls._RE_ADO_PARAM.sub(r"${{ inputs.\1 }}", s)
+        # Only rewrite $(X) when X is in the env block — that's how we know
+        # it's an ADO variable macro and not a bash command substitution.
+        if env_keys:
+            def _macro(m: "re.Match") -> str:
+                name = m.group(1)
+                return f"${{{{ env.{name} }}}}" if name in env_keys else m.group(0)
+            s = cls._RE_ADO_MACRO.sub(_macro, s)
+        return s
+
+    @classmethod
+    def _rewrite_ado_expressions_inplace(cls, obj, env_keys: set) -> None:
+        """Walk a workflow dict in place, rewriting ADO expressions in
+        every string value."""
+        if isinstance(obj, dict):
+            for k, v in list(obj.items()):
+                if isinstance(v, str):
+                    obj[k] = cls._rewrite_ado_expression_string(v, env_keys)
+                else:
+                    cls._rewrite_ado_expressions_inplace(v, env_keys)
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                if isinstance(v, str):
+                    obj[i] = cls._rewrite_ado_expression_string(v, env_keys)
+                else:
+                    cls._rewrite_ado_expressions_inplace(v, env_keys)
 
     @staticmethod
     def _build_env_block(meta: PipelineMetadata) -> dict[str, str]:

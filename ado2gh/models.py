@@ -178,6 +178,8 @@ class PipelineMetadata:
     trigger_schedules:   list[dict]       = field(default_factory=list)
     variables:           list[PipelineVariable]    = field(default_factory=list)
     variable_groups:     list[dict]       = field(default_factory=list)
+    # Each parameter dict: {name, type, default, values (optional list of allowed values)}
+    parameters:          list[dict]       = field(default_factory=list)
     stages:              list[PipelineStage]       = field(default_factory=list)
     environments:        list[PipelineEnvironment] = field(default_factory=list)
     service_connections: list[dict]       = field(default_factory=list)
@@ -209,6 +211,7 @@ class PipelineMetadata:
             "trigger_schedules":   self.trigger_schedules,
             "variables":           [v.__dict__ for v in self.variables],
             "variable_groups":     self.variable_groups,
+            "parameters":          self.parameters,
             "stages": [
                 {
                     "name":          s.name,
@@ -254,6 +257,7 @@ class PipelineMetadata:
             trigger_pr_branches  = d.get("trigger_pr_branches", []),
             trigger_schedules    = d.get("trigger_schedules", []),
             variable_groups      = d.get("variable_groups", []),
+            parameters           = d.get("parameters", []),
             service_connections  = d.get("service_connections", []),
             agent_pools          = d.get("agent_pools", []),
             retention_days       = d.get("retention_days", 30),
