@@ -243,9 +243,19 @@ class PipelineMetadataExtractor:
             meta.migration_notes.append("Could not parse YAML — manual review required.")
             return
 
-        # Top-level variables
-        for var in doc.get("variables", []):
-            if isinstance(var, dict):
+        # Top-level variables — supports both list-form and mapping-form.
+        raw_vars = doc.get("variables", [])
+        if isinstance(raw_vars, dict):
+            # mapping form:  variables: { name: value, ... }
+            for name, value in raw_vars.items():
+                meta.variables.append(PipelineVariable(
+                    name  = str(name),
+                    value = str(value),
+                ))
+        elif isinstance(raw_vars, list):
+            for var in raw_vars:
+                if not isinstance(var, dict):
+                    continue
                 if "group" in var:
                     vg_name = var["group"]
                     vg = next((v for v in var_groups
@@ -261,6 +271,19 @@ class PipelineMetadataExtractor:
                         name  = var.get("name", ""),
                         value = str(var.get("value", "")),
                     ))
+
+        # Top-level parameters (template parameters in ADO YAML).
+        for p in doc.get("parameters", []) or []:
+            if not isinstance(p, dict) or not p.get("name"):
+                continue
+            entry: dict = {
+                "name":    p["name"],
+                "type":    p.get("type", "string"),
+                "default": p.get("default"),
+            }
+            if isinstance(p.get("values"), list):
+                entry["values"] = list(p["values"])
+            meta.parameters.append(entry)
 
         # Stages
         raw_stages = doc.get("stages", [])
