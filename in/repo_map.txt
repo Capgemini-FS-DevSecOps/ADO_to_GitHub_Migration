@@ -1,1 +1,5 @@
-Migration-Demo/azure-pipelines-migration::destination-org-test/azure-pipelines-migration
+# Demo set — covers basic script, bicep template, and hybrid yaml+bicep
+Migration-Demo/azure-pipelines-script-migration::destination-org-test/azure-pipelines-script-migration
+Migration-Demo/bicep-template-migration::destination-org-test/bicep-template-migration
+Migration-Demo/hybrid-pipeline-template-migration::destination-org-test/hybrid-pipeline-template-migration
+Migration-Demo/azure-pipelines-build-migration::destination-org-test/azure-pipelines-build-migration
