@@ -81,7 +81,10 @@ class ServiceConnectionManifest:
         self.ado = ado
 
     def generate(self, projects: list[str],
-                 output_path: str = "output/service_connection_manifest.json") -> dict:
+                 output_path: str = None) -> dict:
+        if output_path is None:
+            from ado2gh.output_dirs import output_str
+            output_path = output_str("service_connection_manifest.json")
         """Scan all projects for service connections and generate migration manifest."""
         all_connections: list[dict] = []
         by_project: dict[str, list] = {}

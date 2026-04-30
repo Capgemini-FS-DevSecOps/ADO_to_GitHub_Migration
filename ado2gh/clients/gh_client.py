@@ -224,6 +224,9 @@ class GHClient:
     def get_default_branch(self, org: str, repo: str) -> str:
         return self._get(f"/repos/{org}/{repo}").get("default_branch", "main")
 
+    def set_default_branch(self, org: str, repo: str, branch: str) -> dict:
+        return self._patch(f"/repos/{org}/{repo}", {"default_branch": branch})
+
     def get_branch_sha(self, org: str, repo: str, branch: str) -> str:
         data = self._get(f"/repos/{org}/{repo}/git/ref/heads/{branch}")
         return data["object"]["sha"]

@@ -13,7 +13,11 @@ migration_state.db
 
 output/
 failed_repos_*.txt
+failed_repos_*.csv
 migration_phase.yaml
+migration_report.html
+validation_report.csv
+validation_report.json
 
 .env
 *.pem
