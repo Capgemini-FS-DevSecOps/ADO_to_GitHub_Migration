@@ -13,6 +13,7 @@ from ado2gh.logging_config import console, log
 from ado2gh.models import (
     DEFAULT_PHASES, GateStatus, PHASE_ORDER, PhaseType, next_phase,
 )
+from ado2gh.output_dirs import output_base, output_str
 
 
 def _load_clients(cfg_global: dict):
@@ -98,7 +99,8 @@ def cli():
 
 @cli.command()
 @click.option("--config", "-c", required=True)
-@click.option("--output", "-o", default="output/discovery", show_default=True)
+@click.option("--output", "-o", default=lambda: output_str("discovery"),
+              show_default="$ADO2GH_OUTPUT_DIR/discovery (default: output/discovery)")
 def discover(config, output):
     """Scan ADO org and output structured inventory for planning.
 
@@ -197,7 +199,8 @@ def status(config, wave, db):
 
 @cli.command()
 @click.option("--config", "-c", required=True)
-@click.option("--output", default="migration_report.html", show_default=True)
+@click.option("--output", default=lambda: output_str("migration_report.html"),
+              show_default="$ADO2GH_OUTPUT_DIR/migration_report.html")
 @click.option("--format", "fmt", default="html",
               type=click.Choice(["html", "json", "csv"]), show_default=True)
 @click.option("--db", default="migration_state.db", show_default=True)
@@ -207,6 +210,7 @@ def report(config, output, fmt, db):
     from ado2gh.reporting.csv_exporter import CSVExporter
     from ado2gh.state.db import StateDB
 
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     state = StateDB(db)
     if fmt == "html":
         Reporter(state).generate_html(output)
@@ -265,7 +269,8 @@ def rollback(config, wave, dry_run, db, scopes):
 @cli.command("export-failed")
 @click.option("--db", default="migration_state.db", show_default=True)
 @click.option("--phase", "-p", default=None)
-@click.option("--output", "-o", default="output/failed_repos.txt", show_default=True)
+@click.option("--output", "-o", default=lambda: output_str("failed_repos.txt"),
+              show_default="$ADO2GH_OUTPUT_DIR/failed_repos.txt")
 def export_failed(db, phase, output):
     """Export failed repos as a text file for targeted retries."""
     from ado2gh.reporting.csv_exporter import CSVExporter
@@ -281,7 +286,8 @@ def export_failed(db, phase, output):
 @click.option("--input", "-i", "input_file", default=None,
               help="Input file with repos to validate")
 @click.option("--db", default="migration_state.db", show_default=True)
-@click.option("--output", "-o", default="validation_report.csv", show_default=True)
+@click.option("--output", "-o", default=lambda: output_str("validation_report.csv"),
+              show_default="$ADO2GH_OUTPUT_DIR/validation_report.csv")
 def validate(config, input_file, db, output):
     """Post-migration validation: compare ADO source vs GitHub target.
 
@@ -290,6 +296,7 @@ def validate(config, input_file, db, output):
     from ado2gh.reporting.post_migration_validator import PostMigrationValidator
     from ado2gh.state.db import StateDB
 
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
     global_cfg, waves = ConfigLoader.load(config)
     ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
@@ -735,10 +742,10 @@ def phase_run(config, phase, dry_run, force, db):
         border_style="green" if summary["failed"] == 0 else "yellow",
     ))
 
-    # Auto-generate failed repos list under output/ so the project root
-    # stays clean across runs.
+    # Auto-generate failed repos list under the configured output base so
+    # the project root stays clean across runs.
     from ado2gh.reporting.csv_exporter import CSVExporter
-    failed_path = Path("output") / f"failed_repos_{phase}.txt"
+    failed_path = output_base() / f"failed_repos_{phase}.txt"
     failed_path.parent.mkdir(parents=True, exist_ok=True)
     CSVExporter.export_failed_repos(state, str(failed_path), phase=phase)
 
@@ -870,7 +877,8 @@ def phase_dashboard(config, db):
 @click.option("--input", "-i", "input_file", default=None,
               help="Input file with repos to assess")
 @click.option("--db", default="migration_state.db", show_default=True)
-@click.option("--output", "-o", default="output/pipeline_readiness.csv", show_default=True)
+@click.option("--output", "-o", default=lambda: output_str("pipeline_readiness.csv"),
+              show_default="$ADO2GH_OUTPUT_DIR/pipeline_readiness.csv")
 def pipeline_readiness(config, input_file, db, output):
     """Assess which pipelines can auto-convert vs need manual work.
 
@@ -891,8 +899,9 @@ def pipeline_readiness(config, input_file, db, output):
 @click.option("--config", "-c", required=True)
 @click.option("--input", "-i", "input_file", default=None,
               help="Input file with repos — scans their projects for service connections")
-@click.option("--output", "-o", default="output/service_connection_manifest.json",
-              show_default=True)
+@click.option("--output", "-o",
+              default=lambda: output_str("service_connection_manifest.json"),
+              show_default="$ADO2GH_OUTPUT_DIR/service_connection_manifest.json")
 def service_connections(config, input_file, output):
     """Generate service connection migration manifest.
 
@@ -924,7 +933,8 @@ def service_connections(config, input_file, output):
               help="Base branch to fork from (defaults to repo default branch)")
 @click.option("--pr-title", default="Add migrated GitHub Actions workflows",
               show_default=True)
-@click.option("--workflows-dir", default="output/workflows", show_default=True,
+@click.option("--workflows-dir", default=lambda: output_str("workflows"),
+              show_default="$ADO2GH_OUTPUT_DIR/workflows",
               help="Local root that holds the generated workflow tree")
 @click.option("--dry-run", is_flag=True, default=False,
               help="List what would be pushed without making any GitHub writes")

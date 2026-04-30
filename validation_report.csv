@@ -1,2 +1,0 @@
-ado_project,ado_repo,gh_target,overall,repo_exists,default_branch,head_commit,branches,workflows,branch_protection,detail
-Migration-Demo,azure-pipelines-migration,destination-org-test/azure-pipelines-migration,WARN,PASS,PASS,PASS,PASS,PASS,WARN,HEAD commit SHA matches — code verified

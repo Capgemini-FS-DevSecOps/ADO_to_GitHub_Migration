@@ -61,10 +61,10 @@ source .env
 export PYTHONIOENCODING=utf-8
 
 REPO_COUNT=$(grep -cv -E '^\s*(#|$)' "$INPUT_FILE" || true)
-echo -e "${BOLD}Migration wrapper${NC}"
-echo "  input:   $INPUT_FILE  ($REPO_COUNT repo(s))"
-echo "  config:  $CONFIG"
-echo "  dry-run: $DRY_RUN"
+
+# Inventory + assign first so we can derive the phase name (poc/pilot/...)
+# before we know where to put the rest of the artifacts. Inventory writes
+# only to SQLite; phase assign writes only migration_phase.yaml at root.
 
 # ── 1. Pipeline inventory ─────────────────────────────────────────────
 step 1 "Pipeline inventory"
@@ -94,7 +94,30 @@ PY
 if [[ -z "$PHASES_TO_RUN" ]]; then
   fail 2 "no phases populated — phase assign produced no waves"
 fi
-echo "  phases to run: $PHASES_TO_RUN"
+
+# ── Output base = output/<phase>_run/ ────────────────────────────────────
+# Every artifact (workflows, secrets, wikis, validation, reports, audit
+# logs) lives under one folder so a phase migration is a self-contained
+# bundle. The wrapper picks the FIRST populated phase as the folder name;
+# repos in subsequent phases of the same run share this folder. Override
+# by exporting ADO2GH_OUTPUT_DIR before invoking the wrapper.
+FIRST_PHASE=$(echo "$PHASES_TO_RUN" | awk '{print $1}')
+export ADO2GH_OUTPUT_DIR="${ADO2GH_OUTPUT_DIR:-output/${FIRST_PHASE}_run}"
+mkdir -p "$ADO2GH_OUTPUT_DIR"
+
+# Per-invocation audit dir so each wrapper run within the same phase
+# preserves its own validation snapshot + reports without overwriting.
+RUN_TS=$(date -u +%Y%m%dT%H%M%SZ)
+RUN_DIR="$ADO2GH_OUTPUT_DIR/runs/$RUN_TS"
+mkdir -p "$RUN_DIR"
+
+echo -e "${BOLD}Migration wrapper${NC}"
+echo "  input:        $INPUT_FILE  ($REPO_COUNT repo(s))"
+echo "  config:       $CONFIG"
+echo "  dry-run:      $DRY_RUN"
+echo "  output base:  $ADO2GH_OUTPUT_DIR"
+echo "  run dir:      $RUN_DIR"
+echo "  phases:       $PHASES_TO_RUN"
 
 # ── 3. Phase run for each populated phase ─────────────────────────────
 DRY_FLAG=""
@@ -108,7 +131,7 @@ for PHASE in $PHASES_TO_RUN; do
   step 3 "phase run --phase $PHASE"
   if ! python -m ado2gh phase run -c "$PHASE_CONFIG" --phase "$PHASE" $FORCE_FLAG $DRY_FLAG; then
     echo -e "${RED}phase $PHASE failed/blocked — stopping pipeline.${NC}" >&2
-    echo "Failed-repo lists are at: output/failed_repos_${PHASE}.txt + .csv"
+    echo "Failed-repo lists are at: $ADO2GH_OUTPUT_DIR/failed_repos_${PHASE}.txt + .csv"
     exit 1
   fi
   # After the first phase, subsequent phases should gate-progress naturally.
@@ -125,7 +148,9 @@ fi
 # ── 4. Validate (optional) ────────────────────────────────────────────
 if [[ "$NO_VALIDATE" -eq 0 ]]; then
   step 4 "Validate (commit SHA verification)"
-  python -m ado2gh validate -c "$PHASE_CONFIG" || echo -e "${RED}validate reported failures — continuing.${NC}"
+  python -m ado2gh validate -c "$PHASE_CONFIG" \
+    -o "$RUN_DIR/validation_report.csv" \
+    || echo -e "${RED}validate reported failures — continuing.${NC}"
   ok
 fi
 
@@ -138,11 +163,23 @@ fi
 
 # ── 6. Report ─────────────────────────────────────────────────────────
 step 6 "Generate HTML report"
-python -m ado2gh report -c "$PHASE_CONFIG" --format html || true
+python -m ado2gh report -c "$PHASE_CONFIG" --format html \
+  --output "$RUN_DIR/migration_report.html" || true
 ok
 
+# ── Audit copies into RUN_DIR ─────────────────────────────────────────
+# failed_repos_*.{txt,csv} are auto-written by `phase run` under
+# $ADO2GH_OUTPUT_DIR; copy them into the per-invocation audit subdir so
+# each rerun keeps its own snapshot.
+for f in "$ADO2GH_OUTPUT_DIR"/failed_repos_*.txt "$ADO2GH_OUTPUT_DIR"/failed_repos_*.csv; do
+  [[ -f "$f" ]] && cp "$f" "$RUN_DIR/" 2>/dev/null || true
+done
+# Snapshot the wave config so we know which repos were attempted.
+[[ -f "$PHASE_CONFIG" ]] && cp "$PHASE_CONFIG" "$RUN_DIR/migration_phase.yaml" || true
+
 echo -e "\n${BOLD}${GREEN}Migration wrapper complete.${NC}"
-echo "  state:   migration_state.db"
-echo "  phase:   $PHASE_CONFIG"
-echo "  output/  generated workflows, secrets manifests, validation, failed-repo lists"
-echo "  report:  migration_report.html"
+echo "  state:           migration_state.db"
+echo "  phase config:    $PHASE_CONFIG"
+echo "  output base:     $ADO2GH_OUTPUT_DIR"
+echo "  per-run audit:   $RUN_DIR"
+echo "  artifact tree:   $ADO2GH_OUTPUT_DIR/{workflows,secrets,wikis,pipeline_readiness.csv,...}"

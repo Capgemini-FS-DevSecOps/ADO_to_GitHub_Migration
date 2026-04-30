@@ -18,6 +18,7 @@ from ado2gh.models import (
     PipelineMetadata,
     RepoConfig,
 )
+from ado2gh.output_dirs import output_base
 from ado2gh.pipelines.transformer import PipelineTransformer
 from ado2gh.state.db import StateDB
 
@@ -202,23 +203,71 @@ class MigrationEngine:
             if result.returncode != 0:
                 raise RuntimeError(f"git remote set-url failed: {result.stderr[:500]}")
 
+            # Push branches + tags only — explicitly NOT a full mirror.
+            # `git push --mirror` does `--prune` on every ref namespace and
+            # tries to delete refs that don't exist in source, which:
+            #  - wipes the ado2gh/migrated-workflows branch we created on
+            #    the destination during a previous `push-workflows` run, and
+            #  - fails on GitHub's read-only refs/pull/*/merge refs (e.g.
+            #    "deny updating a hidden ref").
+            # Pushing only refs/heads/* and refs/tags/* is non-destructive
+            # for our own branches and skips the hidden GitHub PR refs.
+            # `git clone --mirror` sets remote.origin.mirror=true in the
+            # local config, which makes `git push` always do a mirror push
+            # regardless of refspecs. Unset that first.
+            subprocess.run(
+                ["git", "config", "--unset", "remote.origin.mirror"],
+                capture_output=True, text=True, cwd=mirror_path, timeout=10,
+            )
             result = subprocess.run(
-                ["git", "push", "--mirror"],
+                ["git", "push", "--force", "origin",
+                 "+refs/heads/*:refs/heads/*",
+                 "+refs/tags/*:refs/tags/*"],
                 capture_output=True, text=True, cwd=mirror_path, timeout=3600,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
             )
             if result.returncode != 0:
-                raise RuntimeError(f"git push --mirror failed: {result.stderr[:500]}")
+                raise RuntimeError(f"git push (heads+tags) failed: {result.stderr[:500]}")
 
             # LFS: if repo has LFS objects and skip_lfs is not set
             lfs_stats = {}
             if not repo.skip_lfs:
                 lfs_stats = self._push_lfs_objects(mirror_path, target_url)
 
+            # Sync the destination's default branch with the source. If the
+            # destination repo was created and a non-main branch (e.g. our
+            # ado2gh/migrated-workflows from a prior partial run) was the
+            # first ref pushed, GitHub set that as the default — and pushing
+            # main later doesn't auto-correct it. Force the alignment.
+            try:
+                source_default = self._source_default_branch(mirror_path)
+                if source_default:
+                    current = self.gh.get_default_branch(repo.gh_org, repo.gh_repo)
+                    if current != source_default:
+                        self.gh.set_default_branch(
+                            repo.gh_org, repo.gh_repo, source_default,
+                        )
+                        log.info(
+                            "default_branch %s/%s: %s -> %s",
+                            repo.gh_org, repo.gh_repo, current, source_default,
+                        )
+            except Exception as exc:
+                log.warning("default_branch sync failed for %s/%s: %s",
+                            repo.gh_org, repo.gh_repo, exc)
+
             return {"mirror": "success", **lfs_stats}
 
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    @staticmethod
+    def _source_default_branch(mirror_path: str) -> str:
+        """Read HEAD's symbolic-ref from a bare/mirror clone -> branch name."""
+        result = subprocess.run(
+            ["git", "symbolic-ref", "--short", "HEAD"],
+            capture_output=True, text=True, cwd=mirror_path, timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
 
     def _push_lfs_objects(self, mirror_path: str, target_url: str) -> dict:
         """Push LFS objects to target (if any exist)."""
@@ -377,7 +426,8 @@ class MigrationEngine:
             stats["dry_run"] = True
             return stats
 
-        output_root = Path("output") / "workflows" / repo.gh_org / repo.gh_repo / ".github" / "workflows"
+        output_root = (output_base() / "workflows" / repo.gh_org
+                       / repo.gh_repo / ".github" / "workflows")
 
         def _transform_one(pipe: PipelineMetadata) -> dict:
             self.db.upsert_pipeline_migration(
@@ -423,7 +473,7 @@ class MigrationEngine:
         if self.dry_run:
             stats["dry_run"] = True
             return stats
-        out = Path(f"output/wikis/{repo.gh_org}/{repo.gh_repo}")
+        out = output_base() / "wikis" / repo.gh_org / repo.gh_repo
         out.mkdir(parents=True, exist_ok=True)
         for wiki_data in wikis:
             root = wiki_data.get("root", {})
@@ -454,7 +504,7 @@ class MigrationEngine:
             return stats
 
         # Generate secrets mapping manifest (values cannot be migrated)
-        out = Path(f"output/secrets/{repo.gh_org}/{repo.gh_repo}")
+        out = output_base() / "secrets" / repo.gh_org / repo.gh_repo
         out.mkdir(parents=True, exist_ok=True)
         import json
         mapping = {

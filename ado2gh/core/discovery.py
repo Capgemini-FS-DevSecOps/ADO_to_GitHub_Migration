@@ -14,6 +14,7 @@ from pathlib import Path
 from ado2gh.clients import ADOClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import PipelineMetadata, PipelineType
+from ado2gh.output_dirs import output_str
 from ado2gh.state.db import StateDB
 
 
@@ -31,7 +32,9 @@ class DiscoveryScanner:
         self.ado = ado
         self.db = db
 
-    def scan(self, output_dir: str = "output/discovery") -> dict:
+    def scan(self, output_dir: str = None) -> dict:
+        if output_dir is None:
+            output_dir = output_str("discovery")
         """Run full discovery scan and write reports.
 
         Returns summary dict with counts.
