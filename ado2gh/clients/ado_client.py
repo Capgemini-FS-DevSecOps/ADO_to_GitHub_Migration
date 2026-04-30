@@ -62,9 +62,15 @@ class ADOClient:
             return {"branch_count": 0}
 
     def get_repo_commits(self, project: str, repo_id: str,
-                          top: int = 1) -> list[dict]:
+                          top: int = 1, branch: str = "") -> list[dict]:
         url = (f"{self.org_url}/{self._p(project)}/_apis/git/repositories"
                f"/{repo_id}/commits?{self.API}&$top={top}")
+        if branch:
+            # Scope the query to a specific branch — without this, ADO
+            # returns "latest commit across all branches" which can pick
+            # up dangling PR-merge commits that aren't on any branch tip.
+            url += (f"&searchCriteria.itemVersion.version={quote(branch, safe='')}"
+                    f"&searchCriteria.itemVersion.versionType=branch")
         try:
             return self._get(url).get("value", [])
         except Exception:
