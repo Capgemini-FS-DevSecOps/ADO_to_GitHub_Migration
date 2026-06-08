@@ -1,0 +1,82 @@
+# Development / local — SQLite (default). No Postgres required.
+# Usage: docker compose up --build
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  accelerator:
+    build:
+      context: .
+      dockerfile: services/accelerator_api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ADO2GH_STORAGE_BACKEND: sqlite
+      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_CONFIG: /app/migration.yaml
+      REDIS_URL: redis://redis:6379/0
+      ADO_ORG_URL: ${ADO_ORG_URL:-}
+      ADO_PAT: ${ADO_PAT:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      CORS_ORIGINS: "*"
+    volumes:
+      - ./migration.yaml:/app/migration.yaml:ro
+      - ado2gh-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/accelerator_api/Dockerfile
+    command: ["python", "-m", "ado2gh.core.orchestration.worker"]
+    environment:
+      ADO2GH_STORAGE_BACKEND: sqlite
+      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_CONFIG: /app/migration.yaml
+      REDIS_URL: redis://redis:6379/0
+      ADO_ORG_URL: ${ADO_ORG_URL:-}
+      ADO_PAT: ${ADO_PAT:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+    volumes:
+      - ./migration.yaml:/app/migration.yaml:ro
+      - ado2gh-data:/app/data
+    depends_on:
+      - accelerator
+      - redis
+
+  agent:
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      ACCELERATOR_URL: http://accelerator:8080
+    depends_on:
+      - accelerator
+
+  web:
+    build:
+      context: ./apps/migration-ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
+      NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+    depends_on:
+      - accelerator
+      - agent
+
+volumes:
+  ado2gh-data:

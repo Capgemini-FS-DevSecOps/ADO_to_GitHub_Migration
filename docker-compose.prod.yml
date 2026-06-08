@@ -1,0 +1,37 @@
+# Production — PostgreSQL backend.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ado2gh
+      POSTGRES_PASSWORD: ado2gh
+      POSTGRES_DB: ado2gh
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ado2gh"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  accelerator:
+    environment:
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    environment:
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:

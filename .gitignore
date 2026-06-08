@@ -1,15 +1,45 @@
+# --- Python ---
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
 *.egg-info/
+.eggs/
 dist/
 build/
-.eggs/
+pip-wheel-metadata/
 venv/
 .venv/
 
+# Test / lint / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+
+# --- Node / Next.js (migration UI) ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Stray lockfile at repo root (UI lockfile lives under apps/migration-ui/)
+/package-lock.json
+
+# --- Local runtime state (accelerator UI + CLI) ---
+/data/*
+!/data/.gitkeep
+
 *.db
-migration_state.db
+*.db-wal
+*.db-shm
 
 output/
 failed_repos_*.txt
@@ -18,8 +48,32 @@ migration_phase.yaml
 migration_report.html
 validation_report.csv
 validation_report.json
+pipeline_readiness.csv
+service_connection_manifest.json
+*_validation.csv
+discovered_repos.yaml
+scan_*.json
+scan_preview.json
 
+# --- Secrets & credentials ---
 .env
+.env.*
+!.env.example
 *.pem
 
+# --- Logs & scratch ---
 *.log
+tmp/
+tmp_*
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+*.swp
+*~

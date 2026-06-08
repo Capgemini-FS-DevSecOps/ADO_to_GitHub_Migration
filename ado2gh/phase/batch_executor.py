@@ -1,6 +1,7 @@
 """Sub-batch execution with SQLite checkpointing and resume."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -11,7 +12,7 @@ from rich.progress import (
 
 from ado2gh.logging_config import console, log
 from ado2gh.models import (
-    DEFAULT_PHASES, BatchCheckpoint, PhaseType, WaveConfig,
+    DEFAULT_PHASES, BatchCheckpoint, PhaseType, RepoConfig, WaveConfig,
 )
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.db import StateDB
@@ -101,31 +102,129 @@ class BatchExecutor:
             )
         return summary
 
-    def _run_batch(self, wave: WaveConfig, dry_run: bool) -> dict:
+    def execute_wave(
+        self,
+        wave: WaveConfig,
+        dry_run: bool = False,
+        cancel_event=None,
+        on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
+    ) -> dict:
+        """Execute a single wave (used by ``ado2gh run``)."""
+        log.info(
+            "=== Starting wave %d: %s (%d repos)%s ===",
+            wave.wave_id, wave.name, len(wave.repos),
+            " [DRY RUN]" if dry_run else "",
+        )
+        batch = self._run_batch(
+            wave, dry_run, cancel_event=cancel_event, on_repo_done=on_repo_done,
+        )
+        statuses = batch.get("repo_statuses", {})
+        completed = batch["completed"]
+        failed = batch["failed"]
+        overall = (
+            "completed" if failed == 0 and completed == len(wave.repos)
+            else ("partial" if completed > 0 else "failed")
+        )
+        return {
+            "wave_id": wave.wave_id,
+            "name": wave.name,
+            "status": overall,
+            "dry_run": dry_run,
+            "repos": statuses,
+            "completed": completed,
+            "failed": failed,
+            "partial": len(wave.repos) - completed - failed,
+            "total": len(wave.repos),
+        }
+
+    def retry_failed_pipelines(self, wave: WaveConfig, dry_run: bool = False) -> dict:
+        """Reset and re-run pipeline migrations for a wave."""
+        failed = self.db.get_failed_pipeline_migrations(wave.wave_id)
+        if not failed:
+            return {"retried": 0, "completed": 0, "failed": 0}
+        if not dry_run:
+            self.db.reset_failed_pipeline_migrations(wave.wave_id)
+
+        repos_by_key: dict[tuple, Any] = {}
+        for row in failed:
+            key = (row["project"], row["repo_name"])
+            if key not in repos_by_key:
+                for r in wave.repos:
+                    if r.ado_project == row["project"] and r.ado_repo == row["repo_name"]:
+                        repos_by_key[key] = r
+                        break
+
+        retry_repos = list(repos_by_key.values())
+        if not retry_repos:
+            return {"retried": 0, "completed": 0, "failed": len(failed)}
+
+        narrow_wave = WaveConfig(
+            wave_id=wave.wave_id,
+            name=f"{wave.name}-pipeline-retry",
+            description="Pipeline retry",
+            repos=retry_repos,
+            parallel=wave.parallel,
+            pipeline_parallel=wave.pipeline_parallel,
+            phase=wave.phase,
+        )
+        result = self._run_batch(narrow_wave, dry_run, scopes_filter=["pipelines"])
+        return {
+            "retried": len(failed),
+            "completed": result["completed"],
+            "failed": result["failed"],
+        }
+
+    def _run_batch(
+        self,
+        wave: WaveConfig,
+        dry_run: bool,
+        scopes_filter: list[str] | None = None,
+        cancel_event=None,
+        on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
+    ) -> dict:
         self.db.mark_wave_run(wave.wave_id, "started", dry_run)
-        result = {"completed": 0, "failed": 0}
+        result = {"completed": 0, "failed": 0, "repo_statuses": {}}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
                       console=console, transient=True) as prog:
             task = prog.add_task(wave.name, total=len(wave.repos))
             with ThreadPoolExecutor(max_workers=wave.parallel) as pool:
-                futures = {
-                    pool.submit(self.engine.migrate_repo, wave.wave_id, repo,
-                                prog, task,
-                                pipeline_parallel=wave.pipeline_parallel): repo
-                    for repo in wave.repos
-                }
+                futures = {}
+                for repo in wave.repos:
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    repo_to_run = repo
+                    if scopes_filter:
+                        from dataclasses import replace
+                        repo_to_run = replace(repo, scopes=scopes_filter)
+                    futures[pool.submit(
+                        self.engine.migrate_repo, wave.wave_id, repo_to_run,
+                        prog, task, pipeline_parallel=wave.pipeline_parallel,
+                    )] = repo
                 for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        break
                     repo = futures[future]
+                    key = f"{repo.ado_project}/{repo.ado_repo}"
                     try:
                         res = future.result(timeout=1800)
-                        if res["errors"]:
+                        result["repo_statuses"][key] = res
+                        if res.get("errors"):
                             result["failed"] += 1
                         else:
                             result["completed"] += 1
+                        if on_repo_done:
+                            on_repo_done(key, res, repo)
                     except Exception as e:
                         log.error(f"Batch error [{repo.ado_repo}]: {e}")
                         result["failed"] += 1
+                        result["repo_statuses"][key] = {
+                            "status": "failed", "error": str(e),
+                        }
+                        if on_repo_done:
+                            on_repo_done(key, result["repo_statuses"][key], repo)
         self.db.mark_wave_run(wave.wave_id,
                               "completed" if result["failed"] == 0 else "partial")
         return result

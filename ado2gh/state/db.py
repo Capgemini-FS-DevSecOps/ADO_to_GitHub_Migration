@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from ado2gh.models import (
     BatchCheckpoint, MigrationStatus, PhaseGateResult, PhaseType,
@@ -117,6 +117,36 @@ class StateDB:
         completed_at  TEXT,
         UNIQUE(phase, batch_num)
     );
+
+    CREATE TABLE IF NOT EXISTS profile_scans (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_id       TEXT NOT NULL UNIQUE,
+        scanned_at       TEXT NOT NULL,
+        gh_org           TEXT NOT NULL DEFAULT '',
+        projects_scanned INTEGER NOT NULL DEFAULT 0,
+        repos_scanned    INTEGER NOT NULL DEFAULT 0,
+        summary_json     TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS profile_scan_repos (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_id       TEXT NOT NULL,
+        project          TEXT NOT NULL,
+        repo_name        TEXT NOT NULL,
+        total_score      REAL NOT NULL DEFAULT 0,
+        suggested_phase  TEXT,
+        assigned_phase   TEXT,
+        gh_org           TEXT NOT NULL DEFAULT '',
+        gh_repo          TEXT NOT NULL DEFAULT '',
+        pipeline_count   INTEGER NOT NULL DEFAULT 0,
+        repo_json        TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(profile_id, project, repo_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_profile_scan_repos_profile
+        ON profile_scan_repos(profile_id);
+    CREATE INDEX IF NOT EXISTS idx_profile_scan_repos_phase
+        ON profile_scan_repos(profile_id, assigned_phase);
     """
 
     def __init__(self, db_path: str = "migration_state.db"):
@@ -176,6 +206,46 @@ class StateDB:
             return [dict(r) for r in conn.execute(
                 "SELECT * FROM migrations ORDER BY wave_id, id"
             ).fetchall()]
+
+    def migration_status_counts(self) -> dict:
+        """Aggregated repo counts by migration status (distinct ado_repo)."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT status, COUNT(DISTINCT ado_repo) AS cnt "
+                "FROM migrations GROUP BY status"
+            ).fetchall()
+        return {r["status"]: r["cnt"] for r in rows}
+
+    def get_migration_repo_counts(self) -> dict:
+        """Aggregated repo migration counts — avoids loading full migrations table."""
+        with self._conn() as conn:
+            rows = conn.execute("""
+                SELECT ado_repo, status FROM migrations
+                GROUP BY ado_project, ado_repo, scope
+            """).fetchall()
+            done = fail = 0
+            seen_done: set[str] = set()
+            seen_fail: set[str] = set()
+            for r in rows:
+                key = r["ado_repo"]
+                if r["status"] == "completed":
+                    seen_done.add(key)
+                elif r["status"] == "failed":
+                    seen_fail.add(key)
+            done = len(seen_done - seen_fail)
+            fail = len(seen_fail - seen_done)
+            total_pipelines = conn.execute(
+                "SELECT COUNT(*) FROM pipeline_migrations"
+            ).fetchone()[0]
+            total_repos = conn.execute(
+                "SELECT COUNT(DISTINCT ado_project || '/' || ado_repo) FROM migrations"
+            ).fetchone()[0]
+        return {
+            "total_repos": total_repos,
+            "completed_repos": done,
+            "failed_repos": fail,
+            "total_pipelines": total_pipelines,
+        }
 
     def get_failed_migrations(self, wave_id: int = None) -> list[dict]:
         with self._conn() as conn:
@@ -369,6 +439,24 @@ class StateDB:
 
     # ── Risk scores ─────────────────────────────────────────────────────────
 
+    def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:
+        """Remove risk-score rows not present in the latest discovery scan."""
+        if not keys:
+            return 0
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT project, repo_name FROM repo_risk_scores"
+            ).fetchall()
+            removed = 0
+            for project, repo_name in rows:
+                if (project, repo_name) not in keys:
+                    conn.execute(
+                        "DELETE FROM repo_risk_scores WHERE project=? AND repo_name=?",
+                        (project, repo_name),
+                    )
+                    removed += 1
+        return removed
+
     def upsert_risk_score(self, score):
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
@@ -383,7 +471,7 @@ class StateDB:
                     score_json=excluded.score_json, scored_at=excluded.scored_at
             """, (
                 score.project, score.repo_name, score.total_score,
-                score.assigned_phase.value if score.assigned_phase else None,
+                score.assigned_phase if score.assigned_phase else None,
                 score.gh_org, score.gh_repo,
                 json.dumps(score.to_dict()), now,
             ))
@@ -395,11 +483,73 @@ class StateDB:
             ).fetchall()]
 
     def get_risk_scores_for_phase(self, phase) -> list:
+        phase_val = phase.value if hasattr(phase, "value") else str(phase)
         with self._conn() as conn:
             return [dict(r) for r in conn.execute(
                 "SELECT * FROM repo_risk_scores WHERE assigned_phase=? ORDER BY total_score",
-                (phase.value,)
+                (phase_val,)
             ).fetchall()]
+
+    def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
+        counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
+        with self._conn() as conn:
+            counts["risk_scores"] = conn.execute(
+                "SELECT COUNT(*) FROM repo_risk_scores WHERE assigned_phase=?",
+                (phase_id,),
+            ).fetchone()[0]
+            if profile_id:
+                counts["profile_scan"] = conn.execute(
+                    "SELECT COUNT(*) FROM profile_scan_repos "
+                    "WHERE profile_id=? AND assigned_phase=?",
+                    (profile_id, phase_id),
+                ).fetchone()[0]
+            else:
+                counts["profile_scan"] = conn.execute(
+                    "SELECT COUNT(*) FROM profile_scan_repos WHERE assigned_phase=?",
+                    (phase_id,),
+                ).fetchone()[0]
+        return counts
+
+    def reassign_phase_repos(
+        self,
+        from_phase: str,
+        to_phase: str,
+        profile_id: str | None = None,
+    ) -> dict[str, int]:
+        updated = {"risk_scores": 0, "profile_scan": 0}
+        with self._conn() as conn:
+            cur = conn.execute(
+                "UPDATE repo_risk_scores SET assigned_phase=? WHERE assigned_phase=?",
+                (to_phase, from_phase),
+            )
+            updated["risk_scores"] = cur.rowcount
+            if profile_id:
+                cur = conn.execute(
+                    "UPDATE profile_scan_repos SET assigned_phase=? "
+                    "WHERE profile_id=? AND assigned_phase=?",
+                    (to_phase, profile_id, from_phase),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE profile_scan_repos SET assigned_phase=? WHERE assigned_phase=?",
+                    (to_phase, from_phase),
+                )
+            updated["profile_scan"] = cur.rowcount
+        return updated
+
+    def scan_repo_scores(self, profile_id: str | None = None) -> list[float]:
+        with self._conn() as conn:
+            if profile_id:
+                rows = conn.execute(
+                    "SELECT total_score FROM profile_scan_repos WHERE profile_id=?",
+                    (profile_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT total_score FROM profile_scan_repos").fetchall()
+            if rows:
+                return [float(r[0]) for r in rows]
+            rows = conn.execute("SELECT total_score FROM repo_risk_scores").fetchall()
+        return [float(r[0]) for r in rows]
 
     def risk_score_count(self) -> int:
         with self._conn() as conn:
@@ -480,3 +630,130 @@ class StateDB:
                 (phase.value,)
             ).fetchone()
             return row[0] if row and row[0] is not None else -1
+
+    # ── Profile scan (discovery per migration profile) ───────────────────────
+
+    def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
+        gh_org = raw.get("gh_org", "")
+        summary = {
+            k: {kk: vv for kk, vv in v.items() if kk != "repos"}
+            for k, v in raw.get("recommendations", {}).items()
+        }
+        with self._conn() as conn:
+            conn.execute("DELETE FROM profile_scan_repos WHERE profile_id=?", (profile_id,))
+            conn.execute("""
+                INSERT INTO profile_scans
+                    (profile_id, scanned_at, gh_org, projects_scanned, repos_scanned, summary_json)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(profile_id) DO UPDATE SET
+                    scanned_at=excluded.scanned_at,
+                    gh_org=excluded.gh_org,
+                    projects_scanned=excluded.projects_scanned,
+                    repos_scanned=excluded.repos_scanned,
+                    summary_json=excluded.summary_json
+            """, (
+                profile_id, now, gh_org,
+                raw.get("projects_scanned", 0),
+                raw.get("repos_scanned", 0),
+                json.dumps(summary),
+            ))
+            for phase_key, bucket in raw.get("recommendations", {}).items():
+                for repo in bucket.get("repos", []):
+                    suggested = repo.get("assigned_phase") or phase_key
+                    conn.execute("""
+                        INSERT INTO profile_scan_repos
+                            (profile_id, project, repo_name, total_score, suggested_phase,
+                             assigned_phase, gh_org, gh_repo, pipeline_count, repo_json)
+                        VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, (
+                        profile_id,
+                        repo.get("project", ""),
+                        repo.get("repo_name", ""),
+                        repo.get("total_score", 0),
+                        suggested,
+                        suggested,
+                        repo.get("gh_org", gh_org),
+                        repo.get("gh_repo", repo.get("repo_name", "")),
+                        repo.get("pipeline_count", 0),
+                        json.dumps(repo),
+                    ))
+
+    def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM profile_scans WHERE profile_id=?", (profile_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_profile_scan_repos(
+        self, profile_id: str, phase: str | None = None,
+    ) -> list[dict]:
+        with self._conn() as conn:
+            if phase:
+                rows = conn.execute(
+                    "SELECT * FROM profile_scan_repos WHERE profile_id=? AND assigned_phase=? "
+                    "ORDER BY total_score, project, repo_name",
+                    (profile_id, phase),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM profile_scan_repos WHERE profile_id=? "
+                    "ORDER BY assigned_phase, total_score, project, repo_name",
+                    (profile_id,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_profile_repo_phases(
+        self, profile_id: str, assignments: list[dict[str, str]],
+    ) -> int:
+        updated = 0
+        with self._conn() as conn:
+            for item in assignments:
+                cur = conn.execute(
+                    "UPDATE profile_scan_repos SET assigned_phase=? "
+                    "WHERE profile_id=? AND project=? AND repo_name=?",
+                    (
+                        item["assigned_phase"],
+                        profile_id,
+                        item["project"],
+                        item["repo_name"],
+                    ),
+                )
+                updated += cur.rowcount
+        return updated
+
+    def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
+        meta = self.get_profile_scan_meta(profile_id)
+        if not meta:
+            return None
+        repos = self.get_profile_scan_repos(profile_id)
+        buckets: dict[str, dict] = {}
+        for r in repos:
+            phase = r.get("assigned_phase") or r.get("suggested_phase") or "unassigned"
+            if phase not in buckets:
+                buckets[phase] = {
+                    "phase": phase,
+                    "repo_count": 0,
+                    "risk_min": r["total_score"],
+                    "risk_max": r["total_score"],
+                    "rationale": f"User-assigned and recommended repos in {phase}",
+                    "repos": [],
+                }
+            b = buckets[phase]
+            b["repo_count"] += 1
+            b["risk_min"] = min(b["risk_min"], r["total_score"])
+            b["risk_max"] = max(b["risk_max"], r["total_score"])
+            repo_data = json.loads(r.get("repo_json") or "{}")
+            repo_data["assigned_phase"] = r.get("assigned_phase")
+            repo_data["suggested_phase"] = r.get("suggested_phase")
+            b["repos"].append(repo_data)
+        return {
+            "profile_id": profile_id,
+            "scanned_at": meta["scanned_at"],
+            "projects_scanned": meta["projects_scanned"],
+            "repos_scanned": meta["repos_scanned"],
+            "total_repos": meta["repos_scanned"],
+            "gh_org": meta["gh_org"],
+            "recommendations": buckets,
+        }

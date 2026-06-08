@@ -18,6 +18,7 @@ from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import PipelineMetadata
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
+from ado2gh.pipelines.task_scanner import enrich_pipeline_readiness
 from ado2gh.state.db import StateDB
 
 
@@ -74,6 +75,7 @@ class PipelineInventoryBuilder:
         """
         summary: dict[str, dict] = {}
         all_var_groups: dict[str, list] = {}
+        project_svc_conns: dict[str, list] = {}
 
         console.print(Panel(
             f"[bold]Pipeline Inventory Scan[/bold]\n"
@@ -86,8 +88,9 @@ class PipelineInventoryBuilder:
             # Pre-fetch variable groups once per project
             vgs = self.ado.list_variable_groups(project)
             all_var_groups[project] = vgs
+            project_scs = self.ado.list_service_connections(project)
 
-            build_count   = self._scan_build_pipelines(project, vgs)
+            build_count   = self._scan_build_pipelines(project, vgs, project_scs)
             release_count = 0
             if include_releases:
                 release_count = self._scan_release_pipelines(project)
@@ -112,7 +115,8 @@ class PipelineInventoryBuilder:
         ))
         return summary
 
-    def _scan_build_pipelines(self, project: str, var_groups: list[dict]) -> int:
+    def _scan_build_pipelines(self, project: str, var_groups: list[dict],
+                              project_scs: list[dict] | None = None) -> int:
         """Enumerate + enrich all build pipelines for a project in parallel."""
         # Step 1: collect pipeline stubs (fast, paginated)
         stubs = list(self.ado.list_all_pipelines(project))
@@ -137,7 +141,7 @@ class PipelineInventoryBuilder:
             with ThreadPoolExecutor(max_workers=self.parallel) as pool:
                 futures = {
                     pool.submit(
-                        self._enrich_build_pipeline, project, stub, var_groups
+                        self._enrich_build_pipeline, project, stub, var_groups, project_scs or []
                     ): stub
                     for stub in stubs
                 }
@@ -155,7 +159,8 @@ class PipelineInventoryBuilder:
         return count
 
     def _enrich_build_pipeline(self, project: str, stub: dict,
-                               var_groups: list[dict]) -> Optional[PipelineMetadata]:
+                               var_groups: list[dict],
+                               project_scs: list[dict] | None = None) -> Optional[PipelineMetadata]:
         """Fetch full definition + YAML + runs for one build pipeline."""
         pipe_id = stub["id"]
         config  = stub.get("configuration", {})
@@ -231,6 +236,9 @@ class PipelineInventoryBuilder:
             meta = self.extractor.extract_yaml_pipeline(
                 project, stub, definition, build_def, yaml_content, runs, var_groups
             )
+            if meta:
+                enrich_pipeline_readiness(meta, project_scs or [])
+                meta.complexity = self.extractor._score_complexity(meta)
 
             if meta and fallback_used:
                 others = (", ".join(other_candidates)
@@ -275,9 +283,13 @@ class PipelineInventoryBuilder:
             return meta
         else:
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
-            return self.extractor.extract_classic_build_pipeline(
+            meta = self.extractor.extract_classic_build_pipeline(
                 project, stub, build_def, runs, var_groups
             )
+            if meta:
+                enrich_pipeline_readiness(meta, project_scs or [])
+                meta.complexity = self.extractor._score_complexity(meta)
+            return meta
 
     def _scan_release_pipelines(self, project: str) -> int:
         """Enumerate + enrich all classic release pipelines."""

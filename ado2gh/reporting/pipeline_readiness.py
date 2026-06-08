@@ -76,6 +76,12 @@ class PipelineReadinessReport:
         assessments = [self._assess_pipeline(p) for p in all_pipelines]
 
         summary = self._build_summary(assessments)
+        summary["pipelines"] = assessments
+        summary["by_conversion"] = {
+            "auto": summary.get("auto", 0),
+            "assisted": summary.get("assisted", 0),
+            "manual": summary.get("manual", 0),
+        }
 
         if output_path:
             self._write_csv(assessments, output_path)

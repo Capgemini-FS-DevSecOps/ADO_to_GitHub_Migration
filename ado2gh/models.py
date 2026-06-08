@@ -113,7 +113,7 @@ DEFAULT_PHASES: dict[PhaseType, PhaseConfig] = {
         gate_repo_success_pct=0.98, gate_pipeline_success_pct=0.97,
         gate_min_completed=980),
     PhaseType.WAVE3: PhaseConfig(
-        phase=PhaseType.WAVE3, repo_cap=999_999, risk_max=100.0, batch_size=500,
+        phase=PhaseType.WAVE3, repo_cap=9999, risk_max=100.0, batch_size=500,
         repo_parallel=8, pipeline_parallel=16,
         gate_repo_success_pct=0.98, gate_pipeline_success_pct=0.97,
         gate_min_completed=1),
@@ -206,6 +206,7 @@ class PipelineMetadata:
             "repo_type":           self.repo_type,
             "repo_branch":         self.repo_branch,
             "yaml_path":           self.yaml_path,
+            "yaml_content":        self.yaml_content,
             "trigger_branches":    self.trigger_branches,
             "trigger_pr_branches": self.trigger_pr_branches,
             "trigger_schedules":   self.trigger_schedules,
@@ -252,7 +253,7 @@ class PipelineMetadata:
             repo_type      = d.get("repo_type", "TfsGit"),
             repo_branch    = d.get("repo_branch", "main"),
             yaml_path      = d.get("yaml_path", ""),
-            yaml_content   = "",
+            yaml_content   = d.get("yaml_content", ""),
             trigger_branches     = d.get("trigger_branches", []),
             trigger_pr_branches  = d.get("trigger_pr_branches", []),
             trigger_schedules    = d.get("trigger_schedules", []),
@@ -304,7 +305,7 @@ class RiskScore:
     repo_name: str
     total_score: float = 0.0
     signals: list = field(default_factory=list)
-    assigned_phase: Optional[PhaseType] = None
+    assigned_phase: Optional[str] = None
     gh_org: str = ""
     gh_repo: str = ""
     size_kb: int = 0
@@ -321,7 +322,7 @@ class RiskScore:
         return {
             "project": self.project, "repo_name": self.repo_name,
             "total_score": round(self.total_score, 2),
-            "assigned_phase": self.assigned_phase.value if self.assigned_phase else None,
+            "assigned_phase": self.assigned_phase,
             "gh_org": self.gh_org, "gh_repo": self.gh_repo,
             "size_kb": self.size_kb, "pipeline_count": self.pipeline_count,
             "branch_count": self.branch_count, "last_commit_days": self.last_commit_days,

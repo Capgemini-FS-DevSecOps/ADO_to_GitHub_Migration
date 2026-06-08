@@ -1,0 +1,33 @@
+# Serverless production — DynamoDB backend (AWS or DynamoDB Local).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.serverless.yml up --build
+
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "8000:8000"
+
+  accelerator:
+    environment:
+      ADO2GH_STORAGE_BACKEND: dynamodb
+      ADO2GH_DYNAMODB_TABLE: ado2gh-state
+      ADO2GH_DYNAMODB_JOBS_TABLE: ado2gh-jobs
+      ADO2GH_DYNAMODB_ENDPOINT: http://dynamodb:8000
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_REGION: us-east-1
+    depends_on:
+      - dynamodb
+
+  worker:
+    environment:
+      ADO2GH_STORAGE_BACKEND: dynamodb
+      ADO2GH_DYNAMODB_TABLE: ado2gh-state
+      ADO2GH_DYNAMODB_JOBS_TABLE: ado2gh-jobs
+      ADO2GH_DYNAMODB_ENDPOINT: http://dynamodb:8000
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_REGION: us-east-1
+    depends_on:
+      - dynamodb

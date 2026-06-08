@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import base64
-from typing import Any, Iterator
+import threading
+from typing import Any, Iterator, Optional
 from urllib.parse import quote
 
+from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.http_utils import make_session
 
 
@@ -13,16 +15,35 @@ class ADOClient:
     API_RELEASE = "api-version=7.1"
     PAGE_SIZE = 100
 
-    def __init__(self, org_url: str, pat: str):
+    def __init__(
+        self,
+        org_url: str,
+        pat: str = "",
+        token_manager: Optional[ADOTokenManager] = None,
+    ):
         self.org_url = org_url.rstrip("/")
-        self.pat     = pat
-        token = base64.b64encode(f":{pat}".encode()).decode()
-        self.session = make_session()
-        self.session.headers.update({
-            "Authorization": f"Basic {token}",
-            "Content-Type":  "application/json",
-            "Accept":        "application/json",
-        })
+        self._tm = token_manager
+        self._pat = pat if not token_manager else ""
+        self._local = threading.local()
+
+    @property
+    def pat(self) -> str:
+        if self._tm:
+            return self._tm.get_token()
+        return self._pat
+
+    @property
+    def session(self):
+        if not hasattr(self._local, "session"):
+            token = base64.b64encode(f":{self.pat}".encode()).decode()
+            sess = make_session()
+            sess.headers.update({
+                "Authorization": f"Basic {token}",
+                "Content-Type":  "application/json",
+                "Accept":        "application/json",
+            })
+            self._local.session = sess
+        return self._local.session
 
     def _get(self, url: str, params: dict = None, timeout: int = 45) -> Any:
         r = self.session.get(url, params=params, timeout=timeout)
@@ -44,8 +65,27 @@ class ADOClient:
         return self._get(url).get("value", [])
 
     def list_repos(self, project: str) -> list[dict]:
-        url = f"{self.org_url}/{self._p(project)}/_apis/git/repositories?{self.API}"
-        return self._get(url).get("value", [])
+        """List Git repositories in a project (handles pagination)."""
+        encoded = self._p(project)
+        url = (
+            f"{self.org_url}/{encoded}/_apis/git/repositories"
+            f"?{self.API}&$top={self.PAGE_SIZE}"
+        )
+        repos: list[dict] = []
+        while url:
+            r = self.session.get(url, timeout=45)
+            r.raise_for_status()
+            data = r.json()
+            repos.extend(data.get("value", []))
+            cont = r.headers.get("x-ms-continuationtoken")
+            if cont:
+                url = (
+                    f"{self.org_url}/{encoded}/_apis/git/repositories"
+                    f"?{self.API}&$top={self.PAGE_SIZE}&continuationToken={cont}"
+                )
+            else:
+                break
+        return repos
 
     def get_repo(self, project: str, repo: str) -> dict:
         url = (f"{self.org_url}/{self._p(project)}/_apis/git/repositories"
@@ -66,9 +106,6 @@ class ADOClient:
         url = (f"{self.org_url}/{self._p(project)}/_apis/git/repositories"
                f"/{repo_id}/commits?{self.API}&$top={top}")
         if branch:
-            # Scope the query to a specific branch — without this, ADO
-            # returns "latest commit across all branches" which can pick
-            # up dangling PR-merge commits that aren't on any branch tip.
             url += (f"&searchCriteria.itemVersion.version={quote(branch, safe='')}"
                     f"&searchCriteria.itemVersion.versionType=branch")
         try:
@@ -120,11 +157,6 @@ class ADOClient:
     def list_repo_yaml_files(self, project: str, repo_id: str,
                               branch: str = "main",
                               max_results: int = 50) -> list[str]:
-        """List *.yml/*.yaml file paths in a repo on the given branch.
-
-        Used to suggest candidates when an ADO pipeline references a YAML
-        file that is empty or missing in the source.
-        """
         if not repo_id:
             return []
         url = (f"{self.org_url}/{self._p(project)}/_apis/git/repositories"

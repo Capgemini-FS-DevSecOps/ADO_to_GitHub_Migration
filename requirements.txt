@@ -3,6 +3,20 @@ requests>=2.31.0
 PyYAML>=6.0
 rich>=13.0.0
 urllib3>=2.0.0
+pydantic>=2.0.0
+
+# API / Docker services
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+httpx>=0.27.0
+redis>=5.0.0
+psycopg2-binary>=2.9.9
+
+# Serverless production (optional)
+# boto3>=1.34.0
+
+# Dev / test
+pytest>=8.0.0
 
 # Optional: GitHub App authentication
 # cryptography>=41.0.7

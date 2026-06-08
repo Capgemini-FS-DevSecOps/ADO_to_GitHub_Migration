@@ -8,7 +8,7 @@ import requests
 
 from ado2gh.clients.token_manager import TokenManager
 from ado2gh.http_utils import make_session
-from ado2gh.logging_config import log
+from ado2gh.infra.sessions import get_thread_session
 
 
 class GHClient:
@@ -18,11 +18,16 @@ class GHClient:
                  base_url: str = "https://api.github.com"):
         self.BASE = base_url.rstrip("/")
         self._tm = token_manager
-        self.session = make_session()
-        self.session.headers.update({
-            "Accept":               "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        })
+
+    @property
+    def _session(self):
+        sess = get_thread_session()
+        if "Accept" not in sess.headers:
+            sess.headers.update({
+                "Accept":               "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            })
+        return sess
 
     @classmethod
     def from_single_token(cls, token: str,
@@ -39,7 +44,7 @@ class GHClient:
 
     def _get(self, path: str, params: dict = None) -> Any:
         token = self._tm.get_token()
-        r = self.session.get(
+        r = self._session.get(
             f"{self.BASE}{path}", params=params,
             headers={"Authorization": f"Bearer {token}"}, timeout=30,
         )
@@ -49,7 +54,7 @@ class GHClient:
 
     def _post(self, path: str, body: dict = None) -> Any:
         token = self._tm.get_token()
-        r = self.session.post(
+        r = self._session.post(
             f"{self.BASE}{path}", json=body,
             headers={"Authorization": f"Bearer {token}"}, timeout=30,
         )
@@ -59,7 +64,7 @@ class GHClient:
 
     def _patch(self, path: str, body: dict) -> Any:
         token = self._tm.get_token()
-        r = self.session.patch(
+        r = self._session.patch(
             f"{self.BASE}{path}", json=body,
             headers={"Authorization": f"Bearer {token}"}, timeout=30,
         )
@@ -69,7 +74,7 @@ class GHClient:
 
     def _put(self, path: str, body: dict = None) -> requests.Response:
         token = self._tm.get_token()
-        r = self.session.put(
+        r = self._session.put(
             f"{self.BASE}{path}", json=body,
             headers={"Authorization": f"Bearer {token}"}, timeout=30,
         )
@@ -78,7 +83,7 @@ class GHClient:
 
     def _delete(self, path: str) -> requests.Response:
         token = self._tm.get_token()
-        r = self.session.delete(
+        r = self._session.delete(
             f"{self.BASE}{path}",
             headers={"Authorization": f"Bearer {token}"}, timeout=30,
         )

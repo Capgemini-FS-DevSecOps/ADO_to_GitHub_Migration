@@ -13,6 +13,7 @@ dependencies = [
     "PyYAML>=6.0",
     "rich>=13.0.0",
     "urllib3>=2.0.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -20,9 +21,30 @@ app-auth = [
     "cryptography>=41.0.7",
     "PyJWT>=2.8.0",
 ]
+api = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+]
+postgres = [
+    "psycopg2-binary>=2.9.9",
+]
+redis = [
+    "redis>=5.0.0",
+]
+dynamodb = [
+    "boto3>=1.34.0",
+]
+dev = [
+    "pytest>=8.0.0",
+]
 
 [project.scripts]
-ado2gh = "ado2gh.cli:cli"
+ado2gh = "ado2gh.cli.main:cli"
 
 [tool.setuptools.packages.find]
 include = ["ado2gh*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
