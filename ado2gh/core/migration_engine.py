@@ -25,6 +25,8 @@ class MigrationEngine:
         db: StateDB,
         dry_run: bool = False,
         concurrency: ConcurrencyManager | None = None,
+        assignment_id: str | None = None,
+        allowed_repo_keys: set[str] | None = None,
     ):
         self.cfg = global_cfg
         self.ado = ado
@@ -33,6 +35,8 @@ class MigrationEngine:
         self.dry_run = dry_run
         self.strategy = global_cfg.get("migration_strategy", "mirror")
         self.concurrency = concurrency or ConcurrencyManager.from_dict(global_cfg)
+        self.assignment_id = assignment_id
+        self.allowed_repo_keys = allowed_repo_keys
 
     def migrate_repo(
         self,
@@ -42,6 +46,19 @@ class MigrationEngine:
         task_id: Any = None,
         pipeline_parallel: int = 8,
     ) -> dict:
+        repo_key = f"{repo.ado_project}/{repo.ado_repo}"
+        if self.allowed_repo_keys and repo_key not in self.allowed_repo_keys:
+            return {
+                "status": "failed",
+                "scopes": {},
+                "errors": ["cross-cohort mutation blocked"],
+            }
+        if not self.dry_run and self.db.has_repo_in_progress(repo.ado_project, repo.ado_repo):
+            return {
+                "status": "failed",
+                "scopes": {},
+                "errors": ["repo already has active live migration (FR-036)"],
+            }
         results: dict[str, dict] = {}
         requested = repo.scopes or self.SCOPES
         ctx = ScopeContext(

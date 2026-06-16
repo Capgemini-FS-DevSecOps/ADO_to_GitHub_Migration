@@ -107,6 +107,68 @@ class PostgresStateDB:
         completed_at TEXT,
         UNIQUE(phase, batch_num)
     );
+    CREATE TABLE IF NOT EXISTS migration_assignments (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        assignment_type TEXT NOT NULL,
+        execution_phase TEXT NOT NULL,
+        wave_number INTEGER,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS cohort_membership (
+        id SERIAL PRIMARY KEY,
+        assignment_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        ado_project TEXT NOT NULL,
+        ado_repo TEXT NOT NULL,
+        gh_org TEXT,
+        gh_repo TEXT,
+        active INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS repo_dependency_edges (
+        id SERIAL PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        from_repo TEXT NOT NULL,
+        to_repo TEXT NOT NULL,
+        edge_type TEXT NOT NULL DEFAULT 'pipeline_resource',
+        discovered_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS audit_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        actor TEXT,
+        assignment_id TEXT,
+        payload_json TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS remediation_loops (
+        id SERIAL PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        repo_key TEXT NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        max_retries INTEGER NOT NULL DEFAULT 3,
+        status TEXT NOT NULL DEFAULT 'active',
+        updated_at TEXT NOT NULL,
+        UNIQUE(session_id, repo_key)
+    );
+    CREATE TABLE IF NOT EXISTS platform_users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL,
+        display_name TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
     """
 
     def __init__(self, dsn: str):
@@ -554,3 +616,61 @@ class PostgresStateDB:
                 )
                 row = cur.fetchone()
                 return row[0] if row and row[0] is not None else -1
+
+    def count_platform_users(self) -> int:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM platform_users")
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+
+    def create_platform_user(
+        self, user_id: str, username: str, password_hash: str,
+        role: str, display_name: str, created_at: str,
+    ):
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO platform_users (id, username, password_hash, role, display_name, created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    """,
+                    (user_id, username, password_hash, role, display_name, created_at),
+                )
+
+    def get_platform_user_by_username(self, username: str) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM platform_users WHERE username=%s", (username,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def get_platform_user_by_id(self, user_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM platform_users WHERE id=%s", (user_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO auth_sessions (token, user_id, expires_at, created_at)
+                    VALUES (%s,%s,%s,%s)
+                    """,
+                    (token, user_id, expires_at, created_at),
+                )
+
+    def get_auth_session(self, token: str) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM auth_sessions WHERE token=%s", (token,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def delete_auth_session(self, token: str):
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM auth_sessions WHERE token=%s", (token,))

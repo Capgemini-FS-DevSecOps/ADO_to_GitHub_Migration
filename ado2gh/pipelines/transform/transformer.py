@@ -31,7 +31,12 @@ logger = logging.getLogger(__name__)
 class PipelineTransformer:
     """Convert an ADO ``PipelineMetadata`` object into a GitHub Actions workflow."""
 
-    def transform(self, meta: PipelineMetadata, output_dir: Path) -> dict[str, Any]:
+    def transform(
+        self,
+        meta: PipelineMetadata,
+        output_dir: Path,
+        workflow_layout: str = "modular",
+    ) -> dict[str, Any]:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -63,6 +68,8 @@ class PipelineTransformer:
         )
 
         safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", meta.pipeline_name).lower()
+        if workflow_layout == "consolidated":
+            safe_name = "consolidated_workflows"
         workflow_file = output_dir / f"{safe_name}.yml"
         workflow_file.write_text(yaml_text, encoding="utf-8")
 

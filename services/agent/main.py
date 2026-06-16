@@ -1,6 +1,7 @@
 """Agent service — Planner-Executor-Validator loop with MCP tool exposure."""
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from datetime import datetime, timezone
@@ -12,7 +13,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from ado2gh.agents.llm_provider import get_llm_provider
+from ado2gh.agents.local.audit_bridge import IdeAuditBridge
+from ado2gh.agents.local.profiles import capability_matrix, get_profile
+from ado2gh.agents.local.tool_catalog import TOOL_CATALOG_VERSION, list_tools
+from ado2gh.agents.planner import AgentPlanner
+
 ACCEL_URL = os.environ.get("ACCELERATOR_URL", "http://accelerator:8080")
+
+try:
+    _ACTIVE_PROFILE = get_profile(os.environ.get("ADO2GH_LOCAL_PROFILE", "lightweight"))
+except KeyError:
+    _ACTIVE_PROFILE = None
 
 app = FastAPI(title="ADO2GH Agent API", version="5.0.0")
 app.add_middleware(
@@ -23,7 +35,9 @@ app.add_middleware(
 )
 
 _runs: dict[str, dict] = {}
+_sessions: dict[str, dict] = {}
 _approvals: dict[str, dict] = {}
+_audit = IdeAuditBridge()
 
 
 class RunStatus(str, Enum):
@@ -40,6 +54,30 @@ class AgentRunRequest(BaseModel):
     phase: str = "poc"
     wave_id: Optional[int] = None
     dry_run: bool = True
+    assignment_id: Optional[str] = None
+    profile_id: Optional[str] = None
+
+
+class SessionRequest(BaseModel):
+    profile_id: str = "lightweight"
+    assignment_id: Optional[str] = None
+    prompt: str = ""
+    dry_run: bool = True
+
+
+class SessionMessageRequest(BaseModel):
+    message: str = ""
+
+
+class ProvisionRequest(BaseModel):
+    tier: str = "read"
+    actor: str = "operator"
+    reason: str = ""
+
+
+class RemediateRequest(BaseModel):
+    repo_key: str = ""
+    retry_count: int = 0
 
 
 class AgentRunResponse(BaseModel):
@@ -53,18 +91,49 @@ class ApprovalRequest(BaseModel):
     reason: str = ""
 
 
+def _profile(profile_id: Optional[str] = None):
+    pid = profile_id or os.environ.get("ADO2GH_LOCAL_PROFILE", "lightweight")
+    try:
+        return get_profile(pid)
+    except KeyError:
+        return _ACTIVE_PROFILE
+
+
+def _accel_headers() -> dict:
+    headers: dict[str, str] = {}
+    cookie = os.environ.get("ADO2GH_SESSION_COOKIE", "")
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
+
+
 async def _accel_post(path: str, body: dict) -> dict:
-    async with httpx.AsyncClient(base_url=ACCEL_URL, timeout=120.0) as client:
+    async with httpx.AsyncClient(
+        base_url=ACCEL_URL, timeout=120.0, headers=_accel_headers(),
+    ) as client:
         r = await client.post(path, json=body)
         r.raise_for_status()
         return r.json()
 
 
 async def _accel_get(path: str) -> dict:
-    async with httpx.AsyncClient(base_url=ACCEL_URL, timeout=60.0) as client:
+    async with httpx.AsyncClient(
+        base_url=ACCEL_URL, timeout=60.0, headers=_accel_headers(),
+    ) as client:
         r = await client.get(path)
         r.raise_for_status()
         return r.json()
+
+
+async def _check_accelerator() -> tuple[bool, Optional[str]]:
+    try:
+        async with httpx.AsyncClient(base_url=ACCEL_URL, timeout=3.0) as client:
+            r = await client.get("/health")
+            return r.status_code == 200, None
+    except httpx.ConnectError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        return False, str(exc)
 
 
 class FreshnessGuard:
@@ -79,52 +148,104 @@ class FreshnessGuard:
         })
 
 
-async def pev_loop(run_id: str, req: AgentRunRequest) -> None:
+async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] = None) -> None:
     run = _runs[run_id]
     steps: list[dict] = run["steps"]
+    profile = _profile(req.profile_id)
 
     try:
-        # PLAN
         run["status"] = RunStatus.PLANNING
+        if session_id and session_id in _sessions:
+            _sessions[session_id]["status"] = "planning"
+            _sessions[session_id]["subagent"] = "planner"
+
         plan = await _accel_post("/v1/plan", {"config_path": req.config_path, "wave_id": req.wave_id})
         steps.append({"phase": "plan", "tool": "ado2gh_plan_phase", "result": plan})
+        _add_message(session_id, "planner", "Generated migration plan (dry-run)")
 
-        readiness = await _accel_post("/v1/pipeline-readiness", {
-            "config_path": req.config_path,
-        })
+        readiness = await _accel_post("/v1/pipeline-readiness", {"config_path": req.config_path})
         steps.append({"phase": "plan", "tool": "ado2gh_readiness", "result": readiness})
 
-        # EXECUTE (dry-run by default)
         run["status"] = RunStatus.EXECUTING
+        if session_id and session_id in _sessions:
+            _sessions[session_id]["status"] = "executing"
+            _sessions[session_id]["subagent"] = "executor"
+
         migrate = await _accel_post("/v1/migrate", {
             "config_path": req.config_path,
             "wave_id": req.wave_id,
             "dry_run": req.dry_run,
         })
         steps.append({"phase": "execute", "tool": "ado2gh_enqueue_job", "result": migrate})
+        _add_message(session_id, "executor", "Enqueued migration jobs")
 
-        # VALIDATE
         run["status"] = RunStatus.VALIDATING
+        if session_id and session_id in _sessions:
+            _sessions[session_id]["status"] = "validating"
+            _sessions[session_id]["subagent"] = "validator"
+
         validation = await _accel_post("/v1/validate", {
             "config_path": req.config_path,
             "wave_id": req.wave_id,
         })
         steps.append({"phase": "validate", "tool": "ado2gh_validate_repo", "result": validation})
+        _add_message(session_id, "validator", "Validation complete")
 
         if not req.dry_run:
             run["status"] = RunStatus.AWAITING_APPROVAL
-            _approvals[run_id] = {"required": True, "reason": "push-workflows gate"}
+            _approvals[run_id] = {"required": True, "reason": "live execution gate"}
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["status"] = "awaiting_approval"
+                _sessions[session_id]["approval"] = {"required": True}
         else:
             run["status"] = RunStatus.COMPLETED
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["status"] = "completed"
+                _sessions[session_id]["subagent"] = None
 
     except Exception as exc:
         run["status"] = RunStatus.FAILED
         steps.append({"phase": "error", "error": str(exc)})
+        if session_id and session_id in _sessions:
+            _sessions[session_id]["status"] = "failed"
+            _add_message(session_id, "system", f"Error: {exc}")
+
+
+def _add_message(session_id: Optional[str], role: str, content: str) -> None:
+    if not session_id or session_id not in _sessions:
+        return
+    _sessions[session_id]["messages"].append({"role": role, "content": content})
+    _sessions[session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "agent"}
+async def health():
+    reachable, err = await _check_accelerator()
+    profile = _profile()
+    llm_provider = (
+        profile.llm_provider if profile
+        else os.environ.get("LLM_PROVIDER", "stub")
+    )
+    body: dict[str, Any] = {
+        "status": "ok" if reachable else "degraded",
+        "service": "agent",
+        "accelerator_url": ACCEL_URL,
+        "accelerator_reachable": reachable,
+        "profile": profile.profile_id if profile else "lightweight",
+        "llm_provider": llm_provider,
+        "auth_enabled": profile.auth_enabled if profile else False,
+        "tool_catalog_version": TOOL_CATALOG_VERSION,
+    }
+    if profile:
+        body["capabilities"] = capability_matrix(profile)
+    if not reachable:
+        body["connection_error"] = err or "Connection refused"
+        body["remediation_steps"] = [
+            "Start accelerator: python -m uvicorn services.accelerator_api.main:app --port 8080",
+            "Verify ADO2GH_SQLITE_PATH and ADO2GH_STORAGE_BACKEND=sqlite",
+            "Check ACCELERATOR_URL matches running service",
+        ]
+    return body
 
 
 @app.post("/v1/runs", response_model=AgentRunResponse)
@@ -137,7 +258,6 @@ async def start_run(req: AgentRunRequest):
         "steps": [],
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
-    import asyncio
     asyncio.create_task(pev_loop(run_id, req))
     return AgentRunResponse(run_id=run_id, status=RunStatus.PLANNING, steps=[])
 
@@ -172,26 +292,205 @@ async def approve_run(run_id: str, req: ApprovalRequest):
 
 @app.get("/v1/approvals")
 def list_approvals():
-    return [
-        {"run_id": rid, **info}
-        for rid, info in _approvals.items()
-    ]
+    return [{"run_id": rid, **info} for rid, info in _approvals.items()]
 
 
-# ── MCP-compatible tool definitions (JSON schema for Cursor) ───────────────
+@app.post("/v1/sessions")
+async def create_session(req: SessionRequest):
+    """Start PEV session with profile and dry-run default."""
+    profile = _profile(req.profile_id)
+    dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default
+    session_id = f"ses_{uuid.uuid4().hex[:12]}"
+    llm = get_llm_provider()
+    planner = AgentPlanner()
+    plan_preview = planner.plan(
+        profile_id=req.profile_id,
+        assignment_repos=[],
+        dependency_edges=[],
+        dry_run=dry_run,
+    )
+    llm_text = llm.complete(req.prompt or "Plan POC dry-run migration")
+
+    _sessions[session_id] = {
+        "session_id": session_id,
+        "profile_id": req.profile_id,
+        "assignment_id": req.assignment_id,
+        "status": "planning",
+        "subagent": "planner",
+        "dry_run": dry_run,
+        "messages": [
+            {"role": "user", "content": req.prompt or ""},
+            {"role": "planner", "content": llm_text},
+        ],
+        "plan_id": plan_preview.get("profile_id"),
+        "run_id": None,
+        "approval": None,
+        "llm_available": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _audit.record(
+        "session.start",
+        profile_id=req.profile_id,
+        session_id=session_id,
+        assignment_id=req.assignment_id,
+        metadata={"dry_run": dry_run},
+    )
+
+    agent_req = AgentRunRequest(
+        dry_run=dry_run,
+        assignment_id=req.assignment_id,
+        profile_id=req.profile_id,
+    )
+    run_id = str(uuid.uuid4())
+    _runs[run_id] = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "status": RunStatus.PLANNING,
+        "request": agent_req.model_dump(),
+        "steps": [],
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _sessions[session_id]["run_id"] = run_id
+    asyncio.create_task(pev_loop(run_id, agent_req, session_id))
+
+    return {
+        "session_id": session_id,
+        "status": _sessions[session_id]["status"],
+        "subagent": "planner",
+        "dry_run": dry_run,
+    }
+
+
+@app.get("/v1/sessions/{session_id}")
+def get_session(session_id: str):
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    run = _runs.get(session.get("run_id", ""))
+    return {
+        **session,
+        "run_status": run.get("status") if run else None,
+        "steps": run.get("steps", []) if run else [],
+    }
+
+
+@app.post("/v1/sessions/{session_id}/request-live")
+def request_live(session_id: str):
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session["status"] = "awaiting_approval"
+    session["approval"] = {"required": True, "approved": False}
+    _add_message(session_id, "system", "Live execution requested — awaiting approval")
+    return {"session_id": session_id, "status": session["status"]}
+
+
+@app.post("/v1/sessions/{session_id}/approve")
+async def approve_session(session_id: str, req: ApprovalRequest):
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not req.approved:
+        session["status"] = "completed"
+        session["approval"] = {"approved": False, "reason": req.reason}
+        _audit.record(
+            "session.approve.denied",
+            profile_id=session["profile_id"],
+            session_id=session_id,
+            outcome="denied",
+            metadata={"reason": req.reason},
+        )
+        return {"session_id": session_id, "status": session["status"]}
+
+    session["dry_run"] = False
+    session["approval"] = {"approved": True, "reason": req.reason}
+    _audit.record(
+        "session.approve",
+        profile_id=session["profile_id"],
+        session_id=session_id,
+        metadata={"reason": req.reason},
+    )
+    run_id = session.get("run_id")
+    if run_id and run_id in _runs:
+        agent_req = AgentRunRequest(
+            dry_run=False,
+            assignment_id=session.get("assignment_id"),
+            profile_id=session.get("profile_id"),
+        )
+        asyncio.create_task(pev_loop(run_id, agent_req, session_id))
+    return {"session_id": session_id, "status": "executing"}
+
+
+@app.post("/v1/sessions/{session_id}/message")
+def session_message(session_id: str, req: SessionMessageRequest):
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    llm = get_llm_provider()
+    reply = llm.complete(req.message)
+    session["messages"].append({"role": "user", "content": req.message})
+    session["messages"].append({"role": "assistant", "content": reply})
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return {"session_id": session_id, "reply": reply, "status": session["status"]}
+
+
+@app.post("/v1/sessions/{session_id}/provision")
+def provision_session(session_id: str, req: ProvisionRequest):
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if req.tier == "write" and req.actor != "approver":
+        raise HTTPException(status_code=403, detail="Write tier requires Approver")
+    session["provision_tier"] = req.tier
+    session["messages"].append({"role": req.actor, "content": f"provision:{req.tier}"})
+    return {"session_id": session_id, "tier": req.tier, "status": "provisioned"}
+
+
+@app.post("/v1/sessions/{session_id}/remediate")
+async def remediate_session(session_id: str, req: RemediateRequest):
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    max_retries = int(os.environ.get("ADO2GH_MAX_RETRIES", "3"))
+    if req.retry_count >= max_retries:
+        session["status"] = "escalated"
+        return {"session_id": session_id, "status": "escalated", "retry_count": req.retry_count}
+    run_id = session.get("run_id")
+    if run_id and run_id in _runs:
+        agent_req = AgentRunRequest(
+            dry_run=session.get("dry_run", True),
+            profile_id=session.get("profile_id"),
+        )
+        asyncio.create_task(pev_loop(run_id, agent_req, session_id))
+    session["status"] = "remediating"
+    return {"session_id": session_id, "status": "remediating", "retry_count": req.retry_count + 1}
+
+
+@app.get("/v1/llm/status")
+@app.get("/v1/llm-status")
+def llm_status():
+    backend = (
+        os.environ.get("LLM_PROVIDER")
+        or os.environ.get("ADO2GH_LLM_BACKEND")
+        or "stub"
+    )
+    unavailable = backend.lower() == "unavailable"
+    return {
+        "provider": backend,
+        "available": not unavailable,
+        "degraded": unavailable,
+        "message": "Using deterministic stub planner" if backend == "stub" else f"backend={backend}",
+        "backend": backend,
+    }
+
 
 MCP_TOOLS = [
-    {"name": "ado2gh_discover", "endpoint": "POST /v1/discover"},
-    {"name": "ado2gh_readiness", "endpoint": "POST /v1/pipeline-readiness"},
-    {"name": "ado2gh_plan_phase", "endpoint": "POST /v1/plan"},
-    {"name": "ado2gh_enqueue_job", "endpoint": "POST /v1/jobs"},
-    {"name": "ado2gh_job_status", "endpoint": "GET /v1/jobs/{id}"},
-    {"name": "ado2gh_validate_repo", "endpoint": "POST /v1/validate"},
-    {"name": "ado2gh_gate_check", "endpoint": "GET /v1/dashboard"},
-    {"name": "ado2gh_get_report", "endpoint": "GET /v1/dashboard"},
+    {"name": t.name, "endpoint": f"{t.http_method} {t.http_path}"}
+    for t in list_tools()
 ]
 
 
 @app.get("/v1/mcp/tools")
 def mcp_tools():
-    return {"tools": MCP_TOOLS}
+    return {"tools": MCP_TOOLS, "version": TOOL_CATALOG_VERSION}

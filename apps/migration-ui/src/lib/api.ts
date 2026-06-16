@@ -22,10 +22,14 @@ export const ACCEL = process.env.NEXT_PUBLIC_ACCELERATOR_URL || 'http://localhos
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let r: Response;
   try {
-    r = await fetch(`${ACCEL}${path}`, { cache: 'no-store', ...init });
+    r = await fetch(`${ACCEL}${path}`, {
+      cache: 'no-store',
+      credentials: 'include',
+      ...init,
+    });
   } catch {
     throw new Error(
-      `Cannot reach Accelerator API at ${ACCEL}. Start it with .\\scripts\\run-local.ps1 (or run-ui.ps1 for UI only).`,
+      `Cannot reach Accelerator API at ${ACCEL}. If using Docker, ensure the accelerator container is running on port 8080. Otherwise start with .\\scripts\\run-local.ps1 or docker compose up.`,
     );
   }
   if (!r.ok) {
@@ -286,6 +290,25 @@ export async function cancelPipelineRun(runId: string) {
   return api<{ run: PipelineRun; cancelled: boolean }>(`/v1/pipeline/runs/${runId}/cancel`, {
     method: 'POST',
   });
+}
+
+export async function listAssignments(profileId: string) {
+  const data = await api<{ assignments: Array<Record<string, unknown>> }>(
+    `/v1/profiles/${profileId}/assignments`,
+  );
+  return data.assignments;
+}
+
+export async function fetchHistory(profileId?: string) {
+  const q = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const data = await api<{ sessions: Array<Record<string, unknown>> }>(
+    `/v1/history/sessions${q}`,
+  );
+  return data.sessions;
+}
+
+export async function fetchAssignmentGate(assignmentId: string) {
+  return api<Record<string, unknown>>(`/v1/assignments/${assignmentId}/gate-status`);
 }
 
 export { ACCEL as ACCELERATOR_URL };

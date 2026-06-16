@@ -21,6 +21,7 @@ class RunWaveRequest(BaseModel):
     wave_id: Optional[int] = None
     dry_run: bool = False
     db_path: str = "migration_state.db"
+    assignment_id: Optional[str] = None
 
 
 class RunWaveResult(BaseModel):

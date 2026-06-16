@@ -48,3 +48,10 @@ def test_create_state_db_returns_sqlite(tmp_path, monkeypatch):
     db = create_state_db(db_path)
     assert isinstance(db, StateDB)
     assert db.db_path == db_path
+
+
+def test_postgres_schema_includes_agentic_tables():
+    from ado2gh.state.postgres_db import PostgresStateDB
+    assert "migration_assignments" in PostgresStateDB.SCHEMA
+    assert "audit_events" in PostgresStateDB.SCHEMA
+    assert "remediation_loops" in PostgresStateDB.SCHEMA

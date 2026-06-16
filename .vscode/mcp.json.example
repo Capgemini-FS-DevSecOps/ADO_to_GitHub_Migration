@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ado2gh": {
+      "command": "python",
+      "args": ["-m", "services.agent.mcp_server"],
+      "env": {
+        "ACCELERATOR_URL": "http://localhost:8080",
+        "ADO2GH_STORAGE_BACKEND": "sqlite",
+        "ADO2GH_SQLITE_PATH": "REPLACE_WITH_ABSOLUTE_PATH_TO_REPO/migration_state.db",
+        "LLM_PROVIDER": "stub"
+      }
+    }
+  }
+}

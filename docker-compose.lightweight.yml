@@ -1,0 +1,39 @@
+# Lightweight local profile — accelerator + agent only (no redis/worker/web)
+# Usage: docker compose -f docker-compose.lightweight.yml up --build
+
+services:
+  accelerator:
+    build:
+      context: .
+      dockerfile: services/accelerator_api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      ADO2GH_STORAGE_BACKEND: sqlite
+      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_CONFIG: /app/migration.yaml
+      ADO2GH_LIGHTWEIGHT_MODE: "true"
+      ADO_ORG_URL: ${ADO_ORG_URL:-}
+      ADO_PAT: ${ADO_PAT:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      CORS_ORIGINS: "*"
+    volumes:
+      - ./migration.yaml:/app/migration.yaml:ro
+      - ado2gh-data:/app/data
+
+  agent:
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      ACCELERATOR_URL: http://accelerator:8080
+      LLM_PROVIDER: stub
+      ADO2GH_LIGHTWEIGHT_MODE: "true"
+      ADO2GH_AUTH_ENABLED: "false"
+    depends_on:
+      - accelerator
+
+volumes:
+  ado2gh-data:

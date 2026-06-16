@@ -147,6 +147,88 @@ class StateDB:
         ON profile_scan_repos(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_scan_repos_phase
         ON profile_scan_repos(profile_id, assigned_phase);
+
+    CREATE TABLE IF NOT EXISTS migration_assignments (
+        id               TEXT PRIMARY KEY,
+        profile_id       TEXT NOT NULL,
+        name             TEXT NOT NULL,
+        assignment_type  TEXT NOT NULL,
+        execution_phase  TEXT NOT NULL,
+        wave_number      INTEGER,
+        status           TEXT NOT NULL DEFAULT 'active',
+        created_by       TEXT NOT NULL DEFAULT '',
+        created_at       TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS cohort_membership (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        assignment_id    TEXT NOT NULL,
+        profile_id       TEXT NOT NULL,
+        ado_project      TEXT NOT NULL,
+        ado_repo         TEXT NOT NULL,
+        gh_org           TEXT NOT NULL DEFAULT '',
+        gh_repo          TEXT NOT NULL DEFAULT '',
+        active           INTEGER NOT NULL DEFAULT 1,
+        UNIQUE(profile_id, ado_project, ado_repo, active)
+    );
+
+    CREATE TABLE IF NOT EXISTS repo_dependency_edges (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_id       TEXT NOT NULL,
+        from_repo        TEXT NOT NULL,
+        to_repo          TEXT NOT NULL,
+        edge_type        TEXT NOT NULL DEFAULT 'pipeline_resource',
+        source_pipeline_id INTEGER,
+        discovered_at    TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+        id               TEXT PRIMARY KEY,
+        event_type       TEXT NOT NULL,
+        profile_id       TEXT NOT NULL,
+        actor            TEXT NOT NULL DEFAULT '',
+        assignment_id    TEXT,
+        payload_json     TEXT NOT NULL DEFAULT '{}',
+        created_at       TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workflow_dependency_checks (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_id       TEXT NOT NULL,
+        repo_key         TEXT NOT NULL,
+        check_json       TEXT NOT NULL DEFAULT '{}',
+        checked_at       TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS remediation_loops (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id       TEXT NOT NULL,
+        repo_key         TEXT NOT NULL,
+        retry_count      INTEGER NOT NULL DEFAULT 0,
+        max_retries      INTEGER NOT NULL DEFAULT 3,
+        status           TEXT NOT NULL DEFAULT 'active',
+        updated_at       TEXT NOT NULL,
+        UNIQUE(session_id, repo_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_profile ON audit_events(profile_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_cohort_assignment ON cohort_membership(assignment_id);
+
+    CREATE TABLE IF NOT EXISTS platform_users (
+        id               TEXT PRIMARY KEY,
+        username         TEXT NOT NULL UNIQUE,
+        password_hash    TEXT NOT NULL,
+        role             TEXT NOT NULL,
+        display_name     TEXT NOT NULL DEFAULT '',
+        created_at       TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+        token            TEXT PRIMARY KEY,
+        user_id          TEXT NOT NULL,
+        expires_at       TEXT NOT NULL,
+        created_at       TEXT NOT NULL
+    );
     """
 
     def __init__(self, db_path: str = "migration_state.db"):
@@ -156,6 +238,13 @@ class StateDB:
     def _init_db(self):
         with self._conn() as conn:
             conn.executescript(self.SCHEMA)
+            self._migrate_agentic_columns(conn)
+
+    def _migrate_agentic_columns(self, conn: sqlite3.Connection):
+        """Add assignment_id to migrations when upgrading existing DBs."""
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(migrations)").fetchall()}
+        if "assignment_id" not in cols:
+            conn.execute("ALTER TABLE migrations ADD COLUMN assignment_id TEXT")
 
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -757,3 +846,251 @@ class StateDB:
             "gh_org": meta["gh_org"],
             "recommendations": buckets,
         }
+
+    # ── Agentic platform (assignments, audit, remediation) ─────────────────
+
+    def insert_assignment(
+        self,
+        id: str,
+        profile_id: str,
+        name: str,
+        assignment_type: str,
+        execution_phase: str,
+        wave_number: int | None,
+        status: str,
+        created_by: str,
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO migration_assignments
+                (id, profile_id, name, assignment_type, execution_phase,
+                 wave_number, status, created_by, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    id, profile_id, name, assignment_type, execution_phase,
+                    wave_number, status, created_by, now,
+                ),
+            )
+
+    def get_assignment(self, assignment_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM migration_assignments WHERE id=?", (assignment_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_assignments(self, profile_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM migration_assignments WHERE profile_id=? ORDER BY created_at",
+                (profile_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_cohort_membership(
+        self,
+        assignment_id: str,
+        profile_id: str,
+        ado_project: str,
+        ado_repo: str,
+        gh_org: str,
+        gh_repo: str,
+        active: bool,
+    ):
+        with self._conn() as conn:
+            if active:
+                conn.execute(
+                    "UPDATE cohort_membership SET active=0 "
+                    "WHERE profile_id=? AND ado_project=? AND ado_repo=? AND active=1",
+                    (profile_id, ado_project, ado_repo),
+                )
+            conn.execute(
+                """
+                INSERT INTO cohort_membership
+                (assignment_id, profile_id, ado_project, ado_repo, gh_org, gh_repo, active)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    assignment_id, profile_id, ado_project, ado_repo,
+                    gh_org, gh_repo, 1 if active else 0,
+                ),
+            )
+
+    def get_cohort_repos(self, assignment_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT ado_project, ado_repo, gh_org, gh_repo FROM cohort_membership "
+                "WHERE assignment_id=? AND active=1",
+                (assignment_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def insert_audit_event(
+        self,
+        event_id: str,
+        event_type: str,
+        profile_id: str,
+        actor: str,
+        assignment_id: str | None,
+        payload_json: str,
+        created_at: str,
+    ):
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO audit_events
+                (id, event_type, profile_id, actor, assignment_id, payload_json, created_at)
+                VALUES (?,?,?,?,?,?,?)
+                """,
+                (
+                    event_id, event_type, profile_id, actor,
+                    assignment_id, payload_json, created_at,
+                ),
+            )
+
+    def list_audit_events(
+        self, profile_id: str | None = None, limit: int = 100,
+    ) -> list[dict]:
+        with self._conn() as conn:
+            if profile_id:
+                rows = conn.execute(
+                    "SELECT * FROM audit_events WHERE profile_id=? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (profile_id, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_remediation_loop(
+        self, session_id: str, repo_key: str, retry_count: int,
+        max_retries: int, status: str,
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO remediation_loops
+                (session_id, repo_key, retry_count, max_retries, status, updated_at)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(session_id, repo_key) DO UPDATE SET
+                    retry_count=excluded.retry_count,
+                    max_retries=excluded.max_retries,
+                    status=excluded.status,
+                    updated_at=excluded.updated_at
+                """,
+                (session_id, repo_key, retry_count, max_retries, status, now),
+            )
+
+    def get_dependency_edges(self, profile_id: str) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM repo_dependency_edges WHERE profile_id=?",
+                (profile_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_dependency_edge(
+        self, profile_id: str, from_repo: str, to_repo: str,
+        edge_type: str = "pipeline_resource",
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO repo_dependency_edges
+                (profile_id, from_repo, to_repo, edge_type, discovered_at)
+                VALUES (?,?,?,?,?)
+                """,
+                (profile_id, from_repo, to_repo, edge_type, now),
+            )
+
+    def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM migrations WHERE ado_project=? AND ado_repo=? "
+                "AND status='in_progress' LIMIT 1",
+                (ado_project, ado_repo),
+            ).fetchone()
+        return row is not None
+
+    def is_repo_in_assignment_cohort(
+        self, assignment_id: str, ado_project: str, ado_repo: str,
+    ) -> bool:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM cohort_membership WHERE assignment_id=? "
+                "AND ado_project=? AND ado_repo=? AND active=1 LIMIT 1",
+                (assignment_id, ado_project, ado_repo),
+            ).fetchone()
+        return row is not None
+
+    def get_remediation_loop(self, session_id: str, repo_key: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM remediation_loops WHERE session_id=? AND repo_key=?",
+                (session_id, repo_key),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def count_platform_users(self) -> int:
+        with self._conn() as conn:
+            row = conn.execute("SELECT COUNT(*) AS c FROM platform_users").fetchone()
+        return int(row["c"]) if row else 0
+
+    def create_platform_user(
+        self, user_id: str, username: str, password_hash: str,
+        role: str, display_name: str, created_at: str,
+    ):
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO platform_users (id, username, password_hash, role, display_name, created_at)
+                VALUES (?,?,?,?,?,?)
+                """,
+                (user_id, username, password_hash, role, display_name, created_at),
+            )
+
+    def get_platform_user_by_username(self, username: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM platform_users WHERE username=?",
+                (username,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_platform_user_by_id(self, user_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM platform_users WHERE id=?",
+                (user_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO auth_sessions (token, user_id, expires_at, created_at)
+                VALUES (?,?,?,?)
+                """,
+                (token, user_id, expires_at, created_at),
+            )
+
+    def get_auth_session(self, token: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM auth_sessions WHERE token=?",
+                (token,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def delete_auth_session(self, token: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM auth_sessions WHERE token=?", (token,))

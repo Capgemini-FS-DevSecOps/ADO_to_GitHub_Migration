@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accelerator
+  namespace: ado2gh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: accelerator
+  template:
+    metadata:
+      labels:
+        app: accelerator
+    spec:
+      containers:
+        - name: accelerator
+          image: ado2gh-accelerator:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: ado2gh-config
+            - secretRef:
+                name: ado2gh-secrets
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: accelerator
+  namespace: ado2gh
+spec:
+  selector:
+    app: accelerator
+  ports:
+    - port: 8080

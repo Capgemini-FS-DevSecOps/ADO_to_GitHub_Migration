@@ -69,11 +69,16 @@ services:
     build:
       context: ./apps/migration-ui
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
+        NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+        NEXT_PUBLIC_REQUIRE_AUTH: "false"
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
       NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+      NEXT_PUBLIC_REQUIRE_AUTH: "false"
     depends_on:
       - accelerator
       - agent

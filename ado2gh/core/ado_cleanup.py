@@ -143,6 +143,45 @@ class ADOCleanup:
 
         return stats
 
+    def enable_pipelines(self, repo: RepoConfig) -> dict:
+        """Re-enable ADO pipelines disabled after migration (FR-026a symmetric rollback)."""
+        stats = {"enabled": 0, "failed": 0, "total": 0}
+        pipelines = list(self.ado.list_all_pipelines(repo.ado_project))
+        repo_pipelines = []
+        for pipe in pipelines:
+            try:
+                defn = self.ado.get_build_definition_full(repo.ado_project, pipe["id"])
+                pipe_repo = defn.get("repository", {}).get("name", "")
+                if pipe_repo == repo.ado_repo:
+                    repo_pipelines.append(defn)
+            except Exception:
+                pass
+        stats["total"] = len(repo_pipelines)
+        if self.dry_run:
+            stats["dry_run"] = True
+            return stats
+        for defn in repo_pipelines:
+            try:
+                pipe_id = defn.get("id", 0)
+                url = (
+                    f"{self.ado.org_url}/{self.ado._p(repo.ado_project)}"
+                    f"/_apis/build/definitions/{pipe_id}?{self.ado.API}"
+                )
+                defn["queueStatus"] = "enabled"
+                r = self.ado.session.put(url, json=defn, timeout=30)
+                if r.ok:
+                    stats["enabled"] += 1
+                    log.info(
+                        "Re-enabled pipeline: %s/%s (#%d)",
+                        repo.ado_project, defn.get("name", ""), pipe_id,
+                    )
+                else:
+                    stats["failed"] += 1
+            except Exception as exc:
+                log.warning("Failed to re-enable pipeline %d: %s", defn.get("id", 0), exc)
+                stats["failed"] += 1
+        return stats
+
     def _add_redirect_readme(self, repo: RepoConfig) -> dict:
         """Push a MIGRATION_NOTICE.md to the ADO repo pointing to GitHub."""
         if self.dry_run:

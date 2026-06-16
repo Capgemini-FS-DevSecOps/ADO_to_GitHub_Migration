@@ -1,3 +1,4 @@
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
 from ado2gh.pipelines.transformer import PipelineTransformer
 from ado2gh.pipelines.inventory import PipelineInventoryBuilder
+from ado2gh.pipelines.dependency_graph import build_graph, sort_repo_order

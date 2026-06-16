@@ -19,8 +19,16 @@ def push_workflows_for_repos(
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
     dry_run: bool = False,
+    readiness_ok: bool = True,
+    approver_ok: bool = False,
 ) -> int:
     """Commit local workflow YAML to destination repos. Returns count pushed."""
+    if not dry_run and not readiness_ok:
+        console.print("[red]push_workflows blocked: workflow readiness failed[/red]")
+        return 0
+    if not dry_run and not approver_ok:
+        console.print("[red]push_workflows blocked: Approver approval required[/red]")
+        return 0
     pushed_repos = 0
     for r in repos:
         wf_root = Path(workflows_dir) / r.gh_org / r.gh_repo / ".github" / "workflows"

@@ -89,6 +89,8 @@ class AdvancedSettings:
     pipeline_parallel: int = 8
     output_dir: str = "output"
     phases: list[dict[str, Any]] = field(default_factory=list)
+    workflow_layout_policy: str = "modular"
+    policy_rules: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

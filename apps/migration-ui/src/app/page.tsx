@@ -23,8 +23,8 @@ export default function DashboardPage() {
   if (error) {
     return (
       <div className="oai-error">
-        Cannot reach Accelerator API — start the API with <code>.\scripts\run-local.ps1</code> or{' '}
-        <code>docker compose up</code>.
+        Cannot reach Accelerator API — ensure the accelerator is running on port 8080
+        (<code>docker compose up</code> or <code>.\scripts\run-local.ps1</code>).
       </div>
     );
   }

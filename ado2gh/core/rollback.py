@@ -5,7 +5,9 @@ import time
 from typing import Any
 
 from ado2gh.clients import GHClient
-from ado2gh.logging_config import console, log
+from ado2gh.clients.ado_client import ADOClient
+from ado2gh.core.ado_cleanup import ADOCleanup
+from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, MigrationStatus, RepoConfig, WaveConfig
 from ado2gh.state.db import StateDB
 
@@ -19,9 +21,10 @@ class RollbackHandler:
     - Repo-level rollback (all scopes for specific repos)
     """
 
-    def __init__(self, gh: GHClient, db: StateDB):
+    def __init__(self, gh: GHClient, db: StateDB, ado: ADOClient | None = None):
         self.gh = gh
         self.db = db
+        self.ado = ado
 
     def rollback_wave(self, wave: WaveConfig, dry_run: bool = False,
                       scopes: list[str] = None) -> dict:
@@ -116,6 +119,15 @@ class RollbackHandler:
                     elif scope == MigrationScope.BRANCH_POLICIES.value:
                         self._rollback_branch_protection(
                             repo.gh_org, repo.gh_repo, dry_run, stats)
+                    elif scope == MigrationScope.PIPELINES.value:
+                        record = {
+                            "ado_project": repo.ado_project,
+                            "ado_repo": repo.ado_repo,
+                            "gh_org": repo.gh_org,
+                            "gh_repo": repo.gh_repo,
+                            "scope": scope,
+                        }
+                        self._rollback_pipelines(wave_id, record, dry_run, stats)
 
                     if not dry_run:
                         self.db.upsert_migration(
@@ -164,8 +176,20 @@ class RollbackHandler:
 
     def _rollback_pipelines(self, wave_id: int, record: dict,
                             dry_run: bool, stats: dict):
-        """Reset pipeline migration records."""
+        """Reset pipeline migration records; re-enable ADO pipelines when configured (FR-026a)."""
         if not dry_run:
             self.db.reset_failed_pipeline_migrations(wave_id)
-        log.info("Pipeline records reset for wave %d / %s",
+        if self.ado and MigrationScope.PIPELINES.value in (
+            record.get("scope", MigrationScope.PIPELINES.value),
+        ):
+            repo = RepoConfig(
+                ado_project=record["ado_project"],
+                ado_repo=record["ado_repo"],
+                gh_org=record["gh_org"],
+                gh_repo=record["gh_repo"],
+            )
+            cleanup = ADOCleanup(self.ado, self.db, dry_run=dry_run)
+            enable_stats = cleanup.enable_pipelines(repo)
+            stats["ado_pipelines_reenabled"] = enable_stats.get("enabled", 0)
+        log.info("Pipeline rollback for wave %d / %s",
                  wave_id, record.get("ado_repo", ""))

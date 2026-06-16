@@ -16,6 +16,7 @@ Enterprise-grade CLI tool for migrating repositories, pipelines, work items, and
 - [Post-Migration](#post-migration)
 - [Troubleshooting](#troubleshooting)
 - [Architecture](#architecture)
+- [Local Agent IDE Development](#local-agent-ide-development)
 
 ---
 
@@ -87,6 +88,17 @@ ado2gh ado-cleanup --config migration_phase.yaml
 **GitHub Token** scopes:
 - `repo` — create repos, push code, manage settings
 - `admin:org` — team management
+
+### Storage backends
+
+| Variable | Default | Description |
+|---|---|---|
+| `ADO2GH_STORAGE_BACKEND` | `sqlite` | `sqlite` or `postgres` |
+| `ADO2GH_SQLITE_PATH` | `migration_state.db` | SQLite file path (local/dev) |
+| `ADO2GH_DATABASE_URL` | — | Postgres DSN when backend is `postgres` |
+| `ADO2GH_AUDIT_BUCKET` | — | Optional S3 bucket for audit WORM export |
+
+Agentic platform tables (assignments, cohort membership, audit events, remediation loops) live in the same StateDB backend as migration state.
 - `workflow` — GitHub Actions workflow files
 - `delete_repo` — only for rollback
 
@@ -455,6 +467,18 @@ Output includes per-connection:
                          └───────────────┘   │  WAL mode   │
                                              └─────────────┘
 ```
+
+---
+
+## Local Agent IDE Development
+
+Run migration agents locally from Cursor or VS Code with dry-run defaults and shared tool catalog.
+
+- **Quickstart**: [specs/003-local-agent-ide/quickstart.md](specs/003-local-agent-ide/quickstart.md)
+- **Spec Kit**: `/speckit-specify` → `/speckit-plan` → `/speckit-tasks` → `/speckit-implement` for agent features
+- **Lightweight stack**: `.\scripts\run-local-agent.ps1` (accelerator + agent, stub LLM, no Redis/worker)
+- **Full stack + UI**: `.\scripts\run-local.ps1` or `docker compose up`
+- **Cursor skill**: `.cursor/skills/ado2gh-local-agent/SKILL.md`
 
 ---
 

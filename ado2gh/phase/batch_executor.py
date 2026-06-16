@@ -10,6 +10,7 @@ from rich.progress import (
     BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TimeElapsedColumn,
 )
 
+from ado2gh.pipelines.dependency_graph import RepoDependencyEdge, sort_repo_order
 from ado2gh.logging_config import console, log
 from ado2gh.models import (
     DEFAULT_PHASES, BatchCheckpoint, PhaseType, RepoConfig, WaveConfig,
@@ -23,6 +24,27 @@ class BatchExecutor:
         self.engine = engine
         self.db = db
         self.tracker = tracker
+
+    @staticmethod
+    def plan_repo_order(db: StateDB, profile_id: str, repo_keys: list[str]) -> list[str]:
+        """Topo-sorted repo keys for plan output (read-only)."""
+        edges_raw = db.get_dependency_edges(profile_id)
+        edges = [
+            RepoDependencyEdge(r["from_repo"], r["to_repo"], r.get("edge_type", "pipeline_resource"))
+            for r in edges_raw
+        ]
+        ordered, _ = sort_repo_order(repo_keys, edges)
+        return ordered
+
+    def _sort_repos_topo(
+        self, repos: list[RepoConfig], profile_id: str | None,
+    ) -> list[RepoConfig]:
+        if not profile_id:
+            return repos
+        keys = [f"{r.ado_project}/{r.ado_repo}" for r in repos]
+        ordered = self.plan_repo_order(self.db, profile_id, keys)
+        by_key = {f"{r.ado_project}/{r.ado_repo}": r for r in repos}
+        return [by_key[k] for k in ordered if k in by_key]
 
     def execute_phase(self, phase: PhaseType, waves: list[WaveConfig],
                       dry_run: bool = False) -> dict:
@@ -114,6 +136,17 @@ class BatchExecutor:
             "=== Starting wave %d: %s (%d repos)%s ===",
             wave.wave_id, wave.name, len(wave.repos),
             " [DRY RUN]" if dry_run else "",
+        )
+        profile_id = getattr(wave, "profile_id", None)
+        sorted_repos = self._sort_repos_topo(wave.repos, profile_id)
+        wave = WaveConfig(
+            wave_id=wave.wave_id,
+            name=wave.name,
+            description=wave.description,
+            repos=sorted_repos,
+            parallel=wave.parallel,
+            pipeline_parallel=wave.pipeline_parallel,
+            phase=wave.phase,
         )
         batch = self._run_batch(
             wave, dry_run, cancel_event=cancel_event, on_repo_done=on_repo_done,

@@ -58,6 +58,8 @@ Local stack starting in separate windows.
   Agent:       http://localhost:8090/docs
   Web UI:      http://localhost:3000
 
+For agent-only lightweight dev (no UI/redis/worker), use: .\scripts\run-local-agent.ps1
+
 Set credentials before use:
   `$env:ADO_ORG_URL='https://dev.azure.com/YOUR_ORG'
   `$env:ADO_PAT='...'

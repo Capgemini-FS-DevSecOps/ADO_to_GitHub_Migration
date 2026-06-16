@@ -69,9 +69,44 @@ from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.infra.queue.redis_queue import RedisJobQueue
 from ado2gh.infra.state.job_store import JobStoreFactory
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
-from ado2gh.state.factory import create_state_db
+from ado2gh.api.agentic_routes import enforce_live_gate, router as agentic_router
+
+try:
+    from services.accelerator_api.auth_routes import router as auth_router, SESSION_COOKIE
+except ImportError:
+    from auth_routes import router as auth_router, SESSION_COOKIE
+from ado2gh.auth.service import AuthService, auth_enabled
 
 app = FastAPI(title="ADO2GH Accelerator API", version="5.0.0")
+app.include_router(agentic_router)
+app.include_router(auth_router)
+
+_AUTH_EXEMPT = {
+    "/health",
+    "/ready",
+    "/v1/auth/bootstrap-status",
+    "/v1/auth/bootstrap",
+    "/v1/auth/login",
+}
+
+
+@app.middleware("http")
+async def platform_auth_middleware(request, call_next):
+    if not auth_enabled():
+        return await call_next(request)
+    path = request.url.path
+    if not path.startswith("/v1/") or path in _AUTH_EXEMPT:
+        return await call_next(request)
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+    session = AuthService().get_session(token)
+    if not session:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+    request.state.platform_user = session.user
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -144,6 +179,8 @@ def plan(req: PlanRequest):
 
 @app.post("/v1/migrate", response_model=list[RunWaveResponse])
 def migrate(req: RunWaveRequest):
+    if req.assignment_id:
+        enforce_live_gate(req.assignment_id, req.dry_run, req.db_path)
     accel = _accel(req.db_path)
     result = accel.run_wave(req)
     return [RunWaveResponse(
@@ -222,8 +259,17 @@ def freshness(req: FreshnessRequest):
 
 @app.post("/v1/jobs", response_model=JobStatusResponse)
 def enqueue_job(req: JobEnqueueRequest):
+    payload = req.payload or {}
+    assignment_id = payload.get("assignment_id")
+    dry_run = payload.get("dry_run", True)
+    if assignment_id:
+        enforce_live_gate(assignment_id, dry_run, payload.get("db_path", "migration_state.db"))
     store = JobStoreFactory.from_env()
     job = store.enqueue(req.job_type, req.payload, req.idempotency_key)
+    if os.environ.get("ADO2GH_LIGHTWEIGHT_MODE", "").lower() in ("1", "true", "yes"):
+        store.complete(job.id, {"dry_run": dry_run, "inline": True, "status": "completed"})
+        job = store.get(job.id)
+        return JobStatusResponse(job=job)
     try:
         RedisJobQueue().push(job.id)
     except Exception:

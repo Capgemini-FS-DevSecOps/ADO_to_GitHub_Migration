@@ -122,8 +122,8 @@ function ValidateResults({ step }: { step: PipelineStep }) {
 export function RunStepDetails({ steps }: { steps: PipelineStep[] }) {
   const migrate = steps.find((s) => s.id === 'migrate');
   const validate = steps.find((s) => s.id === 'validate');
-  const hasMigrate = migrate?.result?.repo_details || migrate?.result?.repos;
-  const hasValidate = validate?.result?.repo_details;
+  const hasMigrate = Boolean(migrate?.result?.repo_details || migrate?.result?.repos);
+  const hasValidate = Boolean(validate?.result?.repo_details);
 
   if (!hasMigrate && !hasValidate) return null;
 

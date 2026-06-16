@@ -72,8 +72,10 @@ Thumbs.db
 Desktop.ini
 
 # --- IDE ---
+.cursor/
 .idea/
 *.iml
-.vscode/
+.vscode/*
+!.vscode/mcp.json.example
 *.swp
 *~

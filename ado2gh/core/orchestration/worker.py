@@ -5,7 +5,7 @@ import logging
 import time
 
 from ado2gh.api.accelerator import Accelerator
-from ado2gh.api.contracts import JobType, RunWaveRequest
+from ado2gh.api.contracts import JobTypeEnum as JobType, RunWaveRequest
 from ado2gh.infra.queue.redis_queue import RedisJobQueue
 from ado2gh.infra.state.job_store import JobStoreFactory
 
