@@ -16,6 +16,17 @@ import { fetchSession } from '@/lib/auth';
 import { modelsAccessDeniedMessage, modelsPageAllowed } from '@/lib/permissions';
 import { ACCEL } from '@/lib/api';
 
+function isLikelyOllamaUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed.includes('://') ? trimmed : `http://${trimmed}`);
+    return Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 async function listModels() {
   const r = await fetch(`${ACCEL}/v1/settings/llm-models`, { credentials: 'include' });
   if (!r.ok) throw new Error(await r.text());
@@ -49,6 +60,8 @@ export default function LlmModelsPage() {
   const [selectedModelId, setSelectedModelId] = useState('');
   const [customModelId, setCustomModelId] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState('');
+  const [debouncedBaseUrl, setDebouncedBaseUrl] = useState('');
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState('');
@@ -65,6 +78,24 @@ export default function LlmModelsPage() {
   const effectiveModelId = showOverride && customModelId ? customModelId : selectedModelId;
 
   useEffect(() => {
+    setSelectedModelId('');
+    setCatalogEntries([]);
+    setCatalogStale(false);
+    setValidation(null);
+    setError('');
+    setDiscoveryError('');
+  }, [provider, apiKey]);
+
+  useEffect(() => {
+    if (provider !== 'ollama') {
+      setDebouncedBaseUrl('');
+      return;
+    }
+    const timer = setTimeout(() => setDebouncedBaseUrl(baseUrl.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [baseUrl, provider]);
+
+  useEffect(() => {
     if (!allowed) return;
     if (provider === 'stub') {
       setCatalogEntries([{ id: 'stub', display_name: 'Stub', provider: 'stub', source: 'preset' }]);
@@ -72,29 +103,35 @@ export default function LlmModelsPage() {
       setSelectedModelId('stub');
       return;
     }
-    if (provider === 'ollama' && !baseUrl) {
+    if (provider === 'ollama' && (!debouncedBaseUrl || !isLikelyOllamaUrl(debouncedBaseUrl))) {
       setCatalogEntries([]);
+      setDiscoveryError('');
       return;
     }
-    if (provider === 'openai' && !apiKey) {
+    if ((provider === 'openai' || provider === 'anthropic') && !apiKey) {
       setCatalogEntries([]);
       return;
     }
     let cancelled = false;
     setCatalogLoading(true);
+    setDiscoveryError('');
     fetchCatalog({
       provider,
       apiKey: apiKey || undefined,
-      baseUrl: baseUrl || undefined,
+      baseUrl: provider === 'ollama' ? debouncedBaseUrl : undefined,
     })
       .then((catalog) => {
         if (cancelled) return;
         setCatalogEntries(catalog.entries);
         setCatalogStale(catalog.stale);
         setCatalogSource(catalog.source);
-        if (catalog.entries.length && !selectedModelId) {
-          setSelectedModelId(catalog.entries[0].id);
-        }
+        setDiscoveryError(catalog.discovery_error ?? '');
+        setSelectedModelId((prev) => {
+          if (prev && catalog.entries.some((entry) => entry.id === prev)) {
+            return prev;
+          }
+          return catalog.entries[0]?.id ?? '';
+        });
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Catalog load failed'))
       .finally(() => {
@@ -103,7 +140,7 @@ export default function LlmModelsPage() {
     return () => {
       cancelled = true;
     };
-  }, [allowed, provider, apiKey, baseUrl, selectedModelId]);
+  }, [allowed, provider, apiKey, debouncedBaseUrl]);
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -195,6 +232,7 @@ export default function LlmModelsPage() {
       <div className="oai-card">
         <h3 className="oai-subsection-title">Add model</h3>
         {error && <p className="oai-error">{error}</p>}
+        {discoveryError && <p className="oai-error">{discoveryError}</p>}
         {catalogStale && <p className="form-hint">Catalog may be outdated — live fetch failed; preset list shown.</p>}
         <div className="form-grid">
           <input
@@ -213,18 +251,31 @@ export default function LlmModelsPage() {
             <input
               className="oai-input"
               type="password"
-              placeholder="API key"
+              placeholder="API key (required to load model catalog)"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
           )}
           {provider === 'ollama' && (
-            <input
-              className="oai-input"
-              placeholder="Base URL (http://host:11434)"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-            />
+            <>
+              <input
+                className="oai-input"
+                placeholder="Base URL (http://localhost:11434)"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+              />
+              <input
+                className="oai-input"
+                type="password"
+                placeholder="Bearer token (optional — if Ollama requires auth)"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <p className="form-hint">
+                Ollama runs on your machine. When the API runs in Docker, localhost is rewritten to
+                host.docker.internal automatically.
+              </p>
+            </>
           )}
           <select
             className="oai-input"
@@ -233,7 +284,13 @@ export default function LlmModelsPage() {
             disabled={catalogLoading || catalogEntries.length === 0}
           >
             {catalogLoading && <option value="">Loading catalog…</option>}
-            {!catalogLoading && catalogEntries.length === 0 && <option value="">No catalog entries</option>}
+            {!catalogLoading && catalogEntries.length === 0 && (
+              <option value="">
+                {(provider === 'openai' || provider === 'anthropic') && !apiKey
+                  ? 'Enter API key to load models'
+                  : 'No catalog entries'}
+              </option>
+            )}
             {catalogEntries.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.display_name}

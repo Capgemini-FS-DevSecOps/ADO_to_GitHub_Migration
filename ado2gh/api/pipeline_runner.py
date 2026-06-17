@@ -476,7 +476,7 @@ class PipelineRunner:
 
     def _step_validate(self, run: PipelineRun) -> None:
         from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
-        from ado2gh.api.profile_discovery import repo_configs_for_phase
+        from ado2gh.api.profile_discovery import repo_configs_for_phase, resolve_gh_org
         from ado2gh.api.run_reporting import validation_message, validation_repo_detail
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.post_migration_validator import PostMigrationValidator

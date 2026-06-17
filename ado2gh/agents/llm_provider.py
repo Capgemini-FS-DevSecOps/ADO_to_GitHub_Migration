@@ -9,6 +9,7 @@ from typing import Optional
 import httpx
 
 from ado2gh.api.http_llm import build_llm_http_client
+from ado2gh.api.local_hosts import resolve_local_service_url
 
 
 class LLMProvider(ABC):
@@ -98,9 +99,10 @@ class OllamaProvider(LLMProvider):
         headers = {}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        base = resolve_local_service_url(self.base_url)
         with build_llm_http_client(for_cloud=False) as client:
             response = client.post(
-                f"{self.base_url}/api/chat",
+                f"{base}/api/chat",
                 headers=headers or None,
                 json={"model": self.model_id, "messages": messages, "stream": False},
                 timeout=60.0,

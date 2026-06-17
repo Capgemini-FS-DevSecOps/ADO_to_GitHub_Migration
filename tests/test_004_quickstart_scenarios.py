@@ -117,7 +117,12 @@ class TestQuickstartScenario3OperatorDryRunPev:
             ]
             r = agent_client.post(
                 "/v1/sessions",
-                json={"profile_id": "lightweight", "prompt": "Plan wave 1", "dry_run": True},
+                json={
+                    "profile_id": "lightweight",
+                    "prompt": "Plan wave 1",
+                    "dry_run": True,
+                    "execute_pev": True,
+                },
             )
         assert r.status_code == 200
         data = r.json()

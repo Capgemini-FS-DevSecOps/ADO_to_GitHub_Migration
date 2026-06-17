@@ -99,7 +99,7 @@ def test_agent_health_llm_and_session(agent_client):
         ]
         r = agent_client.post(
             "/v1/sessions",
-            json={"profile_id": "lightweight", "prompt": "hi", "dry_run": True},
+            json={"profile_id": "lightweight", "prompt": "hi", "dry_run": True, "execute_pev": True},
         )
     assert r.status_code == 200
     sid = r.json()["session_id"]

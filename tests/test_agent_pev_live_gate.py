@@ -34,7 +34,10 @@ def test_pev_dry_run_completes_without_awaiting_approval():
             [{"wave_id": 1, "status": "ok"}],
             {"total": 0, "matched": 0},
         ]
-        created = client.post("/v1/sessions", json={"profile_id": "lightweight", "dry_run": True})
+        created = client.post(
+            "/v1/sessions",
+            json={"profile_id": "lightweight", "dry_run": True, "execute_pev": True},
+        )
         sid = created.json()["session_id"]
     import time
     time.sleep(0.2)

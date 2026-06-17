@@ -32,7 +32,7 @@ if (-not (Test-Path (Join-Path $UiDir "node_modules"))) {
 Write-Host "Starting Accelerator API on http://localhost:8080 ..."
 Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
-    "Set-Location '$Root'; `$env:ADO2GH_STORAGE_BACKEND='sqlite'; `$env:ADO2GH_SQLITE_PATH='$Root\migration_state.db'; `$env:ADO2GH_DATA_DIR='$Root\data'; `$env:ADO2GH_CONFIG='$($env:ADO2GH_CONFIG)'; python -m uvicorn services.accelerator_api.main:app --host 0.0.0.0 --port 8080"
+    "Set-Location '$Root'; `$env:ADO2GH_STORAGE_BACKEND='sqlite'; `$env:ADO2GH_SQLITE_PATH='$Root\migration_state.db'; `$env:ADO2GH_DATA_DIR='$Root\data'; `$env:ADO2GH_CONFIG='$($env:ADO2GH_CONFIG)'; `$env:CORS_ORIGINS='http://localhost:3000'; python -m uvicorn services.accelerator_api.main:app --host 0.0.0.0 --port 8080"
 )
 
 Start-Sleep -Seconds 2
@@ -40,7 +40,7 @@ Start-Sleep -Seconds 2
 Write-Host "Starting Agent API on http://localhost:8090 ..."
 Start-Process powershell -ArgumentList @(
     "-NoExit", "-Command",
-    "Set-Location '$Root'; `$env:ACCELERATOR_URL='http://localhost:8080'; python -m uvicorn services.agent.main:app --host 0.0.0.0 --port 8090"
+    "Set-Location '$Root'; `$env:ACCELERATOR_URL='http://localhost:8080'; `$env:ADO2GH_DATA_DIR='$Root\data'; `$env:ADO2GH_SQLITE_PATH='$Root\migration_state.db'; `$env:CORS_ORIGINS='http://localhost:3000'; python -m uvicorn services.agent.main:app --host 0.0.0.0 --port 8090"
 )
 
 Start-Sleep -Seconds 2

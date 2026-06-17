@@ -15,10 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from ado2gh.agents.llm_provider import StubLLMProvider, get_llm_provider
+from ado2gh.agents.local.stub_llm import LocalStubLLM
 from ado2gh.agents.local.audit_bridge import IdeAuditBridge
 from ado2gh.agents.local.profiles import capability_matrix, get_profile
 from ado2gh.agents.local.tool_catalog import TOOL_CATALOG_VERSION, list_tools
-from ado2gh.agents.planner import AgentPlanner
 from ado2gh.auth.service import AuthService, SESSION_COOKIE, auth_enabled, permissions_for
 
 ACCEL_URL = os.environ.get("ACCELERATOR_URL", "http://accelerator:8080")
@@ -61,7 +61,8 @@ async def agent_auth_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -96,6 +97,7 @@ class SessionRequest(BaseModel):
     prompt: str = ""
     dry_run: bool = True
     model_id: Optional[str] = None
+    execute_pev: bool = False
 
 
 class SessionMessageRequest(BaseModel):
@@ -124,6 +126,13 @@ class ApprovalRequest(BaseModel):
     reason: str = ""
 
 
+_CHAT_SYSTEM = (
+    "You are an ADO to GitHub migration assistant. "
+    "Answer questions and help plan migrations in conversation. "
+    "Do not claim you executed migrations unless a PEV run was explicitly started."
+)
+
+
 def _profile(profile_id: Optional[str] = None):
     pid = profile_id or os.environ.get("ADO2GH_LOCAL_PROFILE", "lightweight")
     try:
@@ -132,12 +141,47 @@ def _profile(profile_id: Optional[str] = None):
         return _ACTIVE_PROFILE
 
 
-def _accel_headers() -> dict:
-    headers: dict[str, str] = {}
-    cookie = os.environ.get("ADO2GH_SESSION_COOKIE", "")
-    if cookie:
-        headers["Cookie"] = cookie
-    return headers
+def _session_token_from_request(request: Request | None) -> str | None:
+    if request is None:
+        return None
+    return request.cookies.get(SESSION_COOKIE) or None
+
+
+def _session_accel_token(session_id: str | None) -> str | None:
+    if session_id and session_id in _sessions:
+        token = _sessions[session_id].get("session_token")
+        if token:
+            return str(token)
+    return None
+
+
+def _accel_headers(session_token: str | None = None) -> dict[str, str]:
+    if session_token:
+        return {"Cookie": f"{SESSION_COOKIE}={session_token}"}
+    env_cookie = os.environ.get("ADO2GH_SESSION_COOKIE", "").strip()
+    if env_cookie:
+        if "=" in env_cookie:
+            return {"Cookie": env_cookie}
+        return {"Cookie": f"{SESSION_COOKIE}={env_cookie}"}
+    return {}
+
+
+async def _accel_post(path: str, body: dict, *, session_token: str | None = None) -> dict:
+    async with httpx.AsyncClient(
+        base_url=ACCEL_URL, timeout=120.0, headers=_accel_headers(session_token),
+    ) as client:
+        r = await client.post(path, json=body)
+        r.raise_for_status()
+        return r.json()
+
+
+async def _accel_get(path: str, *, session_token: str | None = None) -> dict:
+    async with httpx.AsyncClient(
+        base_url=ACCEL_URL, timeout=60.0, headers=_accel_headers(session_token),
+    ) as client:
+        r = await client.get(path)
+        r.raise_for_status()
+        return r.json()
 
 
 def _platform_user(request: Request | None = None):
@@ -169,6 +213,10 @@ def _require_approve_live(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Missing capability: can_approve_live_execution")
 
 
+def _llm_is_degraded(provider: object) -> bool:
+    return isinstance(provider, (StubLLMProvider, LocalStubLLM))
+
+
 def _resolve_model_id(requested: str | None) -> tuple[str | None, bool]:
     from ado2gh.api.llm_model_store import LLMModelStore
 
@@ -178,26 +226,51 @@ def _resolve_model_id(requested: str | None) -> tuple[str | None, bool]:
         default = store.get_default_model()
         model_id = default.id if default else None
     provider = get_llm_provider(model_id)
-    degraded = isinstance(provider, StubLLMProvider) and model_id is not None
-    return model_id, degraded
+    return model_id, _llm_is_degraded(provider)
 
 
-async def _accel_post(path: str, body: dict) -> dict:
-    async with httpx.AsyncClient(
-        base_url=ACCEL_URL, timeout=120.0, headers=_accel_headers(),
-    ) as client:
-        r = await client.post(path, json=body)
-        r.raise_for_status()
-        return r.json()
+def _session_payload(session_id: str) -> dict[str, Any]:
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    run = _runs.get(session.get("run_id", ""))
+    return {
+        **session,
+        "run_status": run.get("status") if run else None,
+        "steps": run.get("steps", []) if run else [],
+    }
 
 
-async def _accel_get(path: str) -> dict:
-    async with httpx.AsyncClient(
-        base_url=ACCEL_URL, timeout=60.0, headers=_accel_headers(),
-    ) as client:
-        r = await client.get(path)
-        r.raise_for_status()
-        return r.json()
+def _start_pev_run(session_id: str) -> str:
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    run_id = session.get("run_id")
+    if run_id and run_id in _runs:
+        existing = _runs[run_id]
+        if existing.get("status") not in (RunStatus.COMPLETED, RunStatus.FAILED):
+            raise HTTPException(status_code=409, detail="pev_already_running")
+
+    agent_req = AgentRunRequest(
+        dry_run=session.get("dry_run", True),
+        assignment_id=session.get("assignment_id"),
+        profile_id=session.get("profile_id"),
+    )
+    run_id = str(uuid.uuid4())
+    _runs[run_id] = {
+        "run_id": run_id,
+        "session_id": session_id,
+        "status": RunStatus.PLANNING,
+        "request": agent_req.model_dump(),
+        "steps": [],
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    session["run_id"] = run_id
+    session["status"] = "planning"
+    session["subagent"] = "planner"
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
+    asyncio.create_task(pev_loop(run_id, agent_req, session_id))
+    return run_id
 
 
 async def _check_accelerator() -> tuple[bool, Optional[str]]:
@@ -228,6 +301,7 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
     steps: list[dict] = run["steps"]
     profile = _profile(req.profile_id)
     is_live = not req.dry_run
+    session_token = _session_accel_token(session_id)
 
     try:
         if not is_live:
@@ -238,13 +312,13 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
 
             plan = await _accel_post("/v1/plan", {
                 "config_path": req.config_path, "wave_id": req.wave_id,
-            })
+            }, session_token=session_token)
             steps.append({"phase": "plan", "tool": "ado2gh_plan_phase", "result": plan})
             _add_message(session_id, "planner", "Generated migration plan (dry-run)")
 
             readiness = await _accel_post("/v1/pipeline-readiness", {
                 "config_path": req.config_path,
-            })
+            }, session_token=session_token)
             steps.append({"phase": "plan", "tool": "ado2gh_readiness", "result": readiness})
 
         run["status"] = RunStatus.EXECUTING
@@ -264,7 +338,7 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
             if approval_id:
                 migrate_body["live_approval_id"] = approval_id
 
-        migrate = await _accel_post("/v1/migrate", migrate_body)
+        migrate = await _accel_post("/v1/migrate", migrate_body, session_token=session_token)
         steps.append({"phase": "execute", "tool": "ado2gh_enqueue_job", "result": migrate})
         _add_message(
             session_id, "executor",
@@ -279,7 +353,7 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
         validation = await _accel_post("/v1/validate", {
             "config_path": req.config_path,
             "wave_id": req.wave_id,
-        })
+        }, session_token=session_token)
         steps.append({"phase": "validate", "tool": "ado2gh_validate_repo", "result": validation})
         _add_message(session_id, "validator", "Validation complete")
 
@@ -307,19 +381,21 @@ def _add_message(session_id: Optional[str], role: str, content: str) -> None:
 @app.get("/health")
 async def health():
     reachable, err = await _check_accelerator()
+    selected_model_id, llm_degraded = _resolve_model_id(None)
+    from ado2gh.api.llm_model_store import LLMModelStore
+
+    store = LLMModelStore()
+    enabled_models = [m for m in store.load() if m.enabled]
     profile = _profile()
-    llm_provider = (
-        profile.llm_provider if profile
-        else os.environ.get("LLM_PROVIDER", "stub")
-    )
     body: dict[str, Any] = {
-        "status": "ok" if reachable else "degraded",
+        "status": "ok" if reachable and not llm_degraded else "degraded",
         "service": "agent",
         "accelerator_url": ACCEL_URL,
         "accelerator_reachable": reachable,
         "profile": profile.profile_id if profile else "lightweight",
-        "llm_provider": llm_provider,
-        "llm_degraded": not reachable or llm_provider == "stub",
+        "selected_model_id": selected_model_id,
+        "models_configured": len(enabled_models),
+        "llm_degraded": llm_degraded,
         "auth_enabled": auth_enabled(),
         "tool_catalog_version": TOOL_CATALOG_VERSION,
         "remediation_steps": [],
@@ -329,10 +405,16 @@ async def health():
     if not reachable:
         body["connection_error"] = err or "Connection refused"
         body["remediation_steps"] = [
-            "Start accelerator: python -m uvicorn services.accelerator_api.main:app --port 8080",
-            "Verify ADO2GH_SQLITE_PATH and ADO2GH_STORAGE_BACKEND=sqlite",
+            "Start accelerator: docker compose up accelerator",
+            "Verify ADO2GH_DATA_DIR is shared between accelerator and agent containers",
             "Check ACCELERATOR_URL matches running service",
             "Ensure browser sends session cookie (credentials: include)",
+        ]
+    elif llm_degraded:
+        body["remediation_steps"] = [
+            "Add and validate an LLM model under Settings → LLM models",
+            "Enable the model and optionally mark it as default for agent",
+            "Rebuild agent/accelerator after changing docker-compose volume mounts",
         ]
     return body
 
@@ -390,7 +472,11 @@ def list_approvals():
     return []
 
 
-async def _assert_deployment_profile_active(profile_id: str) -> None:
+async def _assert_deployment_profile_active(
+    profile_id: str,
+    *,
+    session_token: str | None = None,
+) -> None:
     """Reject agent sessions for non-active deployment profiles."""
     try:
         get_profile(profile_id)
@@ -398,7 +484,10 @@ async def _assert_deployment_profile_active(profile_id: str) -> None:
     except KeyError:
         pass
     try:
-        data = await _accel_get(f"/v1/settings/profiles/{profile_id}")
+        data = await _accel_get(
+            f"/v1/settings/profiles/{profile_id}",
+            session_token=session_token,
+        )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             return
@@ -411,40 +500,34 @@ async def _assert_deployment_profile_active(profile_id: str) -> None:
 
 @app.post("/v1/sessions")
 async def create_session(req: SessionRequest, request: Request):
-    """Start PEV session with profile and dry-run default."""
+    """Create a chat session; PEV runs only when execute_pev is true or /run-pev is called."""
     _require_operate(request)
-    await _assert_deployment_profile_active(req.profile_id)
+    session_token = _session_token_from_request(request)
+    await _assert_deployment_profile_active(req.profile_id, session_token=session_token)
     profile = _profile(req.profile_id)
     dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
     selected_model_id, llm_degraded = _resolve_model_id(req.model_id)
     llm = get_llm_provider(selected_model_id)
-    if isinstance(llm, StubLLMProvider) and not selected_model_id:
-        llm_degraded = True
-    planner = AgentPlanner()
-    plan_preview = planner.plan(
-        profile_id=req.profile_id,
-        assignment_repos=[],
-        dependency_edges=[],
-        dry_run=dry_run,
-    )
-    llm_text = llm.complete(req.prompt or "Plan POC dry-run migration")
+    user_prompt = req.prompt or "Hello"
+    llm_text = llm.complete(user_prompt, system=_CHAT_SYSTEM)
     actor, role = _audit_actor(request)
 
     _sessions[session_id] = {
         "session_id": session_id,
         "profile_id": req.profile_id,
         "assignment_id": req.assignment_id,
+        "session_token": session_token,
         "selected_model_id": selected_model_id,
         "llm_degraded": llm_degraded,
-        "status": "planning",
-        "subagent": "planner",
+        "status": "idle",
+        "subagent": None,
         "dry_run": dry_run,
         "messages": [
-            {"role": "user", "content": req.prompt or ""},
-            {"role": "planner", "content": llm_text},
+            {"role": "user", "content": user_prompt},
+            {"role": "assistant", "content": llm_text},
         ],
-        "plan_id": plan_preview.get("profile_id"),
+        "plan_id": None,
         "run_id": None,
         "approval": None,
         "live_approval_id": None,
@@ -462,51 +545,47 @@ async def create_session(req: SessionRequest, request: Request):
         metadata={"dry_run": dry_run, "role": role, "selected_model_id": selected_model_id},
     )
 
-    agent_req = AgentRunRequest(
-        dry_run=dry_run,
-        assignment_id=req.assignment_id,
-        profile_id=req.profile_id,
-    )
-    run_id = str(uuid.uuid4())
-    _runs[run_id] = {
-        "run_id": run_id,
-        "session_id": session_id,
-        "status": RunStatus.PLANNING,
-        "request": agent_req.model_dump(),
-        "steps": [],
-        "started_at": datetime.now(timezone.utc).isoformat(),
-    }
-    _sessions[session_id]["run_id"] = run_id
-    asyncio.create_task(pev_loop(run_id, agent_req, session_id))
+    if req.execute_pev:
+        _start_pev_run(session_id)
 
+    session = _sessions[session_id]
     return {
         "session_id": session_id,
-        "status": _sessions[session_id]["status"],
-        "subagent": "planner",
+        "status": session["status"],
+        "subagent": session.get("subagent"),
         "dry_run": dry_run,
         "selected_model_id": selected_model_id,
         "llm_degraded": llm_degraded,
+        "messages": session["messages"],
     }
 
 
 @app.get("/v1/sessions/{session_id}")
 def get_session(session_id: str):
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    run = _runs.get(session.get("run_id", ""))
+    return _session_payload(session_id)
+
+
+@app.post("/v1/sessions/{session_id}/run-pev")
+async def run_pev(session_id: str, request: Request):
+    """Start planner → executor → validator against the accelerator (dry-run by default)."""
+    _require_operate(request)
+    _start_pev_run(session_id)
+    payload = _session_payload(session_id)
     return {
-        **session,
-        "run_status": run.get("status") if run else None,
-        "steps": run.get("steps", []) if run else [],
+        "session_id": session_id,
+        "status": payload["status"],
+        "subagent": payload.get("subagent"),
+        "dry_run": payload.get("dry_run", True),
+        "run_id": payload.get("run_id"),
     }
 
 
 @app.post("/v1/sessions/{session_id}/request-live")
-async def request_live(session_id: str):
+async def request_live(session_id: str, request: Request):
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
     try:
         approval = await _accel_post("/v1/platform/approvals", {
             "scope_type": "agent_session",
@@ -514,7 +593,7 @@ async def request_live(session_id: str):
             "profile_id": session.get("profile_id"),
             "assignment_id": session.get("assignment_id"),
             "reason_request": "Request live PEV execution",
-        })
+        }, session_token=session_token)
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code not in (401, 403):
             raise HTTPException(
@@ -561,11 +640,13 @@ async def approve_session(session_id: str, req: ApprovalRequest, request: Reques
         return {"session_id": session_id, "status": session["status"]}
 
     approval_id = session.get("live_approval_id")
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
     if approval_id:
         try:
             await _accel_post(
                 f"/v1/platform/approvals/{approval_id}/approve",
                 {"reason": req.reason},
+                session_token=session_token,
             )
         except httpx.HTTPStatusError as exc:
             raise HTTPException(
@@ -643,16 +724,26 @@ def deny_live_internal(session_id: str, body: dict | None = None):
 
 
 @app.post("/v1/sessions/{session_id}/message")
-def session_message(session_id: str, req: SessionMessageRequest):
+def session_message(session_id: str, req: SessionMessageRequest, request: Request):
+    _require_operate(request)
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    llm = get_llm_provider()
-    reply = llm.complete(req.message)
+    if session.get("status") not in ("idle", "completed", "failed"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot chat while PEV is running — wait for completion or start a new session",
+        )
+    llm = get_llm_provider(session.get("selected_model_id"))
+    reply = llm.complete(req.message, system=_CHAT_SYSTEM)
     session["messages"].append({"role": "user", "content": req.message})
     session["messages"].append({"role": "assistant", "content": reply})
+    session["status"] = "idle"
+    session["subagent"] = None
     session["updated_at"] = datetime.now(timezone.utc).isoformat()
-    return {"session_id": session_id, "reply": reply, "status": session["status"]}
+    payload = _session_payload(session_id)
+    payload["reply"] = reply
+    return payload
 
 
 @app.post("/v1/sessions/{session_id}/provision")
@@ -695,20 +786,17 @@ def llm_status():
     store = LLMModelStore()
     models = store.load()
     default = store.get_default_model()
-    backend = (
-        os.environ.get("LLM_PROVIDER")
-        or os.environ.get("ADO2GH_LLM_BACKEND")
-        or "stub"
-    )
-    unavailable = backend.lower() == "unavailable"
+    selected_model_id, llm_degraded = _resolve_model_id(None)
+    enabled = [m for m in models if m.enabled]
     return {
-        "provider": backend,
-        "available": not unavailable,
-        "degraded": unavailable or not models,
-        "message": "Using deterministic stub planner" if backend == "stub" else f"backend={backend}",
-        "backend": backend,
-        "models_configured": len([m for m in models if m.enabled]),
+        "provider": default.provider if default else "stub",
+        "available": not llm_degraded,
+        "degraded": llm_degraded,
+        "message": "Using deterministic stub planner" if llm_degraded else f"model={selected_model_id}",
+        "backend": default.provider if default else "stub",
+        "models_configured": len(enabled),
         "default_model_id": default.id if default else None,
+        "selected_model_id": selected_model_id,
     }
 
 

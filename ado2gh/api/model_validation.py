@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 import httpx
 
 from ado2gh.api.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
+from ado2gh.api.local_hosts import resolve_local_service_url
 from ado2gh.api.llm_model_store import LLMModelConfig, LLMModelStore
 
 _validate_lock = threading.Lock()
@@ -44,6 +45,21 @@ def _draft_key(body: dict[str, Any]) -> str:
     )
 
 
+def _anthropic_error_category(response: httpx.Response) -> tuple[str, str] | None:
+    try:
+        body = response.json()
+    except Exception:
+        return None
+    err = body.get("error", body)
+    if not isinstance(err, dict):
+        return None
+    err_type = str(err.get("type", ""))
+    message = str(err.get("message", ""))
+    if err_type in ("not_found_error", "invalid_request_error") and "model" in message.lower():
+        return "model_not_found", "Model was not found at the provider. Choose a model from your account catalog."
+    return None
+
+
 def _classify_error(exc: Exception) -> tuple[str, str]:
     if isinstance(exc, httpx.TimeoutException):
         return "timeout", "Validation timed out. Try again or check network latency."
@@ -54,8 +70,20 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
     if isinstance(exc, ssl_error_type()):
         return "tls", "TLS trust failed. Check custom CA configuration."
     if isinstance(exc, httpx.HTTPStatusError):
+        parsed = _anthropic_error_category(exc.response)
+        if parsed:
+            return parsed
         code = exc.response.status_code
         if code in (401, 403):
+            try:
+                detail = str(exc.response.json().get("detail", ""))
+                if "not authenticated" in detail.lower():
+                    return (
+                        "credentials",
+                        "Ollama rejected the request (401). Add a bearer token if Ollama auth is enabled.",
+                    )
+            except Exception:
+                pass
             return "credentials", "Invalid or unauthorized API credentials."
         if code == 404:
             return "model_not_found", "Model was not found at the provider."
@@ -103,11 +131,15 @@ def _validate_anthropic(api_key: str, model_id: str) -> None:
         response.raise_for_status()
 
 
-def _validate_ollama(base_url: str, model_id: str) -> None:
-    base = base_url.rstrip("/")
+def _validate_ollama(base_url: str, model_id: str, api_key: str = "") -> None:
+    resolved = resolve_local_service_url(base_url)
+    headers: dict[str, str] | None = None
+    if api_key:
+        headers = {"Authorization": f"Bearer {api_key}"}
     with build_llm_http_client(for_cloud=False) as client:
         response = client.post(
-            f"{base}/api/chat",
+            f"{resolved}/api/chat",
+            headers=headers,
             json={
                 "model": model_id,
                 "messages": [{"role": "user", "content": "ping"}],
@@ -134,7 +166,7 @@ def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
         elif provider == "ollama":
             if not base_url:
                 return _result("failed", category="network", message="Base URL is required.")
-            _validate_ollama(base_url, model_id)
+            _validate_ollama(base_url, model_id, api_key)
         elif provider in ("stub", "offline"):
             return _result("passed", message="Stub provider requires no external validation.")
         else:

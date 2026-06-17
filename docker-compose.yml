@@ -27,15 +27,19 @@ services:
     environment:
       ADO2GH_STORAGE_BACKEND: sqlite
       ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_DATA_DIR: /app/data
       ADO2GH_CONFIG: /app/migration.yaml
+      ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
       REDIS_URL: redis://redis:6379/0
       ADO_ORG_URL: ${ADO_ORG_URL:-}
       ADO_PAT: ${ADO_PAT:-}
       GH_TOKEN: ${GH_TOKEN:-}
-      CORS_ORIGINS: "*"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     volumes:
       - ./migration.yaml:/app/migration.yaml:ro
       - ado2gh-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -48,6 +52,7 @@ services:
     environment:
       ADO2GH_STORAGE_BACKEND: sqlite
       ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_DATA_DIR: /app/data
       ADO2GH_CONFIG: /app/migration.yaml
       REDIS_URL: redis://redis:6379/0
       ADO_ORG_URL: ${ADO_ORG_URL:-}
@@ -68,6 +73,14 @@ services:
       - "8090:8090"
     environment:
       ACCELERATOR_URL: http://accelerator:8080
+      ADO2GH_DATA_DIR: /app/data
+      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    volumes:
+      - ado2gh-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - accelerator
 
@@ -85,6 +98,7 @@ services:
       NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
       NEXT_PUBLIC_AGENT_URL: http://localhost:8090
       NEXT_PUBLIC_REQUIRE_AUTH: "false"
+      ACCELERATOR_INTERNAL_URL: http://accelerator:8080
     depends_on:
       accelerator:
         condition: service_healthy

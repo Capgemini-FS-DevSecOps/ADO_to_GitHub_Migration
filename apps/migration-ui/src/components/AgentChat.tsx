@@ -7,12 +7,14 @@ import { fetchSession } from '@/lib/auth';
 import { canApproveLiveExecution, canOperate } from '@/lib/permissions';
 import {
   approveAgentSession,
+  AGENT,
   createAgentSession,
   fetchAgentHealth,
   fetchLlmModels,
   getAgentSession,
   postAgentMessage,
   requestAgentLive,
+  runAgentPev,
   type AgentSession,
 } from '@/lib/agent';
 
@@ -27,13 +29,23 @@ const STUB_MODEL = { id: 'stub', display_name: 'Stub (offline)', provider: 'stub
 export function AgentChat() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });
-  const { data: health } = useQuery({ queryKey: ['agent-health'], queryFn: fetchAgentHealth, retry: 1 });
-  const { data: llmData } = useQuery({ queryKey: ['llm-models'], queryFn: fetchLlmModels });
+  const { data: health, isError: agentHealthError, error: agentHealthErrorObj } = useQuery({
+    queryKey: ['agent-health'],
+    queryFn: fetchAgentHealth,
+    retry: 1,
+  });
+  const { data: llmData, isError: modelsError, error: modelsErrorObj } = useQuery({
+    queryKey: ['llm-models'],
+    queryFn: fetchLlmModels,
+  });
 
   const activeProfiles = (settings?.migration_profiles ?? []).filter(
     (p) => p.status === 'active' || !p.status,
   );
-  const models = llmData?.models?.length ? llmData.models : [STUB_MODEL];
+  const enabledModels = (llmData?.models ?? []).filter(
+    (m) => m.enabled !== false && String(m.provider) !== 'stub',
+  );
+  const models = enabledModels.length ? enabledModels : llmData?.models?.length ? llmData.models : [STUB_MODEL];
   const canApproveLive = canApproveLiveExecution(session?.permissions);
   const canOperateAgent = canOperate(session?.permissions) !== false;
 
@@ -54,8 +66,10 @@ export function AgentChat() {
 
   useEffect(() => {
     const defaultModel = models.find((m) => (m as { default_for_agent?: boolean }).default_for_agent);
-    if (defaultModel && modelId === 'stub') {
-      setModelId(String(defaultModel.id));
+    const firstEnabled = models.find((m) => String(m.id) !== 'stub');
+    const pick = defaultModel ?? firstEnabled;
+    if (pick && modelId === 'stub') {
+      setModelId(String(pick.id));
     }
   }, [models, modelId]);
 
@@ -90,7 +104,7 @@ export function AgentChat() {
         const s = await getAgentSession(sessionId);
         setAgentSession(s);
         syncMessages(s);
-        if (['completed', 'failed', 'awaiting_approval'].includes(s.status)) break;
+        if (['completed', 'failed', 'awaiting_approval', 'idle'].includes(s.status)) break;
         await new Promise((r) => setTimeout(r, 800));
       }
     } finally {
@@ -111,10 +125,31 @@ export function AgentChat() {
     onSuccess: async (s) => {
       setAgentSession(s);
       setError(null);
-      await pollSession(s.session_id);
+      const full = await getAgentSession(s.session_id);
+      setAgentSession(full);
+      syncMessages(full);
+      if (full.status !== 'idle') {
+        await pollSession(s.session_id);
+      }
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'Session failed'),
   });
+
+  const [pevRunning, setPevRunning] = useState(false);
+
+  const runPev = async () => {
+    if (!agentSession || pevRunning) return;
+    setPevRunning(true);
+    setError(null);
+    try {
+      await runAgentPev(agentSession.session_id);
+      await pollSession(agentSession.session_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'PEV run failed');
+    } finally {
+      setPevRunning(false);
+    }
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -129,28 +164,53 @@ export function AgentChat() {
       const s = await postAgentMessage(agentSession.session_id, text);
       setAgentSession(s);
       syncMessages(s);
-      await pollSession(agentSession.session_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Message failed');
     }
   };
 
   const phaseLabel = agentSession?.subagent || agentSession?.status || 'idle';
-  const degraded =
-    (health && health.status === 'degraded') ||
-    !health?.accelerator_reachable ||
-    agentSession?.llm_degraded;
+  const agentUnreachable = agentHealthError;
+  const llmDegraded =
+    !agentUnreachable &&
+    (Boolean(health?.llm_degraded) ||
+      Boolean(agentSession?.llm_degraded) ||
+      (enabledModels.length === 0 && !modelsError));
 
   return (
     <div className="agent-chat-shell">
-      {degraded && (
+      {agentUnreachable && (
         <div className="oai-card" style={{ marginBottom: 12, borderColor: 'var(--warning)' }}>
-          <p>Agent service degraded — accelerator may be unreachable.</p>
-          {health?.remediation_steps?.map((step) => (
+          <p>
+            {agentHealthErrorObj instanceof Error
+              ? agentHealthErrorObj.message
+              : `Cannot reach Agent API at ${AGENT}.`}
+          </p>
+        </div>
+      )}
+
+      {!agentUnreachable && health && !health.accelerator_reachable && (
+        <div className="oai-card" style={{ marginBottom: 12, borderColor: 'var(--warning)' }}>
+          <p>Agent cannot reach the accelerator API.</p>
+          {health.remediation_steps?.map((step) => (
             <p key={step} className="form-hint">{step}</p>
           ))}
         </div>
       )}
+
+      {modelsError && (
+        <div className="oai-card" style={{ marginBottom: 12, borderColor: 'var(--warning)' }}>
+          <p>{modelsErrorObj instanceof Error ? modelsErrorObj.message : 'Failed to load LLM models.'}</p>
+        </div>
+      )}
+
+      {!agentUnreachable && llmDegraded && health?.remediation_steps?.length ? (
+        <div className="oai-card" style={{ marginBottom: 12, borderColor: 'var(--warning)' }}>
+          {health.remediation_steps.map((step) => (
+            <p key={step} className="form-hint">{step}</p>
+          ))}
+        </div>
+      ) : null}
 
       <div className="agent-model-bar">
         <label htmlFor="agent-profile-select" className="agent-model-label">Deployment profile</label>
@@ -182,13 +242,13 @@ export function AgentChat() {
         <span className="agent-model-hint">
           PEV: <strong>{phaseLabel}</strong>
           {agentSession?.dry_run ? ' · dry-run' : ''}
-          {degraded ? ' · stub/degraded LLM' : ''}
+          {llmDegraded ? ' · stub/degraded LLM' : ''}
         </span>
       </div>
 
-      {degraded && !agentSession && (
+      {llmDegraded && !agentSession && !agentUnreachable && (
         <p className="form-hint" style={{ marginBottom: 8 }}>
-          No live model configured — agent uses deterministic stub planning until an admin onboards a model.
+          No live model configured — add, validate, and enable a model under Settings → LLM models.
         </p>
       )}
 
@@ -227,7 +287,20 @@ export function AgentChat() {
         </p>
       )}
 
-      {canOperateAgent && agentSession && agentSession.status !== 'awaiting_approval' && !canApproveLive && (
+      {canOperateAgent && agentSession?.status === 'idle' && (
+        <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="oai-button oai-button-primary"
+            disabled={pevRunning || polling}
+            onClick={runPev}
+          >
+            {pevRunning || polling ? 'Running PEV…' : 'Run migration plan (PEV dry-run)'}
+          </button>
+        </div>
+      )}
+
+      {canOperateAgent && agentSession && agentSession.status !== 'awaiting_approval' && agentSession.status !== 'idle' && !canApproveLive && (
         <button
           type="button"
           className="oai-button oai-button-secondary"
@@ -245,9 +318,11 @@ export function AgentChat() {
             <p>{msg.content}</p>
           </div>
         ))}
-        {(startSession.isPending || polling) && (
+        {(startSession.isPending || pevRunning || polling) && (
           <div className="agent-chat-bubble agent-chat-assistant agent-chat-typing">
-            <span className="agent-typing-dots">PEV running…</span>
+            <span className="agent-typing-dots">
+              {startSession.isPending ? 'Thinking…' : 'PEV running…'}
+            </span>
           </div>
         )}
       </div>
@@ -271,7 +346,7 @@ export function AgentChat() {
         <button
           type="button"
           className="oai-button oai-button-primary agent-chat-send"
-          disabled={!input.trim() || startSession.isPending || polling}
+          disabled={!input.trim() || startSession.isPending || pevRunning || polling}
           onClick={send}
         >
           Send

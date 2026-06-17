@@ -12,6 +12,8 @@ export type CatalogResponse = {
   entries: CatalogEntry[];
   source: string;
   stale: boolean;
+  discovery_error?: string;
+  resolved_base_url?: string;
 };
 
 export type ConnectivityProfile = {
@@ -49,9 +51,30 @@ export type LlmModelRecord = {
 };
 
 async function llmFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${ACCEL}${path}`, { credentials: 'include', ...init });
+  let response: Response;
+  try {
+    response = await fetch(`${ACCEL}${path}`, { credentials: 'include', cache: 'no-store', ...init });
+  } catch {
+    throw new Error(
+      `Cannot reach Accelerator API at ${ACCEL}. If using Docker, ensure the accelerator container is running on port 8080.`,
+    );
+  }
   if (!response.ok) {
-    throw new Error(await response.text());
+    const text = await response.text();
+    if (response.status === 401) {
+      throw new Error('Sign in required — log in as an admin at /login, then retry.');
+    }
+    try {
+      const parsed = JSON.parse(text) as { detail?: string };
+      if (parsed.detail) {
+        throw new Error(parsed.detail);
+      }
+    } catch (parseErr) {
+      if (parseErr instanceof Error && parseErr.message !== text) {
+        throw parseErr;
+      }
+    }
+    throw new Error(text || `Request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
 }

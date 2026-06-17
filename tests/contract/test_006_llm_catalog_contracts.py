@@ -54,20 +54,40 @@ def test_connectivity_get_contract(accel_client):
     assert data.get("proxy_password", "") in ("", "***")
 
 
-def test_catalog_anthropic_preset_contract(accel_client):
+def test_catalog_anthropic_live_contract(accel_client, monkeypatch):
+    _bootstrap_admin(accel_client)
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = {
+        "data": [{"id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6"}],
+        "has_more": False,
+    }
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get.return_value = mock_response
+    monkeypatch.setattr(
+        "ado2gh.api.model_catalog.build_llm_http_client",
+        lambda **kwargs: mock_client,
+    )
+    r = accel_client.get(
+        "/v1/settings/llm-models/catalog",
+        params={"provider": "anthropic", "api_key": "sk-ant-test"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["source"] == "live"
+    assert data["entries"][0]["id"] == "claude-sonnet-4-6"
+
+
+def test_catalog_anthropic_empty_without_key(accel_client):
     _bootstrap_admin(accel_client)
     r = accel_client.get(
         "/v1/settings/llm-models/catalog",
         params={"provider": "anthropic"},
     )
     assert r.status_code == 200
-    data = r.json()
-    assert data["source"] == "preset"
-    assert data["stale"] is False
-    assert len(data["entries"]) >= 1
-    entry = data["entries"][0]
-    assert "id" in entry
-    assert "display_name" in entry
+    assert r.json()["entries"] == []
 
 
 def test_validate_draft_contract_shape(accel_client, monkeypatch):

@@ -131,6 +131,36 @@ def test_audit_payloads_contain_no_raw_secrets(tmp_path, monkeypatch):
     assert "proxy-secret-password" not in str(events)
 
 
+def test_validate_anthropic_model_not_found_category():
+    mock_response = MagicMock()
+    mock_response.status_code = 400
+    mock_response.json.return_value = {
+        "type": "error",
+        "error": {
+            "type": "not_found_error",
+            "message": "model: claude-3-5-sonnet-20241022",
+        },
+    }
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "bad model",
+        request=MagicMock(),
+        response=mock_response,
+    )
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.post.return_value = mock_response
+    with patch("ado2gh.api.model_validation.build_llm_http_client", return_value=mock_client):
+        result = validate_draft(
+            {
+                "provider": "anthropic",
+                "model_id": "claude-3-5-sonnet-20241022",
+                "api_key": "sk-ant-test",
+            }
+        )
+    assert result["category"] == "model_not_found"
+
+
 def test_validate_openai_success():
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()

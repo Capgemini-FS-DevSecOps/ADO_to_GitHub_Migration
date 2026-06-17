@@ -6,7 +6,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from ado2gh.api.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
+from ado2gh.api.local_hosts import ollama_discovery_hint, resolve_local_service_url
 
 _PRESETS_PATH = Path(__file__).resolve().parent / "data" / "llm_presets.json"
 _catalog_lock = threading.Lock()
@@ -35,6 +38,43 @@ def _catalog_key(provider: str, api_key: str, base_url: str) -> str:
     return f"{provider}|{api_key[:8] if api_key else ''}|{base_url}"
 
 
+def _fetch_anthropic_live(api_key: str) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    params: dict[str, Any] | None = {"limit": 1000}
+    with build_llm_http_client(for_cloud=True) as client:
+        while params is not None:
+            response = client.get(
+                "https://api.anthropic.com/v1/models",
+                params=params,
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+            for item in data.get("data", []):
+                model_id = item.get("id", "")
+                if not model_id:
+                    continue
+                entries.append(
+                    {
+                        "id": model_id,
+                        "display_name": item.get("display_name") or model_id,
+                        "description": "",
+                        "provider": "anthropic",
+                        "source": "live",
+                    }
+                )
+            if not data.get("has_more"):
+                break
+            last_id = data.get("last_id")
+            if not last_id:
+                break
+            params = {"limit": 1000, "after_id": last_id}
+    return entries
+
+
 def _fetch_openai_live(api_key: str) -> list[dict[str, Any]]:
     with build_llm_http_client(for_cloud=True) as client:
         response = client.get(
@@ -60,10 +100,16 @@ def _fetch_openai_live(api_key: str) -> list[dict[str, Any]]:
     return entries
 
 
-def _fetch_ollama_live(base_url: str) -> list[dict[str, Any]]:
-    base = base_url.rstrip("/")
+def _ollama_headers(api_key: str = "") -> dict[str, str] | None:
+    if not api_key:
+        return None
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _fetch_ollama_live(base_url: str, api_key: str = "") -> list[dict[str, Any]]:
+    resolved = resolve_local_service_url(base_url)
     with build_llm_http_client(for_cloud=False) as client:
-        response = client.get(f"{base}/api/tags")
+        response = client.get(f"{resolved}/api/tags", headers=_ollama_headers(api_key))
         response.raise_for_status()
         data = response.json()
     entries = []
@@ -83,12 +129,50 @@ def _fetch_ollama_live(base_url: str) -> list[dict[str, Any]]:
     return entries
 
 
+def _ollama_error_payload(base_url: str, resolved: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "entries": [],
+        "source": "live",
+        "stale": False,
+        "discovery_error": ollama_discovery_hint(base_url),
+    }
+    if resolved != base_url.rstrip("/"):
+        payload["resolved_base_url"] = resolved
+    return payload
+
+
+def _ollama_catalog(base_url: str, api_key: str = "") -> dict[str, Any]:
+    resolved = resolve_local_service_url(base_url)
+    try:
+        entries = _fetch_ollama_live(base_url, api_key)
+        payload: dict[str, Any] = {
+            "entries": entries,
+            "source": "live",
+            "stale": False,
+        }
+        if resolved != base_url.rstrip("/"):
+            payload["resolved_base_url"] = resolved
+        return payload
+    except httpx.HTTPError:
+        return _ollama_error_payload(base_url, resolved)
+    except Exception:
+        return _ollama_error_payload(base_url, resolved)
+
+
 def _catalog_result(provider: str, *, api_key: str = "", base_url: str = "") -> dict[str, Any]:
     if provider == "anthropic":
+        if not api_key:
+            return {"entries": [], "source": "live", "stale": False}
+        try:
+            entries = _fetch_anthropic_live(api_key)
+            if entries:
+                return {"entries": entries, "source": "live", "stale": False}
+        except Exception:
+            pass
         return {
             "entries": _preset_entries("anthropic"),
             "source": "preset",
-            "stale": False,
+            "stale": True,
         }
     if provider == "openai":
         if api_key:
@@ -106,8 +190,7 @@ def _catalog_result(provider: str, *, api_key: str = "", base_url: str = "") -> 
     if provider == "ollama":
         if not base_url:
             raise ValueError("base_url required for ollama provider")
-        entries = _fetch_ollama_live(base_url)
-        return {"entries": entries, "source": "live", "stale": False}
+        return _ollama_catalog(base_url, api_key)
     raise ValueError(f"Unsupported catalog provider: {provider}")
 
 

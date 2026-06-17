@@ -100,3 +100,19 @@ export async function logout() {
 export const REQUIRE_AUTH =
   process.env.NEXT_PUBLIC_REQUIRE_AUTH === 'true' ||
   process.env.NEXT_PUBLIC_REQUIRE_AUTH === '1';
+
+/** Whether the UI should block unauthenticated access (runtime bootstrap + build flag). */
+export function platformLoginRequired(
+  status: BootstrapStatus,
+  session: AuthSession | null,
+): boolean {
+  if (session?.authenticated) return false;
+  if (status.needs_bootstrap) return true;
+  if (REQUIRE_AUTH || status.auth_enabled) return true;
+  // Users exist in the platform store — protected routes need a session even in open-dev API mode.
+  return true;
+}
+
+export function platformLoginPath(status: BootstrapStatus): string {
+  return status.needs_bootstrap ? '/login?bootstrap=1' : '/login';
+}

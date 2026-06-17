@@ -33,17 +33,33 @@ def _admin(client: TestClient) -> None:
 
 def test_scenario1_catalog_validate_enable(client, monkeypatch):
     _admin(client)
-    catalog = client.get("/v1/settings/llm-models/catalog", params={"provider": "anthropic"})
+    mock_catalog_response = MagicMock()
+    mock_catalog_response.raise_for_status = MagicMock()
+    mock_catalog_response.json.return_value = {
+        "data": [{"id": "claude-sonnet-4-6", "display_name": "Claude Sonnet 4.6"}],
+        "has_more": False,
+    }
+    mock_catalog_client = MagicMock()
+    mock_catalog_client.__enter__ = MagicMock(return_value=mock_catalog_client)
+    mock_catalog_client.__exit__ = MagicMock(return_value=False)
+    mock_catalog_client.get.return_value = mock_catalog_response
+
+    mock_validate_response = MagicMock()
+    mock_validate_response.raise_for_status = MagicMock()
+    mock_validate_client = MagicMock()
+    mock_validate_client.__enter__ = MagicMock(return_value=mock_validate_client)
+    mock_validate_client.__exit__ = MagicMock(return_value=False)
+    mock_validate_client.post.return_value = mock_validate_response
+
+    with patch("ado2gh.api.model_catalog.build_llm_http_client", return_value=mock_catalog_client):
+        catalog = client.get(
+            "/v1/settings/llm-models/catalog",
+            params={"provider": "anthropic", "api_key": "sk-ant-test"},
+        )
     assert catalog.status_code == 200
     entry = catalog.json()["entries"][0]
 
-    mock_response = MagicMock()
-    mock_response.raise_for_status = MagicMock()
-    mock_client = MagicMock()
-    mock_client.__enter__ = MagicMock(return_value=mock_client)
-    mock_client.__exit__ = MagicMock(return_value=False)
-    mock_client.post.return_value = mock_response
-    with patch("ado2gh.api.model_validation.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.model_validation.build_llm_http_client", return_value=mock_validate_client):
         validated = client.post(
             "/v1/settings/llm-models/validate",
             json={
@@ -61,7 +77,7 @@ def test_scenario1_catalog_validate_enable(client, monkeypatch):
             "provider": "anthropic",
             "model_id": entry["id"],
             "api_key": "sk-ant-test",
-            "catalog_source": "preset",
+            "catalog_source": "live",
             "catalog_label": entry["display_name"],
             "enabled": True,
             "validation_status": "passed",

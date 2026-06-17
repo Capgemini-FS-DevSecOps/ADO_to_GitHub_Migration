@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   bootstrapAdmin,
   fetchBootstrapStatus,
+  fetchSession,
   login,
   register,
-  REQUIRE_AUTH,
 } from '@/lib/auth';
 import { ACCEL } from '@/lib/api';
 
@@ -30,14 +30,15 @@ export default function LoginClient() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!REQUIRE_AUTH) {
-      router.replace('/');
-      return;
-    }
     fetchBootstrapStatus()
-      .then((s) => {
+      .then(async (s) => {
         setNeedsBootstrap(s.needs_bootstrap);
         setRegistrationEnabled(Boolean(s.registration_enabled));
+        const session = await fetchSession();
+        if (session?.authenticated) {
+          router.replace('/');
+          return;
+        }
         setLoading(false);
       })
       .catch(() => {

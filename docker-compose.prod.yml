@@ -22,6 +22,7 @@ services:
     environment:
       ADO2GH_STORAGE_BACKEND: postgres
       ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
       ADO2GH_AUTH_ENABLED: "true"
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
@@ -33,8 +34,20 @@ services:
     environment:
       ADO2GH_STORAGE_BACKEND: postgres
       ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
     depends_on:
       - postgres
+
+  agent:
+    environment:
+      ADO2GH_AUTH_ENABLED: "true"
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   web:
     build:
@@ -48,6 +61,7 @@ services:
       NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
       NEXT_PUBLIC_AGENT_URL: http://localhost:8090
       NEXT_PUBLIC_REQUIRE_AUTH: "true"
+      ACCELERATOR_INTERNAL_URL: http://accelerator:8080
 
 volumes:
   pgdata:
