@@ -376,7 +376,7 @@ class PipelineRunner:
     def _step_migrate(self, run: PipelineRun) -> None:
         from ado2gh.api.accelerator import Accelerator, _build_ado_client, _build_gh_client
         from ado2gh.api.contracts import PhaseRunRequest, RunWaveRequest
-        from ado2gh.api.profile_discovery import build_wave_from_profile_phase
+        from ado2gh.api.profile_discovery import build_wave_from_profile_phase, require_gh_org
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
         from ado2gh.phase.batch_executor import BatchExecutor

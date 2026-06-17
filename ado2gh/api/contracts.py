@@ -22,6 +22,7 @@ class RunWaveRequest(BaseModel):
     dry_run: bool = False
     db_path: str = "migration_state.db"
     assignment_id: Optional[str] = None
+    live_approval_id: Optional[str] = None
 
 
 class RunWaveResult(BaseModel):
@@ -217,10 +218,39 @@ class MigrationProfileResponse(BaseModel):
     ado_pat: str = ""
     gh_org: str = ""
     github_tokens: list[GitHubTokenResponse] = Field(default_factory=list)
+    status: str = "active"
+    is_default: bool = False
+    submitted_by: str = ""
+    approval: dict[str, Any] = Field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
     last_scan_at: str = ""
     scan_summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class OnboardingStatusResponse(BaseModel):
+    needs_profile_setup: bool = False
+    active_profile_count: int = 0
+    default_profile_id: Optional[str] = None
+    pending_approval_count: int = 0
+    role: str = ""
+    blocked_message: Optional[str] = None
+    redirect_path: Optional[str] = None
+    can_submit_profile: bool = False
+
+
+class DeleteProfileRequest(BaseModel):
+    new_default_profile_id: Optional[str] = None
+
+
+class DenyProfileRequest(BaseModel):
+    reason: str = ""
+
+
+class RegisterBody(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=12)
+    display_name: str = ""
 
 
 class ProfileSetupRequest(BaseModel):
@@ -386,3 +416,35 @@ class DiscoveryResponse(BaseModel):
     project_details: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     status: str = "ok"
+
+
+class LiveApprovalCreateRequest(BaseModel):
+    scope_type: Literal["agent_session", "migrate_job", "pipeline_run"]
+    scope_id: str
+    profile_id: Optional[str] = None
+    assignment_id: Optional[str] = None
+    reason_request: Optional[str] = None
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class LiveApprovalDecisionRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
+class LiveApprovalItem(BaseModel):
+    id: str
+    requester_username: str
+    scope_type: str
+    scope_id: str
+    profile_id: Optional[str] = None
+    assignment_id: Optional[str] = None
+    status: str
+    reason_request: Optional[str] = None
+    reason_decision: Optional[str] = None
+    requested_at: str
+    decided_at: Optional[str] = None
+    approver_username: Optional[str] = None
+
+
+class LiveApprovalListResponse(BaseModel):
+    approvals: list[LiveApprovalItem] = Field(default_factory=list)

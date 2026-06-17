@@ -122,6 +122,20 @@ pip install -e .
 ado2gh --version
 ```
 
+### Web console login (Docker prod)
+
+```bash
+export SESSION_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+```
+
+1. Open http://localhost:3000 — redirects to `/login`.
+2. On first boot, create the **admin** account (password ≥ 12 characters).
+3. Complete deployment profile onboarding at `/onboarding/profile` when prompted.
+4. Operators can use **Create account** on the login page after bootstrap.
+
+See `specs/002-login-bootstrap/quickstart.md` and `specs/005-profile-onboarding/quickstart.md`.
+
 ### Multi-Token Setup (Recommended for Scale)
 
 At 5000 repos, you'll hit GitHub rate limits with a single token. Set multiple:

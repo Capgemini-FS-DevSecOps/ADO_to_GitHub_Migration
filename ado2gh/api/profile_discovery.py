@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ado2gh.api.profile_governance import assert_profile_active_for_run, ProfileGovernanceError
+
 from ado2gh.api.migration_scan import load_scan_results, persist_scan_results, scan_with_credentials
 from ado2gh.api.settings_store import MigrationProfile, SettingsStore
 from ado2gh.api.state_db import get_state_db
@@ -105,6 +107,10 @@ def sync_profile_scan_to_risk_scores(
 
 def ensure_profile_scan(profile: MigrationProfile, settings: SettingsStore | None = None) -> dict[str, Any]:
     """Load persisted scan or run a fresh ADO scan for the profile."""
+    try:
+        assert_profile_active_for_run(profile)
+    except ProfileGovernanceError as exc:
+        raise ValueError(exc.code) from exc
     store = settings or SettingsStore()
     existing = load_scan_results(profile.id)
     if existing and existing.get("repos_scanned", 0) > 0:
@@ -139,6 +145,10 @@ def build_wave_from_profile_phase(
     config_path: str | None = None,
 ) -> WaveConfig | None:
     """Build a migration wave from profile discovery assignments."""
+    try:
+        assert_profile_active_for_run(profile)
+    except ProfileGovernanceError as exc:
+        raise ValueError(exc.code) from exc
     db = get_state_db(db_path)
     scores = db.get_risk_scores_for_phase(phase)
     if not scores:

@@ -4,7 +4,7 @@
 
 **Created**: 2026-06-16
 
-**Status**: Draft
+**Status**: Clarified (implemented)
 
 **Input**: UI enhancement for a login page. Assign admin (highest privilege) when the database has no users or the instance is fresh. Must support Docker and Kubernetes deployment.
 

@@ -6,6 +6,7 @@ import {
   bootstrapAdmin,
   fetchBootstrapStatus,
   login,
+  register,
   REQUIRE_AUTH,
 } from '@/lib/auth';
 import { ACCEL } from '@/lib/api';
@@ -14,12 +15,17 @@ export default function LoginClient() {
   const router = useRouter();
   const params = useSearchParams();
   const bootstrapMode = params.get('bootstrap') === '1';
+  const registerMode = params.get('register') === '1';
+  const returnUrl = params.get('returnUrl') || '';
   const apiError = params.get('error') === 'api';
 
   const [needsBootstrap, setNeedsBootstrap] = useState(bootstrapMode);
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [showRegister, setShowRegister] = useState(registerMode);
   const [username, setUsername] = useState('admin');
   const [displayName, setDisplayName] = useState('Platform Admin');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -31,6 +37,7 @@ export default function LoginClient() {
     fetchBootstrapStatus()
       .then((s) => {
         setNeedsBootstrap(s.needs_bootstrap);
+        setRegistrationEnabled(Boolean(s.registration_enabled));
         setLoading(false);
       })
       .catch(() => {
@@ -42,13 +49,22 @@ export default function LoginClient() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    if ((needsBootstrap || showRegister) && password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
     try {
+      let result;
       if (needsBootstrap) {
-        await bootstrapAdmin({ username, password, display_name: displayName });
+        result = await bootstrapAdmin({ username, password, display_name: displayName });
+      } else if (showRegister) {
+        result = await register({ username, password, display_name: displayName });
       } else {
-        await login({ username, password });
+        result = await login({ username, password });
       }
-      router.replace('/');
+      const redirect = result.redirect_path as string | undefined;
+      const target = redirect || returnUrl || '/';
+      router.replace(target.startsWith('/') ? target : '/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
     }
@@ -64,24 +80,30 @@ export default function LoginClient() {
     );
   }
 
+  const title = needsBootstrap
+    ? 'Create admin account'
+    : showRegister
+      ? 'Create operator account'
+      : 'Sign in';
+
   return (
     <div className="login-page">
       <div className="login-card oai-card">
         <div className="oai-logo login-logo" aria-hidden>ADO</div>
-        <h1 className="oai-page-title">
-          {needsBootstrap ? 'Create admin account' : 'Sign in'}
-        </h1>
+        <h1 className="oai-page-title">{title}</h1>
         <p className="login-subtitle">
           {needsBootstrap
             ? 'First boot — create the platform administrator to continue.'
-            : 'ADO2GH Migration Console'}
+            : showRegister
+              ? 'Self-register as an operator (pending profile approval applies).'
+              : 'ADO2GH Migration Console'}
         </p>
         {apiError && (
           <p className="oai-error">Session expired or API unreachable. Sign in again after the stack is up.</p>
         )}
         {error && <p className="oai-error">{error}</p>}
         <form onSubmit={submit} className="login-form">
-          {needsBootstrap && (
+          {(needsBootstrap || showRegister) && (
             <label className="oai-field">
               Display name
               <input
@@ -108,18 +130,45 @@ export default function LoginClient() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete={needsBootstrap ? 'new-password' : 'current-password'}
+              autoComplete={needsBootstrap || showRegister ? 'new-password' : 'current-password'}
               required
-              minLength={needsBootstrap ? 12 : 1}
+              minLength={needsBootstrap || showRegister ? 12 : 1}
             />
           </label>
-          {needsBootstrap && (
-            <p className="login-hint">Minimum 12 characters for the admin password.</p>
+          {(needsBootstrap || showRegister) && (
+            <label className="oai-field">
+              Confirm password
+              <input
+                className="oai-input"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                required
+                minLength={12}
+              />
+            </label>
+          )}
+          {(needsBootstrap || showRegister) && (
+            <p className="login-hint">Minimum 12 characters.</p>
           )}
           <button type="submit" className="oai-button oai-button-primary login-submit">
-            {needsBootstrap ? 'Create admin & continue' : 'Sign in'}
+            {needsBootstrap ? 'Create admin & continue' : showRegister ? 'Create account' : 'Sign in'}
           </button>
         </form>
+        {!needsBootstrap && registrationEnabled && (
+          <p className="login-hint" style={{ marginTop: 16 }}>
+            {showRegister ? (
+              <button type="button" className="oai-button oai-button-secondary" onClick={() => setShowRegister(false)}>
+                Back to sign in
+              </button>
+            ) : (
+              <button type="button" className="oai-button oai-button-secondary" onClick={() => setShowRegister(true)}>
+                Create account
+              </button>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );

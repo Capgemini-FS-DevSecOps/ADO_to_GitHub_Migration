@@ -35,10 +35,27 @@ def _user_from_row(row: dict) -> PlatformUser:
 def permissions_for(role: PlatformRole) -> dict[str, bool]:
     return {
         "can_coordinate": role in (PlatformRole.ADMIN, PlatformRole.COORDINATOR),
-        "can_operate": role in (PlatformRole.ADMIN, PlatformRole.COORDINATOR, PlatformRole.OPERATOR),
+        "can_operate": role in (
+            PlatformRole.ADMIN, PlatformRole.COORDINATOR, PlatformRole.OPERATOR,
+        ),
         "can_approve": role in (PlatformRole.ADMIN, PlatformRole.APPROVER),
+        "can_approve_live_execution": role in (PlatformRole.ADMIN, PlatformRole.APPROVER),
         "can_manage_users": role == PlatformRole.ADMIN,
+        "can_manage_settings": role == PlatformRole.ADMIN,
+        "can_manage_models": role == PlatformRole.ADMIN,
     }
+
+
+def _audit_auth(event_type: str, actor: str, payload: dict | None = None) -> None:
+    from ado2gh.api.profile_governance import write_profile_audit
+
+    write_profile_audit(
+        event_type,
+        profile_id="_platform",
+        actor=actor,
+        payload=payload or {},
+        db_path=os.environ.get("ADO2GH_SQLITE_PATH", "migration_state.db"),
+    )
 
 
 class AuthService:
@@ -67,6 +84,41 @@ class AuthService:
             created_at=now,
         )
         user = PlatformUser(user_id, username.strip().lower(), PlatformRole.ADMIN, display_name or username)
+        session = self._create_session(user)
+        _audit_auth("user.bootstrap", user.username, {"role": user.role.value})
+        return session
+
+    def register_operator(
+        self, username: str, password: str, display_name: str = "",
+    ) -> AuthSession:
+        if self.needs_bootstrap():
+            raise PermissionError("Registration not allowed before bootstrap")
+        validate_password_strength(password)
+        normalized = username.strip().lower()
+        if self.db.get_platform_user_by_username(normalized):
+            raise ValueError("Registration failed")
+        user_id = f"usr_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc).isoformat()
+        self.db.create_platform_user(
+            user_id=user_id,
+            username=normalized,
+            password_hash=hash_password(password),
+            role=PlatformRole.OPERATOR.value,
+            display_name=display_name or username,
+            created_at=now,
+        )
+        from ado2gh.api.profile_governance import write_profile_audit
+
+        write_profile_audit(
+            "user.registered",
+            profile_id="_platform",
+            actor=normalized,
+            payload={"role": PlatformRole.OPERATOR.value},
+            db_path=os.environ.get("ADO2GH_SQLITE_PATH", "migration_state.db"),
+        )
+        user = PlatformUser(
+            user_id, normalized, PlatformRole.OPERATOR, display_name or username,
+        )
         return self._create_session(user)
 
     def login(self, username: str, password: str) -> AuthSession:
@@ -74,10 +126,54 @@ class AuthService:
         if not row or not verify_password(password, row["password_hash"]):
             raise ValueError("Invalid credentials")
         user = _user_from_row(row)
-        return self._create_session(user)
+        session = self._create_session(user)
+        _audit_auth("user.login", user.username, {"role": user.role.value})
+        return session
 
     def logout(self, token: str) -> None:
+        session = self.get_session(token)
+        if session:
+            _audit_auth("user.logout", session.user.username)
         self.db.delete_auth_session(token)
+
+    def list_users(self) -> list[dict]:
+        return self.db.list_platform_users()
+
+    def create_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        display_name: str = "",
+        actor: str = "admin",
+    ) -> PlatformUser:
+        if role == PlatformRole.ADMIN.value:
+            raise ValueError("Cannot create admin via API")
+        try:
+            platform_role = PlatformRole(role)
+        except ValueError:
+            raise ValueError("Invalid role")
+        validate_password_strength(password)
+        normalized = username.strip().lower()
+        if self.db.get_platform_user_by_username(normalized):
+            raise ValueError("User already exists")
+        user_id = f"usr_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc).isoformat()
+        self.db.create_platform_user(
+            user_id=user_id,
+            username=normalized,
+            password_hash=hash_password(password),
+            role=platform_role.value,
+            display_name=display_name or username,
+            created_at=now,
+        )
+        user = PlatformUser(user_id, normalized, platform_role, display_name or username)
+        _audit_auth(
+            "user.created",
+            actor,
+            {"username": normalized, "role": platform_role.value},
+        )
+        return user
 
     def get_session(self, token: str) -> Optional[AuthSession]:
         row = self.db.get_auth_session(token)

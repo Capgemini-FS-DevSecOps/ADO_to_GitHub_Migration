@@ -1,0 +1,46 @@
+{
+  "openai": [
+    {
+      "id": "gpt-4o",
+      "display_name": "GPT-4o",
+      "description": "Flagship multimodal model"
+    },
+    {
+      "id": "gpt-4o-mini",
+      "display_name": "GPT-4o Mini",
+      "description": "Fast, cost-effective"
+    },
+    {
+      "id": "gpt-4-turbo",
+      "display_name": "GPT-4 Turbo",
+      "description": "High capability with vision"
+    },
+    {
+      "id": "o1-mini",
+      "display_name": "o1 Mini",
+      "description": "Reasoning model (mini)"
+    }
+  ],
+  "anthropic": [
+    {
+      "id": "claude-3-5-sonnet-20241022",
+      "display_name": "Claude 3.5 Sonnet",
+      "description": "Balanced intelligence and speed"
+    },
+    {
+      "id": "claude-3-5-haiku-20241022",
+      "display_name": "Claude 3.5 Haiku",
+      "description": "Fast and economical"
+    },
+    {
+      "id": "claude-3-opus-20240229",
+      "display_name": "Claude 3 Opus",
+      "description": "Highest capability Claude 3"
+    },
+    {
+      "id": "claude-sonnet-4-20250514",
+      "display_name": "Claude Sonnet 4",
+      "description": "Latest Sonnet generation"
+    }
+  ]
+}

@@ -55,3 +55,20 @@ def test_postgres_schema_includes_agentic_tables():
     assert "migration_assignments" in PostgresStateDB.SCHEMA
     assert "audit_events" in PostgresStateDB.SCHEMA
     assert "remediation_loops" in PostgresStateDB.SCHEMA
+
+
+def test_postgres_state_db_has_audit_methods():
+    """Postgres backend must mirror SQLite audit API (login/profile flows depend on it)."""
+    from ado2gh.state.postgres_db import PostgresStateDB
+    assert callable(getattr(PostgresStateDB, "insert_audit_event", None))
+    assert callable(getattr(PostgresStateDB, "list_audit_events", None))
+
+
+def test_postgres_state_db_has_profile_scan_methods():
+    """Discovery phase assignments require profile_scan persistence on Postgres."""
+    from ado2gh.state.postgres_db import PostgresStateDB
+    assert "profile_scans" in PostgresStateDB.SCHEMA
+    assert "profile_scan_repos" in PostgresStateDB.SCHEMA
+    assert callable(getattr(PostgresStateDB, "update_profile_repo_phases", None))
+    assert callable(getattr(PostgresStateDB, "save_profile_scan", None))
+    assert callable(getattr(PostgresStateDB, "build_profile_scan_payload", None))

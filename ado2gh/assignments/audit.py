@@ -15,6 +15,9 @@ _SECRET_PATTERNS = [
 ]
 
 
+_SECRET_KEY_NAMES = frozenset({"token", "password", "secret", "pat", "api_key"})
+
+
 def redact_payload(payload: Any) -> Any:
     """Recursively redact likely secrets from audit payloads."""
     if payload is None:
@@ -25,7 +28,13 @@ def redact_payload(payload: Any) -> Any:
             out = pat.sub(lambda m: m.group(0)[:4] + "***", out)
         return out
     if isinstance(payload, dict):
-        return {k: redact_payload(v) for k, v in payload.items()}
+        redacted: dict[Any, Any] = {}
+        for k, v in payload.items():
+            if isinstance(k, str) and k.lower() in _SECRET_KEY_NAMES and isinstance(v, str):
+                redacted[k] = v[:4] + "***" if len(v) > 4 else "***"
+            else:
+                redacted[k] = redact_payload(v)
+        return redacted
     if isinstance(payload, list):
         return [redact_payload(x) for x in payload]
     return payload

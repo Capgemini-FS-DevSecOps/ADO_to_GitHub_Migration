@@ -58,6 +58,10 @@ class MigrationProfile:
     ado_pat: str = ""
     gh_org: str = ""
     github_tokens: list[GitHubToken] = field(default_factory=list)
+    status: str = "active"
+    is_default: bool = False
+    submitted_by: str = ""
+    approval: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
     last_scan_at: str = ""
@@ -71,6 +75,10 @@ class MigrationProfile:
             "ado_pat": "***" if self.ado_pat else "",
             "gh_org": self.gh_org,
             "github_tokens": [t.to_public() for t in self.github_tokens],
+            "status": self.status,
+            "is_default": self.is_default,
+            "submitted_by": self.submitted_by,
+            "approval": self.approval,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_scan_at": self.last_scan_at,
@@ -128,7 +136,34 @@ class SettingsStore:
         sqlite_env = os.environ.get("ADO2GH_SQLITE_PATH")
         if sqlite_env:
             settings.advanced.db_path = sqlite_env
+        self._normalize_defaults(settings)
         return settings
+
+    def _normalize_defaults(self, settings: UISettings) -> None:
+        """Ensure active_profile_id points to an active profile; pick default when unset."""
+        active_profiles = [
+            p for p in settings.migration_profiles
+            if p.status == "active"
+        ]
+        if not active_profiles:
+            settings.active_profile_id = None
+            return
+        if settings.active_profile_id:
+            current = next(
+                (p for p in active_profiles if p.id == settings.active_profile_id),
+                None,
+            )
+            if not current:
+                settings.active_profile_id = active_profiles[0].id
+        else:
+            default = next((p for p in active_profiles if p.is_default), None)
+            settings.active_profile_id = (default or active_profiles[0]).id
+        if not any(p.is_default for p in active_profiles):
+            target = next(
+                (p for p in active_profiles if p.id == settings.active_profile_id),
+                active_profiles[0],
+            )
+            target.is_default = True
 
     def _load_v2(self, data: dict[str, Any], secrets: dict[str, Any]) -> UISettings:
         profile_secrets = secrets.get("profiles", secrets)
@@ -158,6 +193,10 @@ class SettingsStore:
                 ado_pat=sec.get("ado_pat", ""),
                 gh_org=raw.get("gh_org", ""),
                 github_tokens=tokens,
+                status=raw.get("status", "active"),
+                is_default=bool(raw.get("is_default", False)),
+                submitted_by=raw.get("submitted_by", ""),
+                approval=raw.get("approval") or {},
                 created_at=raw.get("created_at", ""),
                 updated_at=raw.get("updated_at", ""),
                 last_scan_at=raw.get("last_scan_at", ""),
@@ -165,13 +204,13 @@ class SettingsStore:
             ))
 
         adv = data.get("advanced", {})
-        return UISettings(
+        settings = UISettings(
             active_profile_id=data.get("active_profile_id"),
             migration_profiles=profiles,
             advanced=AdvancedSettings(**{**asdict(AdvancedSettings()), **adv}),
         )
-
-    def _migrate_v1(self, data: dict[str, Any], secrets: dict[str, Any]) -> UISettings:
+        self._normalize_defaults(settings)
+        return settings
         """Upgrade legacy flat profiles + global tokens."""
         token_secrets = secrets.get("_tokens", {})
         global_tokens: list[GitHubToken] = []
@@ -249,11 +288,31 @@ class SettingsStore:
     def get_profile(self, profile_id: str) -> Optional[MigrationProfile]:
         return next((p for p in self.load().migration_profiles if p.id == profile_id), None)
 
+        adv = data.get("advanced", {})
+        settings = UISettings(
+            active_profile_id=data.get("active_profile_id"),
+            migration_profiles=profiles,
+            advanced=AdvancedSettings(**{**asdict(AdvancedSettings()), **adv}),
+        )
+        self._normalize_defaults(settings)
+        return settings
+
+    def get_active_profiles(self) -> list[MigrationProfile]:
+        return [p for p in self.load().migration_profiles if p.status == "active"]
+
+    def get_default_profile(self) -> Optional[MigrationProfile]:
+        from ado2gh.api.profile_governance import get_default_profile
+
+        return get_default_profile(self.load().migration_profiles)
+
     def get_active_profile(self) -> Optional[MigrationProfile]:
         s = self.load()
         if not s.active_profile_id:
-            return s.migration_profiles[0] if s.migration_profiles else None
-        return next((p for p in s.migration_profiles if p.id == s.active_profile_id), None)
+            return self.get_default_profile()
+        prof = next((p for p in s.migration_profiles if p.id == s.active_profile_id), None)
+        if prof and prof.status == "active":
+            return prof
+        return self.get_default_profile()
 
     def apply_to_process_env(self, profile: MigrationProfile | None = None) -> None:
         p = profile or self.get_active_profile()
@@ -276,8 +335,16 @@ class SettingsStore:
             env_key = "GH_TOKEN" if i == 0 else f"GH_TOKEN_{i + 1}"
             os.environ[env_key] = tok.token
 
-    def setup_profile(self, data: dict[str, Any]) -> MigrationProfile:
+    def setup_profile(
+        self,
+        data: dict[str, Any],
+        *,
+        role: str = "admin",
+        submitted_by: str = "",
+    ) -> MigrationProfile:
         """Atomically create profile with source, target, and initial GitHub token."""
+        from ado2gh.auth.models import PlatformRole
+
         settings = self.load()
         now = datetime.now(timezone.utc).isoformat()
         tok = GitHubToken(
@@ -287,6 +354,12 @@ class SettingsStore:
             created_at=now,
             updated_at=now,
         )
+        active_count = len([p for p in settings.migration_profiles if p.status == "active"])
+        is_admin = role == PlatformRole.ADMIN.value
+        status = "active" if is_admin else "pending_approval"
+        if not is_admin and active_count == 0:
+            raise ValueError("operator_submit_blocked")
+
         prof = MigrationProfile(
             id=str(uuid.uuid4()),
             name=data["name"],
@@ -294,12 +367,19 @@ class SettingsStore:
             ado_pat=data.get("ado_pat", ""),
             gh_org=data.get("gh_org", ""),
             github_tokens=[tok] if tok.token else [],
+            status=status,
+            is_default=is_admin and active_count == 0,
+            submitted_by=submitted_by if not is_admin else "",
+            approval={},
             created_at=now,
             updated_at=now,
         )
         settings.migration_profiles.append(prof)
-        if not settings.active_profile_id:
-            settings.active_profile_id = prof.id
+        if is_admin:
+            if not settings.active_profile_id or active_count == 0:
+                settings.active_profile_id = prof.id
+            if active_count == 0:
+                prof.is_default = True
         self.save(settings)
         return prof
 
@@ -357,14 +437,140 @@ class SettingsStore:
         self.save(settings)
         return prof
 
-    def delete_profile(self, profile_id: str) -> None:
+    def delete_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> None:
+        from ado2gh.api.profile_governance import assert_can_delete, ProfileGovernanceError
+
         settings = self.load()
+        try:
+            assert_can_delete(settings.migration_profiles, profile_id, new_default_profile_id)
+        except ProfileGovernanceError as exc:
+            raise ValueError(exc.code) from exc
+
+        target = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if target and target.is_default and new_default_profile_id:
+            replacement = next(
+                (p for p in settings.migration_profiles if p.id == new_default_profile_id),
+                None,
+            )
+            if replacement:
+                replacement.is_default = True
+                target.is_default = False
+
         settings.migration_profiles = [p for p in settings.migration_profiles if p.id != profile_id]
         if settings.active_profile_id == profile_id:
-            settings.active_profile_id = (
-                settings.migration_profiles[0].id if settings.migration_profiles else None
-            )
+            active = [p for p in settings.migration_profiles if p.status == "active"]
+            settings.active_profile_id = active[0].id if active else None
+        self._normalize_defaults(settings)
         self.save(settings)
+
+    def deactivate_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> MigrationProfile:
+        from ado2gh.api.profile_governance import assert_can_delete, ProfileGovernanceError
+
+        settings = self.load()
+        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if not prof:
+            raise KeyError(profile_id)
+        if prof.status != "active":
+            return prof
+        try:
+            assert_can_delete(settings.migration_profiles, profile_id, new_default_profile_id)
+        except ProfileGovernanceError as exc:
+            raise ValueError(exc.code) from exc
+
+        if prof.is_default and new_default_profile_id:
+            replacement = next(
+                (p for p in settings.migration_profiles if p.id == new_default_profile_id),
+                None,
+            )
+            if replacement:
+                replacement.is_default = True
+                prof.is_default = False
+
+        prof.status = "inactive"
+        prof.updated_at = datetime.now(timezone.utc).isoformat()
+        self._normalize_defaults(settings)
+        self.save(settings)
+        return prof
+
+    def set_default_profile(self, profile_id: str) -> MigrationProfile:
+        settings = self.load()
+        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if not prof:
+            raise KeyError(profile_id)
+        if prof.status != "active":
+            raise ValueError("profile_not_active")
+        for p in settings.migration_profiles:
+            p.is_default = p.id == profile_id
+        prof.updated_at = datetime.now(timezone.utc).isoformat()
+        settings.active_profile_id = profile_id
+        self.save(settings)
+        return prof
+
+    def approve_profile(self, profile_id: str) -> MigrationProfile:
+        settings = self.load()
+        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if not prof:
+            raise KeyError(profile_id)
+        if prof.status != "pending_approval":
+            raise ValueError("not_pending")
+        now = datetime.now(timezone.utc).isoformat()
+        active_before = len([p for p in settings.migration_profiles if p.status == "active"])
+        prof.status = "active"
+        prof.updated_at = now
+        prof.approval = {
+            **prof.approval,
+            "approved_at": now,
+            "denied_at": None,
+            "denial_reason": None,
+        }
+        if active_before == 0:
+            prof.is_default = True
+            settings.active_profile_id = prof.id
+        self._normalize_defaults(settings)
+        self.save(settings)
+        return prof
+
+    def deny_profile(self, profile_id: str, reason: str = "") -> MigrationProfile:
+        settings = self.load()
+        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if not prof:
+            raise KeyError(profile_id)
+        if prof.status != "pending_approval":
+            raise ValueError("not_pending")
+        now = datetime.now(timezone.utc).isoformat()
+        prof.status = "denied"
+        prof.updated_at = now
+        prof.approval = {
+            **prof.approval,
+            "denied_at": now,
+            "denial_reason": reason,
+            "approved_at": None,
+        }
+        if prof.is_default:
+            prof.is_default = False
+        self._normalize_defaults(settings)
+        self.save(settings)
+        return prof
+
+    def appeal_profile(self, profile_id: str, actor: str) -> MigrationProfile:
+        settings = self.load()
+        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if not prof:
+            raise KeyError(profile_id)
+        if prof.status != "denied":
+            raise ValueError("not_denied")
+        if prof.submitted_by and prof.submitted_by != actor:
+            raise PermissionError("not_submitter")
+        now = datetime.now(timezone.utc).isoformat()
+        prof.status = "pending_approval"
+        prof.updated_at = now
+        prof.approval = {
+            **prof.approval,
+            "appealed_at": now,
+            "appeal_count": int(prof.approval.get("appeal_count", 0)) + 1,
+        }
+        self.save(settings)
+        return prof
 
     def upsert_github_token(
         self, profile_id: str, data: dict[str, Any], token_id: str | None = None,
@@ -567,7 +773,10 @@ class SettingsStore:
 
     def set_active(self, profile_id: str) -> None:
         settings = self.load()
-        if not any(p.id == profile_id for p in settings.migration_profiles):
+        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
+        if not prof:
             raise KeyError(profile_id)
+        if prof.status != "active":
+            raise ValueError("profile_not_active")
         settings.active_profile_id = profile_id
         self.save(settings)

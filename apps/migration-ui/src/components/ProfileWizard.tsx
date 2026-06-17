@@ -22,7 +22,9 @@ const STEPS = [
   { id: 'scan', label: 'Scan & Create', icon: SearchIcon },
 ];
 
-export function ProfileWizard() {
+type ProfileWizardMode = 'onboarding' | 'settings-admin' | 'settings-operator';
+
+export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizardMode }) {
   const router = useRouter();
   const qc = useQueryClient();
   const [step, setStep] = useState(0);
@@ -45,13 +47,19 @@ export function ProfileWizard() {
     mutationFn: () => setupMigrationProfile(form),
     onSuccess: async (p) => {
       try {
-        await scanMigrationProfile(p.id);
+        if (p.status === 'active') {
+          await scanMigrationProfile(p.id);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Profile created but scan failed — re-run from Discovery');
       }
       qc.invalidateQueries({ queryKey: ['settings'] });
       qc.invalidateQueries({ queryKey: ['discovery', p.id] });
-      router.push(`/settings/profiles/${p.id}/tokens`);
+      if (mode === 'onboarding' || p.status === 'active') {
+        router.push(mode === 'onboarding' ? '/' : `/settings/profiles/${p.id}/tokens`);
+      } else {
+        router.push('/settings/profiles');
+      }
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'Failed to create profile'),
   });
@@ -131,10 +139,14 @@ export function ProfileWizard() {
   return (
     <div className="wizard-container">
       <div className="wizard-header">
-        <h2 className="oai-subsection-title">New migration profile</h2>
-        <Link href="/settings/profiles" className="oai-button oai-button-secondary">
-          Cancel
-        </Link>
+        <h2 className="oai-subsection-title">
+          {mode === 'onboarding' ? 'First deployment profile' : 'New migration profile'}
+        </h2>
+        {mode !== 'onboarding' && (
+          <Link href="/settings/profiles" className="oai-button oai-button-secondary">
+            Cancel
+          </Link>
+        )}
       </div>
 
       <div className="wizard-step-indicators">
@@ -244,7 +256,9 @@ export function ProfileWizard() {
               <SearchIcon size={22} color="#35b8ff" /> Scan &amp; create profile
             </h3>
             <p className="form-hint">
-              Review migration recommendations, then create the profile in one step.
+              {mode === 'settings-operator'
+                ? 'Your profile will be submitted for admin approval before it can be used for migrations.'
+                : 'Review migration recommendations, then create the profile in one step.'}
             </p>
             <div className="wizard-review-summary">
               <p><strong>{form.name}</strong></p>
@@ -312,7 +326,11 @@ export function ProfileWizard() {
               disabled={setupMut.isPending || !adoValidation?.valid || !ghValidation?.valid}
               onClick={() => setupMut.mutate()}
             >
-              {setupMut.isPending ? 'Creating…' : 'Create profile'}
+              {setupMut.isPending
+                ? 'Creating…'
+                : mode === 'settings-operator'
+                  ? 'Submit for approval'
+                  : 'Create profile'}
             </button>
           </>
         )}

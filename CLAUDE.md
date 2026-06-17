@@ -131,6 +131,7 @@ ado2gh
 ## Execution Workflow
 
 ```
+0. bootstrap admin → profile onboarding (`/onboarding/profile`) → operator Create account on login (optional)
 1. discover           → discovered_repos.yaml
 2. pipelines inventory → populate StateDB pipeline_inventory
 3. pipeline-readiness  → assess conversion effort

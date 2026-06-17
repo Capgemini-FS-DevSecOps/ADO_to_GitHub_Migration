@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from ado2gh.auth.models import PlatformRole
 from ado2gh.auth.service import (
     AuthService,
     SESSION_COOKIE,
@@ -24,6 +25,29 @@ class BootstrapBody(BaseModel):
 class LoginBody(BaseModel):
     username: str
     password: str
+
+
+class RegisterBody(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=12)
+    display_name: str = ""
+
+
+class CreateUserBody(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=12)
+    role: str = Field(pattern="^(coordinator|operator|approver)$")
+    display_name: str = ""
+
+
+def _onboarding_redirect() -> str | None:
+    from ado2gh.api.settings_store import SettingsStore
+    from ado2gh.api.profile_governance import needs_profile_setup
+
+    profiles = SettingsStore().load().migration_profiles
+    if needs_profile_setup(profiles):
+        return "/onboarding/profile"
+    return None
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -56,6 +80,7 @@ def bootstrap_status():
     return {
         "needs_bootstrap": needs,
         "auth_enabled": auth_enabled(),
+        "registration_enabled": not needs,
         "message": "Create the first admin account to continue" if needs else "Sign in to continue",
     }
 
@@ -69,9 +94,28 @@ def bootstrap(body: BootstrapBody, response: Response):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _set_session_cookie(response, session.token)
+    redirect = _onboarding_redirect()
     return {
         "user": _user_payload(session.user),
         "session_expires_at": session.expires_at,
+        "redirect_path": redirect,
+    }
+
+
+@router.post("/register", status_code=201)
+def register(body: RegisterBody, response: Response):
+    try:
+        session = _svc.register_operator(body.username, body.password, body.display_name)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Registration failed")
+    _set_session_cookie(response, session.token)
+    redirect = _onboarding_redirect()
+    return {
+        "user": _user_payload(session.user),
+        "session_expires_at": session.expires_at,
+        "redirect_path": redirect,
     }
 
 
@@ -82,10 +126,44 @@ def login(body: LoginBody, response: Response):
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     _set_session_cookie(response, session.token)
+    redirect = _onboarding_redirect()
+    if session.user.role.value == "admin" and redirect:
+        pass
+    elif session.user.role.value != "admin":
+        redirect = None
     return {
         "user": _user_payload(session.user),
         "session_expires_at": session.expires_at,
+        "redirect_path": redirect,
     }
+
+
+@router.get("/users")
+def list_users(request: Request):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    session = _svc.get_session(token) if token else None
+    if not session or session.user.role != PlatformRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return {"users": _svc.list_users()}
+
+
+@router.post("/users", status_code=201)
+def create_user(body: CreateUserBody, request: Request):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    session = _svc.get_session(token) if token else None
+    if not session or session.user.role != PlatformRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    try:
+        user = _svc.create_user(
+            body.username,
+            body.password,
+            body.role,
+            body.display_name,
+            actor=session.user.username,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"user": _user_payload(user)}
 
 
 @router.post("/logout")

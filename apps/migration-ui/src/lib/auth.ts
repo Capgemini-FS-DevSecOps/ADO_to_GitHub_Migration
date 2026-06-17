@@ -7,16 +7,27 @@ export type AuthUser = {
   display_name: string;
 };
 
+export type PlatformPermissions = {
+  can_coordinate?: boolean;
+  can_operate?: boolean;
+  can_approve?: boolean;
+  can_approve_live_execution?: boolean;
+  can_manage_users?: boolean;
+  can_manage_settings?: boolean;
+  can_manage_models?: boolean;
+};
+
 export type AuthSession = {
   authenticated: boolean;
   user: AuthUser;
   expires_at: string;
-  permissions: Record<string, boolean>;
+  permissions: PlatformPermissions;
 };
 
 export type BootstrapStatus = {
   needs_bootstrap: boolean;
   auth_enabled: boolean;
+  registration_enabled?: boolean;
   message: string;
 };
 
@@ -49,6 +60,24 @@ export async function bootstrapAdmin(body: {
   if (!r.ok) {
     const t = await r.text();
     throw new Error(t || 'Bootstrap failed');
+  }
+  return r.json();
+}
+
+export async function register(body: {
+  username: string;
+  password: string;
+  display_name: string;
+}) {
+  const r = await fetch(`${ACCEL}/v1/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    ...creds,
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t || 'Registration failed');
   }
   return r.json();
 }

@@ -18,6 +18,12 @@ services:
       dockerfile: services/accelerator_api/Dockerfile
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     environment:
       ADO2GH_STORAGE_BACKEND: sqlite
       ADO2GH_SQLITE_PATH: /app/data/migration_state.db
@@ -80,8 +86,10 @@ services:
       NEXT_PUBLIC_AGENT_URL: http://localhost:8090
       NEXT_PUBLIC_REQUIRE_AUTH: "false"
     depends_on:
-      - accelerator
-      - agent
+      accelerator:
+        condition: service_healthy
+      agent:
+        condition: service_started
 
 volumes:
   ado2gh-data:

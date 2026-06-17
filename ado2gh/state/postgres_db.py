@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Iterator, Optional
+from typing import Any, Iterator, Optional
 
 from ado2gh.models import MigrationStatus, PipelineMetadata
 
@@ -107,6 +107,33 @@ class PostgresStateDB:
         completed_at TEXT,
         UNIQUE(phase, batch_num)
     );
+    CREATE TABLE IF NOT EXISTS profile_scans (
+        id SERIAL PRIMARY KEY,
+        profile_id TEXT NOT NULL UNIQUE,
+        scanned_at TEXT NOT NULL,
+        gh_org TEXT NOT NULL DEFAULT '',
+        projects_scanned INTEGER NOT NULL DEFAULT 0,
+        repos_scanned INTEGER NOT NULL DEFAULT 0,
+        summary_json TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE TABLE IF NOT EXISTS profile_scan_repos (
+        id SERIAL PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        project TEXT NOT NULL,
+        repo_name TEXT NOT NULL,
+        total_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+        suggested_phase TEXT,
+        assigned_phase TEXT,
+        gh_org TEXT NOT NULL DEFAULT '',
+        gh_repo TEXT NOT NULL DEFAULT '',
+        pipeline_count INTEGER NOT NULL DEFAULT 0,
+        repo_json TEXT NOT NULL DEFAULT '{}',
+        UNIQUE(profile_id, project, repo_name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_profile_scan_repos_profile
+        ON profile_scan_repos(profile_id);
+    CREATE INDEX IF NOT EXISTS idx_profile_scan_repos_phase
+        ON profile_scan_repos(profile_id, assigned_phase);
     CREATE TABLE IF NOT EXISTS migration_assignments (
         id TEXT PRIMARY KEY,
         profile_id TEXT NOT NULL,
@@ -169,6 +196,25 @@ class PostgresStateDB:
         expires_at TEXT NOT NULL,
         created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS live_execution_approvals (
+        id TEXT PRIMARY KEY,
+        requester_user_id TEXT NOT NULL,
+        requester_username TEXT NOT NULL,
+        scope_type TEXT NOT NULL,
+        scope_id TEXT NOT NULL,
+        assignment_id TEXT,
+        profile_id TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        reason_request TEXT,
+        approver_user_id TEXT,
+        approver_username TEXT,
+        reason_decision TEXT,
+        context_json TEXT,
+        requested_at TEXT NOT NULL,
+        decided_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_live_approval_scope
+        ON live_execution_approvals(scope_type, scope_id, status);
     """
 
     def __init__(self, dsn: str):
@@ -260,7 +306,7 @@ class PostgresStateDB:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("""
                     SELECT ado_repo, status FROM migrations
-                    GROUP BY ado_project, ado_repo, scope
+                    GROUP BY ado_project, ado_repo, scope, status
                 """)
                 rows = cur.fetchall()
                 seen_done: set[str] = set()
@@ -537,6 +583,210 @@ class PostgresStateDB:
                 cur.execute("SELECT COUNT(*) FROM repo_risk_scores")
                 return cur.fetchone()[0]
 
+    def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
+        counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM repo_risk_scores WHERE assigned_phase=%s",
+                    (phase_id,),
+                )
+                counts["risk_scores"] = cur.fetchone()[0]
+                if profile_id:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM profile_scan_repos "
+                        "WHERE profile_id=%s AND assigned_phase=%s",
+                        (profile_id, phase_id),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM profile_scan_repos WHERE assigned_phase=%s",
+                        (phase_id,),
+                    )
+                counts["profile_scan"] = cur.fetchone()[0]
+        return counts
+
+    def reassign_phase_repos(
+        self,
+        from_phase: str,
+        to_phase: str,
+        profile_id: str | None = None,
+    ) -> dict[str, int]:
+        updated = {"risk_scores": 0, "profile_scan": 0}
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE repo_risk_scores SET assigned_phase=%s WHERE assigned_phase=%s",
+                    (to_phase, from_phase),
+                )
+                updated["risk_scores"] = cur.rowcount
+                if profile_id:
+                    cur.execute(
+                        "UPDATE profile_scan_repos SET assigned_phase=%s "
+                        "WHERE profile_id=%s AND assigned_phase=%s",
+                        (to_phase, profile_id, from_phase),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE profile_scan_repos SET assigned_phase=%s WHERE assigned_phase=%s",
+                        (to_phase, from_phase),
+                    )
+                updated["profile_scan"] = cur.rowcount
+        return updated
+
+    def scan_repo_scores(self, profile_id: str | None = None) -> list[float]:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                if profile_id:
+                    cur.execute(
+                        "SELECT total_score FROM profile_scan_repos WHERE profile_id=%s",
+                        (profile_id,),
+                    )
+                else:
+                    cur.execute("SELECT total_score FROM profile_scan_repos")
+                rows = cur.fetchall()
+                if rows:
+                    return [float(r[0]) for r in rows]
+                cur.execute("SELECT total_score FROM repo_risk_scores")
+                rows = cur.fetchall()
+        return [float(r[0]) for r in rows]
+
+    # ── Profile scan (discovery per migration profile) ───────────────────────
+
+    def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
+        gh_org = raw.get("gh_org", "")
+        summary = {
+            k: {kk: vv for kk, vv in v.items() if kk != "repos"}
+            for k, v in raw.get("recommendations", {}).items()
+        }
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM profile_scan_repos WHERE profile_id=%s",
+                    (profile_id,),
+                )
+                cur.execute("""
+                    INSERT INTO profile_scans
+                        (profile_id, scanned_at, gh_org, projects_scanned, repos_scanned, summary_json)
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT(profile_id) DO UPDATE SET
+                        scanned_at=EXCLUDED.scanned_at,
+                        gh_org=EXCLUDED.gh_org,
+                        projects_scanned=EXCLUDED.projects_scanned,
+                        repos_scanned=EXCLUDED.repos_scanned,
+                        summary_json=EXCLUDED.summary_json
+                """, (
+                    profile_id, now, gh_org,
+                    raw.get("projects_scanned", 0),
+                    raw.get("repos_scanned", 0),
+                    json.dumps(summary),
+                ))
+                for phase_key, bucket in raw.get("recommendations", {}).items():
+                    for repo in bucket.get("repos", []):
+                        suggested = repo.get("assigned_phase") or phase_key
+                        cur.execute("""
+                            INSERT INTO profile_scan_repos
+                                (profile_id, project, repo_name, total_score, suggested_phase,
+                                 assigned_phase, gh_org, gh_repo, pipeline_count, repo_json)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        """, (
+                            profile_id,
+                            repo.get("project", ""),
+                            repo.get("repo_name", ""),
+                            repo.get("total_score", 0),
+                            suggested,
+                            suggested,
+                            repo.get("gh_org", gh_org),
+                            repo.get("gh_repo", repo.get("repo_name", "")),
+                            repo.get("pipeline_count", 0),
+                            json.dumps(repo),
+                        ))
+
+    def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM profile_scans WHERE profile_id=%s",
+                    (profile_id,),
+                )
+                row = cur.fetchone()
+        return dict(row) if row else None
+
+    def get_profile_scan_repos(
+        self, profile_id: str, phase: str | None = None,
+    ) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                if phase:
+                    cur.execute(
+                        "SELECT * FROM profile_scan_repos WHERE profile_id=%s AND assigned_phase=%s "
+                        "ORDER BY total_score, project, repo_name",
+                        (profile_id, phase),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM profile_scan_repos WHERE profile_id=%s "
+                        "ORDER BY assigned_phase, total_score, project, repo_name",
+                        (profile_id,),
+                    )
+                return [dict(r) for r in cur.fetchall()]
+
+    def update_profile_repo_phases(
+        self, profile_id: str, assignments: list[dict[str, str]],
+    ) -> int:
+        updated = 0
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                for item in assignments:
+                    cur.execute(
+                        "UPDATE profile_scan_repos SET assigned_phase=%s "
+                        "WHERE profile_id=%s AND project=%s AND repo_name=%s",
+                        (
+                            item["assigned_phase"],
+                            profile_id,
+                            item["project"],
+                            item["repo_name"],
+                        ),
+                    )
+                    updated += cur.rowcount
+        return updated
+
+    def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
+        meta = self.get_profile_scan_meta(profile_id)
+        if not meta:
+            return None
+        repos = self.get_profile_scan_repos(profile_id)
+        buckets: dict[str, dict] = {}
+        for r in repos:
+            phase = r.get("assigned_phase") or r.get("suggested_phase") or "unassigned"
+            if phase not in buckets:
+                buckets[phase] = {
+                    "phase": phase,
+                    "repo_count": 0,
+                    "risk_min": r["total_score"],
+                    "risk_max": r["total_score"],
+                    "rationale": f"User-assigned and recommended repos in {phase}",
+                    "repos": [],
+                }
+            b = buckets[phase]
+            b["repo_count"] += 1
+            b["risk_min"] = min(b["risk_min"], r["total_score"])
+            b["risk_max"] = max(b["risk_max"], r["total_score"])
+            repo_data = json.loads(r.get("repo_json") or "{}")
+            repo_data["assigned_phase"] = r.get("assigned_phase")
+            repo_data["suggested_phase"] = r.get("suggested_phase")
+            b["repos"].append(repo_data)
+        return {
+            "profile_id": profile_id,
+            "scanned_at": meta["scanned_at"],
+            "projects_scanned": meta["projects_scanned"],
+            "repos_scanned": meta["repos_scanned"],
+            "total_repos": meta["repos_scanned"],
+            "gh_org": meta["gh_org"],
+            "recommendations": buckets,
+        }
+
     def upsert_phase_gate(self, result):
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
@@ -617,6 +867,48 @@ class PostgresStateDB:
                 row = cur.fetchone()
                 return row[0] if row and row[0] is not None else -1
 
+    def insert_audit_event(
+        self,
+        event_id: str,
+        event_type: str,
+        profile_id: str,
+        actor: str,
+        assignment_id: str | None,
+        payload_json: str,
+        created_at: str,
+    ):
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO audit_events
+                    (id, event_type, profile_id, actor, assignment_id, payload_json, created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        event_id, event_type, profile_id, actor,
+                        assignment_id, payload_json, created_at,
+                    ),
+                )
+
+    def list_audit_events(
+        self, profile_id: str | None = None, limit: int = 100,
+    ) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                if profile_id:
+                    cur.execute(
+                        "SELECT * FROM audit_events WHERE profile_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
+                        (profile_id, limit),
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT %s",
+                        (limit,),
+                    )
+                return [dict(r) for r in cur.fetchall()]
+
     def count_platform_users(self) -> int:
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -652,6 +944,14 @@ class PostgresStateDB:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
+    def list_platform_users(self) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT id, username, role, display_name, created_at FROM platform_users ORDER BY username",
+                )
+                return [dict(r) for r in cur.fetchall()]
+
     def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -674,3 +974,134 @@ class PostgresStateDB:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM auth_sessions WHERE token=%s", (token,))
+
+    def create_live_execution_approval(
+        self,
+        approval_id: str,
+        requester_user_id: str,
+        requester_username: str,
+        scope_type: str,
+        scope_id: str,
+        requested_at: str,
+        assignment_id: str | None = None,
+        profile_id: str | None = None,
+        reason_request: str | None = None,
+        context_json: str | None = None,
+    ) -> dict:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO live_execution_approvals (
+                        id, requester_user_id, requester_username, scope_type, scope_id,
+                        assignment_id, profile_id, status, reason_request, context_json,
+                        requested_at
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        approval_id, requester_user_id, requester_username,
+                        scope_type, scope_id, assignment_id, profile_id,
+                        "pending", reason_request, context_json, requested_at,
+                    ),
+                )
+        return self.get_live_execution_approval(approval_id) or {}
+
+    def get_live_execution_approval(self, approval_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM live_execution_approvals WHERE id=%s",
+                    (approval_id,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def find_pending_live_execution_approval(
+        self, scope_type: str, scope_id: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM live_execution_approvals
+                    WHERE scope_type=%s AND scope_id=%s AND status='pending'
+                    ORDER BY requested_at DESC LIMIT 1
+                    """,
+                    (scope_type, scope_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def find_approved_live_execution_approval(
+        self, scope_type: str, scope_id: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM live_execution_approvals
+                    WHERE scope_type=%s AND scope_id=%s AND status='approved'
+                    ORDER BY decided_at DESC LIMIT 1
+                    """,
+                    (scope_type, scope_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def list_live_execution_approvals(
+        self, status: str | None = None, limit: int = 100,
+    ) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                if status and status != "all":
+                    cur.execute(
+                        """
+                        SELECT * FROM live_execution_approvals
+                        WHERE status=%s ORDER BY requested_at DESC LIMIT %s
+                        """,
+                        (status, limit),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT * FROM live_execution_approvals
+                        ORDER BY requested_at DESC LIMIT %s
+                        """,
+                        (limit,),
+                    )
+                rows = cur.fetchall()
+        return [dict(r) for r in rows]
+
+    def decide_live_execution_approval(
+        self,
+        approval_id: str,
+        status: str,
+        approver_user_id: str,
+        approver_username: str,
+        reason_decision: str,
+        decided_at: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT status FROM live_execution_approvals WHERE id=%s",
+                    (approval_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                if row["status"] != "pending":
+                    return self.get_live_execution_approval(approval_id)
+                cur.execute(
+                    """
+                    UPDATE live_execution_approvals
+                    SET status=%s, approver_user_id=%s, approver_username=%s,
+                        reason_decision=%s, decided_at=%s
+                    WHERE id=%s
+                    """,
+                    (
+                        status, approver_user_id, approver_username,
+                        reason_decision, decided_at, approval_id,
+                    ),
+                )
+        return self.get_live_execution_approval(approval_id)

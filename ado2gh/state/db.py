@@ -229,6 +229,27 @@ class StateDB:
         expires_at       TEXT NOT NULL,
         created_at       TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS live_execution_approvals (
+        id                   TEXT PRIMARY KEY,
+        requester_user_id    TEXT NOT NULL,
+        requester_username   TEXT NOT NULL,
+        scope_type           TEXT NOT NULL,
+        scope_id             TEXT NOT NULL,
+        assignment_id        TEXT,
+        profile_id           TEXT,
+        status               TEXT NOT NULL DEFAULT 'pending',
+        reason_request       TEXT,
+        approver_user_id     TEXT,
+        approver_username    TEXT,
+        reason_decision      TEXT,
+        context_json         TEXT,
+        requested_at         TEXT NOT NULL,
+        decided_at           TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_live_approval_scope
+        ON live_execution_approvals(scope_type, scope_id, status);
     """
 
     def __init__(self, db_path: str = "migration_state.db"):
@@ -310,7 +331,7 @@ class StateDB:
         with self._conn() as conn:
             rows = conn.execute("""
                 SELECT ado_repo, status FROM migrations
-                GROUP BY ado_project, ado_repo, scope
+                GROUP BY ado_project, ado_repo, scope, status
             """).fetchall()
             done = fail = 0
             seen_done: set[str] = set()
@@ -1073,6 +1094,13 @@ class StateDB:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_platform_users(self) -> list[dict]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT id, username, role, display_name, created_at FROM platform_users ORDER BY username",
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
         with self._conn() as conn:
             conn.execute(
@@ -1094,3 +1122,124 @@ class StateDB:
     def delete_auth_session(self, token: str):
         with self._conn() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE token=?", (token,))
+
+    def create_live_execution_approval(
+        self,
+        approval_id: str,
+        requester_user_id: str,
+        requester_username: str,
+        scope_type: str,
+        scope_id: str,
+        requested_at: str,
+        assignment_id: str | None = None,
+        profile_id: str | None = None,
+        reason_request: str | None = None,
+        context_json: str | None = None,
+    ) -> dict:
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO live_execution_approvals (
+                    id, requester_user_id, requester_username, scope_type, scope_id,
+                    assignment_id, profile_id, status, reason_request, context_json,
+                    requested_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                (
+                    approval_id, requester_user_id, requester_username,
+                    scope_type, scope_id, assignment_id, profile_id,
+                    "pending", reason_request, context_json, requested_at,
+                ),
+            )
+        return self.get_live_execution_approval(approval_id) or {}
+
+    def get_live_execution_approval(self, approval_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM live_execution_approvals WHERE id=?",
+                (approval_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def find_pending_live_execution_approval(
+        self, scope_type: str, scope_id: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM live_execution_approvals
+                WHERE scope_type=? AND scope_id=? AND status='pending'
+                ORDER BY requested_at DESC LIMIT 1
+                """,
+                (scope_type, scope_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def find_approved_live_execution_approval(
+        self, scope_type: str, scope_id: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM live_execution_approvals
+                WHERE scope_type=? AND scope_id=? AND status='approved'
+                ORDER BY decided_at DESC LIMIT 1
+                """,
+                (scope_type, scope_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_live_execution_approvals(
+        self, status: str | None = None, limit: int = 100,
+    ) -> list[dict]:
+        with self._conn() as conn:
+            if status and status != "all":
+                rows = conn.execute(
+                    """
+                    SELECT * FROM live_execution_approvals
+                    WHERE status=?
+                    ORDER BY requested_at DESC LIMIT ?
+                    """,
+                    (status, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT * FROM live_execution_approvals
+                    ORDER BY requested_at DESC LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def decide_live_execution_approval(
+        self,
+        approval_id: str,
+        status: str,
+        approver_user_id: str,
+        approver_username: str,
+        reason_decision: str,
+        decided_at: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT status FROM live_execution_approvals WHERE id=?",
+                (approval_id,),
+            ).fetchone()
+            if not row:
+                return None
+            if row["status"] != "pending":
+                return self.get_live_execution_approval(approval_id)
+            conn.execute(
+                """
+                UPDATE live_execution_approvals
+                SET status=?, approver_user_id=?, approver_username=?,
+                    reason_decision=?, decided_at=?
+                WHERE id=?
+                """,
+                (
+                    status, approver_user_id, approver_username,
+                    reason_decision, decided_at, approval_id,
+                ),
+            )
+        return self.get_live_execution_approval(approval_id)

@@ -32,5 +32,6 @@ def test_mcp_plan_tool_accepts_dry_run():
         timeout=15,
     )
     assert proc.returncode == 0
-    data = json.loads(proc.stdout.strip())
+    last_line = proc.stdout.strip().splitlines()[-1]
+    data = json.loads(last_line)
     assert "content" in data or "error" in data

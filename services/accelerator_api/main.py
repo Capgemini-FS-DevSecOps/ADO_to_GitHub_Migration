@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from ado2gh.api.accelerator import Accelerator
@@ -15,6 +15,9 @@ from ado2gh.api.contracts import (
     MigrationScanResponse,
     PhaseRecommendation,
     ProfileSetupRequest,
+    DeleteProfileRequest,
+    DenyProfileRequest,
+    OnboardingStatusResponse,
     DashboardSnapshot,
     DiscoveryResponse,
     DiscoveryRepoItem,
@@ -28,6 +31,10 @@ from ado2gh.api.contracts import (
     JobEnqueueRequest,
     JobStatusResponse,
     JobTypeEnum,
+    LiveApprovalCreateRequest,
+    LiveApprovalDecisionRequest,
+    LiveApprovalItem,
+    LiveApprovalListResponse,
     PipelineRunResponse,
     PipelineRunStartRequest,
     PipelineStepDefinition,
@@ -69,7 +76,29 @@ from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.infra.queue.redis_queue import RedisJobQueue
 from ado2gh.infra.state.job_store import JobStoreFactory
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
+from ado2gh.state.factory import create_state_db
+from ado2gh.api.profile_governance import (
+    assert_operator_can_submit,
+    assert_profile_active_for_run,
+    onboarding_status_payload,
+    ProfileGovernanceError,
+    write_profile_audit,
+)
+from ado2gh.auth.models import PlatformRole
 from ado2gh.api.agentic_routes import enforce_live_gate, router as agentic_router
+from ado2gh.api.live_approval_store import (
+    LiveApprovalStore,
+    migrate_scope_id,
+    register_migrate_executor,
+    register_pipeline_executor,
+)
+from ado2gh.api.platform_rbac import (
+    operator_requires_live_approval,
+    require_approve_live_execution,
+    require_manage_models,
+    require_manage_settings,
+    require_operate,
+)
 
 try:
     from services.accelerator_api.auth_routes import router as auth_router, SESSION_COOKIE
@@ -87,6 +116,7 @@ _AUTH_EXEMPT = {
     "/v1/auth/bootstrap-status",
     "/v1/auth/bootstrap",
     "/v1/auth/login",
+    "/v1/auth/register",
 }
 
 
@@ -123,6 +153,58 @@ def _accel(db_path: str = "migration_state.db") -> Accelerator:
 
 def _config_path() -> str:
     return os.environ.get("ADO2GH_CONFIG", "migration.yaml")
+
+
+def _platform_user(request: Request):
+    return getattr(request.state, "platform_user", None)
+
+
+def _require_admin(request: Request) -> None:
+    require_manage_settings(request)
+
+
+def _live_store() -> LiveApprovalStore:
+    return LiveApprovalStore()
+
+
+def _execute_approved_migrate(ctx: dict) -> None:
+    req = RunWaveRequest(**ctx)
+    _accel(req.db_path).run_wave(req)
+
+
+def _execute_approved_pipeline(ctx: dict) -> None:
+    run_id = ctx.get("run_id")
+    steps = ctx.get("steps")
+    if run_id:
+        run = PipelineRunStore.get(run_id)
+        if run:
+            run.status = "pending"
+        _runner.start_async(run_id, steps)
+
+
+def _onboarding_redirect() -> str | None:
+    from ado2gh.api.profile_governance import needs_profile_setup
+
+    profiles = _settings.load().migration_profiles
+    if needs_profile_setup(profiles):
+        return "/onboarding/profile"
+    return None
+
+
+def _governance_http_error(exc: ProfileGovernanceError) -> HTTPException:
+    code = exc.code
+    status = 409 if code in ("last_active_profile", "default_replacement_required") else 403
+    if code == "not_found":
+        status = 404
+    return HTTPException(status_code=status, detail=code)
+
+
+@app.get("/v1/onboarding/status", response_model=OnboardingStatusResponse)
+def onboarding_status(request: Request):
+    user = _platform_user(request)
+    role = user.role if user else PlatformRole.OPERATOR
+    profiles = _settings.load().migration_profiles
+    return OnboardingStatusResponse(**onboarding_status_payload(profiles, role))
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -178,7 +260,38 @@ def plan(req: PlanRequest):
 
 
 @app.post("/v1/migrate", response_model=list[RunWaveResponse])
-def migrate(req: RunWaveRequest):
+def migrate(req: RunWaveRequest, request: Request):
+    active = _settings.get_active_profile()
+    if active:
+        try:
+            assert_profile_active_for_run(active)
+        except ProfileGovernanceError as exc:
+            raise _governance_http_error(exc)
+    user = _platform_user(request)
+    profile_id = active.id if active else None
+    scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)
+    if operator_requires_live_approval(user, req.dry_run):
+        store = _live_store()
+        approved = False
+        if req.live_approval_id:
+            row = store.db.get_live_execution_approval(req.live_approval_id)
+            approved = bool(row and row.get("status") == "approved")
+        elif store.has_approved("migrate_job", scope_id):
+            approved = True
+        if not approved:
+            approval = store.create_or_get_pending(
+                user,
+                "migrate_job",
+                scope_id,
+                profile_id=profile_id,
+                assignment_id=req.assignment_id,
+                reason_request="Dashboard live migrate",
+                context=req.model_dump(exclude={"live_approval_id"}),
+            )
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "awaiting_approval", "approval_id": approval["id"]},
+            )
     if req.assignment_id:
         enforce_live_gate(req.assignment_id, req.dry_run, req.db_path)
     accel = _accel(req.db_path)
@@ -289,6 +402,208 @@ def job_status(job_id: str):
 
 _settings = SettingsStore()
 _runner = PipelineRunner(_settings)
+_llm_models = __import__("ado2gh.api.llm_model_store", fromlist=["LLMModelStore"]).LLMModelStore()
+_connectivity = __import__(
+    "ado2gh.api.connectivity_store", fromlist=["ConnectivityStore"]
+).ConnectivityStore()
+
+register_migrate_executor(_execute_approved_migrate)
+register_pipeline_executor(_execute_approved_pipeline)
+
+
+def _maybe_audit_model_enabled(
+    request: Request,
+    *,
+    before_enabled: bool,
+    before_default: bool,
+    model,
+) -> None:
+    if model.validation_status != "passed":
+        return
+    user = _platform_user(request)
+    if model.enabled != before_enabled or model.default_for_agent != before_default:
+        if model.enabled or model.default_for_agent:
+            write_profile_audit(
+                "llm.model.enabled",
+                profile_id="_platform",
+                actor=user.username if user else "admin",
+                payload={
+                    "model_id": model.id,
+                    "enabled": model.enabled,
+                    "default_for_agent": model.default_for_agent,
+                },
+            )
+
+
+@app.get("/v1/settings/connectivity")
+def get_connectivity(request: Request):
+    require_manage_models(request)
+    return _connectivity.load().to_public()
+
+
+@app.put("/v1/settings/connectivity")
+def put_connectivity(request: Request, body: dict):
+    require_manage_models(request)
+    before = _connectivity.load().to_public()
+    user = _platform_user(request)
+    actor = user.username if user else "admin"
+    profile = _connectivity.update(body, actor=actor)
+    after = profile.to_public()
+    changed: list[str] = []
+    for key in body:
+        if key in ("proxy_password", "custom_ca_pem"):
+            if body[key] not in (None, "", "***"):
+                changed.append(key)
+        elif before.get(key) != after.get(key):
+            changed.append(key)
+    write_profile_audit(
+        "connectivity.updated",
+        profile_id="_platform",
+        actor=actor,
+        payload={"fields": changed},
+    )
+    return after
+
+
+@app.post("/v1/settings/connectivity/test")
+def test_connectivity_route(request: Request):
+    require_manage_models(request)
+    from ado2gh.api.http_llm import build_llm_http_client
+    from ado2gh.api.model_validation import _classify_error
+
+    try:
+        with build_llm_http_client(for_cloud=True) as client:
+            response = client.get("https://api.openai.com/v1/models")
+            response.raise_for_status()
+        return {
+            "status": "passed",
+            "category": None,
+            "message": "Outbound TLS and proxy path succeeded.",
+        }
+    except Exception as exc:
+        category, message = _classify_error(exc)
+        return {"status": "failed", "category": category, "message": message}
+
+
+@app.get("/v1/settings/llm-models/catalog")
+def get_llm_catalog(
+    request: Request,
+    provider: str,
+    api_key: str = "",
+    base_url: str = "",
+):
+    require_manage_models(request)
+    from ado2gh.api.model_catalog import list_catalog
+
+    try:
+        return list_catalog(provider=provider, api_key=api_key, base_url=base_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/v1/settings/llm-models/validate")
+def validate_llm_draft(request: Request, body: dict):
+    require_manage_models(request)
+    from ado2gh.api.model_validation import validate_draft
+
+    result = validate_draft(body)
+    user = _platform_user(request)
+    write_profile_audit(
+        "llm.model.validated",
+        profile_id="_platform",
+        actor=user.username if user else "admin",
+        payload={"status": result["status"], "category": result.get("category")},
+    )
+    return result
+
+
+@app.post("/v1/settings/llm-models/{model_id}/validate")
+def validate_llm_saved(model_id: str, request: Request):
+    require_manage_models(request)
+    from ado2gh.api.model_validation import validate_saved
+
+    try:
+        result = validate_saved(model_id, store=_llm_models)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Model not found") from exc
+    user = _platform_user(request)
+    write_profile_audit(
+        "llm.model.validated",
+        profile_id="_platform",
+        actor=user.username if user else "admin",
+        payload={
+            "status": result["status"],
+            "category": result.get("category"),
+            "model_id": model_id,
+        },
+    )
+    return result
+
+
+@app.get("/v1/settings/llm-models")
+def list_llm_models(request: Request):
+    user = _platform_user(request)
+    if user and user.role == PlatformRole.ADMIN:
+        return {"models": [m.to_public() for m in _llm_models.load()]}
+    return {"models": _llm_models.list_public()}
+
+
+@app.post("/v1/settings/llm-models")
+def create_llm_model(request: Request, body: dict):
+    require_manage_models(request)
+    try:
+        model = _llm_models.upsert(body)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    user = _platform_user(request)
+    write_profile_audit(
+        "llm_model.created",
+        profile_id="_platform",
+        actor=user.username if user else "admin",
+        payload={"model_id": model.id, "provider": model.provider},
+    )
+    if model.enabled or model.default_for_agent:
+        write_profile_audit(
+            "llm.model.enabled",
+            profile_id="_platform",
+            actor=user.username if user else "admin",
+            payload={
+                "model_id": model.id,
+                "enabled": model.enabled,
+                "default_for_agent": model.default_for_agent,
+            },
+        )
+    return model.to_public()
+
+
+@app.put("/v1/settings/llm-models/{model_id}")
+def update_llm_model(model_id: str, request: Request, body: dict):
+    require_manage_models(request)
+    existing = _llm_models.get(model_id)
+    before_enabled = existing.enabled if existing else False
+    before_default = existing.default_for_agent if existing else False
+    try:
+        model = _llm_models.upsert(body, model_id=model_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Model not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _maybe_audit_model_enabled(
+        request,
+        before_enabled=before_enabled,
+        before_default=before_default,
+        model=model,
+    )
+    return model.to_public()
+
+
+@app.delete("/v1/settings/llm-models/{model_id}")
+def delete_llm_model(model_id: str, request: Request):
+    require_manage_models(request)
+    _llm_models.delete(model_id)
+    return {"deleted": model_id}
 
 
 @app.get("/v1/settings", response_model=SettingsResponse)
@@ -326,6 +641,28 @@ def asdict_adv(adv):
     return asdict(adv)
 
 
+@app.get("/v1/settings/profiles/pending", response_model=list[MigrationProfileResponse])
+def list_pending_profiles(request: Request):
+    _require_admin(request)
+    pending = [
+        p for p in _settings.load().migration_profiles
+        if p.status == "pending_approval"
+    ]
+    return [MigrationProfileResponse(**p.to_public()) for p in pending]
+
+
+@app.get("/v1/settings/profiles/mine/pending", response_model=list[MigrationProfileResponse])
+def list_my_pending_profiles(request: Request):
+    user = _platform_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    mine = [
+        p for p in _settings.load().migration_profiles
+        if p.submitted_by == user.username and p.status in ("pending_approval", "denied")
+    ]
+    return [MigrationProfileResponse(**p.to_public()) for p in mine]
+
+
 @app.get("/v1/settings/profiles/{profile_id}", response_model=MigrationProfileResponse)
 def get_migration_profile(profile_id: str):
     p = _settings.get_profile(profile_id)
@@ -335,32 +672,68 @@ def get_migration_profile(profile_id: str):
 
 
 @app.post("/v1/settings/profiles", response_model=MigrationProfileResponse)
-def create_profile(req: MigrationProfileRequest):
+def create_profile(req: MigrationProfileRequest, request: Request):
+    require_manage_settings(request)
     p = _settings.upsert_profile(req.model_dump())
     return MigrationProfileResponse(**p.to_public())
 
 
 @app.post("/v1/settings/profiles/setup", response_model=MigrationProfileResponse)
-def setup_profile(req: ProfileSetupRequest):
+def setup_profile(req: ProfileSetupRequest, request: Request):
+    user = _platform_user(request)
+    role = user.role.value if user else PlatformRole.ADMIN.value
+    profiles = _settings.load().migration_profiles
+    if user:
+        try:
+            assert_operator_can_submit(profiles, user.role)
+        except ProfileGovernanceError as exc:
+            raise HTTPException(status_code=403, detail=exc.code)
+
     ado_result = validate_ado_pat(req.ado_org_url, req.ado_pat)
     if not ado_result["valid"]:
+        if user:
+            write_profile_audit(
+                "profile.validation_failed",
+                profile_id="_pending",
+                actor=user.username,
+                payload={"step": "ado", "message": ado_result["message"]},
+            )
         raise HTTPException(status_code=400, detail=ado_result["message"])
     gh_result = validate_github_token(req.github_token, req.gh_org)
     if not gh_result["valid"]:
+        if user:
+            write_profile_audit(
+                "profile.validation_failed",
+                profile_id="_pending",
+                actor=user.username,
+                payload={"step": "github", "message": gh_result["message"]},
+            )
         raise HTTPException(status_code=400, detail=gh_result["message"])
-    p = _settings.setup_profile(req.model_dump())
-    _settings.apply_to_process_env(p)
     try:
-        raw = scan_with_credentials(
-            p.ado_org_url, p.ado_pat, gh_org=p.gh_org,
-            phase_definitions=[ph.to_dict() for ph in _settings.get_phases()],
+        p = _settings.setup_profile(
+            req.model_dump(),
+            role=role,
+            submitted_by=user.username if user else "",
         )
-        persist_scan_results(p.id, raw)
-        _settings.record_scan_summary(p.id, raw)
-    except Exception as exc:
-        # Profile is still usable; discovery can be re-run from the Discovery tab.
-        import logging
-        logging.getLogger(__name__).warning("Profile setup scan failed: %s", exc)
+    except ValueError as exc:
+        if str(exc) == "operator_submit_blocked":
+            raise HTTPException(status_code=403, detail="operator_submit_blocked") from exc
+        raise
+    actor = user.username if user else "system"
+    event = "profile.created" if p.status == "active" else "profile.submitted"
+    write_profile_audit(event, profile_id=p.id, actor=actor, payload={"status": p.status})
+    if p.status == "active":
+        _settings.apply_to_process_env(p)
+        try:
+            raw = scan_with_credentials(
+                p.ado_org_url, p.ado_pat, gh_org=p.gh_org,
+                phase_definitions=[ph.to_dict() for ph in _settings.get_phases()],
+            )
+            persist_scan_results(p.id, raw)
+            _settings.record_scan_summary(p.id, raw)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Profile setup scan failed: %s", exc)
     return MigrationProfileResponse(**p.to_public())
 
 
@@ -401,7 +774,7 @@ def migration_scan_inline(req: MigrationScanRequest):
 
 @app.post("/v1/settings/profiles/{profile_id}/scan", response_model=MigrationScanResponse)
 def migration_scan_profile(profile_id: str, max_repos: int | None = None):
-    p = _require_profile(profile_id)
+    p = _require_profile(profile_id, require_active=True)
     if not p.ado_org_url or not p.ado_pat:
         raise HTTPException(status_code=400, detail="Profile missing ADO credentials")
     try:
@@ -433,7 +806,8 @@ def get_profile_scan(profile_id: str):
 
 
 @app.put("/v1/settings/profiles/{profile_id}", response_model=MigrationProfileResponse)
-def update_profile(profile_id: str, req: MigrationProfileRequest):
+def update_profile(profile_id: str, req: MigrationProfileRequest, request: Request):
+    require_manage_settings(request)
     try:
         p = _settings.upsert_profile(req.model_dump(), profile_id=profile_id)
     except KeyError:
@@ -442,9 +816,129 @@ def update_profile(profile_id: str, req: MigrationProfileRequest):
 
 
 @app.delete("/v1/settings/profiles/{profile_id}")
-def delete_profile(profile_id: str):
-    _settings.delete_profile(profile_id)
+def delete_profile(profile_id: str, request: Request, body: DeleteProfileRequest | None = None):
+    _require_admin(request)
+    user = _platform_user(request)
+    try:
+        _settings.delete_profile(profile_id, body.new_default_profile_id if body else None)
+    except ValueError as exc:
+        code = str(exc)
+        if code == "last_active_profile":
+            raise HTTPException(status_code=409, detail=code) from exc
+        if code in ("default_replacement_required", "invalid_default_replacement"):
+            raise HTTPException(status_code=400, detail=code) from exc
+        raise
+    write_profile_audit(
+        "profile.deleted",
+        profile_id=profile_id,
+        actor=user.username if user else "admin",
+    )
     return {"deleted": profile_id}
+
+
+@app.post("/v1/settings/profiles/{profile_id}/set-default")
+def set_profile_default(profile_id: str, request: Request):
+    _require_admin(request)
+    try:
+        p = _settings.set_default_profile(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    user = _platform_user(request)
+    write_profile_audit(
+        "profile.default_changed",
+        profile_id=profile_id,
+        actor=user.username if user else "admin",
+    )
+    return MigrationProfileResponse(**p.to_public())
+
+
+@app.post("/v1/settings/profiles/{profile_id}/deactivate", response_model=MigrationProfileResponse)
+def deactivate_profile(profile_id: str, request: Request, body: DeleteProfileRequest | None = None):
+    _require_admin(request)
+    user = _platform_user(request)
+    try:
+        p = _settings.deactivate_profile(profile_id, body.new_default_profile_id if body else None)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    except ValueError as exc:
+        code = str(exc)
+        if code == "last_active_profile":
+            raise HTTPException(status_code=409, detail=code) from exc
+        raise HTTPException(status_code=400, detail=code) from exc
+    write_profile_audit(
+        "profile.deactivated",
+        profile_id=profile_id,
+        actor=user.username if user else "admin",
+    )
+    return MigrationProfileResponse(**p.to_public())
+
+
+@app.post("/v1/settings/profiles/{profile_id}/approve", response_model=MigrationProfileResponse)
+def approve_profile(profile_id: str, request: Request):
+    _require_admin(request)
+    p = _require_profile(profile_id, require_active=False)
+    ado_result = validate_ado_pat(p.ado_org_url, p.ado_pat)
+    if not ado_result["valid"]:
+        raise HTTPException(status_code=400, detail=ado_result["message"])
+    if p.github_tokens:
+        gh_result = validate_github_token(p.github_tokens[0].token, p.gh_org)
+        if not gh_result["valid"]:
+            raise HTTPException(status_code=400, detail=gh_result["message"])
+    try:
+        approved = _settings.approve_profile(profile_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    user = _platform_user(request)
+    write_profile_audit(
+        "profile.approved",
+        profile_id=profile_id,
+        actor=user.username if user else "admin",
+    )
+    return MigrationProfileResponse(**approved.to_public())
+
+
+@app.post("/v1/settings/profiles/{profile_id}/deny", response_model=MigrationProfileResponse)
+def deny_profile(profile_id: str, request: Request, body: DenyProfileRequest | None = None):
+    _require_admin(request)
+    try:
+        denied = _settings.deny_profile(profile_id, body.reason if body else "")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    user = _platform_user(request)
+    write_profile_audit(
+        "profile.denied",
+        profile_id=profile_id,
+        actor=user.username if user else "admin",
+        payload={"reason": body.reason if body else ""},
+    )
+    return MigrationProfileResponse(**denied.to_public())
+
+
+@app.post("/v1/settings/profiles/{profile_id}/appeal", response_model=MigrationProfileResponse)
+def appeal_profile(profile_id: str, request: Request):
+    user = _platform_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        appealed = _settings.appeal_profile(profile_id, user.username)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="not_submitter")
+    write_profile_audit(
+        "profile.appealed",
+        profile_id=profile_id,
+        actor=user.username,
+    )
+    return MigrationProfileResponse(**appealed.to_public())
 
 
 @app.post("/v1/settings/profiles/{profile_id}/activate")
@@ -457,10 +951,15 @@ def activate_profile(profile_id: str):
     return {"active_profile_id": profile_id}
 
 
-def _require_profile(profile_id: str):
+def _require_profile(profile_id: str, require_active: bool = False):
     p = _settings.get_profile(profile_id)
     if not p:
         raise HTTPException(status_code=404, detail="Migration profile not found")
+    if require_active:
+        try:
+            assert_profile_active_for_run(p)
+        except ProfileGovernanceError as exc:
+            raise _governance_http_error(exc)
     return p
 
 
@@ -528,7 +1027,8 @@ def list_github_tokens(profile_id: str):
 
 
 @app.post("/v1/settings/profiles/{profile_id}/tokens", response_model=GitHubTokenResponse)
-def create_github_token(profile_id: str, req: GitHubTokenRequest):
+def create_github_token(profile_id: str, req: GitHubTokenRequest, request: Request):
+    require_manage_settings(request)
     try:
         t = _settings.upsert_github_token(profile_id, req.model_dump())
     except KeyError:
@@ -537,7 +1037,8 @@ def create_github_token(profile_id: str, req: GitHubTokenRequest):
 
 
 @app.put("/v1/settings/profiles/{profile_id}/tokens/{token_id}", response_model=GitHubTokenResponse)
-def update_github_token(profile_id: str, token_id: str, req: GitHubTokenRequest):
+def update_github_token(profile_id: str, token_id: str, req: GitHubTokenRequest, request: Request):
+    require_manage_settings(request)
     try:
         t = _settings.upsert_github_token(profile_id, req.model_dump(), token_id=token_id)
     except KeyError:
@@ -546,7 +1047,8 @@ def update_github_token(profile_id: str, token_id: str, req: GitHubTokenRequest)
 
 
 @app.delete("/v1/settings/profiles/{profile_id}/tokens/{token_id}")
-def delete_github_token(profile_id: str, token_id: str):
+def delete_github_token(profile_id: str, token_id: str, request: Request):
+    require_manage_settings(request)
     try:
         _settings.delete_github_token(profile_id, token_id)
     except KeyError:
@@ -586,7 +1088,7 @@ def validate_github_inline(req: ValidateGitHubTokenRequest):
 
 @app.get("/v1/settings/profiles/{profile_id}/discovery", response_model=DiscoveryResponse)
 def get_profile_discovery(profile_id: str):
-    _require_profile(profile_id)
+    _require_profile(profile_id, require_active=True)
     data = load_scan_results(profile_id)
     from ado2gh.api.state_db import get_state_db
 
@@ -632,7 +1134,8 @@ def get_profile_discovery(profile_id: str):
 
 
 @app.put("/v1/settings/profiles/{profile_id}/phase-assignments")
-def update_phase_assignments(profile_id: str, req: PhaseAssignmentRequest):
+def update_phase_assignments(profile_id: str, req: PhaseAssignmentRequest, request: Request):
+    require_manage_settings(request)
     _require_profile(profile_id)
     from ado2gh.api.state_db import get_state_db
 
@@ -641,6 +1144,13 @@ def update_phase_assignments(profile_id: str, req: PhaseAssignmentRequest):
         raise HTTPException(status_code=501, detail="Phase assignment not supported on this storage backend")
     updates = [a.model_dump() for a in req.assignments]
     count = db.update_profile_repo_phases(profile_id, updates)
+    if count == 0 and updates and hasattr(db, "save_profile_scan"):
+        # Scans from before Postgres profile_scan tables may exist only as JSON backups.
+        if not db.get_profile_scan_repos(profile_id):
+            cached = load_scan_results(profile_id)
+            if cached and cached.get("recommendations"):
+                db.save_profile_scan(profile_id, cached)
+                count = db.update_profile_repo_phases(profile_id, updates)
     if count == 0 and updates:
         raise HTTPException(status_code=404, detail="No matching repos found to update")
     from ado2gh.api.profile_discovery import sync_profile_scan_to_risk_scores
@@ -680,7 +1190,14 @@ def cancel_pipeline_run(run_id: str):
 
 
 @app.post("/v1/pipeline/runs", response_model=PipelineRunResponse)
-def start_pipeline_run(req: PipelineRunStartRequest):
+def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
+    active = _settings.get_active_profile()
+    if not active:
+        raise HTTPException(status_code=403, detail="profile_not_active")
+    try:
+        assert_profile_active_for_run(active)
+    except ProfileGovernanceError as exc:
+        raise _governance_http_error(exc)
     adv = _settings.load().advanced
     dry = req.dry_run if req.dry_run is not None else adv.dry_run_default
     _settings.apply_to_process_env()
@@ -688,5 +1205,74 @@ def start_pipeline_run(req: PipelineRunStartRequest):
         req.name, dry, req.phase, req.wave_id,
         step_defs=MIGRATE_UI_PIPELINE_STEPS,
     )
+    user = _platform_user(request)
+    if operator_requires_live_approval(user, dry):
+        store = _live_store()
+        store.create_or_get_pending(
+            user,
+            "pipeline_run",
+            run.id,
+            profile_id=active.id,
+            reason_request=f"Pipeline live run: {req.name}",
+            context={"run_id": run.id, "steps": req.steps},
+        )
+        run.status = "awaiting_approval"
+        run.updated_at = run.created_at
+        return PipelineRunResponse(run=run.to_dict())
     _runner.start_async(run.id, req.steps)
     return PipelineRunResponse(run=run.to_dict())
+
+
+# ── Unified live execution approval queue ────────────────────────────────────
+
+
+@app.get("/v1/platform/approvals", response_model=LiveApprovalListResponse)
+def list_live_approvals(request: Request, status: str = "pending"):
+    require_approve_live_execution(request)
+    store = _live_store()
+    items = [LiveApprovalItem(**row) for row in store.list_approvals(status=status)]
+    return LiveApprovalListResponse(approvals=items)
+
+
+@app.get("/v1/platform/approvals/{approval_id}", response_model=LiveApprovalItem)
+def get_live_approval(approval_id: str, request: Request):
+    user = require_operate(request)
+    store = _live_store()
+    row = store.get_approval(approval_id, requester=user)
+    return LiveApprovalItem(**row)
+
+
+@app.post("/v1/platform/approvals", response_model=LiveApprovalItem)
+def create_live_approval(req: LiveApprovalCreateRequest, request: Request):
+    user = require_operate(request)
+    store = _live_store()
+    row = store.create_or_get_pending(
+        user,
+        req.scope_type,
+        req.scope_id,
+        profile_id=req.profile_id,
+        assignment_id=req.assignment_id,
+        reason_request=req.reason_request,
+        context=req.context,
+    )
+    return LiveApprovalItem(**row)
+
+
+@app.post("/v1/platform/approvals/{approval_id}/approve", response_model=LiveApprovalItem)
+def approve_live_execution(
+    approval_id: str, req: LiveApprovalDecisionRequest, request: Request,
+):
+    approver = require_approve_live_execution(request)
+    store = _live_store()
+    row = store.approve(approval_id, approver, req.reason)
+    return LiveApprovalItem(**row)
+
+
+@app.post("/v1/platform/approvals/{approval_id}/deny", response_model=LiveApprovalItem)
+def deny_live_execution(
+    approval_id: str, req: LiveApprovalDecisionRequest, request: Request,
+):
+    approver = require_approve_live_execution(request)
+    store = _live_store()
+    row = store.deny(approval_id, approver, req.reason)
+    return LiveApprovalItem(**row)

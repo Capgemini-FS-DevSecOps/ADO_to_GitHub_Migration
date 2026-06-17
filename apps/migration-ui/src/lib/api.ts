@@ -4,6 +4,7 @@ import type {
   DashboardSnapshot,
   GitHubTokenEntry,
   MigrationProfile,
+  OnboardingStatus,
   MigrationScanResult,
   PipelineRun,
   ReadinessSnapshot,
@@ -19,6 +20,12 @@ import type {
 
 export const ACCEL = process.env.NEXT_PUBLIC_ACCELERATOR_URL || 'http://localhost:8080';
 
+export async function fetchHealth(): Promise<{ status: string; version?: string }> {
+  const r = await fetch(`${ACCEL}/health`, { cache: 'no-store' });
+  if (!r.ok) throw new Error(`Health check failed (${r.status})`);
+  return r.json();
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let r: Response;
   try {
@@ -32,7 +39,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
       `Cannot reach Accelerator API at ${ACCEL}. If using Docker, ensure the accelerator container is running on port 8080. Otherwise start with .\\scripts\\run-local.ps1 or docker compose up.`,
     );
   }
-  if (!r.ok) {
+    if (!r.ok) {
+    if (r.status === 401) {
+      throw new Error('Not authenticated — sign in at /login');
+    }
     const err = await r.text();
     throw new Error(err || `API ${path} failed (${r.status})`);
   }
@@ -49,6 +59,10 @@ export async function fetchReadiness(): Promise<ReadinessSnapshot> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ config_path: 'migration.yaml' }),
   });
+}
+
+export async function fetchOnboardingStatus(): Promise<OnboardingStatus> {
+  return api<OnboardingStatus>('/v1/onboarding/status');
 }
 
 export async function fetchSettings(): Promise<UISettings> {
@@ -123,8 +137,48 @@ export async function saveMigrationProfile(
   });
 }
 
-export async function deleteMigrationProfile(id: string) {
-  return api<{ deleted: string }>(`/v1/settings/profiles/${id}`, { method: 'DELETE' });
+export async function deleteMigrationProfile(id: string, newDefaultId?: string) {
+  return api<{ deleted: string }>(`/v1/settings/profiles/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newDefaultId ? { new_default_profile_id: newDefaultId } : {}),
+  });
+}
+
+export async function setProfileDefault(id: string) {
+  return api<MigrationProfile>(`/v1/settings/profiles/${id}/set-default`, { method: 'POST' });
+}
+
+export async function deactivateProfile(id: string, newDefaultId?: string) {
+  return api<MigrationProfile>(`/v1/settings/profiles/${id}/deactivate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(newDefaultId ? { new_default_profile_id: newDefaultId } : {}),
+  });
+}
+
+export async function fetchPendingProfiles() {
+  return api<MigrationProfile[]>('/v1/settings/profiles/pending');
+}
+
+export async function fetchMyPendingProfiles() {
+  return api<MigrationProfile[]>('/v1/settings/profiles/mine/pending');
+}
+
+export async function approveProfile(id: string) {
+  return api<MigrationProfile>(`/v1/settings/profiles/${id}/approve`, { method: 'POST' });
+}
+
+export async function denyProfile(id: string, reason = '') {
+  return api<MigrationProfile>(`/v1/settings/profiles/${id}/deny`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function appealProfile(id: string) {
+  return api<MigrationProfile>(`/v1/settings/profiles/${id}/appeal`, { method: 'POST' });
 }
 
 export async function activateMigrationProfile(id: string) {
@@ -309,6 +363,43 @@ export async function fetchHistory(profileId?: string) {
 
 export async function fetchAssignmentGate(assignmentId: string) {
   return api<Record<string, unknown>>(`/v1/assignments/${assignmentId}/gate-status`);
+}
+
+export type LiveApprovalItem = {
+  id: string;
+  requester_username: string;
+  scope_type: string;
+  scope_id: string;
+  profile_id?: string | null;
+  assignment_id?: string | null;
+  status: string;
+  reason_request?: string | null;
+  reason_decision?: string | null;
+  requested_at: string;
+  decided_at?: string | null;
+  approver_username?: string | null;
+};
+
+export async function fetchLiveApprovals(status = 'pending') {
+  return api<{ approvals: LiveApprovalItem[] }>(
+    `/v1/platform/approvals?status=${encodeURIComponent(status)}`,
+  );
+}
+
+export async function approveLiveExecution(approvalId: string, reason: string) {
+  return api<LiveApprovalItem>(`/v1/platform/approvals/${approvalId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function denyLiveExecution(approvalId: string, reason: string) {
+  return api<LiveApprovalItem>(`/v1/platform/approvals/${approvalId}/deny`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export { ACCEL as ACCELERATOR_URL };

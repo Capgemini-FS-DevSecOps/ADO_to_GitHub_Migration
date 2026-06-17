@@ -3,10 +3,11 @@
 import { usePathname } from 'next/navigation';
 import { NavTabs } from '@/components/NavTabs';
 import { AuthGate } from '@/components/AuthGate';
+import { UserSessionBar } from '@/components/UserSessionBar';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLogin = pathname === '/login';
+  const isLogin = pathname === '/login' || pathname.startsWith('/onboarding');
 
   if (isLogin) {
     return <>{children}</>;
@@ -32,6 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <strong>GitHub Actions</strong> • <strong>Git mirror / GEI</strong>
               </p>
             </div>
+            <UserSessionBar />
           </div>
           <div className="oai-container">
             <NavTabs />

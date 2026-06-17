@@ -1,8 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { ChartBarIcon } from '@/components/Icons';
-import { fetchDashboard } from '@/lib/api';
+import { fetchDashboard, ACCEL } from '@/lib/api';
 
 export default function DashboardPage() {
   const { data, isLoading, error } = useQuery({
@@ -21,10 +22,34 @@ export default function DashboardPage() {
   }
 
   if (error) {
+    const message = error instanceof Error ? error.message : 'Request failed';
+    const unreachable = message.includes('Cannot reach Accelerator API');
+    const needsAuth = message.includes('Not authenticated');
+
     return (
       <div className="oai-error">
-        Cannot reach Accelerator API — ensure the accelerator is running on port 8080
-        (<code>docker compose up</code> or <code>.\scripts\run-local.ps1</code>).
+        {unreachable ? (
+          <>
+            <p>
+              Cannot reach Accelerator API at <code>{ACCEL}</code>.
+            </p>
+            <ul className="dashboard-error-steps">
+              <li>Confirm containers are running: <code>docker compose ps</code></li>
+              <li>Restart stack: <code>docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build</code></li>
+              <li>Or locally: <code>.\scripts\run-local.ps1</code></li>
+              <li>Test: <code>curl {ACCEL}/health</code></li>
+            </ul>
+          </>
+        ) : needsAuth ? (
+          <p>Sign in required to view the dashboard.</p>
+        ) : (
+          <p>{message}</p>
+        )}
+        <p>
+          <Link href="/login?bootstrap=1">Create admin account</Link>
+          {' · '}
+          <Link href="/login">Sign in</Link>
+        </p>
       </div>
     );
   }

@@ -31,3 +31,16 @@ def test_validate_password_strength():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_concurrent_bootstrap_rejected(tmp_path):
+    db = tmp_path / "auth2.db"
+    os.environ["ADO2GH_SQLITE_PATH"] = str(db)
+    os.environ["ADO2GH_STORAGE_BACKEND"] = "sqlite"
+    svc = AuthService()
+    svc.bootstrap_admin("admin", "twelve-char-pass", "Admin")
+    try:
+        svc.bootstrap_admin("other", "twelve-char-pass2", "Other")
+        assert False, "expected PermissionError"
+    except PermissionError:
+        pass

@@ -44,10 +44,25 @@ export interface MigrationProfile {
   ado_pat: string;
   gh_org: string;
   github_tokens: GitHubTokenEntry[];
+  status?: string;
+  is_default?: boolean;
+  submitted_by?: string;
+  approval?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
   last_scan_at?: string;
   scan_summary?: ScanSummary;
+}
+
+export interface OnboardingStatus {
+  needs_profile_setup: boolean;
+  active_profile_count: number;
+  default_profile_id: string | null;
+  pending_approval_count: number;
+  role: string;
+  blocked_message: string | null;
+  redirect_path: string | null;
+  can_submit_profile: boolean;
 }
 
 export interface PhaseRecommendation {

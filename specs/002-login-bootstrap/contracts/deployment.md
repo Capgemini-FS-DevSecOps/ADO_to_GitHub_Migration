@@ -7,7 +7,7 @@
 | Variable | Service | Description |
 |----------|---------|-------------|
 | `ADO2GH_AUTH_ENABLED` | accelerator | `true` in prod |
-| `ADO2GH_SESSION_SECRET` | accelerator | Cookie signing secret (32+ bytes) |
+| `SESSION_SECRET` | accelerator | Cookie signing secret (32+ bytes); also accepted as env `SESSION_SECRET` |
 | `ADO2GH_SESSION_TTL_HOURS` | accelerator | Default `8` |
 | `ADO2GH_COOKIE_SECURE` | accelerator | `true` when TLS terminates in front |
 | `ADO2GH_MIN_PASSWORD_LENGTH` | accelerator | Default `12` |

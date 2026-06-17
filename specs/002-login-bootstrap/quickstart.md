@@ -27,6 +27,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 
 **Reset bootstrap** (dev only): wipe Postgres volume or delete `platform_users` rows.
 
+**Rebuild web after `NEXT_PUBLIC_*` changes**: Next.js embeds public env vars at build time. After changing `NEXT_PUBLIC_ACCELERATOR_URL` or `NEXT_PUBLIC_REQUIRE_AUTH`, rebuild the web image:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build web --no-cache
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up web accelerator
+```
+
 ## 2. Docker Compose — standard login
 
 With users present:

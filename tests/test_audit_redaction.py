@@ -11,3 +11,8 @@ def test_redact_github_token():
 def test_redact_nested():
     out = redact_payload({"nested": {"pat": "pat-abc123xyz"}})
     assert "***" in str(out["nested"]["pat"])
+
+
+def test_redact_auth_event_payload():
+    out = redact_payload({"event": "user.login", "password": "secret123"})
+    assert "***" in str(out["password"])
