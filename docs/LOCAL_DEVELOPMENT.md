@@ -106,7 +106,24 @@ Data persists in the `ado2gh-data` volume until you remove it with `docker volum
 .\scripts\run-local.ps1
 ```
 
-**What it does:** starts accelerator (:8080), agent (:8090), and Next.js UI (:3000) in separate terminal windows using SQLite at `./migration_state.db` and `./data`.
+**What it does:** installs Python deps (`requirements.txt` + `pip install -e ".[api]"`), npm deps on first run, then starts accelerator (:8080), agent (:8090), and Next.js UI (:3000) in separate terminal windows. SQLite at `./migration_state.db` and `./data`.
+
+**Recommended:** use a venv so Windows does not pick the Store `python` stub:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+.\scripts\run-local.ps1
+```
+
+### `[WinError 2] The system cannot find the file specified`
+
+| When | Fix |
+|------|-----|
+| Script fails on `python` | Turn off **App execution aliases** for `python.exe` / `python3.exe`, or use `.venv` as above |
+| A spawned window closes immediately | In repo root: `python -m uvicorn services.accelerator_api.main:app --port 8080` and read the error |
+| `npm run dev` fails | Install [Node.js LTS](https://nodejs.org/); `cd apps\migration-ui` → `npm install` |
+| Migration / git step fails | Install **Git for Windows**; ensure `git` is on `PATH` |
 
 Set credentials in the same shell before running:
 

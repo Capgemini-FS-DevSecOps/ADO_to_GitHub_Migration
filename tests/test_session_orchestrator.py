@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from ado2gh.agents.llm_provider import StubLLMProvider, UnavailableLLMProvider
-from ado2gh.agents.session_orchestrator import execute_tool, process_user_message, sync_work_items_to_tasks
+from ado2gh.agents.session_orchestrator import (
+    _migration_tool_calls,
+    execute_tool,
+    process_user_message,
+    sync_work_items_to_tasks,
+)
 
 
 @pytest.fixture
@@ -672,3 +677,60 @@ async def test_invalid_phase_does_not_build_plan(base_session):
     assert result.pending_form is None
     assert not result.start_pev
     build_plan.assert_not_called()
+
+
+def test_rescan_without_ado_keywords_fetches_discovery(base_session):
+    base_session["discovery_snapshot"] = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+        "repos_scanned": 1,
+        "pipeline_inventory_count": 5,
+    }
+    calls = _migration_tool_calls(base_session, "Please rescan discovery after I changed wave assignments")
+    assert calls == [{"name": "fetch_profile_discovery", "arguments": {}}]
+
+
+@pytest.mark.asyncio
+async def test_discovery_reload_emits_status_messages(base_session):
+    discovery = {
+        "repos": [
+            {"assigned_phase": "poc", "project": "P", "repo_name": "r1"},
+            {"assigned_phase": "pilot", "project": "P", "repo_name": "r2"},
+        ],
+        "repos_scanned": 2,
+        "projects_scanned": 1,
+        "pipeline_inventory_count": 1,
+        "recommendations": {"poc": {}, "pilot": {}},
+    }
+
+    async def mock_get(path, **kwargs):
+        assert "discovery" in path
+        return discovery
+
+    build_plan = AsyncMock(
+        return_value={
+            "phase": "poc",
+            "repo_count": 1,
+            "blocked": False,
+            "repos": ["P/r1"],
+            "work_items": [],
+        },
+    )
+
+    result = await process_user_message(
+        base_session,
+        "Refresh discovery after I updated phase assignments",
+        llm=StubLLMProvider(),
+        llm_degraded=True,
+        accel_get=mock_get,
+        accel_post=AsyncMock(),
+        build_plan=build_plan,
+        session_token=None,
+        max_iterations=2,
+    )
+
+    status_msgs = [m for m in base_session["messages"] if m.get("kind") == "status"]
+    assert len(status_msgs) >= 2
+    assert any("Loading discovery" in m["content"] for m in status_msgs)
+    assert any("Discovery loaded" in m["content"] for m in status_msgs)
+    assert base_session.get("discovery_snapshot") == discovery
+    assert result.reply

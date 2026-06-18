@@ -4,13 +4,9 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $UiDir = Join-Path $Root "apps\migration-ui"
 $StopScript = Join-Path $Root "scripts\stop-ui.ps1"
 
-$Npm = Join-Path $env:ProgramFiles "nodejs\npm.cmd"
-if (-not (Test-Path $Npm)) {
-    $Npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
-}
-if (-not $Npm) {
-    throw "npm.cmd not found. Install Node.js from https://nodejs.org/"
-}
+. (Join-Path $Root "scripts\_local-common.ps1")
+
+$Npm = Resolve-NpmCmd
 
 # Avoid EPERM on .next/trace when a previous dev server is still running.
 & $StopScript

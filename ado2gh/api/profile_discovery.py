@@ -66,6 +66,21 @@ def risk_score_from_repo_dict(repo: dict[str, Any], gh_org: str = "") -> RiskSco
     )
 
 
+def manual_phase_overrides(repos: list[dict[str, Any]]) -> dict[tuple[str, str], str]:
+    """Repo keys where the operator assigned a phase different from the risk suggestion."""
+    overrides: dict[tuple[str, str], str] = {}
+    for repo in repos:
+        project = (repo.get("project") or "").strip()
+        repo_name = (repo.get("repo_name") or "").strip()
+        if not project or not repo_name:
+            continue
+        assigned = (repo.get("assigned_phase") or "").strip()
+        suggested = (repo.get("suggested_phase") or "").strip()
+        if assigned and suggested and assigned != suggested:
+            overrides[(project, repo_name)] = assigned
+    return overrides
+
+
 def iter_scan_repos(scan: dict[str, Any]) -> list[dict[str, Any]]:
     repos: list[dict[str, Any]] = []
     for bucket in scan.get("recommendations", {}).values():

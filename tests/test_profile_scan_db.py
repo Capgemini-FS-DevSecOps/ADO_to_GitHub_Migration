@@ -96,6 +96,28 @@ def test_phase_assignment_override(db: StateDB):
     assert gamma["suggested_phase"] == "pilot"
 
 
+def test_rescan_preserves_manual_phase_overrides(db: StateDB):
+    profile_id = "prof-rescan"
+    db.save_profile_scan(profile_id, _sample_scan())
+    db.update_profile_repo_phases(profile_id, [
+        {"project": "P1", "repo_name": "alpha", "assigned_phase": "wave1"},
+    ])
+
+    rescan = _sample_scan()
+    rescan["scanned_at"] = "2026-06-09T12:00:00+00:00"
+    db.save_profile_scan(profile_id, rescan, preserve_manual_assignments=True)
+
+    alpha = next(
+        r for r in db.get_profile_scan_repos(profile_id) if r["repo_name"] == "alpha"
+    )
+    assert alpha["assigned_phase"] == "wave1"
+    assert alpha["suggested_phase"] == "poc"
+
+    payload = db.build_profile_scan_payload(profile_id)
+    assert payload is not None
+    assert "wave1" in payload["recommendations"]
+
+
 def test_build_wave_uses_profile_scan_phase_assignments(db: StateDB):
     from ado2gh.api.profile_discovery import build_wave_from_profile_phase
     from ado2gh.api.settings_store import MigrationProfile

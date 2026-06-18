@@ -196,8 +196,9 @@ def ready():
     ado2gh_ok = False
     if gh_path:
         try:
+            gh_cmd = [gh_path, "extension", "list"]
             result = subprocess.run(
-                ["gh", "extension", "list"],
+                gh_cmd,
                 capture_output=True,
                 text=True,
                 timeout=10,

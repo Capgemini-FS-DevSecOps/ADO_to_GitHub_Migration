@@ -838,9 +838,14 @@ class SettingsStore:
         )
         if gh_org and not raw.get("gh_org"):
             raw["gh_org"] = gh_org
-        persist_scan_results(profile_id, raw)
+        preserve = phases is None
+        persist_scan_results(
+            profile_id,
+            raw,
+            preserve_manual_assignments=preserve,
+        )
         self.record_scan_summary(profile_id, raw)
-        sync_profile_scan_to_risk_scores(profile_id, raw, config_path=adv.config_path)
+        sync_profile_scan_to_risk_scores(profile_id, config_path=adv.config_path)
         return raw
 
     def _start_rescan_after_phase_change(

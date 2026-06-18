@@ -98,7 +98,7 @@ export type AgentPendingForm = {
 export type AgentMessage = {
   role: string;
   content: string;
-  kind?: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'form' | 'task_update' | 'progress';
+  kind?: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'form' | 'task_update' | 'progress' | 'status';
   subagent?: string;
   timestamp?: string;
   meta?: Record<string, unknown>;

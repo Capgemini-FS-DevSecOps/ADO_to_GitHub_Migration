@@ -82,8 +82,13 @@ function AgentTaskTimeline({ tasks }: { tasks: AgentTask[] }) {
   );
 }
 
+function isStatusMessage(msg: ChatMessage): boolean {
+  return msg.kind === 'status';
+}
+
 function isInternalMessage(msg: ChatMessage): boolean {
   if (msg.role === 'user') return false;
+  if (isStatusMessage(msg)) return false;
   if (msg.kind === 'message' || msg.kind === 'form') {
     return msg.role === 'planner' || msg.role === 'executor';
   }
@@ -603,12 +608,21 @@ export function AgentChat() {
       return;
     }
     setMessagePending(true);
+    const pollId = window.setInterval(async () => {
+      try {
+        const s = await getAgentSession(agentSession.session_id);
+        syncMessages(s);
+      } catch {
+        /* partial updates while orchestrator runs */
+      }
+    }, 600);
     try {
       const s = await postAgentMessage(agentSession.session_id, text);
       await handleAgentResponse(s);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Message failed');
     } finally {
+      window.clearInterval(pollId);
       setMessagePending(false);
     }
   };
@@ -654,9 +668,10 @@ export function AgentChat() {
   const renderVisibleMessage = (msg: ChatMessage) => {
     if (msg.kind === 'form') return null;
     const bubbleRole = msg.role === 'user' ? 'user' : 'assistant';
+    const statusClass = isStatusMessage(msg) ? ' agent-chat-status' : '';
     return (
-      <div className={`agent-chat-bubble agent-chat-${bubbleRole}`}>
-        {msg.role !== 'user' && msg.subagent ? (
+      <div className={`agent-chat-bubble agent-chat-${bubbleRole}${statusClass}`}>
+        {msg.role !== 'user' && msg.subagent && !isStatusMessage(msg) ? (
           <div className="agent-chat-meta">
             <span>{msg.subagent}</span>
           </div>
@@ -681,8 +696,11 @@ export function AgentChat() {
         !isInternalMessage(msg) &&
         (msg.kind === 'message' || msg.kind === undefined) &&
         msg.role !== 'tool';
+      const isVisibleAssistant =
+        isStatusMessage(msg) ||
+        (isFinalAssistant);
 
-      if (isUser || isFinalAssistant) {
+      if (isUser || isVisibleAssistant) {
         rows.push(
           <div key={msg.id} className="agent-message-row">
             {renderVisibleMessage(msg)}

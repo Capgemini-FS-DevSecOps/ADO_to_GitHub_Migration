@@ -1273,6 +1273,13 @@ p {
   background: var(--oai-bg-secondary);
 }
 
+.agent-chat-status {
+  opacity: 0.92;
+  font-size: 0.95em;
+  border-left: 3px solid var(--oai-border-subtle, #52525b);
+  padding-left: 10px;
+}
+
 .agent-chat-meta {
   display: flex;
   gap: 8px;

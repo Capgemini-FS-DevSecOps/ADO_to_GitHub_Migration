@@ -34,6 +34,7 @@ You MUST use tools for migration work — never invent repo lists or phases from
 
 Rules:
 1. Call fetch_profile_discovery before build_migration_plan.
+2. After the operator changes phase assignments on the Discovery tab, call fetch_profile_discovery to reload — do NOT call run_profile_scan unless they need a fresh ADO org/inventory scan.
 2. build_migration_plan requires discovery data in session state.
 3. run_migration_pev requires an existing migration_plan AND plan_approved=true (operator confirmed the plan via the review form).
 4. After build_migration_plan succeeds, STOP and wait for operator confirmation — do NOT call run_migration_pev in the same turn.
@@ -200,6 +201,193 @@ def _append_event(
     if meta:
         entry["meta"] = meta
     session.setdefault("messages", []).append(entry)
+
+
+MAX_STATUS_MESSAGES_PER_TURN = 5
+
+TOOL_STATUS_START: dict[str, str] = {
+    "fetch_profile_discovery": "Loading discovery data (repos and phase assignments)…",
+    "run_profile_scan": "Scanning Azure DevOps organization (repos and inventory)…",
+    "build_migration_plan": "Building migration plan from current discovery…",
+    "run_migration_pev": "Starting migration pipeline…",
+    "fetch_migration_status": "Checking migration run status…",
+}
+
+TOOL_TASK_IDS: dict[str, str] = {
+    "fetch_profile_discovery": "discovery",
+    "run_profile_scan": "discovery",
+    "build_migration_plan": "plan",
+    "run_migration_pev": "execute",
+}
+
+
+def _reset_turn_status_budget(session: dict[str, Any]) -> None:
+    session["_status_msg_count"] = 0
+
+
+def _append_status_message(
+    session: dict[str, Any],
+    content: str,
+    *,
+    subagent: str | None = None,
+) -> None:
+    if session.get("_status_msg_count", 0) >= MAX_STATUS_MESSAGES_PER_TURN:
+        return
+    session["_status_msg_count"] = int(session.get("_status_msg_count", 0)) + 1
+    _append_event(
+        session,
+        role="assistant",
+        content=content,
+        kind="status",
+        subagent=subagent,
+    )
+
+
+def _tool_status_done(tool_name: str, result: dict[str, Any]) -> str:
+    if result.get("error"):
+        return result.get("message") or str(result["error"])
+    if tool_name == "fetch_profile_discovery":
+        phases = result.get("phases") or []
+        return (
+            f"Discovery loaded: {result.get('repos_scanned', 0)} repos"
+            f"{f' across {len(phases)} phase(s)' if phases else ''}."
+        )
+    if tool_name == "run_profile_scan":
+        return (
+            f"ADO scan complete: {result.get('repos_scanned', 0)} repos, "
+            f"{result.get('pipeline_inventory_count', 0)} pipelines indexed."
+        )
+    if tool_name == "build_migration_plan":
+        count = result.get("repo_count", 0)
+        phase = result.get("phase", "")
+        return f"Migration plan ready for phase {phase} ({count} repo(s))."
+    if tool_name == "run_migration_pev":
+        mode = "dry-run" if result.get("dry_run", True) else "live"
+        return f"Migration pipeline starting ({mode})."
+    if tool_name == "fetch_migration_status":
+        return "Migration status updated."
+    return "Step complete."
+
+
+def _user_wants_ado_org_scan(user_message: str) -> bool:
+    msg = user_message.lower()
+    ado_phrases = (
+        "scan ado",
+        "scan the org",
+        "scan org",
+        "pipeline inventory",
+        "service connection",
+        "variable group",
+        "inventory scan",
+        "deleted repo",
+        "repo is deleted",
+        "target repo",
+    )
+    if any(p in msg for p in ado_phrases):
+        return True
+    if ("rescan" in msg or "re-scan" in msg) and any(
+        w in msg for w in ("ado", "org", "inventory", "pipeline", "service")
+    ):
+        return True
+    return False
+
+
+def _user_wants_discovery_reload(user_message: str) -> bool:
+    msg = user_message.lower()
+    if _user_wants_ado_org_scan(user_message):
+        return True
+    reload_phrases = (
+        "refresh discovery",
+        "reload discovery",
+        "update discovery",
+        "fetch discovery",
+        "sync discovery",
+        "rediscover",
+        "phase assignment",
+        "wave assignment",
+        "discovery tab",
+        "changed assignment",
+        "updated assignment",
+        "pick up",
+        "latest discovery",
+        "rescan",
+        "re-scan",
+    )
+    return any(p in msg for p in reload_phrases)
+
+
+def _invalidate_cached_discovery(session: dict[str, Any]) -> None:
+    session.pop("discovery_snapshot", None)
+    session.pop("discovery_fetched_at", None)
+    session.pop("migration_plan", None)
+    session["plan_approved"] = False
+
+
+async def _run_orchestrator_tool(
+    tool_name: str,
+    args: dict[str, Any],
+    *,
+    session: dict[str, Any],
+    accel_get: Callable[..., Awaitable[dict]],
+    accel_post: Callable[..., Awaitable[dict]] | None,
+    build_plan: Callable[..., Awaitable[dict]],
+    session_token: str | None,
+    llm: LLMProvider,
+    llm_degraded: bool,
+) -> dict[str, Any]:
+    """Execute one orchestrator tool with visible status messages and task updates."""
+    tool_meta = INTERNAL_TOOLS.get(tool_name, {})
+    subagent = tool_meta.get("subagent", "planner")
+    session["subagent"] = subagent
+
+    start_msg = TOOL_STATUS_START.get(tool_name)
+    if start_msg:
+        _append_status_message(session, start_msg, subagent=subagent)
+
+    _append_event(
+        session,
+        role="assistant",
+        content=tool_name,
+        kind="tool_call",
+        subagent=subagent,
+        meta={"arguments": args},
+    )
+
+    task_id = TOOL_TASK_IDS.get(tool_name)
+    if task_id:
+        _set_task(session["tasks"], task_id, "running", start_msg or tool_name)
+
+    tool_result = await execute_tool(
+        tool_name,
+        args,
+        session=session,
+        accel_get=accel_get,
+        accel_post=accel_post,
+        build_plan=build_plan,
+        session_token=session_token,
+        llm=llm,
+        llm_degraded=llm_degraded,
+    )
+
+    done_msg = _tool_status_done(tool_name, tool_result)
+    if start_msg and not tool_result.get("error"):
+        _append_status_message(session, done_msg, subagent=subagent)
+    elif tool_result.get("error"):
+        _append_status_message(session, done_msg, subagent=subagent)
+
+    if task_id:
+        status = "failed" if tool_result.get("error") else "completed"
+        _set_task(session["tasks"], task_id, status, done_msg)
+
+    _append_event(
+        session,
+        role="tool",
+        content=json.dumps(tool_result, default=str)[:2000],
+        kind="tool_result",
+        subagent=subagent,
+        meta={"tool": tool_name, "result": tool_result},
+    )
+    return tool_result
 
 
 def _parse_llm_json(text: str) -> dict[str, Any]:
@@ -539,6 +727,22 @@ def _available_migration_phases(session: dict[str, Any]) -> list[str]:
     return [p.id for p in default_phase_definitions()]
 
 
+NON_PHASE_TOKENS = frozenset({
+    "assignment",
+    "assignments",
+    "configuration",
+    "config",
+    "settings",
+    "gate",
+    "gates",
+    "breakdown",
+    "change",
+    "changes",
+    "discovery",
+    "tab",
+})
+
+
 def _extract_requested_phase(user_message: str) -> str | None:
     msg = user_message.lower()
     patterns = (
@@ -550,7 +754,10 @@ def _extract_requested_phase(user_message: str) -> str | None:
     for pattern in patterns:
         match = re.search(pattern, msg)
         if match:
-            return match.group(1)
+            token = match.group(1)
+            if token in NON_PHASE_TOKENS:
+                continue
+            return token
     return None
 
 
@@ -626,16 +833,15 @@ def _migration_tool_calls(session: dict[str, Any], user_message: str) -> list[di
     retry = bool(session.get("migration_retry"))
     replan = bool(session.get("migration_replan"))
     msg = user_message.lower()
-    explicit_inventory = any(
+    explicit_ado_scan = _user_wants_ado_org_scan(user_message)
+    explicit_reload = _user_wants_discovery_reload(user_message) and not explicit_ado_scan
+    explicit_inventory = explicit_ado_scan or any(
         w in msg
         for w in (
             "inventory",
             "service connection",
             "pipeline inventory",
             "discover service",
-            "scan ado",
-            "re-scan",
-            "rescan",
             "deleted",
         )
     )
@@ -646,6 +852,8 @@ def _migration_tool_calls(session: dict[str, Any], user_message: str) -> list[di
             phase = _phase_from_message(user_message, session)
             return [{"name": "build_migration_plan", "arguments": {"phase": phase}}]
         return []
+    if explicit_reload:
+        return [{"name": "fetch_profile_discovery", "arguments": {}}]
     if not snap:
         return [{"name": "fetch_profile_discovery", "arguments": {}}]
     if explicit_inventory and inventory_count == 0:
@@ -936,6 +1144,7 @@ async def _tool_fetch_migration_status(
 async def _tool_run_profile_scan(
     session: dict[str, Any],
     accel_post: Callable[..., Awaitable[dict]],
+    accel_get: Callable[..., Awaitable[dict]],
     session_token: str | None,
 ) -> dict[str, Any]:
     profile_id = session.get("profile_id")
@@ -944,27 +1153,17 @@ async def _tool_run_profile_scan(
         {},
         session_token=session_token,
     )
-    session["discovery_snapshot"] = {
-        "profile_id": profile_id,
-        "scanned_at": result.get("scanned_at", ""),
-        "repos_scanned": result.get("repos_scanned", 0),
-        "projects_scanned": result.get("projects_scanned", 0),
-        "repos": [],
-        "org_inventory": result.get("org_inventory", {}),
-        "pipeline_inventory_count": (result.get("org_inventory") or {}).get("pipeline_inventory_count")
-        or (result.get("pipeline_inventory") or {}).get("inventory_count")
-        or 0,
-        "inventory_gaps": result.get("inventory_gaps", []),
-        "project_details": result.get("project_details", []),
-        "warnings": result.get("warnings", []),
-        "status": result.get("status", "ok"),
-    }
-    session["discovery_fetched_at"] = _now()
+    session.pop("migration_plan", None)
+    session["plan_approved"] = False
+    discovery = await _tool_fetch_discovery(session, accel_get, session_token)
     return {
-        "repos_scanned": result.get("repos_scanned", 0),
-        "projects_scanned": result.get("projects_scanned", 0),
-        "pipeline_inventory_count": session["discovery_snapshot"].get("pipeline_inventory_count", 0),
-        "service_connections": (result.get("org_inventory") or {}).get("total_service_connections", 0),
+        "repos_scanned": result.get("repos_scanned", discovery.get("repos_scanned", 0)),
+        "projects_scanned": result.get("projects_scanned", discovery.get("projects_scanned", 0)),
+        "pipeline_inventory_count": discovery.get("pipeline_inventory_count", 0),
+        "service_connections": (result.get("org_inventory") or {}).get(
+            "total_service_connections", 0,
+        ),
+        "phases": discovery.get("phases", []),
     }
 
 
@@ -1213,7 +1412,7 @@ async def execute_tool(
     if name == "run_profile_scan":
         if not accel_post:
             return {"error": "scan_unavailable", "message": "Profile scan is not available."}
-        return await _tool_run_profile_scan(session, accel_post, session_token)
+        return await _tool_run_profile_scan(session, accel_post, accel_get, session_token)
     if name == "build_migration_plan":
         return await _tool_build_plan(
             session,
@@ -1273,29 +1472,8 @@ async def _auto_chain_migration_tools(
 
         tool_name = nxt.get("name", "")
         args = nxt.get("arguments") or {}
-        tool_meta = INTERNAL_TOOLS.get(tool_name, {})
-        subagent = tool_meta.get("subagent", "planner")
-        session["subagent"] = subagent
 
-        _append_event(
-            session,
-            role="assistant",
-            content=tool_name,
-            kind="tool_call",
-            subagent=subagent,
-            meta={"arguments": args},
-        )
-
-        task_id = {
-            "fetch_profile_discovery": "discovery",
-            "run_profile_scan": "discovery",
-            "build_migration_plan": "plan",
-            "run_migration_pev": "execute",
-        }.get(tool_name)
-        if task_id:
-            _set_task(session["tasks"], task_id, "running")
-
-        tool_result = await execute_tool(
+        tool_result = await _run_orchestrator_tool(
             tool_name,
             args,
             session=session,
@@ -1309,20 +1487,7 @@ async def _auto_chain_migration_tools(
 
         if tool_name == "run_migration_pev" and tool_result.get("status") == "starting":
             start_pev = True
-            _set_task(session["tasks"], "execute", "running", "Pipeline starting")
             _set_task(session["tasks"], "validate", "pending")
-        elif task_id:
-            status = "failed" if tool_result.get("error") else "completed"
-            _set_task(session["tasks"], task_id, status, tool_result.get("message", ""))
-
-        _append_event(
-            session,
-            role="tool",
-            content=json.dumps(tool_result, default=str)[:2000],
-            kind="tool_result",
-            subagent=subagent,
-            meta={"tool": tool_name, "result": tool_result},
-        )
 
         if tool_result.get("error"):
             err_reply = tool_result.get("message", tool_result["error"])
@@ -1449,6 +1614,10 @@ async def process_user_message(
         session["subagent"] = None
         return result
 
+    _reset_turn_status_budget(session)
+    if _user_wants_discovery_reload(user_message):
+        _invalidate_cached_discovery(session)
+
     start_pev = False
     orchestration_prompt = user_message
 
@@ -1554,71 +1723,22 @@ async def process_user_message(
         for call in tool_calls:
             tool_name = call.get("name", "")
             args = call.get("arguments") or {}
-            tool_meta = INTERNAL_TOOLS.get(tool_name, {})
-            subagent = tool_meta.get("subagent", "planner")
-            session["subagent"] = subagent
-
-            _append_event(
-                session,
-                role="assistant",
-                content=tool_name,
-                kind="tool_call",
-                subagent=subagent,
-                meta={"arguments": args},
-            )
-
-            task_id = {
-                "fetch_profile_discovery": "discovery",
-                "run_profile_scan": "discovery",
-                "build_migration_plan": "plan",
-                "run_migration_pev": "execute",
-            }.get(tool_name)
-            if task_id:
-                _set_task(session["tasks"], task_id, "running")
-
-            tool_result = await execute_tool(
-                tool_name,
-                args,
-                session=session,
-                accel_get=accel_get,
-                accel_post=accel_post,
-                build_plan=build_plan,
-                session_token=session_token,
-                llm=llm,
-                llm_degraded=llm_degraded,
-            )
-
-            if tool_name == "run_migration_pev" and tool_result.get("status") == "starting":
-                start_pev = True
-                _set_task(session["tasks"], "execute", "running", "Pipeline starting")
-                _set_task(session["tasks"], "validate", "pending")
-                _append_event(
-                    session,
-                    role="system",
-                    content="Starting executor and validator pipeline…",
-                    kind="task_update",
-                    subagent="executor",
-                )
-            elif task_id:
-                status = "failed" if tool_result.get("error") else "completed"
-                _set_task(session["tasks"], task_id, status, tool_result.get("message", ""))
-
-            if (
-                tool_name == "build_migration_plan"
-                and _finalize_build_migration_plan(session, result, tool_result)
-            ):
-                result.tasks = session["tasks"]
-                return result
-
-            if tool_name == "fetch_migration_status":
-                reply = tool_result.get("narrative") or "No migration status available."
-                result.reply = reply
-                _append_event(session, role="assistant", content=reply, kind="message")
-                session["subagent"] = None
-                result.tasks = session["tasks"]
-                return result
 
             if tool_name == "request_user_input":
+                tool_meta = INTERNAL_TOOLS.get(tool_name, {})
+                subagent = tool_meta.get("subagent", "planner")
+                session["subagent"] = subagent
+                tool_result = await execute_tool(
+                    tool_name,
+                    args,
+                    session=session,
+                    accel_get=accel_get,
+                    accel_post=accel_post,
+                    build_plan=build_plan,
+                    session_token=session_token,
+                    llm=llm,
+                    llm_degraded=llm_degraded,
+                )
                 if tool_result.get("auto_resolved"):
                     notice = _user_input_auto_resolve_message(tool_result, args, session)
                     _append_event(
@@ -1633,8 +1753,7 @@ async def process_user_message(
                     if phase:
                         session["plan_phase"] = phase
                     if session.get("discovery_snapshot") and not session.get("migration_plan"):
-                        _set_task(session["tasks"], "plan", "running")
-                        plan_result = await execute_tool(
+                        plan_result = await _run_orchestrator_tool(
                             "build_migration_plan",
                             {"phase": phase},
                             session=session,
@@ -1644,13 +1763,6 @@ async def process_user_message(
                             session_token=session_token,
                             llm=llm,
                             llm_degraded=llm_degraded,
-                        )
-                        plan_status = "failed" if plan_result.get("error") else "completed"
-                        _set_task(
-                            session["tasks"],
-                            "plan",
-                            plan_status,
-                            plan_result.get("message", ""),
                         )
                         if _finalize_build_migration_plan(
                             session, result, plan_result, prefix=f"{notice}\n\n",
@@ -1677,14 +1789,43 @@ async def process_user_message(
                 session["subagent"] = None
                 return result
 
-            _append_event(
-                session,
-                role="tool",
-                content=json.dumps(tool_result, default=str)[:2000],
-                kind="tool_result",
-                subagent=subagent,
-                meta={"tool": tool_name, "result": tool_result},
+            tool_result = await _run_orchestrator_tool(
+                tool_name,
+                args,
+                session=session,
+                accel_get=accel_get,
+                accel_post=accel_post,
+                build_plan=build_plan,
+                session_token=session_token,
+                llm=llm,
+                llm_degraded=llm_degraded,
             )
+
+            if tool_name == "run_migration_pev" and tool_result.get("status") == "starting":
+                start_pev = True
+                _set_task(session["tasks"], "validate", "pending")
+                _append_event(
+                    session,
+                    role="system",
+                    content="Starting executor and validator pipeline…",
+                    kind="task_update",
+                    subagent="executor",
+                )
+
+            if (
+                tool_name == "build_migration_plan"
+                and _finalize_build_migration_plan(session, result, tool_result)
+            ):
+                result.tasks = session["tasks"]
+                return result
+
+            if tool_name == "fetch_migration_status":
+                reply = tool_result.get("narrative") or "No migration status available."
+                result.reply = reply
+                _append_event(session, role="assistant", content=reply, kind="message")
+                session["subagent"] = None
+                result.tasks = session["tasks"]
+                return result
 
             if tool_result.get("error"):
                 err_reply = tool_result.get("message", tool_result["error"])

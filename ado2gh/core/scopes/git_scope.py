@@ -120,9 +120,15 @@ class GitScopeHandler:
 
         tmpdir = tempfile.mkdtemp(prefix="ado2gh_mirror_")
         mirror_path = os.path.join(tmpdir, f"{repo.ado_repo}.git")
+        git_exe = shutil.which("git")
+        if not git_exe:
+            raise RuntimeError(
+                "git executable not found on PATH. Install Git for Windows "
+                "(https://git-scm.com/download/win) and restart your terminal."
+            )
         try:
             result = subprocess.run(
-                ["git", "clone", "--mirror", clone_url, mirror_path],
+                [git_exe, "clone", "--mirror", clone_url, mirror_path],
                 capture_output=True, text=True, timeout=1800,
                 env=git_env,
             )
@@ -130,18 +136,18 @@ class GitScopeHandler:
                 raise RuntimeError(f"git clone --mirror failed: {result.stderr[:500]}")
 
             result = subprocess.run(
-                ["git", "remote", "set-url", "origin", target_url],
+                [git_exe, "remote", "set-url", "origin", target_url],
                 capture_output=True, text=True, cwd=mirror_path, timeout=30,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"git remote set-url failed: {result.stderr[:500]}")
 
             subprocess.run(
-                ["git", "config", "--unset", "remote.origin.mirror"],
+                [git_exe, "config", "--unset", "remote.origin.mirror"],
                 capture_output=True, text=True, cwd=mirror_path, timeout=10,
             )
             result = subprocess.run(
-                ["git", "push", "--force", "origin",
+                [git_exe, "push", "--force", "origin",
                  "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"],
                 capture_output=True, text=True, cwd=mirror_path, timeout=3600,
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},

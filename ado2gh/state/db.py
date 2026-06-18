@@ -815,12 +815,22 @@ class StateDB:
 
     # ── Profile scan (discovery per migration profile) ───────────────────────
 
-    def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+    def save_profile_scan(
+        self,
+        profile_id: str,
+        raw: dict[str, Any],
+        *,
+        preserve_manual_assignments: bool = True,
+    ) -> None:
         from ado2gh.api.migration_scan import pack_scan_summary_json
+        from ado2gh.api.profile_discovery import manual_phase_overrides
 
         now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
         gh_org = raw.get("gh_org", "")
         summary = pack_scan_summary_json(raw)
+        overrides: dict[tuple[str, str], str] = {}
+        if preserve_manual_assignments:
+            overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
         with self._conn() as conn:
             conn.execute("DELETE FROM profile_scan_repos WHERE profile_id=?", (profile_id,))
             conn.execute("""
@@ -859,6 +869,12 @@ class StateDB:
                         repo.get("pipeline_count", 0),
                         json.dumps(repo),
                     ))
+            for (project, repo_name), phase in overrides.items():
+                conn.execute(
+                    "UPDATE profile_scan_repos SET assigned_phase=? "
+                    "WHERE profile_id=? AND project=? AND repo_name=?",
+                    (phase, profile_id, project, repo_name),
+                )
 
     def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]:
         with self._conn() as conn:

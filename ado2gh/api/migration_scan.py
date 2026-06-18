@@ -374,18 +374,33 @@ def scan_with_credentials(
     return raw
 
 
-def persist_scan_results(profile_id: str, results: dict[str, Any]) -> Path:
+def persist_scan_results(
+    profile_id: str,
+    results: dict[str, Any],
+    *,
+    preserve_manual_assignments: bool = True,
+) -> Path:
     """Persist scan to SQLite/state DB and keep JSON backup for portability."""
     from ado2gh.api.state_db import get_state_db
 
     db = get_state_db()
     if hasattr(db, "save_profile_scan"):
-        db.save_profile_scan(profile_id, results)
+        db.save_profile_scan(
+            profile_id,
+            results,
+            preserve_manual_assignments=preserve_manual_assignments,
+        )
 
     path = _scan_results_path(profile_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"profile_id": profile_id, **results}
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if hasattr(db, "build_profile_scan_payload"):
+        payload = db.build_profile_scan_payload(profile_id) or results
+    else:
+        payload = results
+    path.write_text(
+        json.dumps({"profile_id": profile_id, **payload}, indent=2),
+        encoding="utf-8",
+    )
     return path
 
 
