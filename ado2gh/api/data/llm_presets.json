@@ -42,5 +42,83 @@
       "display_name": "Claude Sonnet 4",
       "description": "Latest Sonnet generation"
     }
+  ],
+  "github_copilot": [
+    {
+      "id": "openai/gpt-4o",
+      "display_name": "GPT-4o (GitHub Models)",
+      "description": "OpenAI GPT-4o via GitHub Models"
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "display_name": "GPT-4.1 (GitHub Models)",
+      "description": "OpenAI GPT-4.1 via GitHub Models"
+    },
+    {
+      "id": "openai/o3-mini",
+      "display_name": "o3-mini (GitHub Models)",
+      "description": "OpenAI reasoning model via GitHub Models"
+    },
+    {
+      "id": "meta/llama-3.3-70b-instruct",
+      "display_name": "Llama 3.3 70B",
+      "description": "Meta Llama instruct model"
+    },
+    {
+      "id": "deepseek/deepseek-r1",
+      "display_name": "DeepSeek R1",
+      "description": "DeepSeek reasoning model"
+    }
+  ],
+  "openrouter": [
+    {
+      "id": "openai/gpt-4o",
+      "display_name": "OpenAI GPT-4o",
+      "description": "Routed via OpenRouter"
+    },
+    {
+      "id": "anthropic/claude-3.5-sonnet",
+      "display_name": "Claude 3.5 Sonnet",
+      "description": "Routed via OpenRouter"
+    },
+    {
+      "id": "google/gemini-2.0-flash-001",
+      "display_name": "Gemini 2.0 Flash",
+      "description": "Routed via OpenRouter"
+    },
+    {
+      "id": "meta-llama/llama-3.3-70b-instruct",
+      "display_name": "Llama 3.3 70B Instruct",
+      "description": "Routed via OpenRouter"
+    }
+  ],
+  "azure_openai": [
+    {
+      "id": "gpt-4o",
+      "display_name": "gpt-4o deployment",
+      "description": "Use your Azure deployment name as the model ID"
+    },
+    {
+      "id": "gpt-4o-mini",
+      "display_name": "gpt-4o-mini deployment",
+      "description": "Use your Azure deployment name as the model ID"
+    }
+  ],
+  "google_gemini": [
+    {
+      "id": "gemini-2.0-flash",
+      "display_name": "Gemini 2.0 Flash",
+      "description": "Fast multimodal model"
+    },
+    {
+      "id": "gemini-1.5-pro",
+      "display_name": "Gemini 1.5 Pro",
+      "description": "High capability Gemini"
+    },
+    {
+      "id": "gemini-1.5-flash",
+      "display_name": "Gemini 1.5 Flash",
+      "description": "Fast Gemini 1.5"
+    }
   ]
 }

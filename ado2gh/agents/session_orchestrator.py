@@ -31,14 +31,15 @@ You MUST use tools for migration work — never invent repo lists or phases from
 Rules:
 1. Call fetch_profile_discovery before build_migration_plan.
 2. build_migration_plan requires discovery data in session state.
-3. run_migration_pev requires an existing migration_plan AND plan_approved=true (operator confirmed the plan).
+3. run_migration_pev requires an existing migration_plan AND plan_approved=true (operator confirmed the plan via the review form).
 4. After build_migration_plan succeeds, STOP and wait for operator confirmation — do NOT call run_migration_pev in the same turn.
-5. When the operator asks for live execution (e.g. "no dry run", "migrate live"), set dry_run false before planning if they are admin/approver; operators need approval.
-6. NEVER call run_migration_pev for a live session when session.requires_live_approval is true (operators only — admins and approvers may run live directly).
-7. Use request_user_input when phase, profile, or confirmation is missing — only once per missing field; if phase was auto-resolved, call build_migration_plan next (do not call request_user_input again for phase).
-8. For general questions, reply without tools.
-9. Chain discovery → plan only until the operator confirms the plan; then run_migration_pev when they approve execution.
-10. run_migration_pev starts the executor+validator pipeline; the LLM reviews each subagent phase and may retry up to 3 times.
+5. Remigrate, retry, or replan requests MUST rebuild the plan and show the confirmation form — never start execution in that turn, even if a prior plan was approved.
+6. When the operator asks for live execution (e.g. "no dry run", "migrate live"), set dry_run false before planning if they are admin/approver; operators need approval.
+7. NEVER call run_migration_pev for a live session when session.requires_live_approval is true (operators only — admins and approvers may run live directly).
+8. Use request_user_input when phase, profile, or confirmation is missing — only once per missing field; if phase was auto-resolved, call build_migration_plan next (do not call request_user_input again for phase).
+9. For general questions and migration **status/progress** questions, reply without migration planning tools — use fetch_migration_status for "which repos migrated", progress, or history.
+10. Chain discovery → plan only until the operator confirms the plan; then run_migration_pev only after explicit execute approval (e.g. "execute", "run migration", or form confirm+execute).
+11. run_migration_pev starts the executor+validator pipeline; the LLM reviews each subagent phase and may retry up to 3 times.
 
 Respond with JSON only:
 {
@@ -68,6 +69,13 @@ INTERNAL_TOOLS = {
     "run_migration_pev": {
         "subagent": "executor",
         "description": "Start executor+validator pipeline (dry-run by default).",
+    },
+    "fetch_migration_status": {
+        "subagent": "validator",
+        "description": (
+            "Report which repos have actually been migrated (git/pipeline state), "
+            "including failures — not the in-chat plan."
+        ),
     },
     "request_user_input": {
         "subagent": "planner",
@@ -168,7 +176,42 @@ def _parse_llm_json(text: str) -> dict[str, Any]:
         return {"reply": text, "tool_calls": []}
 
 
+def _migration_status_intent(user_message: str) -> bool:
+    msg = user_message.lower()
+    status_phrases = (
+        "which repos",
+        "what repos",
+        "how many repos",
+        "migrated so far",
+        "already migrated",
+        "migration status",
+        "migration progress",
+        "migration history",
+        "what has been migrated",
+        "what's been migrated",
+        "what has migrated",
+        "repos have been",
+        "repos were migrated",
+        "show migrated",
+        "list migrated",
+        "completed repos",
+        "failed repos",
+        "migration monitor",
+        "run status",
+        "pipeline status",
+    )
+    if any(p in msg for p in status_phrases):
+        return True
+    if "migrat" in msg and any(
+        w in msg for w in ("status", "progress", "so far", "already", "which", "what", "how many", "list", "show")
+    ):
+        return True
+    return False
+
+
 def _migration_intent(user_message: str) -> bool:
+    if _migration_status_intent(user_message):
+        return False
     msg = user_message.lower()
     return any(
         w in msg
@@ -180,8 +223,24 @@ def _migration_intent(user_message: str) -> bool:
     )
 
 
+def _user_wants_replan_only(user_message: str) -> bool:
+    msg = user_message.lower()
+    return any(
+        w in msg
+        for w in (
+            "remigrate",
+            "re-migrate",
+            "re migrate",
+            "replan",
+            "re-plan",
+        )
+    )
+
+
 def _user_wants_retry_migration(user_message: str) -> bool:
     msg = user_message.lower()
+    if _user_wants_replan_only(user_message):
+        return False
     return any(
         w in msg
         for w in (
@@ -193,6 +252,7 @@ def _user_wants_retry_migration(user_message: str) -> bool:
             "deleted",
             "repo is gone",
             "migrate again",
+            "run migration again",
         )
     )
 
@@ -219,12 +279,32 @@ def _phase_from_message(user_message: str, session: dict[str, Any]) -> str:
 
 
 def _wants_migration_execute(user_message: str) -> bool:
+    if _user_wants_retry_migration(user_message) or _user_wants_replan_only(user_message):
+        return False
+    if _user_requests_plan_changes(user_message):
+        return False
     msg = user_message.lower()
+    explicit_execute = (
+        "execute",
+        "start migration",
+        "run migration",
+        "run the migration",
+        "start the migration",
+        "go ahead",
+        "proceed with migration",
+        "proceed with execution",
+        "dry-run",
+        "dry run",
+    )
+    if any(p in msg for p in explicit_execute):
+        return True
+    if msg.strip() in ("yes", "go", "start", "run"):
+        return True
     if parse_execution_mode_from_message(user_message) is False and any(
-        w in msg for w in ("migrate", "migration", "execute", "run", "start", "go")
+        w in msg for w in ("execute", "run", "start", "go")
     ):
         return True
-    return any(w in msg for w in ("run", "execute", "start", "go", "yes", "dry-run", "dry run", "migrate"))
+    return False
 
 
 def _migration_tool_calls(session: dict[str, Any], user_message: str) -> list[dict[str, Any]]:
@@ -232,6 +312,7 @@ def _migration_tool_calls(session: dict[str, Any], user_message: str) -> list[di
     snap = session.get("discovery_snapshot") or {}
     inventory_count = int(snap.get("pipeline_inventory_count") or 0)
     retry = bool(session.get("migration_retry"))
+    replan = bool(session.get("migration_replan"))
     msg = user_message.lower()
     explicit_inventory = any(
         w in msg
@@ -248,6 +329,11 @@ def _migration_tool_calls(session: dict[str, Any], user_message: str) -> list[di
     )
     if retry:
         return [{"name": "run_profile_scan", "arguments": {}}]
+    if replan:
+        if not session.get("migration_plan"):
+            phase = _phase_from_message(user_message, session)
+            return [{"name": "build_migration_plan", "arguments": {"phase": phase}}]
+        return []
     if not snap:
         return [{"name": "fetch_profile_discovery", "arguments": {}}]
     if explicit_inventory and inventory_count == 0:
@@ -261,18 +347,24 @@ def _migration_tool_calls(session: dict[str, Any], user_message: str) -> list[di
         phase = _phase_from_message(user_message, session)
         return [{"name": "build_migration_plan", "arguments": {"phase": phase}}]
     if session.get("plan_approved") and _wants_migration_execute(user_message):
+        if session.get("migration_retry"):
+            return []
         return [{"name": "run_migration_pev", "arguments": {}}]
     return []
 
 
 def _auto_migration_chain_step(session: dict[str, Any], user_message: str) -> dict[str, Any] | None:
     """Next migration tool to run automatically after scan/discovery without waiting for the LLM."""
-    if _discovery_needs_fetch(session):
+    replan = bool(session.get("migration_replan"))
+    if not replan and _discovery_needs_fetch(session):
         return {"name": "fetch_profile_discovery", "arguments": {}}
     snap = session.get("discovery_snapshot") or {}
     if not snap:
         return None
     retry = bool(session.get("migration_retry"))
+    if replan and not session.get("migration_plan"):
+        phase = _phase_from_message(user_message, session)
+        return {"name": "build_migration_plan", "arguments": {"phase": phase}}
     if not session.get("migration_plan") or retry:
         if session.get("migration_plan") and retry:
             session.pop("migration_plan", None)
@@ -283,12 +375,17 @@ def _auto_migration_chain_step(session: dict[str, Any], user_message: str) -> di
 
 
 def _retry_chain_prefix(session: dict[str, Any]) -> str:
-    if not session.get("migration_retry"):
-        return ""
-    return (
-        "**Retry:** rescanned discovery and rebuilt the migration plan "
-        "after the target repo was removed.\n\n"
-    )
+    if session.get("migration_retry"):
+        return (
+            "**Retry:** rescanned discovery and rebuilt the migration plan "
+            "after the target repo was removed.\n\n"
+        )
+    if session.get("migration_replan"):
+        return (
+            "**Remigration:** rebuilt the migration plan from current discovery data. "
+            "Review the configuration before executing.\n\n"
+        )
+    return ""
 
 
 def _user_approves_plan(user_message: str) -> bool:
@@ -421,8 +518,8 @@ def _plan_confirmation_reply(session: dict[str, Any]) -> str:
         return plan.get("block_reason", "Migration plan is blocked.")
     narrative = plan.get("narrative")
     prefix = (
-        "I've prepared a migration plan. **Please review it** — is it correct, "
-        "or do you need changes?\n\n"
+        "I've prepared a migration plan. **Please review the configuration** — "
+        "confirm the phase, repos, GitHub targets, and scopes are correct before execution.\n\n"
     )
     if narrative:
         return prefix + str(narrative) + "\n\nUse the form below to confirm or describe changes."
@@ -463,6 +560,12 @@ def migration_ready_reply(session: dict[str, Any]) -> str:
 
 def _stub_orchestrate(user_message: str, session: dict[str, Any]) -> dict[str, Any]:
     """Deterministic tool routing when LLM is stub/degraded."""
+    if _migration_status_intent(user_message):
+        return {
+            "thinking": "Fetching migration status from platform state.",
+            "tool_calls": [{"name": "fetch_migration_status", "arguments": {}}],
+            "reply": "",
+        }
     if _migration_intent(user_message):
         calls = _migration_tool_calls(session, user_message)
         if not calls:
@@ -480,6 +583,25 @@ def _stub_orchestrate(user_message: str, session: dict[str, Any]) -> dict[str, A
         "thinking": "Answering without migration tools.",
         "tool_calls": [],
         "reply": f"[stub] {user_message[:120]}",
+    }
+
+
+async def _tool_fetch_migration_status(
+    accel_get: Callable[..., Awaitable[dict]],
+    session_token: str | None,
+) -> dict[str, Any]:
+    from ado2gh.api.migration_status_report import (
+        build_migration_status_report,
+        format_migration_status_narrative,
+    )
+
+    data = await accel_get("/v1/migration/status", session_token=session_token)
+    narrative = format_migration_status_narrative(data)
+    return {
+        "summary": data.get("summary"),
+        "migrated_count": len(data.get("migrated_repos") or []),
+        "failed_count": len(data.get("failed_repos") or []),
+        "narrative": narrative,
     }
 
 
@@ -744,6 +866,8 @@ async def execute_tool(
     llm: LLMProvider,
     llm_degraded: bool = False,
 ) -> dict[str, Any]:
+    if name == "fetch_migration_status":
+        return await _tool_fetch_migration_status(accel_get, session_token)
     if name == "fetch_profile_discovery":
         return await _tool_fetch_discovery(session, accel_get, session_token)
     if name == "run_profile_scan":
@@ -864,6 +988,7 @@ async def _auto_chain_migration_tools(
 
         if tool_name == "build_migration_plan":
             session.pop("migration_retry", None)
+            session.pop("migration_replan", None)
             if _finalize_build_migration_plan(session, result, tool_result, prefix=prefix):
                 result.tasks = session["tasks"]
                 return True, False
@@ -895,12 +1020,27 @@ async def process_user_message(
 
     apply_execution_mode_from_message(session, user_message)
 
+    if _migration_status_intent(user_message):
+        status_result = await _tool_fetch_migration_status(accel_get, session_token)
+        result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
+        result.reply = status_result.get("narrative") or "No migration status available."
+        _append_event(session, role="assistant", content=result.reply, kind="message")
+        session["subagent"] = "validator"
+        return result
+
     if _user_wants_retry_migration(user_message):
         session.pop("migration_plan", None)
         session["plan_approved"] = False
         session["migration_retry"] = True
+        session.pop("migration_replan", None)
+    elif _user_wants_replan_only(user_message):
+        session.pop("migration_plan", None)
+        session["plan_approved"] = False
+        session["migration_replan"] = True
+        session.pop("migration_retry", None)
     else:
         session.pop("migration_retry", None)
+        session.pop("migration_replan", None)
 
     if (
         session.get("migration_plan")
@@ -982,13 +1122,14 @@ async def process_user_message(
             if should_return:
                 return result
             if chain_start_pev:
-                result.start_pev = True
-                plan = session.get("migration_plan") or {}
-                result.reply = plan.get("narrative") or "Starting migration pipeline…"
-                _append_event(session, role="assistant", content=result.reply, kind="message")
-                session["subagent"] = "executor"
-                result.tasks = session["tasks"]
-                return result
+                if session.get("plan_approved"):
+                    result.start_pev = True
+                    plan = session.get("migration_plan") or {}
+                    result.reply = plan.get("narrative") or "Starting migration pipeline…"
+                    _append_event(session, role="assistant", content=result.reply, kind="message")
+                    session["subagent"] = "executor"
+                    result.tasks = session["tasks"]
+                    return result
             if _auto_migration_chain_step(session, user_message):
                 orchestration_prompt = (
                     f"Original request: {user_message}\n"
@@ -1058,6 +1199,14 @@ async def process_user_message(
                 tool_name == "build_migration_plan"
                 and _finalize_build_migration_plan(session, result, tool_result)
             ):
+                result.tasks = session["tasks"]
+                return result
+
+            if tool_name == "fetch_migration_status":
+                reply = tool_result.get("narrative") or "No migration status available."
+                result.reply = reply
+                _append_event(session, role="assistant", content=reply, kind="message")
+                session["subagent"] = None
                 result.tasks = session["tasks"]
                 return result
 
@@ -1155,7 +1304,7 @@ async def process_user_message(
         )
         if should_return:
             return result
-        if chain_start_pev:
+        if chain_start_pev and session.get("plan_approved"):
             result.start_pev = True
             plan = session.get("migration_plan") or {}
             result.reply = (
@@ -1169,16 +1318,18 @@ async def process_user_message(
             return result
 
         if start_pev:
-            result.start_pev = True
-            plan = session.get("migration_plan") or {}
-            result.reply = (
-                plan.get("narrative")
-                or parsed.get("reply")
-                or "Starting migration pipeline…"
-            )
-            _append_event(session, role="assistant", content=result.reply, kind="message")
-            session["subagent"] = "executor"
-            return result
+            if session.get("plan_approved"):
+                result.start_pev = True
+                plan = session.get("migration_plan") or {}
+                result.reply = (
+                    plan.get("narrative")
+                    or parsed.get("reply")
+                    or "Starting migration pipeline…"
+                )
+                _append_event(session, role="assistant", content=result.reply, kind="message")
+                session["subagent"] = "executor"
+                return result
+            start_pev = False
 
         orchestration_prompt = (
             f"Original request: {user_message}\n"
@@ -1192,6 +1343,7 @@ async def process_user_message(
             session.get("migration_plan")
             and not _wants_migration_execute(user_message)
             and not session.get("migration_retry")
+            and not _migration_status_intent(user_message)
         ):
             result.reply = parsed.get("reply") or migration_ready_reply(session)
             _append_event(session, role="assistant", content=result.reply, kind="message")

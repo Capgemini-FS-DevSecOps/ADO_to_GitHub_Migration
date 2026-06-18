@@ -1,5 +1,16 @@
 import { ACCEL } from './api';
 
+export type LlmProviderSpec = {
+  id: string;
+  label: string;
+  description?: string;
+  kind: string;
+  default_base_url?: string | null;
+  requires_api_key: boolean;
+  requires_base_url: boolean;
+  preset_key: string;
+};
+
 export type CatalogEntry = {
   id: string;
   display_name: string;
@@ -77,6 +88,11 @@ async function llmFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(text || `Request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
+}
+
+export async function fetchProviders(): Promise<LlmProviderSpec[]> {
+  const data = await llmFetch<{ providers: LlmProviderSpec[] }>('/v1/settings/llm-models/providers');
+  return data.providers;
 }
 
 export async function fetchCatalog(params: {

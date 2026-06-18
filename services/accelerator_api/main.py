@@ -438,6 +438,19 @@ def pipeline_readiness(req: ReadinessRequest):
     )
 
 
+@app.get("/v1/migration/status")
+def migration_status():
+    """Per-repo migration progress from StateDB and recent pipeline runs."""
+    from ado2gh.api.migration_status_report import build_migration_status_report
+    from ado2gh.api.pipeline_runner import PipelineRunStore
+
+    adv = _settings.load().advanced
+    db = create_state_db(adv.db_path)
+    runs, _ = PipelineRunStore.list_runs(limit=10, offset=0)
+    report = build_migration_status_report(db, pipeline_runs=runs)
+    return report
+
+
 @app.get("/v1/dashboard", response_model=DashboardSnapshot)
 def dashboard(db_path: str = "migration_state.db"):
     db = create_state_db(db_path)
@@ -611,6 +624,14 @@ def test_connectivity_route(request: Request):
     except Exception as exc:
         category, message = _classify_error(exc)
         return {"status": "failed", "category": category, "message": message}
+
+
+@app.get("/v1/settings/llm-models/providers")
+def list_llm_provider_types(request: Request):
+    require_manage_models(request)
+    from ado2gh.api.llm_provider_registry import list_provider_specs
+
+    return {"providers": list_provider_specs()}
 
 
 @app.get("/v1/settings/llm-models/catalog")

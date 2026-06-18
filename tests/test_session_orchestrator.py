@@ -487,3 +487,57 @@ async def test_retry_with_stub_llm_chains_full_workflow(base_session):
     assert mock_build_fn.called
     assert base_session.get("migration_plan") == plan_doc
     assert result.pending_form is not None
+
+
+@pytest.mark.asyncio
+async def test_remigrate_does_not_auto_execute_with_prior_approval(base_session):
+    """Remigrate must replan and show confirmation — not start PEV immediately."""
+    base_session["migration_plan"] = {
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "repos": ["azure-pipelines/azure-pipelines-script-migration"],
+        "pipeline_steps": ["connect", "migrate", "validate"],
+        "narrative": "Prior plan",
+    }
+    base_session["plan_approved"] = True
+    base_session["discovery_snapshot"] = {
+        "repos": [{"assigned_phase": "poc", "project": "azure-pipelines", "repo_name": "azure-pipelines-script-migration"}],
+        "repos_scanned": 1,
+        "pipeline_inventory_count": 1,
+    }
+
+    plan_doc = {
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "repos": ["azure-pipelines/azure-pipelines-script-migration"],
+        "pipeline_steps": ["connect", "migrate", "validate"],
+        "narrative": "Remigration plan ready.",
+    }
+
+    mock_build = AsyncMock(return_value=plan_doc)
+
+    result = await process_user_message(
+        base_session,
+        "Please remigrate azure-pipelines/azure-pipelines-script-migration",
+        llm=StubLLMProvider(),
+        llm_degraded=True,
+        accel_get=AsyncMock(),
+        build_plan=mock_build,
+        session_token=None,
+        max_iterations=3,
+    )
+
+    assert not result.start_pev
+    assert base_session.get("plan_approved") is False
+    assert result.pending_form is not None
+    assert result.pending_form.get("form_id") == "plan_confirmation"
+    assert mock_build.called
+
+
+def test_wants_migration_execute_ignores_remigrate():
+    from ado2gh.agents.session_orchestrator import _wants_migration_execute
+
+    assert not _wants_migration_execute("Please remigrate the repo")
+    assert _wants_migration_execute("execute dry-run migration")

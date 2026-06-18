@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 import httpx
 
 from ado2gh.api.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
+from ado2gh.api.llm_provider_registry import get_provider_spec
 from ado2gh.api.local_hosts import resolve_local_service_url
 from ado2gh.api.llm_model_store import LLMModelStore
 
@@ -99,11 +100,34 @@ def ssl_error_type():
     return ssl.SSLError
 
 
-def _validate_openai(api_key: str, model_id: str) -> None:
+def _validate_openai_compatible(
+    api_key: str,
+    model_id: str,
+    *,
+    base_url: str,
+    extra_headers: dict[str, str] | None = None,
+    auth_style: str = "bearer",
+    completions_path: str = "/chat/completions",
+    azure_api_version: str = "2024-06-01",
+) -> None:
+    path = completions_path.replace("{model_id}", model_id)
+    if not path.startswith("/"):
+        path = f"/{path}"
+    url = f"{base_url.rstrip('/')}{path}"
+    headers = (
+        {"api-key": api_key}
+        if auth_style == "azure-api-key"
+        else {"Authorization": f"Bearer {api_key}"}
+    )
+    if extra_headers:
+        headers.update(extra_headers)
+    if auth_style == "azure-api-key":
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}api-version={azure_api_version}"
     with build_llm_http_client(for_cloud=True) as client:
         response = client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}"},
+            url,
+            headers=headers,
             json={
                 "model": model_id,
                 "messages": [{"role": "user", "content": "ping"}],
@@ -111,6 +135,14 @@ def _validate_openai(api_key: str, model_id: str) -> None:
             },
         )
         response.raise_for_status()
+
+
+def _validate_openai(api_key: str, model_id: str) -> None:
+    _validate_openai_compatible(
+        api_key,
+        model_id,
+        base_url="https://api.openai.com/v1",
+    )
 
 
 def _validate_anthropic(api_key: str, model_id: str) -> None:
@@ -149,12 +181,25 @@ def _validate_ollama(base_url: str, model_id: str, api_key: str = "") -> None:
         response.raise_for_status()
 
 
+def _validate_gemini(api_key: str, model_id: str, base_url: str = "") -> None:
+    spec = get_provider_spec("google_gemini")
+    root = (base_url or (spec.default_base_url if spec else "")).rstrip("/")
+    with build_llm_http_client(for_cloud=True) as client:
+        response = client.post(
+            f"{root}/models/{model_id}:generateContent",
+            params={"key": api_key},
+            json={"contents": [{"parts": [{"text": "ping"}]}]},
+        )
+        response.raise_for_status()
+
+
 def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
     provider = body.get("provider", "")
     model_id = body.get("model_id", "")
     api_key = (body.get("api_key") or "").strip()
     base_url = body.get("base_url") or ""
     try:
+        spec = get_provider_spec(provider)
         if provider == "openai":
             if not api_key:
                 return _result("failed", category="credentials", message="API key is required.")
@@ -163,6 +208,55 @@ def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
             if not api_key:
                 return _result("failed", category="credentials", message="API key is required.")
             _validate_anthropic(api_key, model_id)
+        elif provider == "github_copilot":
+            if not api_key:
+                return _result(
+                    "failed",
+                    category="credentials",
+                    message="GitHub PAT with models:read scope is required.",
+                )
+            if not spec:
+                return _result("failed", category="model_not_found", message="Unknown provider.")
+            _validate_openai_compatible(
+                api_key,
+                model_id,
+                base_url=base_url or spec.default_base_url,
+                extra_headers=spec.runtime_headers(),
+            )
+        elif provider == "openrouter":
+            if not api_key:
+                return _result("failed", category="credentials", message="API key is required.")
+            if not spec:
+                return _result("failed", category="model_not_found", message="Unknown provider.")
+            _validate_openai_compatible(
+                api_key,
+                model_id,
+                base_url=base_url or spec.default_base_url,
+                extra_headers=spec.runtime_headers(),
+            )
+        elif provider == "azure_openai":
+            if not api_key:
+                return _result("failed", category="credentials", message="API key is required.")
+            if not base_url:
+                return _result(
+                    "failed",
+                    category="network",
+                    message="Azure resource base URL is required (e.g. https://{resource}.openai.azure.com/openai).",
+                )
+            if not spec:
+                return _result("failed", category="model_not_found", message="Unknown provider.")
+            _validate_openai_compatible(
+                api_key,
+                model_id,
+                base_url=base_url,
+                auth_style=spec.auth_style,
+                completions_path=spec.completions_path,
+                azure_api_version=spec.azure_api_version,
+            )
+        elif provider == "google_gemini":
+            if not api_key:
+                return _result("failed", category="credentials", message="API key is required.")
+            _validate_gemini(api_key, model_id, base_url)
         elif provider == "ollama":
             if not base_url:
                 return _result("failed", category="network", message="Base URL is required.")

@@ -7,10 +7,12 @@ import {
   deleteModel,
   fetchCatalog,
   fetchConnectivity,
+  fetchProviders,
   saveModel,
   validateModel,
   validationBadgeLabel,
   type CatalogEntry,
+  type LlmProviderSpec,
   type ValidationResult,
   type LlmModelRecord,
 } from '@/lib/llmSettings';
@@ -29,10 +31,26 @@ function isLikelyOllamaUrl(url: string): boolean {
   }
 }
 
+function isLikelyHttpUrl(url: string): boolean {
+  return isLikelyOllamaUrl(url);
+}
+
 async function listModels() {
   const r = await fetch(`${ACCEL}/v1/settings/llm-models`, { credentials: 'include', cache: 'no-store' });
   if (!r.ok) throw new Error(await r.text());
   return r.json() as Promise<{ models: LlmModelRecord[] }>;
+}
+
+function apiKeyPlaceholder(spec: LlmProviderSpec | undefined): string {
+  if (!spec) return 'API key';
+  if (spec.id === 'github_copilot') {
+    return 'GitHub PAT (models:read scope)';
+  }
+  if (spec.id === 'openrouter') return 'OpenRouter API key';
+  if (spec.id === 'google_gemini') return 'Google AI API key';
+  if (spec.id === 'azure_openai') return 'Azure OpenAI API key';
+  if (spec.id === 'anthropic') return 'Anthropic API key';
+  return 'API key (required to load model catalog)';
 }
 
 export default function LlmModelsPage() {
@@ -52,6 +70,12 @@ export default function LlmModelsPage() {
     enabled: allowed,
   });
 
+  const { data: providers = [] } = useQuery({
+    queryKey: ['llm-providers'],
+    queryFn: fetchProviders,
+    enabled: allowed,
+  });
+
   const [displayName, setDisplayName] = useState('');
   const [provider, setProvider] = useState('openai');
   const [apiKey, setApiKey] = useState('');
@@ -67,6 +91,11 @@ export default function LlmModelsPage() {
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState('');
 
+  const providerSpec = useMemo(
+    () => providers.find((entry) => entry.id === provider),
+    [providers, provider],
+  );
+
   const selectedEntry = useMemo(
     () => catalogEntries.find((entry) => entry.id === selectedModelId),
     [catalogEntries, selectedModelId],
@@ -78,13 +107,23 @@ export default function LlmModelsPage() {
 
   const effectiveModelId = showOverride && customModelId ? customModelId : selectedModelId;
 
+  const needsBaseUrl = providerSpec?.requires_base_url ?? provider === 'ollama';
+  const needsApiKey = providerSpec?.requires_api_key ?? provider !== 'stub';
+
   const canLoadCatalog =
     provider === 'stub' ||
-    (provider === 'ollama' && isLikelyOllamaUrl(baseUrl)) ||
-    ((provider === 'openai' || provider === 'anthropic') && Boolean(apiKey.trim()));
+    (needsBaseUrl && isLikelyHttpUrl(baseUrl) && (!needsApiKey || Boolean(apiKey.trim()))) ||
+    (!needsBaseUrl && needsApiKey && Boolean(apiKey.trim())) ||
+    (!needsBaseUrl && !needsApiKey);
 
   const canValidate =
     provider === 'stub' || Boolean(effectiveModelId) || canLoadCatalog;
+
+  useEffect(() => {
+    if (providers.length && !providers.some((entry) => entry.id === provider)) {
+      setProvider(providers[0]?.id ?? 'openai');
+    }
+  }, [providers, provider]);
 
   useEffect(() => {
     setValidation(null);
@@ -99,10 +138,14 @@ export default function LlmModelsPage() {
     }
     if (provider === 'ollama') {
       setBaseUrl((prev) => prev || 'http://localhost:11434');
+    } else if (providerSpec?.default_base_url) {
+      setBaseUrl(providerSpec.default_base_url);
+    } else {
+      setBaseUrl('');
     }
     setCatalogEntries([]);
     setSelectedModelId('');
-  }, [provider, apiKey, baseUrl]);
+  }, [provider, apiKey, providerSpec?.default_base_url]);
 
   async function loadCatalog(): Promise<CatalogEntry[]> {
     if (!canLoadCatalog || catalogLoading) return catalogEntries;
@@ -116,7 +159,7 @@ export default function LlmModelsPage() {
       const catalog = await fetchCatalog({
         provider,
         apiKey: apiKey || undefined,
-        baseUrl: provider === 'ollama' ? baseUrl.trim() : undefined,
+        baseUrl: needsBaseUrl ? baseUrl.trim() : undefined,
       });
       setCatalogEntries(catalog.entries);
       setCatalogStale(catalog.stale);
@@ -155,7 +198,7 @@ export default function LlmModelsPage() {
         provider,
         model_id: effectiveModelId || displayName,
         api_key: apiKey,
-        base_url: provider === 'ollama' ? baseUrl : null,
+        base_url: needsBaseUrl ? baseUrl : providerSpec?.default_base_url ?? null,
         catalog_source: showOverride && customModelId ? 'override' : catalogSource,
         catalog_label: selectedEntry?.display_name ?? customModelId,
         enabled: validation?.status === 'passed',
@@ -218,7 +261,7 @@ export default function LlmModelsPage() {
         provider,
         model_id: modelId,
         api_key: apiKey,
-        base_url: provider === 'ollama' ? baseUrl : null,
+        base_url: needsBaseUrl ? baseUrl : providerSpec?.default_base_url ?? null,
         catalog_source: showOverride && customModelId ? 'override' : catalogSource,
       });
       setValidation(result);
@@ -245,8 +288,8 @@ export default function LlmModelsPage() {
     <div>
       <h2 className="oai-subsection-title">LLM models</h2>
       <p className="form-hint">
-        Enter provider credentials, search the model catalog, validate connectivity, then save and enable.
-        For local Ollama, use Search models or Validate to discover installed models.
+        Choose a provider (OpenAI, Anthropic, GitHub Copilot, OpenRouter, Azure OpenAI, Gemini,
+        or local Ollama), search the catalog, validate connectivity, then save and enable.
       </p>
       <div className="oai-card" style={{ marginBottom: 16 }}>
         {(data?.models ?? []).map((m) => (
@@ -289,39 +332,53 @@ export default function LlmModelsPage() {
             onChange={(e) => setDisplayName(e.target.value)}
           />
           <select className="oai-input" value={provider} onChange={(e) => setProvider(e.target.value)}>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="ollama">Local / Ollama</option>
-            <option value="stub">Stub</option>
+            {providers.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label}
+              </option>
+            ))}
           </select>
-          {provider !== 'stub' && provider !== 'ollama' && (
+          {providerSpec?.description && (
+            <p className="form-hint" style={{ gridColumn: '1 / -1' }}>
+              {providerSpec.description}
+            </p>
+          )}
+          {provider !== 'stub' && needsApiKey && (
             <input
               className="oai-input"
               type="password"
-              placeholder="API key (required to load model catalog)"
+              placeholder={apiKeyPlaceholder(providerSpec)}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
           )}
-          {provider === 'ollama' && (
+          {needsBaseUrl && (
             <>
               <input
                 className="oai-input"
-                placeholder="Base URL (http://localhost:11434)"
+                placeholder={
+                  provider === 'ollama'
+                    ? 'Base URL (http://localhost:11434)'
+                    : 'Base URL (e.g. https://{resource}.openai.azure.com/openai)'
+                }
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
-              <input
-                className="oai-input"
-                type="password"
-                placeholder="Bearer token (optional — if Ollama requires auth)"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-              <p className="form-hint">
-                Ollama runs on your machine. When the API runs in Docker, localhost is rewritten to
-                host.docker.internal automatically.
-              </p>
+              {provider === 'ollama' && (
+                <>
+                  <input
+                    className="oai-input"
+                    type="password"
+                    placeholder="Bearer token (optional — if Ollama requires auth)"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                  />
+                  <p className="form-hint">
+                    Ollama runs on your machine. When the API runs in Docker, localhost is rewritten to
+                    host.docker.internal automatically.
+                  </p>
+                </>
+              )}
             </>
           )}
           <select
@@ -337,8 +394,8 @@ export default function LlmModelsPage() {
                   ? 'Enter base URL, then search for models'
                   : provider === 'ollama'
                     ? 'Search models to load local models'
-                    : (provider === 'openai' || provider === 'anthropic') && !apiKey
-                      ? 'Enter API key to load models'
+                    : needsApiKey && !apiKey
+                      ? 'Enter credentials to load models'
                       : 'Search models to load catalog'}
               </option>
             )}

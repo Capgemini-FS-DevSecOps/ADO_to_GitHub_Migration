@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from ado2gh.api.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
+from ado2gh.api.llm_provider_registry import get_provider_spec
 from ado2gh.api.local_hosts import ollama_discovery_hint, resolve_local_service_url
 
 _PRESETS_PATH = Path(__file__).resolve().parent / "data" / "llm_presets.json"
@@ -21,7 +22,9 @@ def _load_presets() -> dict[str, list[dict[str, Any]]]:
 
 
 def _preset_entries(provider: str) -> list[dict[str, Any]]:
-    presets = _load_presets().get(provider, [])
+    spec = get_provider_spec(provider)
+    preset_key = spec.preset_key if spec else provider
+    presets = _load_presets().get(preset_key, [])
     return [
         {
             "id": item["id"],
@@ -100,6 +103,84 @@ def _fetch_openai_live(api_key: str) -> list[dict[str, Any]]:
     return entries
 
 
+def _fetch_github_models_live(api_key: str) -> list[dict[str, Any]]:
+    spec = get_provider_spec("github_copilot")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        **(spec.runtime_headers() if spec else {}),
+    }
+    with build_llm_http_client(for_cloud=True) as client:
+        response = client.get(spec.catalog_path if spec else "", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+    entries: list[dict[str, Any]] = []
+    models = data if isinstance(data, list) else data.get("data", data.get("models", []))
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id") or item.get("name") or ""
+        if not model_id:
+            continue
+        entries.append(
+            {
+                "id": model_id,
+                "display_name": item.get("display_name") or item.get("name") or model_id,
+                "description": item.get("description", ""),
+                "provider": "github_copilot",
+                "source": "live",
+            }
+        )
+    return entries
+
+
+def _fetch_openrouter_live(api_key: str) -> list[dict[str, Any]]:
+    spec = get_provider_spec("openrouter")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        **(spec.runtime_headers() if spec else {}),
+    }
+    with build_llm_http_client(for_cloud=True) as client:
+        response = client.get(spec.catalog_path if spec else "", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+    entries = []
+    for item in data.get("data", []):
+        model_id = item.get("id", "")
+        if not model_id:
+            continue
+        entries.append(
+            {
+                "id": model_id,
+                "display_name": item.get("name") or model_id,
+                "description": item.get("description", ""),
+                "provider": "openrouter",
+                "source": "live",
+            }
+        )
+    return entries
+
+
+def _live_with_preset_fallback(
+    provider: str,
+    *,
+    api_key: str = "",
+    fetcher,
+) -> dict[str, Any]:
+    if not api_key:
+        return {"entries": [], "source": "live", "stale": False}
+    try:
+        entries = fetcher(api_key)
+        if entries:
+            return {"entries": entries, "source": "live", "stale": False}
+    except Exception:
+        pass
+    return {
+        "entries": _preset_entries(provider),
+        "source": "preset",
+        "stale": True,
+    }
+
+
 def _ollama_headers(api_key: str = "") -> dict[str, str] | None:
     if not api_key:
         return None
@@ -161,19 +242,9 @@ def _ollama_catalog(base_url: str, api_key: str = "") -> dict[str, Any]:
 
 def _catalog_result(provider: str, *, api_key: str = "", base_url: str = "") -> dict[str, Any]:
     if provider == "anthropic":
-        if not api_key:
-            return {"entries": [], "source": "live", "stale": False}
-        try:
-            entries = _fetch_anthropic_live(api_key)
-            if entries:
-                return {"entries": entries, "source": "live", "stale": False}
-        except Exception:
-            pass
-        return {
-            "entries": _preset_entries("anthropic"),
-            "source": "preset",
-            "stale": True,
-        }
+        return _live_with_preset_fallback(
+            provider, api_key=api_key, fetcher=_fetch_anthropic_live,
+        )
     if provider == "openai":
         if api_key:
             try:
@@ -186,6 +257,20 @@ def _catalog_result(provider: str, *, api_key: str = "", base_url: str = "") -> 
             "entries": _preset_entries("openai"),
             "source": "preset",
             "stale": True,
+        }
+    if provider == "github_copilot":
+        return _live_with_preset_fallback(
+            provider, api_key=api_key, fetcher=_fetch_github_models_live,
+        )
+    if provider == "openrouter":
+        return _live_with_preset_fallback(
+            provider, api_key=api_key, fetcher=_fetch_openrouter_live,
+        )
+    if provider in ("azure_openai", "google_gemini"):
+        return {
+            "entries": _preset_entries(provider),
+            "source": "preset",
+            "stale": False,
         }
     if provider == "ollama":
         if not base_url:
