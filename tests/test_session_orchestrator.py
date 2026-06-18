@@ -541,3 +541,38 @@ def test_wants_migration_execute_ignores_remigrate():
 
     assert not _wants_migration_execute("Please remigrate the repo")
     assert _wants_migration_execute("execute dry-run migration")
+
+
+@pytest.mark.asyncio
+async def test_general_question_does_not_run_migration_tools(base_session):
+    base_session["discovery_snapshot"] = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+        "repos_scanned": 1,
+    }
+    base_session["migration_plan"] = None
+
+    accel_get = AsyncMock()
+    build_plan = AsyncMock()
+
+    result = await process_user_message(
+        base_session,
+        "What time is it?",
+        llm=StubLLMProvider(),
+        llm_degraded=True,
+        accel_get=accel_get,
+        build_plan=build_plan,
+        session_token=None,
+    )
+
+    assert "UTC" in (result.reply or "")
+    assert not result.start_pev
+    assert result.pending_form is None
+    accel_get.assert_not_called()
+    build_plan.assert_not_called()
+
+
+def test_migration_workflow_inactive_for_time_question():
+    from ado2gh.agents.session_orchestrator import _migration_workflow_active
+
+    assert not _migration_workflow_active("What time is it?")
+    assert _migration_workflow_active("build migration plan for poc")

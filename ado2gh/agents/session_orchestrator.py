@@ -37,7 +37,7 @@ Rules:
 6. When the operator asks for live execution (e.g. "no dry run", "migrate live"), set dry_run false before planning if they are admin/approver; operators need approval.
 7. NEVER call run_migration_pev for a live session when session.requires_live_approval is true (operators only — admins and approvers may run live directly).
 8. Use request_user_input when phase, profile, or confirmation is missing — only once per missing field; if phase was auto-resolved, call build_migration_plan next (do not call request_user_input again for phase).
-9. For general questions and migration **status/progress** questions, reply without migration planning tools — use fetch_migration_status for "which repos migrated", progress, or history.
+9. For general questions (time, greetings, unrelated topics), reply in plain text with tool_calls=[] — never call migration tools. For migration status, use fetch_migration_status.
 10. Chain discovery → plan only until the operator confirms the plan; then run_migration_pev only after explicit execute approval (e.g. "execute", "run migration", or form confirm+execute).
 11. run_migration_pev starts the executor+validator pipeline; the LLM reviews each subagent phase and may retry up to 3 times.
 
@@ -47,6 +47,13 @@ Respond with JSON only:
   "tool_calls": [{"name": "tool_name", "arguments": {}}],
   "reply": "user-facing message when no more tools needed this turn"
 }
+"""
+
+GENERAL_CHAT_SYSTEM = """You are the ADO→GitHub migration assistant.
+Answer general questions briefly and accurately (time, greetings, capabilities, etc.).
+You help operators plan and run Azure DevOps → GitHub migrations, but not every message is a migration request.
+If a migration plan is already waiting for review, you may remind them to use the confirmation form — do NOT rebuild plans or start execution unless asked.
+Never invent migration status — if asked about progress, say to ask for migration status explicitly.
 """
 
 INTERNAL_TOOLS = {
@@ -207,6 +214,49 @@ def _migration_status_intent(user_message: str) -> bool:
     ):
         return True
     return False
+
+
+def _migration_workflow_active(user_message: str) -> bool:
+    """True when the user is asking for migration planning/execution work."""
+    return any(
+        (
+            _migration_intent(user_message),
+            _user_wants_retry_migration(user_message),
+            _user_wants_replan_only(user_message),
+            _wants_migration_execute(user_message),
+            _user_approves_plan(user_message),
+            _user_requests_plan_changes(user_message),
+        )
+    )
+
+
+def _direct_general_answer(user_message: str) -> str | None:
+    msg = user_message.lower().strip()
+    if any(p in msg for p in ("what time is it", "what's the time", "whats the time", "current time")):
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        return f"The current time is **{now}**."
+    return None
+
+
+def _general_chat_reply(
+    user_message: str,
+    llm: LLMProvider,
+    session: dict[str, Any],
+) -> str:
+    direct = _direct_general_answer(user_message)
+    if direct:
+        if session.get("pending_form"):
+            return (
+                f"{direct}\n\n"
+                "A migration plan is still waiting for your review in the form below."
+            )
+        return direct
+    raw = llm.complete(user_message, system=GENERAL_CHAT_SYSTEM)
+    parsed = _parse_llm_json(raw)
+    reply = (parsed.get("reply") or raw or "").strip()
+    if session.get("pending_form") and "form" not in reply.lower():
+        reply += "\n\nA migration plan is waiting for your review in the form below."
+    return reply
 
 
 def _migration_intent(user_message: str) -> bool:
@@ -564,6 +614,12 @@ def _stub_orchestrate(user_message: str, session: dict[str, Any]) -> dict[str, A
         return {
             "thinking": "Fetching migration status from platform state.",
             "tool_calls": [{"name": "fetch_migration_status", "arguments": {}}],
+            "reply": "",
+        }
+    if not _migration_workflow_active(user_message):
+        return {
+            "thinking": "General question — answering without migration tools.",
+            "tool_calls": [],
             "reply": "",
         }
     if _migration_intent(user_message):
@@ -1050,6 +1106,17 @@ async def process_user_message(
     ):
         session["plan_approved"] = True
 
+    if not _migration_workflow_active(user_message):
+        result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
+        if llm_unconfigured:
+            from ado2gh.agents.llm_provider import NO_LLM_CONFIGURED_MESSAGE
+            result.reply = NO_LLM_CONFIGURED_MESSAGE
+        else:
+            result.reply = _general_chat_reply(user_message, llm, session)
+        _append_event(session, role="assistant", content=result.reply, kind="message")
+        session["subagent"] = None
+        return result
+
     result = OrchestratorResult(tasks=session["tasks"])
     if llm_unconfigured:
         from ado2gh.agents.llm_provider import NO_LLM_CONFIGURED_MESSAGE
@@ -1091,6 +1158,8 @@ async def process_user_message(
             raw = llm.complete(prompt, system=ORCHESTRATOR_SYSTEM)
             parsed = _parse_llm_json(raw)
             tool_calls = parsed.get("tool_calls") or []
+            if tool_calls and not _migration_workflow_active(user_message):
+                tool_calls = []
             if not tool_calls and _migration_intent(user_message):
                 stub = _stub_orchestrate(orchestration_prompt, session)
                 if stub.get("tool_calls"):
@@ -1108,6 +1177,11 @@ async def process_user_message(
             )
 
         if not tool_calls:
+            if not _migration_workflow_active(user_message):
+                reply = parsed.get("reply") or _general_chat_reply(user_message, llm, session)
+                _append_event(session, role="assistant", content=reply, kind="message")
+                result.reply = reply
+                break
             should_return, chain_start_pev = await _auto_chain_migration_tools(
                 session,
                 user_message,
@@ -1137,7 +1211,19 @@ async def process_user_message(
                 )
                 continue
 
-            reply = parsed.get("reply") or migration_ready_reply(session)
+            reply = parsed.get("reply")
+            if not reply:
+                reply = (
+                    migration_ready_reply(session)
+                    if _migration_workflow_active(user_message)
+                    else _general_chat_reply(user_message, llm, session)
+                )
+            _append_event(session, role="assistant", content=reply, kind="message")
+            result.reply = reply
+            break
+
+        if tool_calls and not _migration_workflow_active(user_message):
+            reply = parsed.get("reply") or _general_chat_reply(user_message, llm, session)
             _append_event(session, role="assistant", content=reply, kind="message")
             result.reply = reply
             break
