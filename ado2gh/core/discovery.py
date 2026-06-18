@@ -13,7 +13,6 @@ from pathlib import Path
 
 from ado2gh.clients import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import PipelineMetadata, PipelineType
 from ado2gh.output_dirs import output_str
 from ado2gh.state.db import StateDB
 

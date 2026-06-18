@@ -1,15 +1,15 @@
 {
-  "version": "0.10.4.dev0",
+  "version": "0.11.2.dev0",
   "integration_state_schema": 1,
   "installed_integrations": [
-    "cursor-agent"
+    "windsurf"
   ],
   "integration_settings": {
-    "cursor-agent": {
+    "windsurf": {
       "script": "ps",
-      "invoke_separator": "-"
+      "invoke_separator": "."
     }
   },
-  "integration": "cursor-agent",
-  "default_integration": "cursor-agent"
+  "integration": "windsurf",
+  "default_integration": "windsurf"
 }

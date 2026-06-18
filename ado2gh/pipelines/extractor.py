@@ -6,7 +6,6 @@ from datetime import datetime
 
 import yaml
 
-from ado2gh.logging_config import log
 from ado2gh.models import (
     PipelineComplexity,
     PipelineEnvironment,

@@ -1,16 +1,14 @@
 """Audit bridge for local IDE sessions and MCP tool calls."""
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 
 from ado2gh.assignments.audit import AuditWriter
-from ado2gh.state.db import StateDB
+from ado2gh.state.factory import create_state_db
 
 
-def _state_db() -> StateDB:
-    path = os.environ.get("ADO2GH_SQLITE_PATH", "migration_state.db")
-    return StateDB(path)
+def _state_db():
+    return create_state_db()
 
 
 class IdeAuditBridge:

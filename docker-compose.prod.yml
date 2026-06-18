@@ -26,6 +26,7 @@ services:
       ADO2GH_AUTH_ENABLED: "true"
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,6 +36,7 @@ services:
       ADO2GH_STORAGE_BACKEND: postgres
       ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
       ADO2GH_DATA_DIR: /app/data
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     depends_on:
       - postgres
 

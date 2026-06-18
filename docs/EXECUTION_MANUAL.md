@@ -66,7 +66,7 @@ cd c:\Users\snanjan\Downloads\ADO2GH
 python -m venv venv
 venv\Scripts\activate          # Windows
 pip install -e .
-ado2gh --version               # Should print: 5.0.0
+ado2gh --version               # Should print: 5.1.0
 ```
 
 ### Set Credentials

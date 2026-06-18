@@ -4,6 +4,10 @@ from __future__ import annotations
 import logging
 import time
 
+from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
+
+ensure_gei_dotnet_env()
+
 from ado2gh.api.accelerator import Accelerator
 from ado2gh.api.contracts import JobTypeEnum as JobType, RunWaveRequest
 from ado2gh.infra.queue.redis_queue import RedisJobQueue

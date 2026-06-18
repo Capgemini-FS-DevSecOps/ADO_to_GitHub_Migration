@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from ado2gh.logging_config import console, log
-from ado2gh.models import DEFAULT_PHASES, GateStatus, PHASE_ORDER, PhaseType, next_phase
+from ado2gh.models import DEFAULT_PHASES
 
 
 def load_clients(cfg_global: dict):

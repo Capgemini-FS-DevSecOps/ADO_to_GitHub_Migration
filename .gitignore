@@ -59,6 +59,7 @@ scan_preview.json
 .env
 .env.*
 !.env.example
+.do-not-use
 *.pem
 
 # --- Logs & scratch ---

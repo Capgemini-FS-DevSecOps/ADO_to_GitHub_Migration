@@ -65,7 +65,6 @@ def register(cli):
     @click.option("--db", default="migration_state.db", show_default=True)
     def phase_plan(config, db):
         from ado2gh.core.config_loader import ConfigLoader
-        from ado2gh.phase.progress_tracker import ProgressTracker
         from ado2gh.state.factory import create_state_db
         from rich.panel import Panel
         global_cfg, waves = ConfigLoader.load(config)

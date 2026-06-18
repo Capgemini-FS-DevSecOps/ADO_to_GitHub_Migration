@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 
 from ado2gh.api.local_hosts import ollama_discovery_hint, resolve_local_service_url
 

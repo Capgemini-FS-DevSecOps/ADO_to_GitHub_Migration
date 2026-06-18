@@ -7,7 +7,25 @@ interface RepoMigrateDetail {
   status: string;
   summary?: string;
   errors?: string[];
-  scopes?: Array<{ scope: string; status: string; error?: string; detail?: string }>;
+  scopes?: Array<{
+    scope: string;
+    label?: string;
+    category?: string;
+    status: string;
+    error?: string;
+    detail?: string;
+  }>;
+}
+
+interface WorkItemDetail {
+  id: string;
+  label: string;
+  category?: string;
+  category_label?: string;
+  status: string;
+  blocker?: string;
+  repo?: string;
+  scope?: string;
 }
 
 interface RepoValidateDetail {
@@ -19,15 +37,53 @@ interface RepoValidateDetail {
   checks?: Array<{ check: string; verdict: string; detail?: string }>;
 }
 
+const MIGRATE_STEP_IDS = new Set([
+  'migrate',
+  'migrate_repos',
+  'convert_pipelines',
+  'map_secrets',
+  'convert_metadata',
+]);
+
 function verdictClass(verdict: string): string {
   if (verdict === 'PASS' || verdict === 'completed') return 'badge-auto';
   if (verdict === 'WARN' || verdict === 'partial') return 'badge-assisted';
+  if (verdict === 'blocked' || verdict === 'ready') return 'badge-assisted';
   return 'badge-manual';
 }
 
 function MigrateResults({ step }: { step: PipelineStep }) {
   const details = (step.result?.repo_details as RepoMigrateDetail[] | undefined) ?? [];
+  const workItems = (step.result?.work_items as WorkItemDetail[] | undefined) ?? [];
   const repos = step.result?.repos as Record<string, unknown> | undefined;
+
+  if (workItems.length > 0) {
+    return (
+      <table className="run-detail-table">
+        <thead>
+          <tr>
+            <th>Work item</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {workItems.map((wi) => (
+            <tr key={wi.id}>
+              <td>{wi.label}</td>
+              <td>{wi.category_label ?? wi.category ?? '—'}</td>
+              <td>
+                <span className={verdictClass(wi.status)}>{wi.status}</span>
+              </td>
+              <td>{wi.blocker || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
   if (!details.length && repos) {
     return (
       <p style={{ fontSize: 12, color: '#888' }}>
@@ -61,7 +117,7 @@ function MigrateResults({ step }: { step: PipelineStep }) {
                     ?.filter((s) => s.status !== 'completed')
                     .map((s) => (
                       <li key={s.scope}>
-                        {s.scope}: {s.error || s.detail || 'failed'}
+                        {s.label ?? s.scope}: {s.error || s.detail || 'failed'}
                       </li>
                     ))}
                 </ul>
@@ -120,9 +176,11 @@ function ValidateResults({ step }: { step: PipelineStep }) {
 }
 
 export function RunStepDetails({ steps }: { steps: PipelineStep[] }) {
-  const migrate = steps.find((s) => s.id === 'migrate');
+  const migrateSteps = steps.filter(
+    (s) => MIGRATE_STEP_IDS.has(s.id) && (s.result?.repo_details || s.result?.repos || s.result?.work_items),
+  );
   const validate = steps.find((s) => s.id === 'validate');
-  const hasMigrate = Boolean(migrate?.result?.repo_details || migrate?.result?.repos);
+  const hasMigrate = migrateSteps.length > 0;
   const hasValidate = Boolean(validate?.result?.repo_details);
 
   if (!hasMigrate && !hasValidate) return null;
@@ -130,13 +188,14 @@ export function RunStepDetails({ steps }: { steps: PipelineStep[] }) {
   return (
     <div className="oai-card">
       <h2 className="oai-subsection-title">Repo results</h2>
-      {hasMigrate && migrate && (
-        <section style={{ marginBottom: 24 }}>
-          <h3 className="oai-detail-heading">Migration</h3>
-          <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>{migrate.message}</p>
-          <MigrateResults step={migrate} />
-        </section>
-      )}
+      {hasMigrate &&
+        migrateSteps.map((step) => (
+          <section key={step.id} style={{ marginBottom: 24 }}>
+            <h3 className="oai-detail-heading">{step.label}</h3>
+            <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>{step.message}</p>
+            <MigrateResults step={step} />
+          </section>
+        ))}
       {hasValidate && validate && (
         <section>
           <h3 className="oai-detail-heading">Validation</h3>

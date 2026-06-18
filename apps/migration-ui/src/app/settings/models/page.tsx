@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import {
   canEnableModel,
+  deleteModel,
   fetchCatalog,
   fetchConnectivity,
   saveModel,
@@ -61,7 +62,6 @@ export default function LlmModelsPage() {
   const [customModelId, setCustomModelId] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [discoveryError, setDiscoveryError] = useState('');
-  const [debouncedBaseUrl, setDebouncedBaseUrl] = useState('');
   const [validation, setValidation] = useState<ValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
   const [error, setError] = useState('');
@@ -77,70 +77,75 @@ export default function LlmModelsPage() {
 
   const effectiveModelId = showOverride && customModelId ? customModelId : selectedModelId;
 
+  const canLoadCatalog =
+    provider === 'stub' ||
+    (provider === 'ollama' && isLikelyOllamaUrl(baseUrl)) ||
+    ((provider === 'openai' || provider === 'anthropic') && Boolean(apiKey.trim()));
+
+  const canValidate =
+    provider === 'stub' || Boolean(effectiveModelId) || canLoadCatalog;
+
   useEffect(() => {
-    setSelectedModelId('');
-    setCatalogEntries([]);
-    setCatalogStale(false);
     setValidation(null);
     setError('');
     setDiscoveryError('');
-  }, [provider, apiKey]);
-
-  useEffect(() => {
-    if (provider !== 'ollama') {
-      setDebouncedBaseUrl('');
-      return;
-    }
-    const timer = setTimeout(() => setDebouncedBaseUrl(baseUrl.trim()), 400);
-    return () => clearTimeout(timer);
-  }, [baseUrl, provider]);
-
-  useEffect(() => {
-    if (!allowed) return;
+    setCatalogStale(false);
+    setCustomModelId('');
     if (provider === 'stub') {
       setCatalogEntries([{ id: 'stub', display_name: 'Stub', provider: 'stub', source: 'preset' }]);
-      setCatalogStale(false);
       setSelectedModelId('stub');
       return;
     }
-    if (provider === 'ollama' && (!debouncedBaseUrl || !isLikelyOllamaUrl(debouncedBaseUrl))) {
-      setCatalogEntries([]);
-      setDiscoveryError('');
-      return;
+    if (provider === 'ollama') {
+      setBaseUrl((prev) => prev || 'http://localhost:11434');
     }
-    if ((provider === 'openai' || provider === 'anthropic') && !apiKey) {
-      setCatalogEntries([]);
-      return;
-    }
-    let cancelled = false;
+    setCatalogEntries([]);
+    setSelectedModelId('');
+  }, [provider, apiKey, baseUrl]);
+
+  async function loadCatalog(): Promise<CatalogEntry[]> {
+    if (!canLoadCatalog || catalogLoading) return catalogEntries;
+    if (provider === 'stub') return catalogEntries;
+
     setCatalogLoading(true);
+    setError('');
     setDiscoveryError('');
-    fetchCatalog({
-      provider,
-      apiKey: apiKey || undefined,
-      baseUrl: provider === 'ollama' ? debouncedBaseUrl : undefined,
-    })
-      .then((catalog) => {
-        if (cancelled) return;
-        setCatalogEntries(catalog.entries);
-        setCatalogStale(catalog.stale);
-        setCatalogSource(catalog.source);
-        setDiscoveryError(catalog.discovery_error ?? '');
-        setSelectedModelId((prev) => {
-          if (prev && catalog.entries.some((entry) => entry.id === prev)) {
-            return prev;
-          }
-          return catalog.entries[0]?.id ?? '';
-        });
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Catalog load failed'))
-      .finally(() => {
-        if (!cancelled) setCatalogLoading(false);
+    setValidation(null);
+    try {
+      const catalog = await fetchCatalog({
+        provider,
+        apiKey: apiKey || undefined,
+        baseUrl: provider === 'ollama' ? baseUrl.trim() : undefined,
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [allowed, provider, apiKey, debouncedBaseUrl]);
+      setCatalogEntries(catalog.entries);
+      setCatalogStale(catalog.stale);
+      setCatalogSource(catalog.source);
+      setDiscoveryError(catalog.discovery_error ?? '');
+      setSelectedModelId((prev) => {
+        if (prev && catalog.entries.some((entry) => entry.id === prev)) {
+          return prev;
+        }
+        return catalog.entries[0]?.id ?? '';
+      });
+      return catalog.entries;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Catalog load failed');
+      setCatalogEntries([]);
+      setSelectedModelId('');
+      return [];
+    } finally {
+      setCatalogLoading(false);
+    }
+  }
+
+  async function resolveModelIdForValidation(): Promise<string> {
+    if (effectiveModelId) return effectiveModelId;
+    if (provider === 'stub') return 'stub';
+    if (!canLoadCatalog) return '';
+    const entries = await loadCatalog();
+    if (showOverride && customModelId) return customModelId;
+    return entries[0]?.id ?? '';
+  }
 
   const createMut = useMutation({
     mutationFn: () =>
@@ -168,15 +173,34 @@ export default function LlmModelsPage() {
     onError: (e) => setError(e instanceof Error ? e.message : 'Save failed'),
   });
 
+  const deleteMut = useMutation({
+    mutationFn: (modelId: string) => deleteModel(modelId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['llm-models-admin'] });
+      qc.invalidateQueries({ queryKey: ['llm-models'] });
+      setError('');
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Delete failed'),
+  });
+
   async function handleValidate() {
-    if (validating) return;
+    if (validating || !canValidate) return;
     setValidating(true);
     setError('');
     try {
+      const modelId = await resolveModelIdForValidation();
+      if (!modelId) {
+        setError(
+          provider === 'ollama'
+            ? 'No local models found — check the Ollama base URL and that Ollama is running.'
+            : 'No models found — check credentials and try Search models.',
+        );
+        return;
+      }
       const result = await validateModel({
         display_name: displayName,
         provider,
-        model_id: effectiveModelId,
+        model_id: modelId,
         api_key: apiKey,
         base_url: provider === 'ollama' ? baseUrl : null,
         catalog_source: showOverride && customModelId ? 'override' : catalogSource,
@@ -205,7 +229,8 @@ export default function LlmModelsPage() {
     <div>
       <h2 className="oai-subsection-title">LLM models</h2>
       <p className="form-hint">
-        Pick a model from the catalog, validate connectivity, then save and enable.
+        Enter provider credentials, search the model catalog, validate connectivity, then save and enable.
+        For local Ollama, use Search models or Validate to discover installed models.
       </p>
       <div className="oai-card" style={{ marginBottom: 16 }}>
         {(data?.models ?? []).map(
@@ -218,16 +243,32 @@ export default function LlmModelsPage() {
             validation_status?: string;
             validation_at?: string | null;
           }) => (
-            <p key={m.id} className="credential-meta">
-              <strong>{m.display_name}</strong> — {m.provider} / {m.catalog_label || m.model_id}{' '}
-              <span className="form-hint">
-                ({validationBadgeLabel(m.validation_status)}
-                {m.validation_at ? ` · ${m.validation_at}` : ''})
-              </span>
-            </p>
+            <div key={m.id} className="credential-meta" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <p style={{ flex: 1, margin: 0 }}>
+                <strong>{m.display_name}</strong> — {m.provider} / {m.catalog_label || m.model_id}{' '}
+                <span className="form-hint">
+                  ({validationBadgeLabel(m.validation_status)}
+                  {m.validation_at ? ` · ${m.validation_at}` : ''})
+                </span>
+              </p>
+              <button
+                type="button"
+                className="oai-button oai-button-secondary"
+                disabled={deleteMut.isPending}
+                onClick={() => {
+                  if (window.confirm(`Delete model "${m.display_name}"?`)) {
+                    deleteMut.mutate(m.id);
+                  }
+                }}
+              >
+                Delete
+              </button>
+            </div>
           ),
         )}
-        {!data?.models?.length && <p className="form-hint">No models configured — agent uses stub mode.</p>}
+        {!data?.models?.length && (
+          <p className="form-hint">No models configured — the agent chat will prompt you to add one.</p>
+        )}
       </div>
       <div className="oai-card">
         <h3 className="oai-subsection-title">Add model</h3>
@@ -286,9 +327,13 @@ export default function LlmModelsPage() {
             {catalogLoading && <option value="">Loading catalog…</option>}
             {!catalogLoading && catalogEntries.length === 0 && (
               <option value="">
-                {(provider === 'openai' || provider === 'anthropic') && !apiKey
-                  ? 'Enter API key to load models'
-                  : 'No catalog entries'}
+                {provider === 'ollama' && !isLikelyOllamaUrl(baseUrl)
+                  ? 'Enter base URL, then search for models'
+                  : provider === 'ollama'
+                    ? 'Search models to load local models'
+                    : (provider === 'openai' || provider === 'anthropic') && !apiKey
+                      ? 'Enter API key to load models'
+                      : 'Search models to load catalog'}
               </option>
             )}
             {catalogEntries.map((entry) => (
@@ -311,12 +356,20 @@ export default function LlmModelsPage() {
             {validationBadgeLabel(validation.status)} — {validation.message}
           </p>
         )}
-        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
           <button
             type="button"
             className="oai-button"
-            disabled={validating || !effectiveModelId}
-            onClick={handleValidate}
+            disabled={!canLoadCatalog || catalogLoading || provider === 'stub'}
+            onClick={() => void loadCatalog()}
+          >
+            {catalogLoading ? 'Searching…' : 'Search models'}
+          </button>
+          <button
+            type="button"
+            className="oai-button"
+            disabled={validating || !canValidate}
+            onClick={() => void handleValidate()}
           >
             {validating ? 'Validating…' : 'Validate'}
           </button>

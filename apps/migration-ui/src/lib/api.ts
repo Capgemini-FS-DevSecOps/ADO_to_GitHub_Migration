@@ -1,6 +1,8 @@
 import type {
   AdvancedSettings,
   AdoValidationResult,
+  AuditHistoryParams,
+  AuditHistoryResponse,
   DashboardSnapshot,
   GitHubTokenEntry,
   MigrationProfile,
@@ -53,11 +55,16 @@ export async function fetchDashboard(): Promise<DashboardSnapshot> {
   return api<DashboardSnapshot>('/v1/dashboard');
 }
 
-export async function fetchReadiness(): Promise<ReadinessSnapshot> {
+export async function fetchReadiness(options?: {
+  refreshInventory?: boolean;
+}): Promise<ReadinessSnapshot> {
   return api<ReadinessSnapshot>('/v1/pipeline-readiness', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config_path: 'migration.yaml' }),
+    body: JSON.stringify({
+      config_path: 'migration.yaml',
+      refresh_inventory: options?.refreshInventory ?? false,
+    }),
   });
 }
 
@@ -119,6 +126,14 @@ export async function runMigrationScan(body: {
 
 export async function scanMigrationProfile(profileId: string): Promise<MigrationScanResult> {
   return api<MigrationScanResult>(`/v1/settings/profiles/${profileId}/scan`, { method: 'POST' });
+}
+
+export async function fetchProfileScanStatus(
+  profileId: string,
+): Promise<{ profile_id: string; running: boolean }> {
+  return api<{ profile_id: string; running: boolean }>(
+    `/v1/settings/profiles/${profileId}/scan/status`,
+  );
 }
 
 export async function fetchProfileScan(profileId: string): Promise<MigrationScanResult> {
@@ -307,9 +322,13 @@ export async function savePhaseAssignments(
 }
 
 export async function runValidation(body: {
-  config_path: string;
+  profile_id?: string;
+  phase?: string;
+  config_path?: string;
+  config_yaml?: string;
   db_path?: string;
   input_path?: string;
+  input_text?: string;
 }): Promise<ValidationResult> {
   return api<ValidationResult>('/v1/validate', {
     method: 'POST',
@@ -318,8 +337,41 @@ export async function runValidation(body: {
   });
 }
 
-export async function fetchPipelineRuns(): Promise<{ runs: PipelineRun[] }> {
-  return api<{ runs: PipelineRun[] }>('/v1/pipeline/runs');
+export async function fetchPipelineRuns(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  runs: PipelineRun[];
+  total: number;
+  limit: number;
+  offset: number;
+  summary?: {
+    total: number;
+    completed_live: number;
+    dry_run: number;
+    active: number;
+    awaiting_approval?: number;
+    failed: number;
+  };
+}> {
+  const limit = params?.limit ?? 20;
+  const offset = params?.offset ?? 0;
+  return api<{
+    runs: PipelineRun[];
+    total: number;
+    limit: number;
+    offset: number;
+    summary?: {
+      total: number;
+      completed_live: number;
+      dry_run: number;
+      active: number;
+      awaiting_approval?: number;
+      failed: number;
+    };
+  }>(
+    `/v1/pipeline/runs?limit=${limit}&offset=${offset}`,
+  );
 }
 
 export async function fetchPipelineRun(id: string): Promise<{ run: PipelineRun }> {
@@ -353,12 +405,52 @@ export async function listAssignments(profileId: string) {
   return data.assignments;
 }
 
-export async function fetchHistory(profileId?: string) {
+function historyQueryString(params: AuditHistoryParams): string {
+  const q = new URLSearchParams();
+  if (params.profileId) q.set('profile_id', params.profileId);
+  if (params.limit != null) q.set('limit', String(params.limit));
+  if (params.offset != null) q.set('offset', String(params.offset));
+  if (params.actor) q.set('actor', params.actor);
+  if (params.eventType) q.set('event_type', params.eventType);
+  if (params.search) q.set('search', params.search);
+  if (params.dateFrom) q.set('date_from', params.dateFrom);
+  if (params.dateTo) q.set('date_to', params.dateTo);
+  const s = q.toString();
+  return s ? `?${s}` : '';
+}
+
+export async function fetchHistory(
+  params: AuditHistoryParams = {},
+): Promise<AuditHistoryResponse> {
+  return api<AuditHistoryResponse>(`/v1/history/sessions${historyQueryString(params)}`);
+}
+
+export async function fetchAuditEventTypes(profileId?: string): Promise<string[]> {
   const q = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
-  const data = await api<{ sessions: Array<Record<string, unknown>> }>(
-    `/v1/history/sessions${q}`,
-  );
-  return data.sessions;
+  const data = await api<{ event_types: string[] }>(`/v1/history/event-types${q}`);
+  return data.event_types;
+}
+
+export async function downloadAuditHistoryExport(
+  params: AuditHistoryParams = {},
+): Promise<void> {
+  const r = await fetch(`${ACCEL}/v1/history/sessions/export${historyQueryString(params)}`, {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(err || `Export failed (${r.status})`);
+  }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'audit-history.csv';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function fetchAssignmentGate(assignmentId: string) {

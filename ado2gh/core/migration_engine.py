@@ -8,7 +8,7 @@ from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.registry import SCOPE_REGISTRY
 from ado2gh.infra.concurrency import ConcurrencyManager
 from ado2gh.logging_config import log
-from ado2gh.models import MigrationScope, MigrationStatus, RepoConfig
+from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, MigrationScope, MigrationStatus, RepoConfig
 from ado2gh.state.db import StateDB
 
 
@@ -33,7 +33,7 @@ class MigrationEngine:
         self.gh = gh
         self.db = db
         self.dry_run = dry_run
-        self.strategy = global_cfg.get("migration_strategy", "mirror")
+        self.strategy = global_cfg.get("migration_strategy", DEFAULT_MIGRATION_STRATEGY)
         self.concurrency = concurrency or ConcurrencyManager.from_dict(global_cfg)
         self.assignment_id = assignment_id
         self.allowed_repo_keys = allowed_repo_keys
@@ -79,7 +79,8 @@ class MigrationEngine:
             if handler is None:
                 continue
 
-            self.db.upsert_migration(wave_id, repo, scope, MigrationStatus.IN_PROGRESS)
+            if not self.dry_run:
+                self.db.upsert_migration(wave_id, repo, scope, MigrationStatus.IN_PROGRESS)
 
             if progress and task_id is not None:
                 progress.update(
@@ -98,25 +99,28 @@ class MigrationEngine:
 
                 if inner_failed:
                     results[scope] = {"status": "failed", "detail": stats}
-                    self.db.upsert_migration(
-                        wave_id, repo, scope, MigrationStatus.FAILED,
-                        stats=stats,
-                        error=f"{stats.get('failed', 0)}/{stats.get('total', '?')} item(s) failed",
-                    )
+                    if not self.dry_run:
+                        self.db.upsert_migration(
+                            wave_id, repo, scope, MigrationStatus.FAILED,
+                            stats=stats,
+                            error=f"{stats.get('failed', 0)}/{stats.get('total', '?')} item(s) failed",
+                        )
                 else:
                     results[scope] = {"status": "completed", "detail": stats}
-                    self.db.upsert_migration(
-                        wave_id, repo, scope, MigrationStatus.COMPLETED, stats=stats,
-                    )
+                    if not self.dry_run:
+                        self.db.upsert_migration(
+                            wave_id, repo, scope, MigrationStatus.COMPLETED, stats=stats,
+                        )
             except Exception as exc:
                 log.error(
                     "scope %s failed for %s/%s: %s",
                     scope, repo.ado_project, repo.ado_repo, exc,
                 )
                 results[scope] = {"status": "failed", "error": str(exc)}
-                self.db.upsert_migration(
-                    wave_id, repo, scope, MigrationStatus.FAILED, error=str(exc),
-                )
+                if not self.dry_run:
+                    self.db.upsert_migration(
+                        wave_id, repo, scope, MigrationStatus.FAILED, error=str(exc),
+                    )
 
         completed = sum(1 for v in results.values() if v["status"] == "completed")
         total = len(results)

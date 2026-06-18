@@ -1,7 +1,7 @@
 """Pluggable ADO task -> GitHub Actions mapping registry."""
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Optional
 
 ADO_TASK_MAP: dict[str, str] = {
     "NodeTool@0":              "actions/setup-node@v4",

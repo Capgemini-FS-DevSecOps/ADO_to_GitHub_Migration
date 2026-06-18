@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt pyproject.toml ./
 COPY ado2gh ./ado2gh
 COPY services/agent ./services/agent

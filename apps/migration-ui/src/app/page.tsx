@@ -3,13 +3,32 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ChartBarIcon } from '@/components/Icons';
+import { StepStatusBadge } from '@/components/PipelineProgress';
 import { fetchDashboard, ACCEL } from '@/lib/api';
+import { mapPipelineRunStatus } from '@/lib/pipelineRunStatus';
+import type { StepStatus } from '@/lib/types';
+
+function migrationStatus(s: string): StepStatus {
+  return mapPipelineRunStatus(s);
+}
+
+function formatStartedAt(iso: string): string {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
 
 export default function DashboardPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
     queryFn: fetchDashboard,
-    refetchInterval: 15000,
+    refetchInterval: (query) => {
+      const active = query.state.data?.active_migrations?.length ?? 0;
+      return active > 0 ? 5000 : 15000;
+    },
   });
 
   if (isLoading) {
@@ -81,6 +100,45 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {(data?.active_migrations?.length ?? 0) > 0 && data && (
+        <div className="oai-card" style={{ marginTop: '1rem' }}>
+          <h2 className="oai-subsection-title">Active migrations</h2>
+          <div className="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Status</th>
+                  <th>Phase</th>
+                  <th>Current step</th>
+                  <th>Started by</th>
+                  <th>Started</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.active_migrations!.map((m) => (
+                  <tr key={m.id}>
+                    <td>
+                      <Link href={`/runs?id=${m.id}`}>{m.name}</Link>
+                      {m.dry_run && (
+                        <span style={{ marginLeft: 8, fontSize: 11, color: '#888' }}>dry-run</span>
+                      )}
+                    </td>
+                    <td>
+                      <StepStatusBadge status={migrationStatus(m.status)} />
+                    </td>
+                    <td>{m.phase}{m.wave_id != null ? ` / wave ${m.wave_id}` : ''}</td>
+                    <td>{m.current_step || '—'}</td>
+                    <td>{m.started_by_display_name || m.started_by_username || '—'}</td>
+                    <td>{formatStartedAt(m.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {(data?.phase_gates?.length ?? 0) > 0 && data && (
         <div className="oai-card">

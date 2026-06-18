@@ -51,9 +51,13 @@ class PhaseRunResult(BaseModel):
 
 
 class ValidateRequest(BaseModel):
-    config_path: str
+    config_path: Optional[str] = None
+    config_yaml: Optional[str] = None
     input_path: Optional[str] = None
-    db_path: str = "migration_state.db"
+    input_text: Optional[str] = None
+    profile_id: Optional[str] = None
+    phase: Optional[str] = None
+    db_path: Optional[str] = None
     output_path: str = "output/validation_report.csv"
 
 
@@ -77,7 +81,7 @@ from enum import Enum
 
 class HealthResponse(BaseModel):
     status: str = "ok"
-    version: str = "5.0.0"
+    version: str = "5.1.0"
 
 
 class JobTypeEnum(str, Enum):
@@ -120,6 +124,7 @@ class JobStatusResponse(BaseModel):
 class PlanRequest(BaseModel):
     config_path: str
     wave_id: Optional[int] = None
+    db_path: str = "migration_state.db"
 
 
 class PlanResponse(BaseModel):
@@ -151,15 +156,18 @@ class ValidateResponse(BaseModel):
 
 
 class ReadinessRequest(BaseModel):
-    config_path: str
+    config_path: str = "migration.yaml"
     db_path: str = "migration_state.db"
+    refresh_inventory: bool = False
 
 
 class ReadinessResponse(BaseModel):
     auto: int = 0
     assisted: int = 0
     manual: int = 0
+    total_pipelines: int = 0
     total_effort_hours: float = 0.0
+    inventory_refreshed: bool = False
     pipelines: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -170,6 +178,21 @@ class DashboardSnapshot(BaseModel):
     total_pipelines: int = 0
     inventory_count: int = 0
     phase_gates: list[dict[str, Any]] = Field(default_factory=list)
+    active_migrations: list["ActiveMigrationItem"] = Field(default_factory=list)
+
+
+class ActiveMigrationItem(BaseModel):
+    id: str
+    name: str
+    status: str
+    dry_run: bool = True
+    phase: str = "poc"
+    wave_id: Optional[int] = None
+    current_step: str = ""
+    started_by_username: str = ""
+    started_by_display_name: str = ""
+    created_at: str = ""
+    updated_at: str = ""
 
 
 class FreshnessRequest(BaseModel):

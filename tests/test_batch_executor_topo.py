@@ -1,5 +1,5 @@
 """Batch executor topological ordering."""
-from ado2gh.models import RepoConfig, WaveConfig
+from ado2gh.models import RepoConfig
 from ado2gh.phase.batch_executor import BatchExecutor
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.db import StateDB

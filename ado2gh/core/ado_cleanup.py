@@ -1,11 +1,8 @@
 """Post-migration ADO cleanup — disable pipelines, archive repos, add redirect."""
 from __future__ import annotations
 
-import json
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from ado2gh.clients.ado_client import ADOClient
@@ -200,7 +197,6 @@ class ADOCleanup:
         )
 
         try:
-            import base64
             source = self.ado.get_repo(repo.ado_project, repo.ado_repo)
             repo_id = source.get("id", "")
             default_branch = (source.get("defaultBranch", "refs/heads/main")

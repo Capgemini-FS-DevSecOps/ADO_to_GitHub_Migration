@@ -130,12 +130,35 @@ class LLMModelStore:
     def list_public(self) -> list[dict[str, Any]]:
         return [m.to_public() for m in self.load() if m.enabled]
 
+    def list_agent_ready_models(self) -> list[LLMModelConfig]:
+        ready: list[LLMModelConfig] = []
+        for model in self.load():
+            if not model.enabled:
+                continue
+            if model.provider in ("stub", "offline"):
+                ready.append(model)
+                continue
+            if model.validation_status == "passed":
+                ready.append(model)
+        return ready
+
+    def has_agent_ready_model(self) -> bool:
+        return bool(self.list_agent_ready_models())
+
     def get_default_model(self) -> Optional[LLMModelConfig]:
         models = self.load()
         default = next((m for m in models if m.default_for_agent and m.enabled), None)
-        if default:
+        if default and (
+            default.provider in ("stub", "offline")
+            or default.validation_status == "passed"
+        ):
             return default
-        enabled = [m for m in models if m.enabled and m.provider != "stub"]
+        enabled = [
+            m for m in models
+            if m.enabled
+            and m.provider != "stub"
+            and m.validation_status == "passed"
+        ]
         return enabled[0] if enabled else None
 
     def upsert(self, data: dict[str, Any], model_id: str | None = None) -> LLMModelConfig:
@@ -206,8 +229,10 @@ class LLMModelStore:
         return model
 
     def delete(self, model_id: str) -> None:
-        models = [m for m in self.load() if m.id != model_id]
-        self.save(models)
+        models = self.load()
+        if not any(m.id == model_id for m in models):
+            raise KeyError(model_id)
+        self.save([m for m in models if m.id != model_id])
 
     def get(self, model_id: str) -> Optional[LLMModelConfig]:
         return next((m for m in self.load() if m.id == model_id), None)

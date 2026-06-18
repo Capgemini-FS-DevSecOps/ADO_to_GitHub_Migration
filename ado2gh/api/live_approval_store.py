@@ -5,7 +5,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import httpx
 from fastapi import HTTPException

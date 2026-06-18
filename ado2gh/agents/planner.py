@@ -1,7 +1,7 @@
 """Migration planner — topo order, layout policy, workflow branch strategy."""
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, List
 
 from ado2gh.pipelines.dependency_graph import RepoDependencyEdge, sort_repo_order
 

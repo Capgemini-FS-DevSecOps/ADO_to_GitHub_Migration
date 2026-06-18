@@ -6,8 +6,6 @@ Repo lists come from separate input files (text or CSV).
 from __future__ import annotations
 
 import csv
-import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +32,11 @@ class ConfigLoader:
         with open(cfg_path, "r", encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
 
+        return ConfigLoader.parse_config(raw, source_name=cfg_path.name)
+
+    @staticmethod
+    def parse_config(raw: Any, *, source_name: str = "config") -> tuple[dict, list[WaveConfig]]:
+        """Parse a loaded YAML mapping into global settings and waves."""
         if not isinstance(raw, dict):
             raise ValueError(f"Config root must be a mapping, got {type(raw).__name__}")
 
@@ -59,12 +62,17 @@ class ConfigLoader:
         total_repos = sum(len(w.repos) for w in waves)
         if waves:
             log.info("Loaded config: %d wave(s), %d repos from %s",
-                     len(waves), total_repos, cfg_path.name)
+                     len(waves), total_repos, source_name)
         else:
             log.info("Loaded settings from %s (no waves — use --input for repo list)",
-                     cfg_path.name)
+                     source_name)
 
         return global_cfg, waves
+
+    @staticmethod
+    def load_yaml_text(text: str, *, source_name: str = "upload") -> tuple[dict, list[WaveConfig]]:
+        raw = yaml.safe_load(text)
+        return ConfigLoader.parse_config(raw, source_name=source_name)
 
     # ── Text input (project/repo per line) ──────────────────────────────────
 
@@ -81,20 +89,31 @@ class ConfigLoader:
         txt_path = Path(path)
         if not txt_path.exists():
             raise FileNotFoundError(f"Input file not found: {path}")
+        content = txt_path.read_text(encoding="utf-8")
+        return ConfigLoader.load_text_content(content, gh_org, scopes, source_name=txt_path.name)
 
+    @staticmethod
+    def load_text_content(
+        content: str,
+        gh_org: str,
+        scopes: list[str] | None = None,
+        *,
+        source_name: str = "upload",
+    ) -> list[RepoConfig]:
+        """Parse repo list text (file upload or paste)."""
+        scopes = scopes or ["repo"]
         repos: list[RepoConfig] = []
-        with open(txt_path, "r", encoding="utf-8") as fh:
-            for lineno, raw_line in enumerate(fh, 1):
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                try:
-                    repo = _parse_text_line(line, gh_org, scopes)
-                    repos.append(repo)
-                except ValueError as exc:
-                    log.warning("line %d skipped: %s", lineno, exc)
+        for lineno, raw_line in enumerate(content.splitlines(), 1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                repo = _parse_text_line(line, gh_org, scopes)
+                repos.append(repo)
+            except ValueError as exc:
+                log.warning("line %d skipped: %s", lineno, exc)
 
-        log.info("Loaded %d repo(s) from %s", len(repos), txt_path.name)
+        log.info("Loaded %d repo(s) from %s", len(repos), source_name)
         return repos
 
     # ── CSV input (with per-repo scopes) ────────────────────────────────────

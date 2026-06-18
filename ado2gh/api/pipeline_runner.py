@@ -21,20 +21,69 @@ class StepStatus(str, Enum):
 
 
 ACCELERATOR_PIPELINE_STEPS: list[dict[str, str]] = [
-    {"id": "connect", "label": "Connect & Validate", "description": "Verify ADO and GitHub credentials"},
-    {"id": "discover", "label": "Discover", "description": "Scan ADO org for repos and pipelines"},
-    {"id": "inventory", "label": "Pipeline Inventory", "description": "Deep-scan pipeline definitions"},
-    {"id": "readiness", "label": "Readiness", "description": "Classify pipelines auto/assisted/manual"},
-    {"id": "assign", "label": "Phase Assign", "description": "Risk-score repos and assign phases"},
-    {"id": "migrate", "label": "Migration Run", "description": "Execute migration wave or phase"},
-    {"id": "validate", "label": "Validate", "description": "Commit SHA verification"},
+    {"id": "connect", "label": "Connect & validate credentials",
+     "description": "Verify ADO PAT, GitHub token, and org access"},
+    {"id": "discover", "label": "Discover repositories",
+     "description": "Scan ADO projects and repos; sync profile discovery"},
+    {"id": "inventory", "label": "Inventory ADO pipelines",
+     "description": "Deep-scan YAML, classic, and release pipeline definitions into StateDB"},
+    {"id": "readiness", "label": "Assess conversion readiness",
+     "description": "Classify auto/assisted/manual; flag blockers (Key Vault, self-hosted agents, secrets)"},
+    {"id": "assign", "label": "Assign migration phases",
+     "description": "Risk-score repos and assign to poc/pilot/wave phases"},
+    {"id": "migrate_repos", "label": "Migrate repository contents",
+     "description": "Git mirror or GEI transfer — branches, tags, LFS, commit history"},
+    {"id": "convert_pipelines", "label": "Convert pipelines → GitHub Actions",
+     "description": "Transform ADO YAML to workflow files (blocked if inventory/secrets missing)"},
+    {"id": "map_secrets", "label": "Map secrets & service connections",
+     "description": "Emit secrets manifest — blocked until GitHub secrets/OIDC are created"},
+    {"id": "convert_metadata", "label": "Convert branch policies & wiki",
+     "description": "Branch protection rules, wiki pages, and work items → GitHub"},
+    {"id": "migrate", "label": "Run all scoped migrations",
+     "description": "Execute every enabled scope for repos in the selected phase"},
+    {"id": "validate", "label": "Validate migrated repos",
+     "description": "Commit SHA and branch parity vs ADO source"},
 ]
 
 MIGRATE_UI_PIPELINE_STEPS: list[dict[str, str]] = [
-    {"id": "connect", "label": "Connect & Validate", "description": "Verify credentials and load profile discovery"},
-    {"id": "migrate", "label": "Migration Run", "description": "Execute migration for repos in the selected phase"},
-    {"id": "validate", "label": "Validate", "description": "Commit SHA verification against source"},
+    {"id": "connect", "label": "Connect & validate",
+     "description": "Verify credentials and load profile discovery for the phase"},
+    {"id": "inventory", "label": "Pipeline inventory",
+     "description": "Scan ADO pipeline definitions (required before workflow conversion)"},
+    {"id": "readiness", "label": "Readiness check",
+     "description": "Surface blockers: secrets, service connections, unsupported tasks"},
+    {"id": "migrate_repos", "label": "Migrate repositories",
+     "description": "Transfer git content to GitHub (mirror or GEI)"},
+    {"id": "convert_pipelines", "label": "Convert workflows",
+     "description": "ADO pipelines → GitHub Actions YAML"},
+    {"id": "map_secrets", "label": "Secrets & connections manifest",
+     "description": "Document required GitHub secrets (manual setup)"},
+    {"id": "validate", "label": "Validate",
+     "description": "Commit SHA verification against ADO source"},
 ]
+
+AGENT_MIGRATION_PIPELINE_STEPS: list[dict[str, str]] = MIGRATE_UI_PIPELINE_STEPS
+
+_PIPELINE_STEP_INDEX: dict[str, dict[str, str]] = {
+    s["id"]: s for s in ACCELERATOR_PIPELINE_STEPS
+}
+
+
+def resolve_pipeline_step_defs(step_ids: list[str] | None) -> list[dict[str, str]]:
+    """Resolve step metadata for a requested step id list (preserves order)."""
+    if not step_ids:
+        return ACCELERATOR_PIPELINE_STEPS
+    resolved: list[dict[str, str]] = []
+    for step_id in step_ids:
+        if step_id in _PIPELINE_STEP_INDEX:
+            resolved.append(_PIPELINE_STEP_INDEX[step_id])
+        else:
+            resolved.append({
+                "id": step_id,
+                "label": step_id.replace("_", " ").title(),
+                "description": "",
+            })
+    return resolved
 
 
 @dataclass
@@ -62,6 +111,18 @@ class PipelineRun:
     error: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
+    started_by_user_id: Optional[str] = None
+    started_by_username: Optional[str] = None
+    started_by_display_name: Optional[str] = None
+
+    def current_step_label(self) -> str:
+        for step in self.steps:
+            if step.status == "running":
+                return step.label
+        for step in self.steps:
+            if step.status == "pending":
+                return step.label
+        return ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +137,10 @@ class PipelineRun:
             "error": self.error,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "started_by_user_id": self.started_by_user_id,
+            "started_by_username": self.started_by_username,
+            "started_by_display_name": self.started_by_display_name,
+            "current_step": self.current_step_label(),
         }
 
 
@@ -109,10 +174,40 @@ class PipelineRunStore:
             cls._cancel_events.pop(run_id, None)
 
     @classmethod
-    def list_runs(cls, limit: int = 50) -> list[PipelineRun]:
+    def list_runs(cls, limit: int = 20, offset: int = 0) -> tuple[list[PipelineRun], int]:
         with cls._lock:
             runs = sorted(cls._runs.values(), key=lambda r: r.created_at, reverse=True)
-            return runs[:limit]
+            total = len(runs)
+            start = max(0, offset)
+            end = start + max(1, limit)
+            return runs[start:end], total
+
+    @classmethod
+    def list_active_runs(cls) -> list[PipelineRun]:
+        active_statuses = {"pending", "running", "awaiting_approval"}
+        with cls._lock:
+            runs = [
+                r for r in cls._runs.values()
+                if r.status in active_statuses
+            ]
+        return sorted(runs, key=lambda r: r.created_at, reverse=True)
+
+    @classmethod
+    def summary(cls) -> dict[str, int]:
+        with cls._lock:
+            runs = list(cls._runs.values())
+        return {
+            "total": len(runs),
+            "completed_live": sum(
+                1 for r in runs if r.status == "completed" and not r.dry_run
+            ),
+            "dry_run": sum(
+                1 for r in runs if r.dry_run or r.status == "dry_run_complete"
+            ),
+            "active": sum(1 for r in runs if r.status in ("running", "pending")),
+            "awaiting_approval": sum(1 for r in runs if r.status == "awaiting_approval"),
+            "failed": sum(1 for r in runs if r.status == "failed"),
+        }
 
     @classmethod
     def get(cls, run_id: str) -> Optional[PipelineRun]:
@@ -126,6 +221,10 @@ class PipelineRunStore:
         phase: str,
         wave_id: int | None,
         step_defs: list[dict[str, str]] | None = None,
+        *,
+        started_by_user_id: str | None = None,
+        started_by_username: str | None = None,
+        started_by_display_name: str | None = None,
     ) -> PipelineRun:
         defs = step_defs or ACCELERATOR_PIPELINE_STEPS
         now = datetime.now(timezone.utc).isoformat()
@@ -146,6 +245,9 @@ class PipelineRunStore:
             steps=steps,
             created_at=now,
             updated_at=now,
+            started_by_user_id=started_by_user_id,
+            started_by_username=started_by_username,
+            started_by_display_name=started_by_display_name,
         )
         with cls._lock:
             cls._runs[run.id] = run
@@ -210,7 +312,16 @@ class PipelineRunner:
             "inventory": self._step_inventory,
             "readiness": self._step_readiness,
             "assign": self._step_assign,
-            "migrate": self._step_migrate,
+            "migrate": lambda r: self._migrate_scoped(r, "migrate", None),
+            "migrate_repos": lambda r: self._migrate_scoped(r, "migrate_repos", ["repo"]),
+            "convert_pipelines": lambda r: self._migrate_scoped(
+                r, "convert_pipelines", ["pipelines"],
+            ),
+            "map_secrets": lambda r: self._migrate_scoped(r, "map_secrets", ["secrets"]),
+            "convert_metadata": lambda r: self._migrate_scoped(
+                r, "convert_metadata",
+                ["branch_policies", "wiki", "work_items"],
+            ),
             "validate": self._step_validate,
         }
 
@@ -240,8 +351,12 @@ class PipelineRunner:
                     self._stop_remaining_steps(run)
                     return
             if run.status != "cancelled":
-                run.status = "completed"
-                self._log(run, "Pipeline completed successfully")
+                if run.dry_run:
+                    run.status = "dry_run_complete"
+                    self._log(run, "Dry-run pipeline finished (no migrations recorded)")
+                else:
+                    run.status = "completed"
+                    self._log(run, "Pipeline completed successfully")
         except Exception as exc:
             run.status = "failed"
             run.error = str(exc)
@@ -347,7 +462,10 @@ class PipelineRunner:
         from ado2gh.state.factory import create_state_db
 
         adv = self.settings.load().advanced
-        report = PipelineReadinessReport(create_state_db(adv.db_path)).generate()
+        db = create_state_db(adv.db_path)
+        report = PipelineReadinessReport(db).generate(
+            migration_lookup=db.get_latest_pipeline_migrations(),
+        )
         self._set_step(run, "readiness", StepStatus.COMPLETED,
                        f"Auto: {report.get('auto', 0)} | Assisted: {report.get('assisted', 0)} | Manual: {report.get('manual', 0)}",
                        {"auto": report.get("auto"), "assisted": report.get("assisted"), "manual": report.get("manual")})
@@ -373,12 +491,20 @@ class PipelineRunner:
                            "No waves in config — run ado2gh phase assign or edit migration.yaml",
                            {})
 
-    def _step_migrate(self, run: PipelineRun) -> None:
+    def _migrate_scoped(
+        self, run: PipelineRun, step_id: str, scope_filter: list[str] | None,
+    ) -> None:
         from ado2gh.api.accelerator import Accelerator, _build_ado_client, _build_gh_client
         from ado2gh.api.contracts import PhaseRunRequest, RunWaveRequest
+        from ado2gh.api.migration_work_plan import (
+            apply_scope_results_to_work_items,
+            build_work_items_for_repos,
+        )
         from ado2gh.api.profile_discovery import build_wave_from_profile_phase, require_gh_org
         from ado2gh.core.config_loader import ConfigLoader
+        from ado2gh.api.validation_run import _merge_profile_credentials
         from ado2gh.core.migration_engine import MigrationEngine
+        from ado2gh.models import MigrationScope
         from ado2gh.phase.batch_executor import BatchExecutor
         from ado2gh.phase.progress_tracker import ProgressTracker
         from ado2gh.state.factory import create_state_db
@@ -386,6 +512,7 @@ class PipelineRunner:
         adv = self.settings.load().advanced
         profile = self.settings.get_active_profile()
         cancel_event = PipelineRunStore.cancel_event(run.id)
+        step_label = next((s.label for s in run.steps if s.id == step_id), step_id)
 
         if profile:
             gh_org = require_gh_org(profile, config_path=adv.config_path)
@@ -399,13 +526,15 @@ class PipelineRunner:
                 config_path=adv.config_path,
             )
             if wave and wave.repos:
-                mode = "DRY RUN (no GitHub writes)" if run.dry_run else "LIVE"
+                mode = "DRY RUN" if run.dry_run else "LIVE"
+                scope_note = f" scopes={','.join(scope_filter)}" if scope_filter else ""
                 self._log(
                     run,
-                    f"Migrating {len(wave.repos)} repo(s) for phase {run.phase} [{mode}] → {gh_org}",
+                    f"{step_label}: {len(wave.repos)} repo(s) phase {run.phase} [{mode}]{scope_note}",
                 )
                 global_cfg, _ = ConfigLoader.load(adv.config_path)
-                global_cfg = {**global_cfg, "gh_org": gh_org}
+                global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
+                global_cfg["gh_org"] = gh_org
                 ado = _build_ado_client(global_cfg)
                 gh = _build_gh_client(global_cfg)
                 db = create_state_db(adv.db_path)
@@ -417,31 +546,62 @@ class PipelineRunner:
 
                 from ado2gh.api.run_reporting import migrate_repo_detail
 
+                enabled_scopes = (
+                    scope_filter
+                    if scope_filter is not None
+                    else [s.value for s in MigrationScope]
+                )
+                pre_work_items = build_work_items_for_repos(
+                    wave.repos,
+                    enabled_scopes=enabled_scopes,
+                    db=db,
+                )
+
+                saved_scopes = []
+                for repo in wave.repos:
+                    saved_scopes.append(list(repo.scopes or ["repo"]))
+                    if scope_filter is not None:
+                        repo.scopes = list(scope_filter)
+
                 def on_repo_done(key: str, res: dict, repo_cfg) -> None:
                     detail = migrate_repo_detail(key, res)
                     self._log(run, detail["summary"])
 
-                result = executor.execute_wave(
-                    wave,
-                    dry_run=run.dry_run,
-                    cancel_event=cancel_event,
-                    on_repo_done=on_repo_done,
-                )
+                try:
+                    result = executor.execute_wave(
+                        wave,
+                        dry_run=run.dry_run,
+                        cancel_event=cancel_event,
+                        on_repo_done=on_repo_done,
+                    )
+                finally:
+                    for repo, scopes in zip(wave.repos, saved_scopes):
+                        repo.scopes = scopes
+
                 repo_details = [
                     migrate_repo_detail(k, v) for k, v in result.get("repos", {}).items()
                 ]
                 result["repo_details"] = repo_details
+                work_items = apply_scope_results_to_work_items(
+                    pre_work_items, repo_details,
+                )
+                result["work_items"] = work_items
                 if cancel_event.is_set():
-                    self._set_step(run, "migrate", StepStatus.SKIPPED,
-                                   "Migration cancelled by user", result)
+                    self._set_step(run, step_id, StepStatus.SKIPPED,
+                                   "Cancelled by user", result)
                     return
                 failed_names = [d["repo"] for d in repo_details if d["status"] != "completed"]
-                msg = f"Phase {run.phase}: {result['completed']} completed, {result['failed']} failed"
+                msg = f"{step_label}: {result['completed']} completed, {result['failed']} failed"
                 if failed_names:
                     shown = ", ".join(failed_names[:5])
                     extra = f" (+{len(failed_names) - 5} more)" if len(failed_names) > 5 else ""
                     msg += f" — failed: {shown}{extra}"
-                self._set_step(run, "migrate", StepStatus.COMPLETED, msg, result)
+                migrate_status = (
+                    StepStatus.FAILED
+                    if not run.dry_run and result.get("failed", 0) > 0
+                    else StepStatus.COMPLETED
+                )
+                self._set_step(run, step_id, migrate_status, msg, result)
                 return
 
         accel = Accelerator(db_path=adv.db_path)
@@ -453,7 +613,7 @@ class PipelineRunner:
                 db_path=adv.db_path,
             ))
             msg = f"Wave {result.wave_id}: {result.completed}/{result.total} completed"
-            self._set_step(run, "migrate", StepStatus.COMPLETED, msg, result.__dict__)
+            self._set_step(run, step_id, StepStatus.COMPLETED, msg, result.__dict__)
         else:
             phase_cfg = adv.config_path.replace(".yaml", "_phase.yaml")
             config_for_phase = phase_cfg if _phase_config_exists(adv.config_path) else adv.config_path
@@ -466,13 +626,21 @@ class PipelineRunner:
             ))
             if result.completed == 0 and result.failed == 0:
                 self._set_step(
-                    run, "migrate", StepStatus.SKIPPED,
+                    run, step_id, StepStatus.SKIPPED,
                     f"No repos assigned to phase {run.phase} — assign phases on Discovery tab",
                     result.__dict__,
                 )
                 return
             msg = f"Phase {result.phase}: {result.completed} completed, {result.failed} failed"
-            self._set_step(run, "migrate", StepStatus.COMPLETED, msg, result.__dict__)
+            migrate_status = (
+                StepStatus.FAILED
+                if not run.dry_run and result.failed > 0
+                else StepStatus.COMPLETED
+            )
+            self._set_step(run, step_id, migrate_status, msg, result.__dict__)
+
+    def _step_migrate(self, run: PipelineRun) -> None:
+        self._migrate_scoped(run, "migrate", None)
 
     def _step_validate(self, run: PipelineRun) -> None:
         from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
@@ -511,7 +679,11 @@ class PipelineRunner:
             from ado2gh.cli.helpers import load_repos
             repos = load_repos(None, global_cfg, waves)
 
-        migrate_step = next((s for s in run.steps if s.id == "migrate"), None)
+        migrate_step = None
+        for sid in ("migrate_repos", "migrate"):
+            migrate_step = next((s for s in run.steps if s.id == sid and s.result), None)
+            if migrate_step:
+                break
         if migrate_step and migrate_step.result:
             from ado2gh.api.run_reporting import migrate_repo_detail
 

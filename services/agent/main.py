@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 import warnings
@@ -14,12 +15,45 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from ado2gh.agents.llm_provider import StubLLMProvider, get_llm_provider
-from ado2gh.agents.local.stub_llm import LocalStubLLM
+from ado2gh.agents.execution_mode import parse_execution_mode_from_message
+from ado2gh.agents.live_execution_policy import (
+    attach_actor_to_session,
+    can_execute_live_without_approval,
+    execution_policy_summary,
+    live_execution_block_message,
+    session_requires_live_approval,
+)
+from ado2gh.agents.llm_provider import StubLLMProvider, UnavailableLLMProvider, get_llm_provider
+from ado2gh.agents.session_access import (
+    assert_agent_session_access,
+    is_admin_request,
+    request_username,
+)
+from ado2gh.agents.pev_coordinator import (
+    MAX_PEV_RETRIES,
+    review_executor_output,
+    review_planner_output,
+    review_validator_output,
+    should_retry_migration,
+)
 from ado2gh.agents.local.audit_bridge import IdeAuditBridge
 from ado2gh.agents.local.profiles import capability_matrix, get_profile
+from ado2gh.agents.local.stub_llm import LocalStubLLM
 from ado2gh.agents.local.tool_catalog import TOOL_CATALOG_VERSION, list_tools
+from ado2gh.api.migration_work_plan import (
+    build_work_items_for_repos,
+    plan_narrative_from_work_items,
+    work_items_summary,
+)
+from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
 from ado2gh.auth.service import AuthService, SESSION_COOKIE, auth_enabled, permissions_for
+from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.state.factory import create_state_db
+
+AGENT_DEFAULT_PIPELINE_STEPS = [s["id"] for s in MIGRATE_UI_PIPELINE_STEPS]
+MIGRATE_STEP_IDS = frozenset({
+    "migrate", "migrate_repos", "convert_pipelines", "map_secrets", "convert_metadata",
+})
 
 ACCEL_URL = os.environ.get("ACCELERATOR_URL", "http://accelerator:8080")
 
@@ -28,7 +62,7 @@ try:
 except KeyError:
     _ACTIVE_PROFILE = None
 
-app = FastAPI(title="ADO2GH Agent API", version="5.0.0")
+app = FastAPI(title="ADO2GH Agent API", version="5.1.0")
 
 _AGENT_AUTH_EXEMPT = {
     "/health",
@@ -91,6 +125,10 @@ class AgentRunRequest(BaseModel):
     profile_id: Optional[str] = None
 
 
+class PlanPhaseBody(BaseModel):
+    phase: str = "poc"
+
+
 class SessionRequest(BaseModel):
     profile_id: str = "lightweight"
     assignment_id: Optional[str] = None
@@ -102,6 +140,14 @@ class SessionRequest(BaseModel):
 
 class SessionMessageRequest(BaseModel):
     message: str = ""
+
+
+class FormSubmitRequest(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionModeRequest(BaseModel):
+    dry_run: bool
 
 
 class ProvisionRequest(BaseModel):
@@ -129,7 +175,13 @@ class ApprovalRequest(BaseModel):
 _CHAT_SYSTEM = (
     "You are an ADO to GitHub migration assistant. "
     "Answer questions and help plan migrations in conversation. "
-    "Do not claim you executed migrations unless a PEV run was explicitly started."
+    "When summarizing a migration plan, list phase, repo count, and ordered steps clearly. "
+    "Do not claim you executed migrations unless a pipeline run was explicitly started."
+)
+
+_PLANNER_SYSTEM = (
+    "You are the migration planner subagent. Summarize the structured plan for an operator: "
+    "target phase, repo count, execution order, dry-run vs live, and prerequisites."
 )
 
 
@@ -217,7 +269,11 @@ def _llm_is_degraded(provider: object) -> bool:
     return isinstance(provider, (StubLLMProvider, LocalStubLLM))
 
 
-def _resolve_model_id(requested: str | None) -> tuple[str | None, bool]:
+def _llm_is_unconfigured(provider: object) -> bool:
+    return isinstance(provider, UnavailableLLMProvider)
+
+
+def _resolve_model_id(requested: str | None) -> tuple[str | None, bool, bool]:
     from ado2gh.api.llm_model_store import LLMModelStore
 
     store = LLMModelStore()
@@ -226,7 +282,23 @@ def _resolve_model_id(requested: str | None) -> tuple[str | None, bool]:
         default = store.get_default_model()
         model_id = default.id if default else None
     provider = get_llm_provider(model_id)
-    return model_id, _llm_is_degraded(provider)
+    unconfigured = _llm_is_unconfigured(provider)
+    degraded = _llm_is_degraded(provider) or unconfigured
+    return model_id, degraded, unconfigured
+
+
+def _get_accessible_session(
+    session_id: str,
+    request: Request | None = None,
+    *,
+    profile_id: str | None = None,
+    write: bool = False,
+) -> dict[str, Any]:
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    assert_agent_session_access(request, session, profile_id=profile_id, write=write)
+    return session
 
 
 def _session_payload(session_id: str) -> dict[str, Any]:
@@ -238,13 +310,73 @@ def _session_payload(session_id: str) -> dict[str, Any]:
         **session,
         "run_status": run.get("status") if run else None,
         "steps": run.get("steps", []) if run else [],
+        "tasks": session.get("tasks", []),
+        "pending_form": session.get("pending_form"),
+        "execution_policy": execution_policy_summary(session),
     }
+
+
+async def _enqueue_session_live_approval(
+    session_id: str,
+    session: dict[str, Any],
+    request: Request,
+) -> dict[str, Any] | None:
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
+    try:
+        approval = await _accel_post("/v1/platform/approvals", {
+            "scope_type": "agent_session",
+            "scope_id": session_id,
+            "profile_id": session.get("profile_id"),
+            "assignment_id": session.get("assignment_id"),
+            "reason_request": "Request live PEV execution",
+        }, session_token=session_token)
+    except httpx.HTTPStatusError:
+        approval = None
+    except httpx.HTTPError:
+        approval = None
+
+    session["status"] = "awaiting_approval"
+    session["approval"] = {"required": True, "approved": False}
+    if approval:
+        session["live_approval_id"] = approval.get("id")
+        session["live_approval_status"] = approval.get("status", "pending")
+        session["approval"]["approval_id"] = approval.get("id")
+    return approval
+
+
+async def _try_start_pev_run(session_id: str, request: Request | None = None) -> bool:
+    """Start PEV when allowed. Returns False if live execution is blocked pending approval."""
+    session = _sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session_requires_live_approval(session):
+        msg = live_execution_block_message(session)
+        if request:
+            await _enqueue_session_live_approval(session_id, session, request)
+        _add_message(session_id, "assistant", msg, kind="message")
+        return False
+    _start_pev_run(session_id)
+    return True
 
 
 def _start_pev_run(session_id: str) -> str:
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    plan = session.get("migration_plan")
+    if not plan:
+        raise HTTPException(
+            status_code=409,
+            detail="migration_plan_required — generate a plan before executing",
+        )
+    if plan.get("blocked"):
+        raise HTTPException(status_code=409, detail=plan.get("block_reason", "plan_blocked"))
+    if not session.get("plan_approved"):
+        raise HTTPException(
+            status_code=409,
+            detail="plan_not_confirmed — review and confirm the migration plan before executing",
+        )
+
     run_id = session.get("run_id")
     if run_id and run_id in _runs:
         existing = _runs[run_id]
@@ -255,6 +387,7 @@ def _start_pev_run(session_id: str) -> str:
         dry_run=session.get("dry_run", True),
         assignment_id=session.get("assignment_id"),
         profile_id=session.get("profile_id"),
+        phase=plan.get("phase", "poc"),
     )
     run_id = str(uuid.uuid4())
     _runs[run_id] = {
@@ -296,96 +429,462 @@ class FreshnessGuard:
         })
 
 
-async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] = None) -> None:
-    run = _runs[run_id]
-    steps: list[dict] = run["steps"]
-    profile = _profile(req.profile_id)
-    is_live = not req.dry_run
-    session_token = _session_accel_token(session_id)
+async def _build_migration_plan(
+    session: dict[str, Any],
+    session_token: str | None,
+    *,
+    phase: str = "poc",
+) -> dict[str, Any]:
+    """Profile discovery + work-item plan for executor/validator subagents."""
+    from ado2gh.agents.planner import AgentPlanner
+
+    profile_id = session.get("profile_id", "lightweight")
+    dry_run = session.get("dry_run", True)
+    repos: list[str] = []
+    repo_configs: list[RepoConfig] = []
+    deps: list[dict] = []
+    gh_org = ""
+    db_path: str | None = None
 
     try:
-        if not is_live:
-            run["status"] = RunStatus.PLANNING
-            if session_id and session_id in _sessions:
-                _sessions[session_id]["status"] = "planning"
-                _sessions[session_id]["subagent"] = "planner"
+        settings = await _accel_get("/v1/settings", session_token=session_token)
+        adv = settings.get("advanced") or {}
+        db_path = adv.get("db_path")
+        for prof in settings.get("migration_profiles") or []:
+            if prof.get("id") == profile_id:
+                gh_org = (prof.get("gh_org") or "").strip()
+                break
+    except httpx.HTTPStatusError:
+        pass
 
-            plan = await _accel_post("/v1/plan", {
-                "config_path": req.config_path, "wave_id": req.wave_id,
-            }, session_token=session_token)
-            steps.append({"phase": "plan", "tool": "ado2gh_plan_phase", "result": plan})
-            _add_message(session_id, "planner", "Generated migration plan (dry-run)")
-
-            readiness = await _accel_post("/v1/pipeline-readiness", {
-                "config_path": req.config_path,
-            }, session_token=session_token)
-            steps.append({"phase": "plan", "tool": "ado2gh_readiness", "result": readiness})
-
-        run["status"] = RunStatus.EXECUTING
-        if session_id and session_id in _sessions:
-            _sessions[session_id]["status"] = "executing"
-            _sessions[session_id]["subagent"] = "executor"
-
-        migrate_body: dict[str, Any] = {
-            "config_path": req.config_path,
-            "wave_id": req.wave_id,
-            "dry_run": req.dry_run,
-        }
-        if req.assignment_id:
-            migrate_body["assignment_id"] = req.assignment_id
-        if session_id and session_id in _sessions:
-            approval_id = _sessions[session_id].get("live_approval_id")
-            if approval_id:
-                migrate_body["live_approval_id"] = approval_id
-
-        migrate = await _accel_post("/v1/migrate", migrate_body, session_token=session_token)
-        steps.append({"phase": "execute", "tool": "ado2gh_enqueue_job", "result": migrate})
-        _add_message(
-            session_id, "executor",
-            "Enqueued migration jobs" if not is_live else "Live migration executed",
+    try:
+        discovery = await _accel_get(
+            f"/v1/settings/profiles/{profile_id}/discovery",
+            session_token=session_token,
         )
+        for r in discovery.get("repos", []):
+            assigned = r.get("assigned_phase") or r.get("suggested_phase") or "poc"
+            if assigned == phase:
+                key = f"{r['project']}/{r['repo_name']}"
+                repos.append(key)
+                repo_configs.append(RepoConfig(
+                    ado_project=r["project"],
+                    ado_repo=r["repo_name"],
+                    gh_org=(r.get("gh_org") or gh_org or "").strip(),
+                    gh_repo=r.get("gh_repo") or r["repo_name"],
+                    phase=phase,
+                    risk_score=float(r.get("total_score") or 0),
+                ))
+        if not repos:
+            for r in discovery.get("repos", [])[:100]:
+                repos.append(f"{r['project']}/{r['repo_name']}")
+                repo_configs.append(RepoConfig(
+                    ado_project=r["project"],
+                    ado_repo=r["repo_name"],
+                    gh_org=(r.get("gh_org") or gh_org or "").strip(),
+                    gh_repo=r.get("gh_repo") or r["repo_name"],
+                    phase=phase,
+                ))
+    except httpx.HTTPStatusError:
+        pass
 
-        run["status"] = RunStatus.VALIDATING
+    planner = AgentPlanner()
+    plan = planner.plan(profile_id, repos, deps, dry_run=dry_run)
+    plan["phase"] = phase
+    plan["execution"] = "pipeline_run"
+    plan["pipeline_steps"] = list(AGENT_DEFAULT_PIPELINE_STEPS)
+    plan["repo_count"] = len(repos)
+    plan["dry_run"] = dry_run
+
+    enabled_scopes = [
+        MigrationScope.REPO.value,
+        MigrationScope.PIPELINES.value,
+        MigrationScope.SECRETS.value,
+    ]
+    db = None
+    if db_path:
+        try:
+            db = create_state_db(db_path)
+        except Exception:
+            db = None
+    work_items = build_work_items_for_repos(
+        repo_configs,
+        enabled_scopes=enabled_scopes,
+        db=db,
+    )
+    plan["work_items"] = work_items
+    plan["work_summary"] = work_items_summary(work_items)
+    plan["narrative"] = plan_narrative_from_work_items(phase, work_items, dry_run=dry_run)
+
+    if not repos:
+        plan["blocked"] = True
+        plan["block_reason"] = (
+            "No repos in profile discovery for this phase. "
+            "Run Discovery scan and assign phases, and ensure this profile is active."
+        )
+    return plan
+
+
+async def _ensure_migration_plan(
+    session: dict[str, Any],
+    session_token: str | None,
+    *,
+    phase: str | None = None,
+) -> dict[str, Any]:
+    """Load discovery + planner output before PEV (deterministic, no LLM required)."""
+    profile_id = session.get("profile_id", "lightweight")
+    chosen_phase = phase or session.get("plan_phase", "poc")
+    if not session.get("discovery_snapshot"):
+        discovery = await _accel_get(
+            f"/v1/settings/profiles/{profile_id}/discovery",
+            session_token=session_token,
+        )
+        session["discovery_snapshot"] = discovery
+        session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
+    plan = session.get("migration_plan")
+    if not plan:
+        plan = await _build_migration_plan(session, session_token, phase=chosen_phase)
+        session["migration_plan"] = plan
+        session["plan_phase"] = chosen_phase
+    return plan
+
+
+def _sync_session_tasks(session_id: str | None, **updates: str) -> None:
+    if not session_id or session_id not in _sessions:
+        return
+    tasks = _sessions[session_id].setdefault("tasks", [])
+    if not tasks:
+        from ado2gh.agents.session_orchestrator import _init_tasks
+        tasks.extend(_init_tasks())
+        _sessions[session_id]["tasks"] = tasks
+    from ado2gh.agents.session_orchestrator import _set_task, sync_work_items_to_tasks
+    for task_id, status in updates.items():
+        _set_task(tasks, task_id, status)
+    plan = _sessions[session_id].get("migration_plan") or {}
+    if plan.get("work_items"):
+        sync_work_items_to_tasks(_sessions[session_id], plan["work_items"])
+
+
+def _sync_work_items_from_pipeline(session_id: str | None, final_run: dict[str, Any]) -> None:
+    if not session_id or session_id not in _sessions:
+        return
+    from ado2gh.api.migration_work_plan import apply_scope_results_to_work_items
+    from ado2gh.agents.session_orchestrator import sync_work_items_to_tasks
+
+    session = _sessions[session_id]
+    plan = session.get("migration_plan") or {}
+    work_items = list(plan.get("work_items") or [])
+    all_repo_details: list[dict[str, Any]] = []
+    for step in final_run.get("steps", []):
+        if step.get("id") not in MIGRATE_STEP_IDS:
+            continue
+        result = step.get("result") or {}
+        if result.get("work_items"):
+            work_items = list(result["work_items"])
+        all_repo_details.extend(result.get("repo_details") or [])
+    if work_items and all_repo_details:
+        work_items = apply_scope_results_to_work_items(work_items, all_repo_details)
+    if work_items:
+        plan["work_items"] = work_items
+        session["migration_plan"] = plan
+        sync_work_items_to_tasks(session, work_items)
+
+
+def _migration_steps_summary(final_run: dict[str, Any]) -> tuple[list[dict], bool]:
+    """Return migrate-related steps and whether any failed."""
+    steps = [
+        s for s in final_run.get("steps", [])
+        if s.get("id") in MIGRATE_STEP_IDS
+    ]
+    failed = any(s.get("status") == "failed" for s in steps)
+    return steps, failed
+
+
+async def _poll_pipeline_run(
+    pipe_id: str,
+    session_token: str | None,
+    session_id: str | None,
+) -> dict[str, Any]:
+    final_run: dict[str, Any] = {}
+    for _ in range(180):
+        await asyncio.sleep(2)
+        polled = await _accel_get(
+            f"/v1/pipeline/runs/{pipe_id}", session_token=session_token,
+        )
+        final_run = polled.get("run", polled)
         if session_id and session_id in _sessions:
-            _sessions[session_id]["status"] = "validating"
-            _sessions[session_id]["subagent"] = "validator"
+            _sessions[session_id]["pipeline_run_id"] = pipe_id
+        if final_run.get("status") in (
+            "completed", "dry_run_complete", "failed", "cancelled",
+        ):
+            break
+    return final_run
 
-        validation = await _accel_post("/v1/validate", {
-            "config_path": req.config_path,
-            "wave_id": req.wave_id,
-        }, session_token=session_token)
-        steps.append({"phase": "validate", "tool": "ado2gh_validate_repo", "result": validation})
-        _add_message(session_id, "validator", "Validation complete")
 
-        run["status"] = RunStatus.COMPLETED
+async def _start_agent_pipeline(
+    plan: dict[str, Any],
+    req: AgentRunRequest,
+    *,
+    is_live: bool,
+    session_token: str | None,
+) -> tuple[dict[str, Any], str]:
+    run_body = {
+        "name": f"Agent — {plan.get('phase', 'poc')}",
+        "dry_run": not is_live,
+        "phase": plan.get("phase", req.phase),
+        "steps": plan.get("pipeline_steps", AGENT_DEFAULT_PIPELINE_STEPS),
+    }
+    pipeline_resp = await _accel_post(
+        "/v1/pipeline/runs", run_body, session_token=session_token,
+    )
+    pipeline_run = pipeline_resp.get("run", pipeline_resp)
+    return pipeline_run, pipeline_run["id"]
+
+
+async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] = None) -> None:
+    """Planner → executor → validator via LLM-reviewed pipeline runs (max 3 retries)."""
+    run = _runs[run_id]
+    steps: list[dict] = run["steps"]
+    session = _sessions.get(session_id) if session_id else None
+    session_token = _session_accel_token(session_id)
+    plan = session.get("migration_plan") if session else None
+    is_live = not (session.get("dry_run", True) if session else req.dry_run)
+    model_id = session.get("selected_model_id") if session else None
+    llm = get_llm_provider(model_id)
+    _, llm_degraded, llm_unconfigured = _resolve_model_id(model_id)
+
+    if is_live and session and session_requires_live_approval(session):
+        run["status"] = RunStatus.AWAITING_APPROVAL
+        steps.append({"phase": "error", "error": "live_approval_required"})
+        _add_message(
+            session_id,
+            "assistant",
+            live_execution_block_message(session),
+            kind="message",
+        )
         if session_id and session_id in _sessions:
-            _sessions[session_id]["status"] = "completed"
-            _sessions[session_id]["subagent"] = None
-            _sessions[session_id]["approval"] = {"approved": True} if is_live else None
+            _sessions[session_id]["status"] = "awaiting_approval"
+        return
+
+    if not plan:
+        run["status"] = RunStatus.FAILED
+        steps.append({"phase": "error", "error": "migration_plan_required"})
+        if session_id:
+            _add_message(session_id, "system", "No migration plan — generate a plan first.")
+        return
+
+    if plan.get("blocked"):
+        run["status"] = RunStatus.FAILED
+        reason = plan.get("block_reason", "plan_blocked")
+        steps.append({"phase": "error", "error": reason})
+        _add_message(session_id, "system", reason)
+        return
+
+    try:
+        run["status"] = RunStatus.PLANNING
+        if session_id and session_id in _sessions:
+            _sessions[session_id]["status"] = "planning"
+            _sessions[session_id]["subagent"] = "planner"
+        steps.append({"phase": "plan", "tool": "agent_planner", "result": plan})
+
+        planner_review = review_planner_output(llm, plan, llm_degraded=llm_degraded)
+        steps.append({
+            "phase": "plan",
+            "tool": "planner_llm_review",
+            "result": planner_review.to_dict(),
+        })
+        _sync_session_tasks(session_id, plan="completed", discovery="completed")
+        _add_message(session_id, "planner", planner_review.summary, kind="progress")
+        if planner_review.next_action == "abort":
+            run["status"] = RunStatus.FAILED
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["status"] = "failed"
+                _sessions[session_id]["subagent"] = None
+            return
+
+        try:
+            readiness = await _accel_post(
+                "/v1/pipeline-readiness",
+                {"config_path": req.config_path},
+                session_token=session_token,
+            )
+            steps.append({"phase": "plan", "tool": "ado2gh_readiness", "result": readiness})
+        except Exception:
+            pass
+
+        attempt = 0
+        final_run: dict[str, Any] = {}
+        pipeline_failed = True
+        migrate_step: dict[str, Any] | None = None
+        validate_step: dict[str, Any] | None = None
+        validator_review = None
+
+        while attempt < MAX_PEV_RETRIES:
+            attempt += 1
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["pev_attempt"] = attempt
+                _sessions[session_id]["status"] = "executing"
+                _sessions[session_id]["subagent"] = "executor"
+
+            run["status"] = RunStatus.EXECUTING
+            _sync_session_tasks(
+                session_id,
+                execute="running",
+            )
+            if session_id and session_id in _sessions:
+                for t in _sessions[session_id].get("tasks", []):
+                    if t["id"] == "execute":
+                        t["detail"] = f"Attempt {attempt}/{MAX_PEV_RETRIES}"
+
+            pipeline_run, pipe_id = await _start_agent_pipeline(
+                plan, req, is_live=is_live, session_token=session_token,
+            )
+            steps.append({
+                "phase": "execute",
+                "tool": "pipeline_run",
+                "attempt": attempt,
+                "result": {"run_id": pipe_id},
+            })
+
+            if pipeline_run.get("status") == "awaiting_approval":
+                run["status"] = RunStatus.AWAITING_APPROVAL
+                if session_id and session_id in _sessions:
+                    _sessions[session_id]["status"] = "awaiting_approval"
+                    _sessions[session_id]["pipeline_run_id"] = pipe_id
+                _add_message(
+                    session_id,
+                    "executor",
+                    "Pipeline awaiting platform approval for live run.",
+                    kind="progress",
+                )
+                return
+
+            final_run = await _poll_pipeline_run(pipe_id, session_token, session_id)
+            steps.append({
+                "phase": "execute",
+                "tool": "pipeline_run_complete",
+                "attempt": attempt,
+                "result": final_run,
+            })
+            _sync_work_items_from_pipeline(session_id, final_run)
+
+            executor_review = review_executor_output(
+                llm, final_run, attempt, llm_degraded=llm_degraded,
+            )
+            steps.append({
+                "phase": "execute",
+                "tool": "executor_llm_review",
+                "attempt": attempt,
+                "result": executor_review.to_dict(),
+            })
+            _add_message(session_id, "executor", executor_review.summary, kind="progress")
+
+            run["status"] = RunStatus.VALIDATING
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["status"] = "validating"
+                _sessions[session_id]["subagent"] = "validator"
+            _sync_session_tasks(session_id, validate="running")
+
+            validate_step = next(
+                (s for s in final_run.get("steps", []) if s.get("id") == "validate"), None,
+            )
+            validator_review = review_validator_output(
+                llm, final_run, validate_step, attempt, llm_degraded=llm_degraded,
+            )
+            steps.append({
+                "phase": "validate",
+                "tool": "validator_llm_review",
+                "attempt": attempt,
+                "result": validator_review.to_dict(),
+            })
+            steps.append({
+                "phase": "validate",
+                "tool": "pipeline_validate",
+                "attempt": attempt,
+                "result": validate_step or {},
+            })
+            _add_message(session_id, "validator", validator_review.summary, kind="progress")
+
+            migrate_steps, migrate_failed = _migration_steps_summary(final_run)
+            migrate_step = migrate_steps[0] if migrate_steps else None
+
+            if validator_review.verdict == "pass" or validator_review.next_action == "proceed":
+                pipeline_failed = False
+                _sync_session_tasks(session_id, execute="completed", validate="completed")
+                break
+
+            if should_retry_migration(validator_review, attempt):
+                _add_message(
+                    session_id,
+                    "validator",
+                    f"LLM recommends retry ({attempt + 1}/{MAX_PEV_RETRIES}): "
+                    + "; ".join(validator_review.issues[:3] or ["transient failure"]),
+                    kind="progress",
+                )
+                continue
+
+            pipeline_failed = (
+                validator_review.verdict == "fail"
+                or final_run.get("status") == "failed"
+                or migrate_failed
+            )
+            exec_status = "failed" if pipeline_failed else "completed"
+            val_status = "failed" if validator_review.verdict == "fail" else "completed"
+            _sync_session_tasks(session_id, execute=exec_status, validate=val_status)
+            break
+
+        if pipeline_failed:
+            run["status"] = RunStatus.FAILED
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["status"] = "failed"
+                _sessions[session_id]["subagent"] = None
+            if migrate_step and migrate_step.get("status") == "failed":
+                _add_message(
+                    session_id,
+                    "validator",
+                    migrate_step.get("message") or "Migration step failed.",
+                )
+        else:
+            run["status"] = RunStatus.COMPLETED
+            if session_id and session_id in _sessions:
+                _sessions[session_id]["status"] = "completed"
+                _sessions[session_id]["subagent"] = None
 
     except Exception as exc:
         run["status"] = RunStatus.FAILED
         steps.append({"phase": "error", "error": str(exc)})
         if session_id and session_id in _sessions:
             _sessions[session_id]["status"] = "failed"
+            _sessions[session_id]["subagent"] = None
             _add_message(session_id, "system", f"Error: {exc}")
 
 
-def _add_message(session_id: Optional[str], role: str, content: str) -> None:
+def _add_message(
+    session_id: Optional[str],
+    role: str,
+    content: str,
+    *,
+    kind: str = "message",
+) -> None:
     if not session_id or session_id not in _sessions:
         return
-    _sessions[session_id]["messages"].append({"role": role, "content": content})
+    _sessions[session_id]["messages"].append({
+        "role": role,
+        "content": content,
+        "kind": kind,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
     _sessions[session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
 
 @app.get("/health")
 async def health():
     reachable, err = await _check_accelerator()
-    selected_model_id, llm_degraded = _resolve_model_id(None)
+    selected_model_id, llm_degraded, llm_unconfigured = _resolve_model_id(None)
     from ado2gh.api.llm_model_store import LLMModelStore
 
     store = LLMModelStore()
-    enabled_models = [m for m in store.load() if m.enabled]
+    enabled_models = store.list_agent_ready_models()
     profile = _profile()
     body: dict[str, Any] = {
         "status": "ok" if reachable and not llm_degraded else "degraded",
@@ -396,6 +895,7 @@ async def health():
         "selected_model_id": selected_model_id,
         "models_configured": len(enabled_models),
         "llm_degraded": llm_degraded,
+        "llm_unconfigured": llm_unconfigured,
         "auth_enabled": auth_enabled(),
         "tool_catalog_version": TOOL_CATALOG_VERSION,
         "remediation_steps": [],
@@ -409,6 +909,12 @@ async def health():
             "Verify ADO2GH_DATA_DIR is shared between accelerator and agent containers",
             "Check ACCELERATOR_URL matches running service",
             "Ensure browser sends session cookie (credentials: include)",
+        ]
+    elif llm_unconfigured:
+        body["remediation_steps"] = [
+            "Open Settings → LLM models and add a provider (OpenAI, Anthropic, or Ollama)",
+            "Run Validate on the model, then enable it and mark as default for agent",
+            "Start a new agent chat after at least one model is enabled",
         ]
     elif llm_degraded:
         body["remediation_steps"] = [
@@ -506,11 +1012,13 @@ async def create_session(req: SessionRequest, request: Request):
     await _assert_deployment_profile_active(req.profile_id, session_token=session_token)
     profile = _profile(req.profile_id)
     dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default
-    session_id = f"ses_{uuid.uuid4().hex[:12]}"
-    selected_model_id, llm_degraded = _resolve_model_id(req.model_id)
-    llm = get_llm_provider(selected_model_id)
     user_prompt = req.prompt or "Hello"
-    llm_text = llm.complete(user_prompt, system=_CHAT_SYSTEM)
+    parsed_mode = parse_execution_mode_from_message(user_prompt)
+    if parsed_mode is not None:
+        dry_run = parsed_mode
+    session_id = f"ses_{uuid.uuid4().hex[:12]}"
+    selected_model_id, llm_degraded, llm_unconfigured = _resolve_model_id(req.model_id)
+    llm = get_llm_provider(selected_model_id)
     actor, role = _audit_actor(request)
 
     _sessions[session_id] = {
@@ -520,22 +1028,77 @@ async def create_session(req: SessionRequest, request: Request):
         "session_token": session_token,
         "selected_model_id": selected_model_id,
         "llm_degraded": llm_degraded,
+        "llm_unconfigured": llm_unconfigured,
         "status": "idle",
         "subagent": None,
         "dry_run": dry_run,
-        "messages": [
-            {"role": "user", "content": user_prompt},
-            {"role": "assistant", "content": llm_text},
-        ],
+        "messages": [],
         "plan_id": None,
         "run_id": None,
         "approval": None,
         "live_approval_id": None,
         "live_approval_status": None,
-        "llm_available": not llm_degraded,
+        "llm_available": not llm_unconfigured,
+        "migration_plan": None,
+        "plan_phase": "poc",
+        "discovery_snapshot": None,
+        "discovery_fetched_at": None,
+        "tasks": [],
+        "pending_form": None,
+        "plan_approved": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    attach_actor_to_session(_sessions[session_id], getattr(request.state, "platform_user", None))
+
+    migrate_intent = any(
+        w in user_prompt.lower()
+        for w in ("migrate", "migration", "plan phase", "dry-run", "dry run", "execute")
+    )
+    if migrate_intent or req.execute_pev:
+        from ado2gh.agents.session_orchestrator import process_user_message
+
+        orch = await process_user_message(
+            _sessions[session_id],
+            user_prompt,
+            llm=llm,
+            llm_degraded=llm_degraded,
+            llm_unconfigured=llm_unconfigured,
+            accel_get=_accel_get,
+            build_plan=_build_migration_plan,
+            session_token=session_token,
+        )
+        if orch.start_pev or (
+            req.execute_pev
+            and can_execute_live_without_approval(_sessions[session_id])
+        ):
+            plan = await _ensure_migration_plan(_sessions[session_id], session_token)
+            if plan.get("blocked"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=plan.get("block_reason", "migration_plan_blocked"),
+                )
+            started = await _try_start_pev_run(session_id, request)
+            if not started:
+                _sessions[session_id]["status"] = "awaiting_approval"
+        elif req.execute_pev and session_requires_live_approval(_sessions[session_id]):
+            _add_message(
+                session_id,
+                "assistant",
+                live_execution_block_message(_sessions[session_id]),
+                kind="message",
+            )
+            try:
+                await _enqueue_session_live_approval(session_id, _sessions[session_id], request)
+            except Exception:
+                pass
+            _sessions[session_id]["status"] = "awaiting_approval"
+    else:
+        llm_text = llm.complete(user_prompt, system=_CHAT_SYSTEM)
+        _sessions[session_id]["messages"] = [
+            {"role": "user", "content": user_prompt, "kind": "message", "timestamp": datetime.now(timezone.utc).isoformat()},
+            {"role": "assistant", "content": llm_text, "kind": "message", "timestamp": datetime.now(timezone.utc).isoformat()},
+        ]
     _audit.record(
         "session.start",
         profile_id=req.profile_id,
@@ -545,23 +1108,95 @@ async def create_session(req: SessionRequest, request: Request):
         metadata={"dry_run": dry_run, "role": role, "selected_model_id": selected_model_id},
     )
 
-    if req.execute_pev:
-        _start_pev_run(session_id)
-
     session = _sessions[session_id]
-    return {
-        "session_id": session_id,
-        "status": session["status"],
-        "subagent": session.get("subagent"),
-        "dry_run": dry_run,
-        "selected_model_id": selected_model_id,
-        "llm_degraded": llm_degraded,
-        "messages": session["messages"],
-    }
+    return _session_payload(session_id)
+
+
+@app.get("/v1/sessions")
+def list_sessions(request: Request, profile_id: str | None = None):
+    """List agent chat sessions, optionally filtered by deployment profile."""
+    _require_operate(request)
+    viewer = request_username(request)
+    admin = is_admin_request(request)
+    items: list[dict[str, Any]] = []
+    for sid, session in _sessions.items():
+        if profile_id and session.get("profile_id") != profile_id:
+            continue
+        if auth_enabled() and viewer and not admin:
+            owner = session.get("user_username")
+            if owner and owner != viewer:
+                continue
+        first_user = next(
+            (m for m in session.get("messages", []) if m.get("role") == "user"),
+            None,
+        )
+        title = str((first_user or {}).get("content", "New chat"))[:80]
+        items.append({
+            "session_id": sid,
+            "profile_id": session.get("profile_id"),
+            "title": title,
+            "status": session.get("status"),
+            "updated_at": session.get("updated_at"),
+            "created_at": session.get("created_at"),
+            "message_count": len(session.get("messages", [])),
+        })
+    items.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
+    return {"sessions": items}
 
 
 @app.get("/v1/sessions/{session_id}")
-def get_session(session_id: str):
+def get_session(session_id: str, request: Request):
+    _require_operate(request)
+    _get_accessible_session(session_id, request)
+    return _session_payload(session_id)
+
+
+@app.delete("/v1/sessions/{session_id}")
+def delete_session(session_id: str, request: Request):
+    _require_operate(request)
+    _get_accessible_session(session_id, request, write=True)
+    run_id = _sessions[session_id].get("run_id")
+    if run_id and run_id in _runs:
+        del _runs[run_id]
+    del _sessions[session_id]
+    return {"deleted": session_id}
+
+
+@app.post("/v1/sessions/{session_id}/plan")
+async def create_migration_plan(
+    session_id: str,
+    request: Request,
+    body: PlanPhaseBody | None = None,
+):
+    """Planner subagent: LLM + discovery → structured migration_plan on the session."""
+    _require_operate(request)
+    session = _get_accessible_session(session_id, request)
+    if session.get("status") not in ("idle", "completed", "failed"):
+        raise HTTPException(status_code=409, detail="session_busy")
+    phase = (body.phase if body else None) or session.get("plan_phase", "poc")
+    session["plan_phase"] = phase
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
+    plan = await _build_migration_plan(session, session_token, phase=phase)
+    llm = get_llm_provider(session.get("selected_model_id"))
+    if not plan.get("blocked"):
+        plan["narrative"] = llm.complete(
+            f"Summarize this migration plan for the operator:\n{json.dumps(plan, indent=2)}",
+            system=_PLANNER_SYSTEM,
+        )
+    else:
+        plan["narrative"] = plan.get("block_reason", "Plan blocked")
+    session["migration_plan"] = plan
+    session["plan_approved"] = False
+    session["status"] = "idle"
+    session["subagent"] = "planner"
+    _add_message(session_id, "planner", plan["narrative"], kind="progress")
+    from ado2gh.agents.session_orchestrator import _plan_confirmation_form, _plan_confirmation_reply
+
+    if not plan.get("blocked"):
+        session["pending_form"] = _plan_confirmation_form(session)
+        _add_message(session_id, "assistant", _plan_confirmation_reply(session), kind="message")
+    session["subagent"] = None
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
     return _session_payload(session_id)
 
 
@@ -569,7 +1204,30 @@ def get_session(session_id: str):
 async def run_pev(session_id: str, request: Request):
     """Start planner → executor → validator against the accelerator (dry-run by default)."""
     _require_operate(request)
-    _start_pev_run(session_id)
+    session = _get_accessible_session(session_id, request)
+    plan = session.get("migration_plan")
+    if not plan:
+        raise HTTPException(
+            status_code=409,
+            detail="migration_plan_required — generate a plan before executing",
+        )
+    if plan.get("blocked"):
+        raise HTTPException(
+            status_code=409,
+            detail=plan.get("block_reason", "migration_plan_blocked"),
+        )
+    started = await _try_start_pev_run(session_id, request)
+    if not started:
+        payload = _session_payload(session_id)
+        return {
+            "session_id": session_id,
+            "status": payload["status"],
+            "subagent": payload.get("subagent"),
+            "dry_run": payload.get("dry_run", True),
+            "run_id": payload.get("run_id"),
+            "blocked": True,
+            "execution_policy": payload.get("execution_policy"),
+        }
     payload = _session_payload(session_id)
     return {
         "session_id": session_id,
@@ -582,37 +1240,12 @@ async def run_pev(session_id: str, request: Request):
 
 @app.post("/v1/sessions/{session_id}/request-live")
 async def request_live(session_id: str, request: Request):
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
-    try:
-        approval = await _accel_post("/v1/platform/approvals", {
-            "scope_type": "agent_session",
-            "scope_id": session_id,
-            "profile_id": session.get("profile_id"),
-            "assignment_id": session.get("assignment_id"),
-            "reason_request": "Request live PEV execution",
-        }, session_token=session_token)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code not in (401, 403):
-            raise HTTPException(
-                status_code=exc.response.status_code,
-                detail="live_approval_enqueue_failed",
-            ) from exc
-        approval = None
-    except httpx.HTTPError:
-        approval = None
-
+    session = _get_accessible_session(session_id, request)
+    attach_actor_to_session(session, getattr(request.state, "platform_user", None))
+    approval = await _enqueue_session_live_approval(session_id, session, request)
     if approval is None:
-        session["status"] = "awaiting_approval"
-        session["approval"] = {"required": True, "approved": False}
         _add_message(session_id, "system", "Live execution requested — awaiting approval")
         return {"session_id": session_id, "status": session["status"]}
-    session["status"] = "awaiting_approval"
-    session["live_approval_id"] = approval.get("id")
-    session["approval"] = {"required": True, "approved": False, "approval_id": approval.get("id")}
-    session["live_approval_status"] = approval.get("status", "pending")
     _add_message(session_id, "system", "Live execution requested — awaiting platform approval")
     return {
         "session_id": session_id,
@@ -624,9 +1257,7 @@ async def request_live(session_id: str, request: Request):
 @app.post("/v1/sessions/{session_id}/approve")
 async def approve_session(session_id: str, req: ApprovalRequest, request: Request):
     _require_approve_live(request)
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = _get_accessible_session(session_id, request)
     if not req.approved:
         session["status"] = "completed"
         session["approval"] = {"approved": False, "reason": req.reason}
@@ -724,26 +1355,225 @@ def deny_live_internal(session_id: str, body: dict | None = None):
 
 
 @app.post("/v1/sessions/{session_id}/message")
-def session_message(session_id: str, req: SessionMessageRequest, request: Request):
+async def session_message(session_id: str, req: SessionMessageRequest, request: Request):
     _require_operate(request)
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = _get_accessible_session(session_id, request)
     if session.get("status") not in ("idle", "completed", "failed"):
         raise HTTPException(
             status_code=409,
             detail="Cannot chat while PEV is running — wait for completion or start a new session",
         )
+    if session.get("pending_form"):
+        raise HTTPException(
+            status_code=409,
+            detail="pending_form — submit the form or cancel before sending a new message",
+        )
+
+    from ado2gh.agents.session_orchestrator import process_user_message
+
     llm = get_llm_provider(session.get("selected_model_id"))
-    reply = llm.complete(req.message, system=_CHAT_SYSTEM)
-    session["messages"].append({"role": "user", "content": req.message})
-    session["messages"].append({"role": "assistant", "content": reply})
-    session["status"] = "idle"
-    session["subagent"] = None
+    _, llm_degraded, llm_unconfigured = _resolve_model_id(session.get("selected_model_id"))
+    attach_actor_to_session(session, getattr(request.state, "platform_user", None))
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
+
+    orch = await process_user_message(
+        session,
+        req.message,
+        llm=llm,
+        llm_degraded=llm_degraded,
+        llm_unconfigured=llm_unconfigured,
+        accel_get=_accel_get,
+        build_plan=_build_migration_plan,
+        session_token=session_token,
+    )
+
+    if orch.start_pev:
+        try:
+            plan = await _ensure_migration_plan(session, session_token)
+            if plan.get("blocked"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=plan.get("block_reason", "migration_plan_blocked"),
+                )
+            started = await _try_start_pev_run(session_id, request)
+            if not started:
+                session["status"] = "awaiting_approval"
+        except HTTPException as exc:
+            session["messages"].append({
+                "role": "system",
+                "content": str(exc.detail),
+                "kind": "message",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+    session["status"] = "idle" if not orch.start_pev else session.get("status", "planning")
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
+    payload = _session_payload(session_id)
+    payload["reply"] = orch.reply
+    return payload
+
+
+@app.post("/v1/sessions/{session_id}/form-submit")
+async def submit_session_form(session_id: str, req: FormSubmitRequest, request: Request):
+    _require_operate(request)
+    session = _get_accessible_session(session_id, request)
+    form = session.get("pending_form")
+    if not form:
+        raise HTTPException(status_code=409, detail="no_pending_form")
+
+    from ado2gh.agents.session_orchestrator import migration_ready_reply, process_user_message
+
+    values = req.values or {}
+    form_id = str(form.get("form_id") or "")
+    session["pending_form"] = None
+    attach_actor_to_session(session, getattr(request.state, "platform_user", None))
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
+    reply = ""
+
+    if form_id == "plan_confirmation":
+        plan_notes = str(values.get("plan_notes") or "").strip()
+        plan_confirmed = bool(values.get("plan_confirmed"))
+        confirm_execute = bool(values.get("confirm_execute"))
+
+        if plan_notes and not plan_confirmed:
+            session.pop("migration_plan", None)
+            session["plan_approved"] = False
+            _, replan_degraded, replan_unconfigured = _resolve_model_id(session.get("selected_model_id"))
+            orch = await process_user_message(
+                session,
+                f"Revise the migration plan. Operator feedback: {plan_notes}",
+                llm=get_llm_provider(session.get("selected_model_id")),
+                llm_degraded=replan_degraded,
+                llm_unconfigured=replan_unconfigured,
+                accel_get=_accel_get,
+                build_plan=_build_migration_plan,
+                session_token=session_token,
+            )
+            session["updated_at"] = datetime.now(timezone.utc).isoformat()
+            payload = _session_payload(session_id)
+            payload["reply"] = orch.reply or "Rebuilding migration plan with your changes…"
+            if orch.pending_form:
+                payload["pending_form"] = orch.pending_form
+            return payload
+
+        if not plan_confirmed:
+            session["pending_form"] = form
+            raise HTTPException(
+                status_code=400,
+                detail="Confirm the plan is correct, or describe changes in Notes without checking confirm.",
+            )
+
+        session["plan_approved"] = True
+        plan = session.get("migration_plan") or {}
+        if plan_notes:
+            plan["operator_notes"] = plan_notes
+            session["migration_plan"] = plan
+
+        if confirm_execute:
+            if plan.get("blocked"):
+                raise HTTPException(
+                    status_code=409,
+                    detail=plan.get("block_reason", "migration_plan_blocked"),
+                )
+            started = await _try_start_pev_run(session_id, request)
+            mode = "dry-run" if session.get("dry_run", True) else "live"
+            if started:
+                reply = plan.get("narrative") or f"Plan confirmed — starting {mode} migration…"
+            else:
+                reply = live_execution_block_message(session)
+                session["status"] = "awaiting_approval"
+        else:
+            reply = migration_ready_reply(session)
+            session["status"] = "idle"
+            session["subagent"] = None
+
+        _add_message(session_id, "assistant", reply, kind="message")
+        session["updated_at"] = datetime.now(timezone.utc).isoformat()
+        payload = _session_payload(session_id)
+        payload["reply"] = reply
+        return payload
+
+    phase = str(values.get("phase") or session.get("plan_phase") or "poc").strip()
+    if not phase:
+        raise HTTPException(status_code=400, detail="phase_required")
+    confirm_execute = bool(values.get("confirm_execute"))
+    session["plan_phase"] = phase
+
+    try:
+        plan = await _ensure_migration_plan(session, session_token, phase=phase)
+        if plan.get("blocked"):
+            raise HTTPException(
+                status_code=409,
+                detail=plan.get("block_reason", "migration_plan_blocked"),
+            )
+
+        if confirm_execute:
+            started = await _try_start_pev_run(session_id, request)
+            mode = "dry-run" if session.get("dry_run", True) else "live"
+            if started:
+                reply = plan.get("narrative") or f"Starting {mode} migration for phase {phase}…"
+            else:
+                reply = live_execution_block_message(session)
+                session["status"] = "awaiting_approval"
+        else:
+            reply = migration_ready_reply(session)
+            session["status"] = "idle"
+            session["subagent"] = None
+
+        _add_message(session_id, "assistant", reply, kind="message")
+    except HTTPException:
+        session["pending_form"] = form
+        raise
+    except Exception as exc:
+        session["pending_form"] = form
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
     session["updated_at"] = datetime.now(timezone.utc).isoformat()
     payload = _session_payload(session_id)
     payload["reply"] = reply
     return payload
+
+
+@app.patch("/v1/sessions/{session_id}/execution-mode")
+async def update_execution_mode(
+    session_id: str, req: ExecutionModeRequest, request: Request,
+):
+    """Set dry-run vs live on an agent session (admins/approvers use live without approval queue)."""
+    _require_operate(request)
+    session = _get_accessible_session(session_id, request)
+    if session.get("status") not in ("idle", "completed", "failed", "awaiting_approval"):
+        raise HTTPException(status_code=409, detail="session_busy")
+    attach_actor_to_session(session, getattr(request.state, "platform_user", None))
+    previous = bool(session.get("dry_run", True))
+    session["dry_run"] = req.dry_run
+    if previous != req.dry_run:
+        session.pop("migration_plan", None)
+        session["plan_approved"] = False
+        if not req.dry_run:
+            session.pop("live_approval_status", None)
+            session.pop("live_approval_id", None)
+            if can_execute_live_without_approval(session):
+                session["status"] = "idle"
+                session.pop("approval", None)
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
+    mode = "dry-run" if req.dry_run else "live"
+    _add_message(
+        session_id,
+        "system",
+        f"Execution mode set to **{mode}**."
+        + (" Migration plan cleared — send a message to rebuild with the new mode." if previous != req.dry_run else ""),
+        kind="message",
+    )
+    return _session_payload(session_id)
+
+
+@app.post("/v1/sessions/{session_id}/form-cancel")
+def cancel_session_form(session_id: str, request: Request):
+    _require_operate(request)
+    session = _get_accessible_session(session_id, request)
+    session["pending_form"] = None
+    session["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return _session_payload(session_id)
 
 
 @app.post("/v1/sessions/{session_id}/provision")
@@ -786,14 +1616,19 @@ def llm_status():
     store = LLMModelStore()
     models = store.load()
     default = store.get_default_model()
-    selected_model_id, llm_degraded = _resolve_model_id(None)
-    enabled = [m for m in models if m.enabled]
+    selected_model_id, llm_degraded, llm_unconfigured = _resolve_model_id(None)
+    enabled = store.list_agent_ready_models()
     return {
-        "provider": default.provider if default else "stub",
-        "available": not llm_degraded,
+        "provider": default.provider if default else None,
+        "available": not llm_unconfigured,
         "degraded": llm_degraded,
-        "message": "Using deterministic stub planner" if llm_degraded else f"model={selected_model_id}",
-        "backend": default.provider if default else "stub",
+        "unconfigured": llm_unconfigured,
+        "message": (
+            "No LLM models configured — add one under Settings → LLM models"
+            if llm_unconfigured
+            else ("Using deterministic stub planner" if llm_degraded else f"model={selected_model_id}")
+        ),
+        "backend": default.provider if default else None,
         "models_configured": len(enabled),
         "default_model_id": default.id if default else None,
         "selected_model_id": selected_model_id,

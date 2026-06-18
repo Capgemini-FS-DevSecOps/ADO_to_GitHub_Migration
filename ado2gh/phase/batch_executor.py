@@ -215,7 +215,8 @@ class BatchExecutor:
         cancel_event=None,
         on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
     ) -> dict:
-        self.db.mark_wave_run(wave.wave_id, "started", dry_run)
+        if not dry_run:
+            self.db.mark_wave_run(wave.wave_id, "started", dry_run)
         result = {"completed": 0, "failed": 0, "repo_statuses": {}}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
@@ -258,6 +259,9 @@ class BatchExecutor:
                         }
                         if on_repo_done:
                             on_repo_done(key, result["repo_statuses"][key], repo)
-        self.db.mark_wave_run(wave.wave_id,
-                              "completed" if result["failed"] == 0 else "partial")
+        if not dry_run:
+            self.db.mark_wave_run(
+                wave.wave_id,
+                "completed" if result["failed"] == 0 else "partial",
+            )
         return result

@@ -5,11 +5,9 @@ import csv
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import RepoConfig
 
 
 class ServiceConnectionManifest:

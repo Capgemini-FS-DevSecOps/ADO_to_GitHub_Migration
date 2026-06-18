@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { fetchPhases, fetchSettings, updatePhases } from '@/lib/api';
+import { fetchPhases, fetchProfileScanStatus, fetchSettings, updatePhases } from '@/lib/api';
 import type { PhaseDefinition, PhasesPayload, PhaseRemoval } from '@/lib/types';
 
 type EditablePhase = PhaseDefinition & { risk_min?: number };
@@ -103,6 +103,7 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
   const [error, setError] = useState<string | null>(null);
   const [rescanNote, setRescanNote] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [bgScanProfileId, setBgScanProfileId] = useState<string | null>(null);
 
   useEffect(() => {
     if (payload?.phases) {
@@ -110,6 +111,24 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
       setRemovals([]);
     }
   }, [payload]);
+
+  const { data: scanStatus } = useQuery({
+    queryKey: ['profile-scan-status', bgScanProfileId],
+    queryFn: () => fetchProfileScanStatus(bgScanProfileId!),
+    enabled: !!bgScanProfileId,
+    refetchInterval: (query) => (query.state.data?.running ? 2000 : false),
+  });
+
+  useEffect(() => {
+    if (!bgScanProfileId || scanStatus === undefined) return;
+    if (scanStatus.running) return;
+    setBgScanProfileId(null);
+    setRescanNote('Phases saved and profile re-scanned.');
+    qc.invalidateQueries({ queryKey: ['phases'] });
+    qc.invalidateQueries({ queryKey: ['settings'] });
+    qc.invalidateQueries({ queryKey: ['discovery'] });
+    qc.invalidateQueries({ queryKey: ['profile-scan'] });
+  }, [bgScanProfileId, scanStatus, qc]);
 
   const saveMut = useMutation({
     mutationFn: (body: { span_to_scan?: boolean }) =>
@@ -126,7 +145,6 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
         profile_id: profileId ?? undefined,
       }),
     onSuccess: (data) => {
-      setPendingSave(null);
       setError(null);
       const rescan = data.rescan;
       if (rescan?.skipped) {
@@ -135,6 +153,10 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
             ? 'Phases saved. Activate a profile with ADO credentials to re-scan assignments.'
             : 'Phases saved.',
         );
+      } else if (rescan?.status === 'started' || rescan?.status === 'already_running') {
+        const pid = rescan.profile_id ?? profileId ?? settings?.active_profile_id ?? null;
+        if (pid) setBgScanProfileId(pid);
+        setRescanNote('Phases saved. Re-scanning repositories in the background…');
       } else if (rescan?.repos_scanned != null) {
         setRescanNote(
           `Phases saved and profile re-scanned (${rescan.repos_scanned} repos re-assigned).`,
@@ -144,11 +166,10 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
       }
       qc.invalidateQueries({ queryKey: ['phases'] });
       qc.invalidateQueries({ queryKey: ['settings'] });
-      qc.invalidateQueries({ queryKey: ['discovery'] });
     },
     onError: (e) => {
-      setPendingSave(null);
       setRescanNote(null);
+      setBgScanProfileId(null);
       setError(String(e));
     },
   });
@@ -216,8 +237,12 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
 
   const confirmSave = () => {
     if (!pendingSave) return;
-    saveMut.mutate(pendingSave);
+    const body = pendingSave;
+    setPendingSave(null);
+    saveMut.mutate(body);
   };
+
+  const backgroundScanning = !!bgScanProfileId || scanStatus?.running;
 
   const activeProfile = settings?.migration_profiles?.find(
     (p) => p.id === (profileId ?? settings?.active_profile_id),
@@ -337,7 +362,7 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
         <button
           type="button"
           className="oai-button oai-button-secondary"
-          disabled={saveMut.isPending}
+          disabled={saveMut.isPending || backgroundScanning}
           onClick={() => requestSave(true)}
         >
           Span bands to scan results
@@ -345,10 +370,10 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
         <button
           type="button"
           className="oai-button oai-button-primary"
-          disabled={saveMut.isPending}
+          disabled={saveMut.isPending || backgroundScanning}
           onClick={() => requestSave(false)}
         >
-          {saveMut.isPending ? 'Saving & re-scanning…' : 'Save phases'}
+          {saveMut.isPending ? 'Saving…' : backgroundScanning ? 'Re-scanning…' : 'Save phases'}
         </button>
       </div>
 
@@ -365,7 +390,14 @@ export function PhaseConfigurator({ profileId }: { profileId?: string | null }) 
       )}
 
       {error && <p className="badge-manual" style={{ marginTop: 12 }}>{error}</p>}
-      {rescanNote && !error && <p className="discovery-save-ok">{rescanNote}</p>}
+      {backgroundScanning && !error && (
+        <p className="scan-status-banner" style={{ marginTop: 12 }}>
+          Re-scanning repositories in the background… Discovery assignments will update when complete.
+        </p>
+      )}
+      {rescanNote && !error && !backgroundScanning && (
+        <p className="discovery-save-ok">{rescanNote}</p>
+      )}
 
       {pendingRemoval && (
         <RemovalModal

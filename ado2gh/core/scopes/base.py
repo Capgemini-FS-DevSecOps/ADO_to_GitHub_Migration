@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ado2gh.models import RepoConfig
+from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, RepoConfig
 
 
 @dataclass
@@ -14,7 +14,7 @@ class ScopeContext:
     gh: Any
     db: Any
     dry_run: bool = False
-    strategy: str = "mirror"
+    strategy: str = DEFAULT_MIGRATION_STRATEGY
     wave_id: int = 0
     pipeline_parallel: int = 8
 

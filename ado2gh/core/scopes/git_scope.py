@@ -1,15 +1,40 @@
 """Git mirror / GEI migration scope."""
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import subprocess
 import tempfile
 from typing import Any
 
+from ado2gh.core.gei_runtime import gei_subprocess_env
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, RepoConfig
+
+
+def _clean_clone_url(clone_url: str) -> str:
+    """Strip embedded credentials from ADO remoteUrl (e.g. https://org@dev.azure.com/...)."""
+    if "://" not in clone_url:
+        return clone_url
+    scheme, rest = clone_url.split("://", 1)
+    host_and_path = rest.split("/", 1)
+    if "@" in host_and_path[0]:
+        host_and_path[0] = host_and_path[0].split("@", 1)[1]
+    return f"{scheme}://{'/'.join(host_and_path)}"
+
+
+def _ado_git_env(pat: str) -> dict[str, str]:
+    """Git subprocess env using Basic auth header (reliable for Azure DevOps PATs)."""
+    token = base64.b64encode(f":{pat}".encode()).decode()
+    return {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.extraHeader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {token}",
+    }
 
 
 class GitScopeHandler:
@@ -47,7 +72,7 @@ class GitScopeHandler:
                 "Configure gh_org on the migration profile or global.gh_org in migration.yaml."
             )
 
-        if not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
+        if ctx.strategy != "gei" and not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
             ctx.gh.create_repo(
                 repo.gh_org, repo.gh_repo, private=True,
                 description=f"Migrated from ADO: {repo.ado_project}/{repo.ado_repo}",
@@ -85,13 +110,8 @@ class GitScopeHandler:
         return ScopeResult(stats=stats)
 
     def _run_mirror(self, repo: RepoConfig, clone_url: str, ctx: ScopeContext) -> dict:
-        if "://" in clone_url:
-            scheme, rest = clone_url.split("://", 1)
-            host_and_path = rest.split("/", 1)
-            if "@" in host_and_path[0]:
-                host_and_path[0] = host_and_path[0].split("@", 1)[1]
-            clone_url = f"{scheme}://{'/'.join(host_and_path)}"
-        auth_url = clone_url.replace("https://", f"https://:{ctx.ado.pat}@")
+        clone_url = _clean_clone_url(clone_url)
+        git_env = _ado_git_env(ctx.ado.pat)
         gh_token = ctx.gh.token_manager.get_token()
         target_url = (
             f"https://x-access-token:{gh_token}@github.com/"
@@ -102,9 +122,9 @@ class GitScopeHandler:
         mirror_path = os.path.join(tmpdir, f"{repo.ado_repo}.git")
         try:
             result = subprocess.run(
-                ["git", "clone", "--mirror", auth_url, mirror_path],
+                ["git", "clone", "--mirror", clone_url, mirror_path],
                 capture_output=True, text=True, timeout=1800,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                env=git_env,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"git clone --mirror failed: {result.stderr[:500]}")
@@ -184,18 +204,28 @@ class GitScopeHandler:
         ado_org = ctx.global_cfg.get("ado_org_url", "").rstrip("/").split("/")[-1]
         gh_token = ctx.gh.token_manager.get_token()
         cmd = [
-            "gh", "gei", "migrate-repo",
+            "gh", "ado2gh", "migrate-repo",
             "--ado-org", ado_org,
             "--ado-team-project", repo.ado_project,
             "--ado-repo", repo.ado_repo,
             "--github-org", repo.gh_org,
             "--github-repo", repo.gh_repo,
-            "--wait",
         ]
-        env = {**os.environ, "ADO_PAT": ctx.ado.pat, "GH_PAT": gh_token}
+        env = gei_subprocess_env(ADO_PAT=ctx.ado.pat, GH_PAT=gh_token)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200, env=env)
+        combined = f"{result.stdout}\n{result.stderr}"
         if result.returncode != 0:
             raise RuntimeError(
-                f"gh gei failed (exit {result.returncode}): {result.stderr[:500]}"
+                f"gh ado2gh migrate-repo failed (exit {result.returncode}): "
+                f"{combined[:800]}"
+            )
+        if "Usage:" in combined and "migrate-repo" in combined:
+            raise RuntimeError(
+                "gh ado2gh migrate-repo printed usage help — check gh-ado2gh extension install"
+            )
+        if "no operation will be performed" in combined.lower():
+            raise RuntimeError(
+                "gh ado2gh skipped migration: target repo already exists on GitHub. "
+                "Delete the empty target repo or choose a different github_repo name."
             )
         return {"gei": "success", "gei_output": result.stdout[:1000]}

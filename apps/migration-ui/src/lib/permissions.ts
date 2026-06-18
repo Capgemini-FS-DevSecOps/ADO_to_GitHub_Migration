@@ -63,6 +63,10 @@ export function operatorSettingsHint(permissions?: PlatformPermissions | null): 
   return 'Operator view — deployment profiles are read-only; live execution requires admin or approver approval.';
 }
 
+export function canViewAllAuditHistory(permissions?: PlatformPermissions | null, role?: string | null): boolean {
+  return role === 'admin' || permissions?.can_manage_settings === true;
+}
+
 export function modelsAccessDeniedMessage(): string {
   return 'LLM model onboarding is restricted to platform administrators (`can_manage_models`).';
 }

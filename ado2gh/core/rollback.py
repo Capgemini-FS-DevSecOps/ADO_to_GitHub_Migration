@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
 from ado2gh.clients import GHClient
 from ado2gh.clients.ado_client import ADOClient

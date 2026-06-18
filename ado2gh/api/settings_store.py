@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from ado2gh.api.phase_definitions import (
     span_phases_to_scan,
     validate_phases,
 )
+from ado2gh.models import DEFAULT_MIGRATION_STRATEGY
 
 
 def _settings_path() -> Path:
@@ -91,7 +93,7 @@ class AdvancedSettings:
     config_path: str = "migration.yaml"
     db_path: str = "migration_state.db"
     dry_run_default: bool = True
-    migration_strategy: str = "mirror"
+    migration_strategy: str = DEFAULT_MIGRATION_STRATEGY
     default_phase: str = "poc"
     repo_parallel: int = 4
     pipeline_parallel: int = 8
@@ -119,6 +121,9 @@ class UISettings:
 
 
 class SettingsStore:
+    _rescan_lock = threading.Lock()
+    _rescan_running: set[str] = set()
+
     def __init__(self, path: Path | None = None):
         self.path = path or _settings_path()
 
@@ -720,10 +725,41 @@ class SettingsStore:
         payload = self.phases_payload(profile_id)
         target_profile = profile_id or settings.active_profile_id
         if target_profile:
-            payload["rescan"] = self._rescan_profile_after_phase_change(
+            payload["rescan"] = self._start_rescan_after_phase_change(
                 target_profile, phases,
             )
         return payload
+
+    def profile_rescan_status(self, profile_id: str) -> dict[str, Any]:
+        with self._rescan_lock:
+            running = profile_id in self._rescan_running
+        return {"profile_id": profile_id, "running": running}
+
+    def _start_rescan_after_phase_change(
+        self,
+        profile_id: str,
+        phases: list[PhaseDefinition],
+    ) -> dict[str, Any]:
+        profile = self.get_profile(profile_id)
+        if not profile:
+            return {"skipped": True, "reason": "profile not found"}
+        if not profile.ado_org_url or not profile.ado_pat:
+            return {"skipped": True, "reason": "profile missing ADO credentials"}
+
+        with self._rescan_lock:
+            if profile_id in self._rescan_running:
+                return {"status": "already_running", "profile_id": profile_id}
+            self._rescan_running.add(profile_id)
+
+        def _run() -> None:
+            try:
+                self._rescan_profile_after_phase_change(profile_id, phases)
+            finally:
+                with self._rescan_lock:
+                    self._rescan_running.discard(profile_id)
+
+        threading.Thread(target=_run, daemon=True, name=f"phase-rescan-{profile_id}").start()
+        return {"status": "started", "profile_id": profile_id}
 
     def _rescan_profile_after_phase_change(
         self,

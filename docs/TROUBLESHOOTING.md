@@ -90,6 +90,35 @@ ado2gh phase run --phase poc --config migration_phase.yaml
 
 ## GEI Migration Failures
 
+### `Couldn't find a valid ICU package` / `gh ado2gh migrate-repo` exit 255
+
+The `gh-ado2gh` extension uses a bundled .NET runtime. In slim Docker images you need either ICU libraries or invariant globalization mode.
+
+**Docker (recommended):** Rebuild accelerator and worker (the image installs `libicu-dev` and sets `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache accelerator worker
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d accelerator worker
+```
+
+Verify inside the running container:
+
+```bash
+docker compose exec accelerator printenv DOTNET_SYSTEM_GLOBALIZATION_INVARIANT
+docker compose exec accelerator gh ado2gh --help
+```
+
+**Local CLI (outside Docker):**
+
+```bash
+# Linux
+export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+# or install ICU, e.g. apt install libicu72
+
+# Windows PowerShell
+$env:DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = "1"
+```
+
 ### `gh gei` not found
 
 ```bash

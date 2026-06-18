@@ -14,7 +14,7 @@ export GH_TOKEN="your-github-token"
 ## Global Options
 
 ```bash
-ado2gh --version          # Show version (5.0.0)
+ado2gh --version          # Show version (5.1.0)
 ado2gh --help             # List all commands
 ado2gh <command> --help   # Help for a specific command
 ```

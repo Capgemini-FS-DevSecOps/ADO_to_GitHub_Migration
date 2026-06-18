@@ -6,10 +6,14 @@ import os
 from abc import ABC, abstractmethod
 from typing import Optional
 
-import httpx
 
 from ado2gh.api.http_llm import build_llm_http_client
 from ado2gh.api.local_hosts import resolve_local_service_url
+
+NO_LLM_CONFIGURED_MESSAGE = (
+    "No LLM models are configured. Go to **Settings → LLM models** to add, "
+    "validate, and enable a model, then start a new chat."
+)
 
 
 class LLMProvider(ABC):
@@ -26,6 +30,13 @@ class StubLLMProvider(LLMProvider):
     def complete(self, prompt: str, system: Optional[str] = None) -> str:
         snippet = (prompt or "")[:80]
         return f"[stub] processed: {snippet}"
+
+
+class UnavailableLLMProvider(LLMProvider):
+    """Returned when the model registry has no usable agent models."""
+
+    def complete(self, prompt: str, system: Optional[str] = None) -> str:
+        return NO_LLM_CONFIGURED_MESSAGE
 
 
 class OpenAIProvider(LLMProvider):
@@ -113,6 +124,15 @@ class OllamaProvider(LLMProvider):
         return message.get("content") or json.dumps(data)
 
 
+def _explicit_env_stub_enabled() -> bool:
+    backend = (
+        os.environ.get("LLM_PROVIDER")
+        or os.environ.get("ADO2GH_LLM_BACKEND")
+        or ""
+    ).lower()
+    return backend in ("stub", "offline")
+
+
 def _provider_from_model_config(model_id: str) -> LLMProvider | None:
     from ado2gh.api.llm_model_store import LLMModelStore
 
@@ -121,6 +141,9 @@ def _provider_from_model_config(model_id: str) -> LLMProvider | None:
         return None
     if cfg.provider not in ("stub", "offline") and cfg.validation_status != "passed":
         return None
+    if cfg.provider in ("stub", "offline"):
+        from ado2gh.agents.local.stub_llm import LocalStubLLM
+        return LocalStubLLM()
     if cfg.provider == "openai" and cfg.api_key:
         return OpenAIProvider(cfg.api_key, cfg.model_id, cfg.base_url or None)
     if cfg.provider == "anthropic" and cfg.api_key:
@@ -131,23 +154,37 @@ def _provider_from_model_config(model_id: str) -> LLMProvider | None:
 
 
 def get_llm_provider(model_id: str | None = None) -> LLMProvider:
-    """Resolve provider from env, onboarded model registry, or stub."""
+    """Resolve provider from registry, env override, or unconfigured."""
+    from ado2gh.api.llm_model_store import LLMModelStore
+
+    store = LLMModelStore()
     configured_id = model_id or os.environ.get("ADO2GH_LLM_MODEL_ID")
     if configured_id:
         resolved = _provider_from_model_config(configured_id)
         if resolved:
             return resolved
 
+    default = store.get_default_model()
+    if default:
+        resolved = _provider_from_model_config(default.id)
+        if resolved:
+            return resolved
+
+    for cfg in store.load():
+        if cfg.enabled and cfg.provider in ("stub", "offline"):
+            resolved = _provider_from_model_config(cfg.id)
+            if resolved:
+                return resolved
+
+    if _explicit_env_stub_enabled():
+        from ado2gh.agents.local.stub_llm import LocalStubLLM
+        return LocalStubLLM()
+
     backend = (
         os.environ.get("LLM_PROVIDER")
         or os.environ.get("ADO2GH_LLM_BACKEND")
-        or "stub"
+        or ""
     ).lower()
-    if backend in ("stub", "offline", ""):
-        from ado2gh.agents.local.stub_llm import LocalStubLLM
-        return LocalStubLLM()
-    if backend == "unavailable":
-        return StubLLMProvider()
     if backend == "openai":
         key = os.environ.get("OPENAI_API_KEY", "")
         model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
@@ -158,4 +195,7 @@ def get_llm_provider(model_id: str | None = None) -> LLMProvider:
         model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
         if key:
             return AnthropicProvider(key, model)
-    return StubLLMProvider()
+
+    if not store.has_agent_ready_model():
+        return UnavailableLLMProvider()
+    return UnavailableLLMProvider()

@@ -17,6 +17,7 @@ services:
       ADO_PAT: ${ADO_PAT:-}
       GH_TOKEN: ${GH_TOKEN:-}
       CORS_ORIGINS: "*"
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     volumes:
       - ./migration.yaml:/app/migration.yaml:ro
       - ado2gh-data:/app/data

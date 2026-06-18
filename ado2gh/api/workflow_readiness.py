@@ -1,7 +1,7 @@
 """Workflow dependency readiness checks with structured log lines (FR-051)."""
 from __future__ import annotations
 
-from typing import Any, List
+from typing import List
 
 
 def check_workflow_readiness(

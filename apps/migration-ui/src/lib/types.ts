@@ -1,4 +1,11 @@
-export type StepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+export type StepStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'skipped'
+  | 'dry_run_complete'
+  | 'awaiting_approval';
 
 export interface PipelineStep {
   id: string;
@@ -23,6 +30,10 @@ export interface PipelineRun {
   error?: string | null;
   created_at: string;
   updated_at: string;
+  started_by_user_id?: string | null;
+  started_by_username?: string | null;
+  started_by_display_name?: string | null;
+  current_step?: string;
 }
 
 export interface GitHubTokenEntry {
@@ -131,11 +142,28 @@ export interface DiscoverySnapshot {
   status?: string;
 }
 
+export interface ValidationCheckRow {
+  check: string;
+  verdict: string;
+  detail: string;
+}
+
+export interface ValidationRepoResult {
+  project: string;
+  repo: string;
+  gh_target?: string;
+  overall: string;
+  primary_reason?: string;
+  message?: string;
+  detail?: string;
+  checks?: ValidationCheckRow[];
+}
+
 export interface ValidationResult {
   total: number;
   matched: number;
   failed: number;
-  results: Array<Record<string, unknown>>;
+  results: ValidationRepoResult[];
 }
 
 export interface ScanSummary {
@@ -209,6 +237,8 @@ export interface PhasesPayload {
     synced?: number;
     skipped?: boolean;
     reason?: string;
+    status?: 'started' | 'already_running';
+    running?: boolean;
   };
 }
 
@@ -229,10 +259,53 @@ export interface StepDefinition {
   description: string;
 }
 
+export interface AuditEvent {
+  id: string;
+  event_type: string;
+  profile_id: string;
+  actor: string;
+  assignment_id?: string | null;
+  payload_json?: string;
+  created_at: string;
+}
+
+export interface AuditHistoryResponse {
+  sessions: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+  count: number;
+}
+
+export interface AuditHistoryParams {
+  profileId?: string;
+  limit?: number;
+  offset?: number;
+  actor?: string;
+  eventType?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
 export interface PhaseGate {
   phase: string;
   status: string;
   repo_success_pct: number;
+}
+
+export interface ActiveMigration {
+  id: string;
+  name: string;
+  status: string;
+  dry_run: boolean;
+  phase: string;
+  wave_id?: number | null;
+  current_step: string;
+  started_by_username: string;
+  started_by_display_name: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DashboardSnapshot {
@@ -242,21 +315,31 @@ export interface DashboardSnapshot {
   total_pipelines: number;
   inventory_count: number;
   phase_gates: PhaseGate[];
+  active_migrations?: ActiveMigration[];
 }
 
 export interface PipelineReadinessItem {
   project: string;
   pipeline_id: string | number;
   pipeline_name: string;
+  repo_name?: string;
+  pipeline_type?: string;
   classification: string;
+  conversion?: string;
+  migration_status?: string;
+  workflow_file?: string;
   effort_hours: number;
   service_connections: string | number;
+  blockers?: string[];
+  warnings?: string[];
 }
 
 export interface ReadinessSnapshot {
   auto: number;
   assisted: number;
   manual: number;
+  total_pipelines?: number;
   total_effort_hours: number;
+  inventory_refreshed?: boolean;
   pipelines: PipelineReadinessItem[];
 }

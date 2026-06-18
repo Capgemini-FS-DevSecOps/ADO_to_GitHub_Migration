@@ -128,6 +128,12 @@ export async function saveModel(body: Record<string, unknown>): Promise<LlmModel
   });
 }
 
+export async function deleteModel(modelId: string): Promise<{ deleted: string }> {
+  return llmFetch<{ deleted: string }>(`/v1/settings/llm-models/${modelId}`, {
+    method: 'DELETE',
+  });
+}
+
 export function canEnableModel(validationStatus: string | undefined): boolean {
   return validationStatus === 'passed';
 }

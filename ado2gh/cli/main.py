@@ -11,7 +11,7 @@ from ado2gh.cli.misc import register as register_misc
 
 
 @click.group()
-@click.version_option("5.0.0")
+@click.version_option("5.1.0")
 def cli():
     """ado2gh v5 — Production-ready ADO to GitHub migration with multi-token,
     risk-based phasing, and post-migration validation."""

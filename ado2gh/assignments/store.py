@@ -1,7 +1,6 @@
 """CRUD for migration assignments and cohort membership."""
 from __future__ import annotations
 
-import json
 from uuid import uuid4
 
 from ado2gh.assignments.models import AssignmentType, MigrationAssignment

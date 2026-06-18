@@ -3,7 +3,6 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from ado2gh.api.model_validation import validate_draft, validate_saved

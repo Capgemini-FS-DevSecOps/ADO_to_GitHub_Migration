@@ -1,5 +1,5 @@
 """Tests for migration scan risk bucketing."""
-from ado2gh.models import PHASE_ORDER, PhaseType, RiskScore
+from ado2gh.models import PHASE_ORDER, RiskScore
 from ado2gh.phase.wave_assigner import WaveAssigner
 
 

@@ -1,13 +1,11 @@
 """LLM provider adapter tests (OpenAI + Anthropic + Ollama + stub)."""
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from ado2gh.agents.llm_provider import (
     AnthropicProvider,
     OllamaProvider,
     OpenAIProvider,
-    StubLLMProvider,
     get_llm_provider,
 )
 
@@ -20,10 +18,20 @@ def _mock_http_client(response: MagicMock):
     return mock_client
 
 
-def test_stub_provider_default(monkeypatch):
+def test_stub_provider_default(monkeypatch, tmp_path):
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     monkeypatch.delenv("ADO2GH_LLM_BACKEND", raising=False)
     monkeypatch.delenv("ADO2GH_LLM_MODEL_ID", raising=False)
+    monkeypatch.setenv("ADO2GH_DATA_DIR", str(tmp_path))
+    from ado2gh.agents.llm_provider import UnavailableLLMProvider, get_llm_provider
+
+    provider = get_llm_provider()
+    assert isinstance(provider, UnavailableLLMProvider)
+    assert "No LLM models are configured" in provider.complete("hello world")
+
+
+def test_stub_provider_explicit_env(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "stub")
     provider = get_llm_provider()
     text = provider.complete("hello world")
     assert "hello" in text.lower() or "[stub]" in text

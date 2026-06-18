@@ -3,7 +3,7 @@
 
 def test_gate_status_shape():
     from ado2gh.api.agentic_routes import _gate_payload
-    from ado2gh.models import GateStatus, PhaseType
+    from ado2gh.models import PhaseType
     from ado2gh.phase.gate_checker import PhaseGateChecker
     from ado2gh.state.db import StateDB
     import tempfile

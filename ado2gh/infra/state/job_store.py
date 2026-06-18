@@ -7,7 +7,6 @@ import sqlite3
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Optional
 
 from ado2gh.api.contracts import JobRecord, JobStatus, JobTypeEnum as JobType
 

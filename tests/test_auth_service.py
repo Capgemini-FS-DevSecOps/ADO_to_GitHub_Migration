@@ -1,6 +1,5 @@
 """Platform auth service tests."""
 import os
-import tempfile
 
 from ado2gh.auth.password import hash_password, verify_password, validate_password_strength
 from ado2gh.auth.service import AuthService

@@ -7,7 +7,6 @@ from urllib.parse import quote
 import requests
 
 from ado2gh.clients.token_manager import TokenManager
-from ado2gh.http_utils import make_session
 from ado2gh.infra.sessions import get_thread_session
 
 

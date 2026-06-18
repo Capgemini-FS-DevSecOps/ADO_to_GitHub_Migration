@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { NavTabs } from '@/components/NavTabs';
 import { AuthGate } from '@/components/AuthGate';
 import { UserSessionBar } from '@/components/UserSessionBar';
+import { BrandLogo, BrandWordmark } from '@/components/BrandLogo';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,24 +19,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="oai-app">
         <header className="oai-header">
           <div className="oai-container oai-header-inner">
-            <div className="oai-logo" aria-hidden>
-              ADO
-            </div>
-            <div className="oai-header-text">
-              <h1 className="oai-title">ADO2GH Migration Console</h1>
-              <p className="oai-description">
-                Enterprise Azure DevOps to GitHub migration accelerator with phased rollout,
-                pipeline transformation, PEV agent orchestration, and commit-level validation.
-              </p>
-              <p className="oai-tech-stack">
-                Powered by <strong>ado2gh Accelerator</strong> • <strong>FastAPI</strong> •{' '}
-                <strong>Planner–Executor–Validator Agent</strong> | Targets:{' '}
-                <strong>GitHub Actions</strong> • <strong>Git mirror / GEI</strong>
-              </p>
+            <div className="oai-brand">
+              <BrandLogo size={44} />
+              <div className="oai-brand-text">
+                <BrandWordmark />
+                <p className="oai-brand-tagline">
+                  Enterprise Azure DevOps → GitHub migration with phased rollout and agent orchestration
+                </p>
+              </div>
             </div>
             <UserSessionBar />
           </div>
-          <div className="oai-container">
+          <div className="oai-container oai-header-nav">
             <NavTabs />
           </div>
         </header>
@@ -43,10 +38,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="oai-container oai-main">{children}</main>
 
         <footer className="oai-footer">
-          <div className="oai-container">
-            <p>
-              ADO2GH Migration Accelerator — OrchestrateAI (OAI) UI • Local: SQLite • Production:
-              PostgreSQL / DynamoDB
+          <div className="oai-container oai-footer-inner">
+            <p className="oai-footer-brand">
+              <strong>ADO2GitHub</strong> · OrchestrateAI console
+            </p>
+            <p className="oai-footer-meta">
+              ado2gh Accelerator · FastAPI · Planner–Executor–Validator agent · Git mirror / GEI
             </p>
           </div>
         </footer>

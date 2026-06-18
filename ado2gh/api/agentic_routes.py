@@ -4,24 +4,24 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from ado2gh.assignments.audit import AuditWriter
 from ado2gh.assignments.audit_export import AuditExportJob
 from ado2gh.assignments.models import AssignmentType
 from ado2gh.assignments.rbac import ProfileRole, RBAC
-from ado2gh.assignments.resolver import AssignmentResolver
 from ado2gh.assignments.store import AssignmentStore
 from ado2gh.api.workflow_readiness import check_workflow_readiness
-from ado2gh.clients.ado_client import ADOClient
-from ado2gh.clients.gh_client import GHClient
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.rollback import RollbackHandler
-from ado2gh.models import GateStatus, MigrationScope, PhaseType, RepoConfig, WaveConfig
+from ado2gh.models import GateStatus, MigrationScope, PhaseType, RepoConfig
 from ado2gh.phase.gate_checker import PhaseGateChecker
-from ado2gh.phase.policy_rules import PolicyEvaluator, PolicyRules
+from ado2gh.phase.policy_rules import PolicyRules
 from ado2gh.pipelines.dependency_graph import RepoDependencyEdge, build_graph
+from ado2gh.api.audit_access import can_view_all_audit_history, resolve_audit_actor_filter
+from ado2gh.api.platform_rbac import require_operate
+from ado2gh.state.audit_query import audit_events_to_csv
 from ado2gh.state.factory import create_state_db
 
 router = APIRouter(tags=["agentic"])
@@ -351,16 +351,107 @@ def audit_export(profile_id: str, bucket: Optional[str] = None):
     return job.export_profile(profile_id)
 
 
+def _audit_search_kwargs(
+    profile_id: Optional[str] = None,
+    actor: Optional[str] = None,
+    event_type: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    if profile_id:
+        kwargs["profile_id"] = profile_id
+    if actor:
+        kwargs["actor"] = actor
+    if event_type:
+        kwargs["event_type"] = event_type
+    if search:
+        kwargs["search"] = search
+    if date_from:
+        kwargs["date_from"] = date_from
+    if date_to:
+        kwargs["date_to"] = date_to
+    return kwargs
+
+
 @router.get("/v1/history/sessions")
-def history_sessions(profile_id: Optional[str] = None, limit: int = 50):
-    """FR-039 — sessions derived from audit + remediation loops."""
+def history_sessions(
+    request: Request,
+    profile_id: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+    actor: Optional[str] = None,
+    event_type: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+):
+    """FR-039 — paginated audit trail with optional filters."""
+    require_operate(request)
+    user = getattr(request.state, "platform_user", None)
+    scoped_actor = resolve_audit_actor_filter(user, actor)
     db = create_state_db(_db_path())
-    events = db.list_audit_events(profile_id=profile_id, limit=limit)
-    sessions = [
-        e for e in events
-        if e.get("event_type") in ("agent_session", "rollback", "gate_override", "assignment_created")
-    ]
-    return {"sessions": sessions, "count": len(sessions)}
+    filters = _audit_search_kwargs(
+        profile_id, scoped_actor, event_type, search, date_from, date_to,
+    )
+    events = db.search_audit_events(limit=limit, offset=offset, **filters)
+    total = db.count_audit_events(**filters)
+    return {
+        "sessions": events,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": len(events),
+        "scoped_to_actor": scoped_actor if not can_view_all_audit_history(user) else None,
+        "can_view_all": can_view_all_audit_history(user),
+    }
+
+
+@router.get("/v1/history/event-types")
+def history_event_types(request: Request, profile_id: Optional[str] = None, limit: int = 200):
+    require_operate(request)
+    user = getattr(request.state, "platform_user", None)
+    scoped_actor = resolve_audit_actor_filter(user, None)
+    db = create_state_db(_db_path())
+    return {
+        "event_types": db.list_audit_event_types(
+            profile_id=profile_id or None,
+            limit=limit,
+            actor=scoped_actor,
+        ),
+        "can_view_all": can_view_all_audit_history(user),
+    }
+
+
+@router.get("/v1/history/sessions/export")
+def export_history_sessions(
+    request: Request,
+    profile_id: Optional[str] = None,
+    actor: Optional[str] = None,
+    event_type: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 10000,
+):
+    """Download filtered audit events as CSV."""
+    require_operate(request)
+    user = getattr(request.state, "platform_user", None)
+    scoped_actor = resolve_audit_actor_filter(user, actor)
+    db = create_state_db(_db_path())
+    filters = _audit_search_kwargs(
+        profile_id, scoped_actor, event_type, search, date_from, date_to,
+    )
+    events = db.search_audit_events(limit=min(limit, 10000), offset=0, **filters)
+    csv_body = audit_events_to_csv(events)
+    return Response(
+        content=csv_body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="audit-history.csv"',
+        },
+    )
 
 
 def enforce_live_gate(assignment_id: str, dry_run: bool, db_path: str) -> None:

@@ -42,6 +42,14 @@ class PhaseType(str, Enum):
     WAVE3 = "wave3"
 
 
+class MigrationStrategy(str, Enum):
+    MIRROR = "mirror"
+    GEI = "gei"
+
+
+DEFAULT_MIGRATION_STRATEGY = MigrationStrategy.GEI.value
+
+
 class GateStatus(str, Enum):
     PASS     = "pass"
     FAIL     = "fail"

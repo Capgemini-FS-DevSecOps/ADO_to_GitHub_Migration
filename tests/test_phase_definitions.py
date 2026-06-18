@@ -1,4 +1,3 @@
-import pytest
 
 from ado2gh.api.phase_definitions import (
     ConfigurableWaveAssigner,

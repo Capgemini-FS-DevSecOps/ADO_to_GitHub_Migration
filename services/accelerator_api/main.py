@@ -3,60 +3,15 @@ from __future__ import annotations
 
 import os
 
+from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
+
+ensure_gei_dotnet_env()
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from ado2gh.api.accelerator import Accelerator
-from ado2gh.api.contracts import (
-    AdvancedSettingsRequest,
-    MigrationProfileRequest,
-    MigrationProfileResponse,
-    MigrationScanRequest,
-    MigrationScanResponse,
-    PhaseRecommendation,
-    ProfileSetupRequest,
-    DeleteProfileRequest,
-    DenyProfileRequest,
-    OnboardingStatusResponse,
-    DashboardSnapshot,
-    DiscoveryResponse,
-    DiscoveryRepoItem,
-    DiscoverRequest,
-    DiscoverResponse,
-    FreshnessRequest,
-    FreshnessResponse,
-    GitHubTokenRequest,
-    GitHubTokenResponse,
-    HealthResponse,
-    JobEnqueueRequest,
-    JobStatusResponse,
-    JobTypeEnum,
-    LiveApprovalCreateRequest,
-    LiveApprovalDecisionRequest,
-    LiveApprovalItem,
-    LiveApprovalListResponse,
-    PipelineRunResponse,
-    PipelineRunStartRequest,
-    PipelineStepDefinition,
-    PhaseAssignmentRequest,
-    PhaseAssignmentItem,
-    PhaseDefinitionItem,
-    PhasesUpdateRequest,
-    PlanRequest,
-    PlanResponse,
-    ReadinessRequest,
-    ReadinessResponse,
-    RunWaveRequest,
-    RunWaveResponse,
-    SettingsResponse,
-    ValidateAdoPatRequest,
-    ValidateAdoPatResponse,
-    ValidateConnectionResponse,
-    ValidateGitHubTokenRequest,
-    ValidateGitHubTokenResponse,
-    ValidateRequest,
-    ValidateResponse,
-)
+from ado2gh.api.contracts import *
 from ado2gh.api.credential_validation import validate_ado_pat, validate_github_token
 from ado2gh.api.migration_scan import (
     load_scan_results,
@@ -68,10 +23,9 @@ from ado2gh.api.pipeline_runner import (
     MIGRATE_UI_PIPELINE_STEPS,
     PipelineRunStore,
     PipelineRunner,
+    resolve_pipeline_step_defs,
 )
 from ado2gh.api.settings_store import SettingsStore
-from ado2gh.clients.ado_client import ADOClient
-from ado2gh.clients.gh_client import GHClient
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.infra.queue.redis_queue import RedisJobQueue
 from ado2gh.infra.state.job_store import JobStoreFactory
@@ -106,7 +60,7 @@ except ImportError:
     from auth_routes import router as auth_router, SESSION_COOKIE
 from ado2gh.auth.service import AuthService, auth_enabled
 
-app = FastAPI(title="ADO2GH Accelerator API", version="5.0.0")
+app = FastAPI(title="ADO2GH Accelerator API", version="5.1.0")
 app.include_router(agentic_router)
 app.include_router(auth_router)
 
@@ -214,10 +168,56 @@ def health():
 
 @app.get("/ready")
 def ready():
+    import shutil
+    import subprocess
+
     from ado2gh.infra.state.storage_config import StorageConfig
+    from ado2gh.models import DEFAULT_MIGRATION_STRATEGY
 
     cfg = StorageConfig.from_env()
     checks = {"api": True, "storage_backend": cfg.backend.value}
+
+    adv = SettingsStore().load().advanced
+    strategy = adv.migration_strategy or DEFAULT_MIGRATION_STRATEGY
+    try:
+        global_cfg, _ = ConfigLoader.load(_config_path())
+        strategy = global_cfg.get("migration_strategy", strategy)
+    except Exception:
+        pass
+    checks["migration_strategy"] = strategy
+
+    gh_path = shutil.which("gh")
+    checks["gh"] = bool(gh_path)
+    if not gh_path:
+        checks["gh_hint"] = "Install GitHub CLI (gh) and gh-gei extension in the container image"
+
+    gei_ok = False
+    ado2gh_ok = False
+    if gh_path:
+        try:
+            result = subprocess.run(
+                ["gh", "extension", "list"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                ext = result.stdout.lower()
+                gei_ok = "gei" in ext
+                ado2gh_ok = "ado2gh" in ext
+        except Exception:
+            gei_ok = False
+            ado2gh_ok = False
+    checks["gh_gei"] = gei_ok
+    checks["gh_ado2gh"] = ado2gh_ok
+    if gh_path and not ado2gh_ok:
+        checks["gh_ado2gh_hint"] = "Run: gh extension install github/gh-ado2gh"
+
+    git_path = shutil.which("git")
+    checks["git"] = bool(git_path)
+    if not git_path:
+        checks["git_hint"] = "Install git in the container image (apt-get install git) and rebuild"
+
     if cfg.backend.value == "postgres":
         try:
             create_state_db().inventory_count()
@@ -230,13 +230,20 @@ def ready():
         checks["redis"] = RedisJobQueue().ping()
     except Exception:
         checks["redis"] = False
-    required = ["api", "storage_backend", "database"]
+
+    if strategy == "gei":
+        required = ["api", "storage_backend", "database", "gh", "gh_ado2gh"]
+    else:
+        required = ["api", "storage_backend", "database", "git"]
     return {"ready": all(checks.get(k) for k in required), "checks": checks}
 
 
 @app.post("/v1/discover", response_model=DiscoverResponse)
 def discover(req: DiscoverRequest):
-    result = _accel().discover(req)
+    active = _settings.get_active_profile()
+    ado_url = active.ado_org_url if active else None
+    ado_pat = active.ado_pat if active else None
+    result = _accel().discover(req, ado_url=ado_url, ado_pat=ado_pat)
     return DiscoverResponse(output_dir=result.output_dir)
 
 
@@ -256,77 +263,170 @@ def plan(req: PlanRequest):
                 db.inventory_count_for_repo(r.ado_project, r.ado_repo) for r in w.repos
             ),
         })
+    if not items:
+        active = _settings.get_active_profile()
+        if active:
+            from ado2gh.api.migration_scan import load_scan_results
+            from ado2gh.api.profile_discovery import iter_scan_repos
+
+            scan = load_scan_results(active.id)
+            if scan:
+                by_phase: dict[str, list] = {}
+                for repo in iter_scan_repos(scan):
+                    ph = repo.get("assigned_phase") or repo.get("suggested_phase") or "poc"
+                    by_phase.setdefault(ph, []).append(repo)
+                for idx, (ph, repos) in enumerate(sorted(by_phase.items())):
+                    items.append({
+                        "wave_id": 9000 + idx,
+                        "name": ph,
+                        "phase": ph,
+                        "repo_count": len(repos),
+                        "pipeline_count": sum(
+                            int(r.get("pipeline_count", 0)) for r in repos
+                        ),
+                        "source": "profile_discovery",
+                    })
     return PlanResponse(waves=items)
 
 
 @app.post("/v1/migrate", response_model=list[RunWaveResponse])
 def migrate(req: RunWaveRequest, request: Request):
-    active = _settings.get_active_profile()
-    if active:
-        try:
-            assert_profile_active_for_run(active)
-        except ProfileGovernanceError as exc:
-            raise _governance_http_error(exc)
-    user = _platform_user(request)
-    profile_id = active.id if active else None
-    scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)
-    if operator_requires_live_approval(user, req.dry_run):
-        store = _live_store()
-        approved = False
-        if req.live_approval_id:
-            row = store.db.get_live_execution_approval(req.live_approval_id)
-            approved = bool(row and row.get("status") == "approved")
-        elif store.has_approved("migrate_job", scope_id):
-            approved = True
-        if not approved:
-            approval = store.create_or_get_pending(
-                user,
-                "migrate_job",
-                scope_id,
-                profile_id=profile_id,
-                assignment_id=req.assignment_id,
-                reason_request="Dashboard live migrate",
-                context=req.model_dump(exclude={"live_approval_id"}),
-            )
+    try:
+        active = _settings.get_active_profile()
+        if active:
+            try:
+                assert_profile_active_for_run(active)
+            except ProfileGovernanceError as exc:
+                raise _governance_http_error(exc)
+        user = _platform_user(request)
+        profile_id = active.id if active else None
+        scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)
+        if operator_requires_live_approval(user, req.dry_run):
+            store = _live_store()
+            approved = False
+            if req.live_approval_id:
+                row = store.db.get_live_execution_approval(req.live_approval_id)
+                approved = bool(row and row.get("status") == "approved")
+            elif store.has_approved("migrate_job", scope_id):
+                approved = True
+            if not approved:
+                approval = store.create_or_get_pending(
+                    user,
+                    "migrate_job",
+                    scope_id,
+                    profile_id=profile_id,
+                    assignment_id=req.assignment_id,
+                    reason_request="Dashboard live migrate",
+                    context=req.model_dump(exclude={"live_approval_id"}),
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail={"code": "awaiting_approval", "approval_id": approval["id"]},
+                )
+        if req.assignment_id:
+            enforce_live_gate(req.assignment_id, req.dry_run, req.db_path)
+        _, waves = ConfigLoader.load(req.config_path)
+        targets = [w for w in waves if req.wave_id is None or w.wave_id == req.wave_id]
+        if not targets:
             raise HTTPException(
-                status_code=403,
-                detail={"code": "awaiting_approval", "approval_id": approval["id"]},
+                status_code=400,
+                detail=(
+                    "No migration waves in migration.yaml for this request. "
+                    "Use POST /v1/pipeline/runs with an active profile after Discovery phase assignment."
+                ),
             )
-    if req.assignment_id:
-        enforce_live_gate(req.assignment_id, req.dry_run, req.db_path)
-    accel = _accel(req.db_path)
-    result = accel.run_wave(req)
-    return [RunWaveResponse(
-        wave_id=result.wave_id,
-        status=result.status,
-        completed=result.completed,
-        failed=result.failed,
-        total=result.total,
-    )]
+        accel = _accel(req.db_path)
+        # Extract credentials from active profile if available
+        ado_url = active.ado_org_url if active else None
+        ado_pat = active.ado_pat if active else None
+        gh_org = active.gh_org if active else None
+        gh_token = active.github_tokens[0].token if active and active.github_tokens else None
+        result = accel.run_wave(req, ado_url=ado_url, ado_pat=ado_pat, gh_token=gh_token, gh_org=gh_org)
+        return [RunWaveResponse(
+            wave_id=result.wave_id,
+            status=result.status,
+            completed=result.completed,
+            failed=result.failed,
+            total=result.total,
+        )]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import logging
+        from ado2gh.api.errors import ConfigurationError
+        error_msg = str(exc)
+        if "ADO_PAT" in error_msg or "ADO_ORG_URL" in error_msg:
+            logging.getLogger(__name__).error("ADO credentials missing: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=400,
+                detail="ADO credentials not configured. Please configure a migration profile with ADO credentials."
+            ) from exc
+        if "GH_TOKEN" in error_msg:
+            logging.getLogger(__name__).error("GitHub credentials missing: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=400,
+                detail="GitHub credentials not configured. Please configure a migration profile with GitHub credentials."
+            ) from exc
+        if isinstance(exc, ConfigurationError) or "Wave" in error_msg and "not found" in error_msg:
+            raise HTTPException(status_code=400, detail=error_msg) from exc
+        logging.getLogger(__name__).error("Migration failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg) from exc
 
 
 @app.post("/v1/validate", response_model=ValidateResponse)
 def validate(req: ValidateRequest):
-    accel = _accel(req.db_path)
-    result = accel.validate(req)
-    matched = sum(1 for d in result.details if d.get("overall") == "PASS")
+    from ado2gh.api.run_reporting import validation_repo_detail
+    from ado2gh.api.validation_run import run_validation
+
+    try:
+        result = run_validation(req, _settings)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    normalized = [validation_repo_detail(d) for d in result.details]
+    matched = sum(1 for d in normalized if d.get("overall") == "PASS")
     return ValidateResponse(
         total=result.total,
         matched=matched,
         failed=result.failed,
-        results=result.details,
+        results=normalized,
     )
 
 
 @app.post("/v1/pipeline-readiness", response_model=ReadinessResponse)
 def pipeline_readiness(req: ReadinessRequest):
-    report = PipelineReadinessReport(create_state_db(req.db_path)).generate()
-    by_conv = report.get("by_conversion", {})
+    adv = _settings.load().advanced
+    db_path = req.db_path or adv.db_path
+    config_path = req.config_path or adv.config_path
+    db = create_state_db(db_path)
+    inventory_refreshed = False
+
+    if req.refresh_inventory or db.inventory_count() == 0:
+        active = _settings.get_active_profile()
+        _settings.apply_to_process_env()
+        accel = _accel(db_path)
+        ado_url = active.ado_org_url if active else None
+        ado_pat = active.ado_pat if active else None
+        accel.inventory(
+            config_path,
+            ado_url=ado_url,
+            ado_pat=ado_pat,
+        )
+        inventory_refreshed = True
+
+    migration_lookup = {}
+    if hasattr(db, "get_latest_pipeline_migrations"):
+        migration_lookup = db.get_latest_pipeline_migrations()
+
+    report = PipelineReadinessReport(db).generate(migration_lookup=migration_lookup)
     return ReadinessResponse(
         auto=report.get("auto", 0),
         assisted=report.get("assisted", 0),
         manual=report.get("manual", 0),
+        total_pipelines=report.get("total_pipelines", 0),
         total_effort_hours=report.get("total_effort_hours", 0),
+        inventory_refreshed=inventory_refreshed,
         pipelines=report.get("pipelines", []),
     )
 
@@ -335,6 +435,22 @@ def pipeline_readiness(req: ReadinessRequest):
 def dashboard(db_path: str = "migration_state.db"):
     db = create_state_db(db_path)
     counts = db.get_migration_repo_counts()
+    active = [
+        ActiveMigrationItem(
+            id=r.id,
+            name=r.name,
+            status=r.status,
+            dry_run=r.dry_run,
+            phase=r.phase,
+            wave_id=r.wave_id,
+            current_step=r.current_step_label(),
+            started_by_username=r.started_by_username or "",
+            started_by_display_name=r.started_by_display_name or r.started_by_username or "",
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        )
+        for r in PipelineRunStore.list_active_runs()
+    ]
     return DashboardSnapshot(
         total_repos=counts.get("total_repos", 0),
         completed_repos=counts.get("completed_repos", 0),
@@ -342,6 +458,7 @@ def dashboard(db_path: str = "migration_state.db"):
         total_pipelines=counts.get("total_pipelines", 0),
         inventory_count=db.inventory_count(),
         phase_gates=db.get_all_phase_gates(),
+        active_migrations=active,
     )
 
 
@@ -349,14 +466,18 @@ def dashboard(db_path: str = "migration_state.db"):
 def freshness(req: FreshnessRequest):
     global_cfg, _ = ConfigLoader.load(req.config_path)
     from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
-    ado = _build_ado_client(global_cfg)
-    gh = _build_gh_client(global_cfg)
+    active = _settings.get_active_profile()
+    ado_url = active.ado_org_url if active else None
+    ado_pat = active.ado_pat if active else None
+    gh_org = active.gh_org if active else global_cfg.get("gh_org", "")
+    gh_token = active.github_tokens[0].token if active and active.github_tokens else None
+    ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
+    gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
     source = ado.get_repo(req.project, req.repo)
     repo_id = source.get("id", "")
     branch = source.get("defaultBranch", "refs/heads/main").replace("refs/heads/", "")
     commits = ado.get_repo_commits(req.project, repo_id, top=1, branch=branch)
     ado_sha = commits[0].get("commitId", "") if commits else ""
-    gh_org = global_cfg.get("gh_org", "")
     try:
         gh_sha = gh.get_branch_sha(gh_org, req.repo, branch)
     except Exception:
@@ -602,7 +723,17 @@ def update_llm_model(model_id: str, request: Request, body: dict):
 @app.delete("/v1/settings/llm-models/{model_id}")
 def delete_llm_model(model_id: str, request: Request):
     require_manage_models(request)
+    existing = _llm_models.get(model_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="model_not_found")
     _llm_models.delete(model_id)
+    user = _platform_user(request)
+    write_profile_audit(
+        "llm.model.deleted",
+        profile_id="_platform",
+        actor=user.username if user else "admin",
+        payload={"model_id": model_id, "display_name": existing.display_name},
+    )
     return {"deleted": model_id}
 
 
@@ -794,6 +925,12 @@ def migration_scan_profile(profile_id: str, max_repos: int | None = None):
     from ado2gh.api.profile_discovery import sync_profile_scan_to_risk_scores
     sync_profile_scan_to_risk_scores(profile_id, raw, config_path=adv.config_path)
     return _scan_response(raw)
+
+
+@app.get("/v1/settings/profiles/{profile_id}/scan/status")
+def profile_scan_status(profile_id: str):
+    _require_profile(profile_id)
+    return _settings.profile_rescan_status(profile_id)
 
 
 @app.get("/v1/settings/profiles/{profile_id}/scan")
@@ -1166,8 +1303,15 @@ def pipeline_steps(context: str = "migrate"):
 
 
 @app.get("/v1/pipeline/runs")
-def list_pipeline_runs(limit: int = 50):
-    return {"runs": [r.to_dict() for r in PipelineRunStore.list_runs(limit)]}
+def list_pipeline_runs(limit: int = 20, offset: int = 0):
+    runs, total = PipelineRunStore.list_runs(limit=limit, offset=offset)
+    return {
+        "runs": [r.to_dict() for r in runs],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "summary": PipelineRunStore.summary(),
+    }
 
 
 @app.get("/v1/pipeline/runs/{run_id}")
@@ -1201,11 +1345,18 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
     adv = _settings.load().advanced
     dry = req.dry_run if req.dry_run is not None else adv.dry_run_default
     _settings.apply_to_process_env()
+    default_step_ids = [s["id"] for s in MIGRATE_UI_PIPELINE_STEPS]
+    step_ids = req.steps or default_step_ids
+    user = _platform_user(request)
     run = PipelineRunStore.create(
         req.name, dry, req.phase, req.wave_id,
-        step_defs=MIGRATE_UI_PIPELINE_STEPS,
+        step_defs=resolve_pipeline_step_defs(step_ids),
+        started_by_user_id=getattr(user, "id", None) if user else None,
+        started_by_username=getattr(user, "username", None) if user else None,
+        started_by_display_name=(
+            getattr(user, "display_name", None) or getattr(user, "username", None)
+        ) if user else None,
     )
-    user = _platform_user(request)
     if operator_requires_live_approval(user, dry):
         store = _live_store()
         store.create_or_get_pending(
@@ -1214,12 +1365,14 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
             run.id,
             profile_id=active.id,
             reason_request=f"Pipeline live run: {req.name}",
-            context={"run_id": run.id, "steps": req.steps},
+            context={"run_id": run.id, "steps": step_ids},
         )
         run.status = "awaiting_approval"
         run.updated_at = run.created_at
+        if run.steps:
+            run.steps[0].message = "Waiting for live execution approval"
         return PipelineRunResponse(run=run.to_dict())
-    _runner.start_async(run.id, req.steps)
+    _runner.start_async(run.id, step_ids)
     return PipelineRunResponse(run=run.to_dict())
 
 

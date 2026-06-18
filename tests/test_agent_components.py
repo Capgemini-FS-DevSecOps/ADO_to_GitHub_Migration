@@ -1,6 +1,5 @@
 """Agent planner and boards gaps."""
 from ado2gh.agents.planner import AgentPlanner
-from ado2gh.agents.validator import AgentValidator
 from ado2gh.reporting.boards_gaps import generate_boards_gaps
 
 

@@ -3,14 +3,19 @@ from __future__ import annotations
 
 from typing import Any
 
+from ado2gh.api.migration_work_plan import SCOPE_META
+
 
 def migrate_repo_detail(key: str, res: dict[str, Any]) -> dict[str, Any]:
     """Normalize per-repo migration result for API/UI."""
     scopes = res.get("scopes") or {}
     scope_rows = []
     for scope, detail in scopes.items():
+        meta = SCOPE_META.get(scope, {})
         scope_rows.append({
             "scope": scope,
+            "label": meta.get("label", scope),
+            "category": meta.get("category", "convert_metadata"),
             "status": detail.get("status", "?"),
             "error": detail.get("error"),
             "detail": _stringify(detail.get("detail")),
@@ -39,7 +44,10 @@ def _migrate_summary(key: str, res: dict, scope_rows: list, errors: list) -> str
     if scope_rows:
         failed = [s for s in scope_rows if s.get("status") != "completed"]
         if failed:
-            parts = [f"{s['scope']}={s.get('error') or s.get('detail') or 'failed'}" for s in failed]
+            parts = []
+            for s in failed:
+                label = s.get("label") or s["scope"]
+                parts.append(f"{label}={s.get('error') or s.get('detail') or 'failed'}")
             return f"{key}: {status} — " + "; ".join(parts)
     if errors:
         return f"{key}: {status} — " + "; ".join(errors)
@@ -57,18 +65,27 @@ def validation_repo_detail(row: dict[str, Any]) -> dict[str, Any]:
         })
     failures = [c for c in check_rows if c["verdict"] == "FAIL"]
     warns = [c for c in check_rows if c["verdict"] == "WARN"]
-    primary = (
-        row.get("error")
-        or (failures[0]["detail"] if failures else None)
-        or (warns[0]["detail"] if warns else None)
-        or "OK"
-    )
+    primary = row.get("error")
+    if not primary and failures:
+        primary = failures[0]["detail"]
+    elif not primary and warns:
+        primary = warns[0]["detail"]
+    elif not primary and check_rows:
+        passed_details = [
+            c["detail"] for c in check_rows
+            if c.get("verdict") == "PASS" and c.get("detail")
+        ]
+        primary = "; ".join(passed_details[:4]) if passed_details else "All checks passed"
+    else:
+        primary = primary or "OK"
     return {
         "project": row.get("ado_project", ""),
         "repo": row.get("ado_repo", ""),
         "gh_target": row.get("gh_target", ""),
         "overall": row.get("overall", "?"),
         "primary_reason": primary,
+        "message": primary,
+        "detail": primary,
         "checks": check_rows,
     }
 

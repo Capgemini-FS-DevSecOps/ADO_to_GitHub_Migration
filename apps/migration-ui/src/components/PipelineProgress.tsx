@@ -1,6 +1,7 @@
 'use client';
 
 import type { PipelineStep, StepStatus } from '@/lib/types';
+import { pipelineRunStatusLabel } from '@/lib/pipelineRunStatus';
 
 const STATUS_COLOR: Record<StepStatus, string> = {
   pending: 'rgba(53, 184, 255, 0.2)',
@@ -8,6 +9,8 @@ const STATUS_COLOR: Record<StepStatus, string> = {
   completed: '#00ff88',
   failed: '#FF6B6B',
   skipped: '#666',
+  dry_run_complete: '#ffc107',
+  awaiting_approval: '#ffc107',
 };
 
 export function StepPipelineBar({ steps, compact = false }: { steps: PipelineStep[]; compact?: boolean }) {
@@ -43,6 +46,13 @@ export function StepPipelineBar({ steps, compact = false }: { steps: PipelineSte
   );
 }
 
-export function StepStatusBadge({ status }: { status: StepStatus }) {
-  return <span className={`step-badge step-badge-${status}`}>{status}</span>;
+export function StepStatusBadge({ status }: { status: StepStatus | string }) {
+  const label = pipelineRunStatusLabel(status);
+  const css =
+    status === 'dry_run_complete'
+      ? 'dry_run'
+      : status === 'awaiting_approval'
+        ? 'awaiting_approval'
+        : status;
+  return <span className={`step-badge step-badge-${css}`}>{label}</span>;
 }

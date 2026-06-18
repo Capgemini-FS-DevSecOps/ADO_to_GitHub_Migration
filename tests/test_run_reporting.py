@@ -37,6 +37,24 @@ def test_validation_repo_detail_fail_reason():
     assert len(detail["checks"]) == 2
 
 
+def test_validation_repo_detail_pass_summary():
+    row = {
+        "ado_project": "azure-pipelines",
+        "ado_repo": "hybrid-pipeline-template-migration",
+        "gh_target": "org/hybrid-pipeline-template-migration",
+        "overall": "PASS",
+        "checks": {
+            "repo_exists": {"verdict": "PASS", "detail": "Repository exists"},
+            "head_commit": {"verdict": "PASS", "detail": "HEAD SHA match (abc123)"},
+        },
+    }
+    detail = validation_repo_detail(row)
+    assert detail["project"] == "azure-pipelines"
+    assert detail["repo"] == "hybrid-pipeline-template-migration"
+    assert "HEAD SHA match" in detail["primary_reason"]
+    assert detail["message"] == detail["primary_reason"]
+
+
 def test_validation_message_lists_failures():
     results = [
         {"ado_project": "A", "ado_repo": "r1", "overall": "PASS"},

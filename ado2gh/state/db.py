@@ -7,8 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ado2gh.models import (
-    BatchCheckpoint, MigrationStatus, PhaseGateResult, PhaseType,
-    PipelineMetadata, RepoConfig,
+    MigrationStatus, PipelineMetadata, RepoConfig,
 )
 
 
@@ -459,6 +458,27 @@ class StateDB:
                 "SELECT COUNT(*) FROM pipeline_inventory WHERE project=? AND repo_name=?",
                 (project, repo_name)
             ).fetchone()[0]
+
+    def get_latest_pipeline_migrations(self) -> dict[str, dict]:
+        """Latest migration row per project:pipeline_id."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT pm.* FROM pipeline_migrations pm
+                INNER JOIN (
+                    SELECT project, pipeline_id, MAX(id) AS max_id
+                    FROM pipeline_migrations
+                    GROUP BY project, pipeline_id
+                ) latest
+                ON pm.id = latest.max_id
+                """
+            ).fetchall()
+        lookup: dict[str, dict] = {}
+        for row in rows:
+            item = dict(row)
+            key = f"{item['project']}:{item['pipeline_id']}"
+            lookup[key] = item
+        return lookup
 
     def clear_inventory(self, project: str = None):
         with self._conn() as conn:
@@ -975,19 +995,91 @@ class StateDB:
     def list_audit_events(
         self, profile_id: str | None = None, limit: int = 100,
     ) -> list[dict]:
+        return self.search_audit_events(
+            profile_id=profile_id, limit=limit, offset=0,
+        )
+
+    def search_audit_events(
+        self,
+        *,
+        profile_id: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        actor: str | None = None,
+        event_type: str | None = None,
+        search: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict]:
+        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
+
+        filters = AuditEventFilters(
+            profile_id=profile_id,
+            actor=actor,
+            event_type=event_type,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        clauses, params = build_audit_filters(filters)
+        where = " AND ".join(clauses)
+        sql = (
+            f"SELECT * FROM audit_events WHERE {where} "
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        )
         with self._conn() as conn:
-            if profile_id:
-                rows = conn.execute(
-                    "SELECT * FROM audit_events WHERE profile_id=? "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (profile_id, limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
+            rows = conn.execute(sql, (*params, limit, offset)).fetchall()
         return [dict(r) for r in rows]
+
+    def count_audit_events(
+        self,
+        *,
+        profile_id: str | None = None,
+        actor: str | None = None,
+        event_type: str | None = None,
+        search: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> int:
+        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
+
+        filters = AuditEventFilters(
+            profile_id=profile_id,
+            actor=actor,
+            event_type=event_type,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        clauses, params = build_audit_filters(filters)
+        where = " AND ".join(clauses)
+        sql = f"SELECT COUNT(*) AS c FROM audit_events WHERE {where}"
+        with self._conn() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return int(row["c"]) if row else 0
+
+    def list_audit_event_types(
+        self,
+        profile_id: str | None = None,
+        limit: int = 200,
+        actor: str | None = None,
+    ) -> list[str]:
+        clauses = ["1=1"]
+        params: list[Any] = []
+        if profile_id:
+            clauses.append("profile_id=?")
+            params.append(profile_id)
+        if actor:
+            clauses.append("actor=?")
+            params.append(actor)
+        where = " AND ".join(clauses)
+        sql = (
+            f"SELECT DISTINCT event_type FROM audit_events WHERE {where} "
+            "ORDER BY event_type LIMIT ?"
+        )
+        with self._conn() as conn:
+            rows = conn.execute(sql, (*params, limit)).fetchall()
+        return [str(r["event_type"]) for r in rows]
 
     def upsert_remediation_loop(
         self, session_id: str, repo_key: str, retry_count: int,

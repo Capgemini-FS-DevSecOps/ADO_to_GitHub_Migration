@@ -7,8 +7,9 @@ export default function AgentPage() {
     <div>
       <h1 className="oai-page-title">Migration Agent</h1>
       <p className="form-hint">
-        Planner → executor → validator (PEV) sessions default to dry-run. Operators may request live
-        execution; platform admin or approver must approve on the unified live queue before irreversible steps run.
+        Chat with the migration assistant, then generate a plan (planner subagent). Execute runs
+        connect → migrate → validate via the same pipeline as the Migrate tab (dry-run by default).
+        Operators may request live execution; platform admin or approver can run live migrations directly.
       </p>
       <div className="oai-card agent-page-card">
         <AgentChat />

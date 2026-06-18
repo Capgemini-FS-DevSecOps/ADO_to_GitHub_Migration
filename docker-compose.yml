@@ -35,6 +35,7 @@ services:
       ADO_PAT: ${ADO_PAT:-}
       GH_TOKEN: ${GH_TOKEN:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     volumes:
       - ./migration.yaml:/app/migration.yaml:ro
       - ado2gh-data:/app/data
@@ -58,6 +59,7 @@ services:
       ADO_ORG_URL: ${ADO_ORG_URL:-}
       ADO_PAT: ${ADO_PAT:-}
       GH_TOKEN: ${GH_TOKEN:-}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     volumes:
       - ./migration.yaml:/app/migration.yaml:ro
       - ado2gh-data:/app/data
@@ -77,6 +79,7 @@ services:
       ADO2GH_SQLITE_PATH: /app/data/migration_state.db
       ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     volumes:
       - ado2gh-data:/app/data
     extra_hosts:

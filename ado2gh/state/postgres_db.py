@@ -9,6 +9,11 @@ from typing import Any, Iterator, Optional
 from ado2gh.models import MigrationStatus, PipelineMetadata
 
 
+def _phase_value(phase) -> str:
+    """Accept PhaseType enum or plain phase id string."""
+    return phase.value if hasattr(phase, "value") else str(phase)
+
+
 class PostgresStateDB:
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS migrations (
@@ -448,6 +453,29 @@ class PostgresStateDB:
                 )
                 return cur.fetchone()[0]
 
+    def get_latest_pipeline_migrations(self) -> dict[str, dict]:
+        """Latest migration row per project:pipeline_id."""
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT pm.* FROM pipeline_migrations pm
+                    INNER JOIN (
+                        SELECT project, pipeline_id, MAX(id) AS max_id
+                        FROM pipeline_migrations
+                        GROUP BY project, pipeline_id
+                    ) latest
+                    ON pm.id = latest.max_id
+                    """
+                )
+                rows = cur.fetchall()
+        lookup: dict[str, dict] = {}
+        for row in rows:
+            item = dict(row)
+            key = f"{item['project']}:{item['pipeline_id']}"
+            lookup[key] = item
+        return lookup
+
     def clear_inventory(self, project: str = None):
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -569,11 +597,12 @@ class PostgresStateDB:
                 return [dict(r) for r in cur.fetchall()]
 
     def get_risk_scores_for_phase(self, phase) -> list:
+        phase_val = _phase_value(phase)
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT * FROM repo_risk_scores WHERE assigned_phase=%s ORDER BY total_score",
-                    (phase.value,),
+                    (phase_val,),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
@@ -820,7 +849,7 @@ class PostgresStateDB:
     def get_phase_gate(self, phase) -> Optional[dict]:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM phase_gates WHERE phase=%s", (phase.value,))
+                cur.execute("SELECT * FROM phase_gates WHERE phase=%s", (_phase_value(phase),))
                 row = cur.fetchone()
                 return dict(row) if row else None
 
@@ -852,7 +881,7 @@ class PostgresStateDB:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
                     "SELECT * FROM batch_checkpoints WHERE phase=%s ORDER BY batch_num",
-                    (phase.value,),
+                    (_phase_value(phase),),
                 )
                 return [dict(r) for r in cur.fetchall()]
 
@@ -862,7 +891,7 @@ class PostgresStateDB:
                 cur.execute(
                     "SELECT MAX(batch_num) FROM batch_checkpoints "
                     "WHERE phase=%s AND status='completed'",
-                    (phase.value,),
+                    (_phase_value(phase),),
                 )
                 row = cur.fetchone()
                 return row[0] if row and row[0] is not None else -1
@@ -894,20 +923,95 @@ class PostgresStateDB:
     def list_audit_events(
         self, profile_id: str | None = None, limit: int = 100,
     ) -> list[dict]:
+        return self.search_audit_events(
+            profile_id=profile_id, limit=limit, offset=0,
+        )
+
+    def search_audit_events(
+        self,
+        *,
+        profile_id: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        actor: str | None = None,
+        event_type: str | None = None,
+        search: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> list[dict]:
+        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
+
+        filters = AuditEventFilters(
+            profile_id=profile_id,
+            actor=actor,
+            event_type=event_type,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        clauses, params = build_audit_filters(filters)
+        where = " AND ".join(clauses).replace("?", "%s")
+        sql = (
+            f"SELECT * FROM audit_events WHERE {where} "
+            "ORDER BY created_at DESC LIMIT %s OFFSET %s"
+        )
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                if profile_id:
-                    cur.execute(
-                        "SELECT * FROM audit_events WHERE profile_id=%s "
-                        "ORDER BY created_at DESC LIMIT %s",
-                        (profile_id, limit),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT * FROM audit_events ORDER BY created_at DESC LIMIT %s",
-                        (limit,),
-                    )
+                cur.execute(sql, (*params, limit, offset))
                 return [dict(r) for r in cur.fetchall()]
+
+    def count_audit_events(
+        self,
+        *,
+        profile_id: str | None = None,
+        actor: str | None = None,
+        event_type: str | None = None,
+        search: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> int:
+        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
+
+        filters = AuditEventFilters(
+            profile_id=profile_id,
+            actor=actor,
+            event_type=event_type,
+            search=search,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        clauses, params = build_audit_filters(filters)
+        where = " AND ".join(clauses).replace("?", "%s")
+        sql = f"SELECT COUNT(*) AS c FROM audit_events WHERE {where}"
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+    def list_audit_event_types(
+        self,
+        profile_id: str | None = None,
+        limit: int = 200,
+        actor: str | None = None,
+    ) -> list[str]:
+        clauses = ["1=1"]
+        params: list[Any] = []
+        if profile_id:
+            clauses.append("profile_id=%s")
+            params.append(profile_id)
+        if actor:
+            clauses.append("actor=%s")
+            params.append(actor)
+        where = " AND ".join(clauses)
+        sql = (
+            f"SELECT DISTINCT event_type FROM audit_events WHERE {where} "
+            "ORDER BY event_type LIMIT %s"
+        )
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (*params, limit))
+                return [str(row[0]) for row in cur.fetchall()]
 
     def count_platform_users(self) -> int:
         with self._conn() as conn:
@@ -1071,6 +1175,89 @@ class PostgresStateDB:
                     )
                 rows = cur.fetchall()
         return [dict(r) for r in rows]
+
+    def get_assignment(self, assignment_id: str) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM migration_assignments WHERE id=%s",
+                    (assignment_id,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def list_assignments(self, profile_id: str) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM migration_assignments WHERE profile_id=%s ORDER BY created_at",
+                    (profile_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def upsert_cohort_membership(
+        self,
+        assignment_id: str,
+        profile_id: str,
+        ado_project: str,
+        ado_repo: str,
+        gh_org: str,
+        gh_repo: str,
+        active: bool,
+    ):
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                if active:
+                    cur.execute(
+                        "UPDATE cohort_membership SET active=0 "
+                        "WHERE profile_id=%s AND ado_project=%s AND ado_repo=%s AND active=1",
+                        (profile_id, ado_project, ado_repo),
+                    )
+                cur.execute(
+                    """
+                    INSERT INTO cohort_membership
+                    (assignment_id, profile_id, ado_project, ado_repo, gh_org, gh_repo, active)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        assignment_id, profile_id, ado_project, ado_repo,
+                        gh_org, gh_repo, 1 if active else 0,
+                    ),
+                )
+
+    def get_cohort_repos(self, assignment_id: str) -> list[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT ado_project, ado_repo, gh_org, gh_repo FROM cohort_membership "
+                    "WHERE assignment_id=%s AND active=1",
+                    (assignment_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM migrations WHERE ado_project=%s AND ado_repo=%s "
+                    "AND status='in_progress' LIMIT 1",
+                    (ado_project, ado_repo),
+                )
+                row = cur.fetchone()
+        return row is not None
+
+    def is_repo_in_assignment_cohort(
+        self, assignment_id: str, ado_project: str, ado_repo: str,
+    ) -> bool:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM cohort_membership WHERE assignment_id=%s "
+                    "AND ado_project=%s AND ado_repo=%s AND active=1 LIMIT 1",
+                    (assignment_id, ado_project, ado_repo),
+                )
+                row = cur.fetchone()
+        return row is not None
 
     def decide_live_execution_approval(
         self,

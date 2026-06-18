@@ -46,4 +46,18 @@ def test_agent_health_llm_degraded_without_models(agent_client):
         data = agent_client.get("/health").json()
 
     assert data["llm_degraded"] is True
+    assert data["llm_unconfigured"] is True
     assert data["models_configured"] == 0
+
+
+def test_agent_session_prompts_when_no_llm_models(agent_client):
+    created = agent_client.post(
+        "/v1/sessions",
+        json={"profile_id": "lightweight", "prompt": "Hello", "dry_run": True},
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body.get("llm_unconfigured") is True
+    assistant = next((m for m in body.get("messages", []) if m.get("role") == "assistant"), None)
+    assert assistant is not None
+    assert "No LLM models are configured" in assistant["content"]

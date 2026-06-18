@@ -1,5 +1,4 @@
 """Profile governance helper tests."""
-import os
 from dataclasses import dataclass
 
 import pytest
@@ -11,7 +10,7 @@ from ado2gh.api.profile_governance import (
     ProfileGovernanceError,
     ProfileStatus,
 )
-from ado2gh.api.settings_store import MigrationProfile, SettingsStore
+from ado2gh.api.settings_store import SettingsStore
 
 
 @dataclass

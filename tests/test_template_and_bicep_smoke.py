@@ -1,13 +1,12 @@
 """Smoke tests for template resolver, task scanner, Bicep/ARM mappings, job graph."""
 from __future__ import annotations
 
-import yaml
 
 from ado2gh.models import PipelineMetadata, PipelineStage, PipelineType
-from ado2gh.pipelines.resolve.template_resolver import extract_template_refs, resolve_templates
+from ado2gh.pipelines.resolve.template_resolver import extract_template_refs
 from ado2gh.pipelines.task_scanner import scan_yaml_tasks, scan_service_connection_refs
 from ado2gh.pipelines.transform.job_graph import build_multi_stage_jobs
-from ado2gh.pipelines.transform.task_registry import ADO_TASK_MAP, lookup_task
+from ado2gh.pipelines.transform.task_registry import lookup_task
 from ado2gh.pipelines.transform.transformer import PipelineTransformer
 from ado2gh.infra.state.job_store import SQLiteJobStore
 from ado2gh.api.contracts import JobTypeEnum as JobType

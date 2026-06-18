@@ -3,7 +3,6 @@ from ado2gh.api.profile_discovery import (
     iter_scan_repos,
     sync_profile_scan_to_risk_scores,
 )
-from ado2gh.api.migration_scan import persist_scan_results
 from ado2gh.state.db import StateDB
 
 

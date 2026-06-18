@@ -9,7 +9,7 @@ import httpx
 
 from ado2gh.api.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
 from ado2gh.api.local_hosts import resolve_local_service_url
-from ado2gh.api.llm_model_store import LLMModelConfig, LLMModelStore
+from ado2gh.api.llm_model_store import LLMModelStore
 
 _validate_lock = threading.Lock()
 _validate_inflight: dict[str, threading.Event] = {}

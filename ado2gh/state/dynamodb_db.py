@@ -9,6 +9,11 @@ from typing import Any, Optional
 from ado2gh.models import MigrationStatus, PipelineMetadata
 
 
+def _phase_value(phase) -> str:
+    """Accept PhaseType enum or plain phase id string."""
+    return phase.value if hasattr(phase, "value") else str(phase)
+
+
 def _json_default(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return float(obj)
@@ -267,7 +272,8 @@ class DynamoDBStateDB:
         return self._query_pk("risk")
 
     def get_risk_scores_for_phase(self, phase) -> list:
-        return [r for r in self._query_pk("risk") if r.get("assigned_phase") == phase.value]
+        phase_val = _phase_value(phase)
+        return [r for r in self._query_pk("risk") if r.get("assigned_phase") == phase_val]
 
     def risk_score_count(self) -> int:
         return len(self._query_pk("risk"))
@@ -288,7 +294,7 @@ class DynamoDBStateDB:
         })
 
     def get_phase_gate(self, phase) -> Optional[dict]:
-        return self._get("phase_gate", phase.value)
+        return self._get("phase_gate", _phase_value(phase))
 
     def get_all_phase_gates(self) -> list:
         return self._query_pk("phase_gate")
@@ -307,7 +313,8 @@ class DynamoDBStateDB:
         })
 
     def get_batch_checkpoints(self, phase) -> list:
-        rows = [r for r in self._query_pk("batch") if r.get("phase") == phase.value]
+        phase_val = _phase_value(phase)
+        rows = [r for r in self._query_pk("batch") if r.get("phase") == phase_val]
         return sorted(rows, key=lambda r: r.get("batch_num", 0))
 
     def get_last_completed_batch(self, phase) -> int:

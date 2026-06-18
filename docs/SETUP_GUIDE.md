@@ -1,4 +1,8 @@
-# Setup Guide — ADO2GH Migration Tool
+# Setup Guide — ADO2GitHub Migration Platform
+
+> **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for services, state backends, and deployment modes.
+
+Technical setup for the CLI, Docker stack, and web console.
 
 Complete setup instructions for running ADO-to-GitHub migrations at enterprise scale.
 

@@ -1,5 +1,4 @@
 """Tests for profile scan persistence in StateDB."""
-import json
 from pathlib import Path
 
 import pytest
