@@ -331,7 +331,11 @@ export async function savePhaseAssignments(
   profileId: string,
   assignments: { project: string; repo_name: string; assigned_phase: string }[],
 ) {
-  return api<{ updated: number }>(`/v1/settings/profiles/${profileId}/phase-assignments`, {
+  return api<{
+    updated: number;
+    synced_risk_scores?: number;
+    message?: string;
+  }>(`/v1/settings/profiles/${profileId}/phase-assignments`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assignments }),

@@ -1,6 +1,8 @@
 # ADO2GH Execution Manual
 
-Complete operational guide for running Azure DevOps to GitHub migrations using the ado2gh CLI.
+Complete operational guide for running Azure DevOps to GitHub migrations using the **ado2gh CLI**.
+
+> **Web console / Docker:** For the migration UI, agent, and local SQLite stack, start with [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md). This manual covers CLI-first workflows.
 
 ---
 

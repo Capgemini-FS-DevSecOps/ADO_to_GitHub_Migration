@@ -94,3 +94,28 @@ def test_phase_assignment_override(db: StateDB):
     )
     assert gamma["assigned_phase"] == "wave1"
     assert gamma["suggested_phase"] == "pilot"
+
+
+def test_build_wave_uses_profile_scan_phase_assignments(db: StateDB):
+    from ado2gh.api.profile_discovery import build_wave_from_profile_phase
+    from ado2gh.api.settings_store import MigrationProfile
+
+    profile_id = "prof-wave"
+    db.save_profile_scan(profile_id, _sample_scan())
+    db.update_profile_repo_phases(profile_id, [
+        {"project": "P1", "repo_name": "beta", "assigned_phase": "pilot"},
+    ])
+
+    profile = MigrationProfile(
+        id=profile_id,
+        name="test",
+        ado_org_url="https://dev.azure.com/org",
+        ado_pat="***",
+        gh_org="acme-github",
+        is_default=True,
+    )
+    wave = build_wave_from_profile_phase("poc", profile, db_path=str(db.db_path))
+    assert wave is not None
+    repo_names = {r.ado_repo for r in wave.repos}
+    assert repo_names == {"alpha"}
+    assert "beta" not in repo_names

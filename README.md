@@ -6,24 +6,34 @@ Enterprise-grade migration platform for **Azure DevOps → GitHub** at scale: ri
 
 ---
 
-## Quick start
+## Quick start (local, SQLite)
+
+**Docker — full UI + API + agent (recommended):**
+
+```bash
+cp .env.example .env    # set ADO_PAT, ADO_ORG_URL, GH_TOKEN
+docker compose up --build
+# UI http://localhost:3000 · API :8080 · Agent :8090
+```
+
+**CLI only:**
 
 ```bash
 pip install -e ".[api,dev]"
 export ADO_PAT=... ADO_ORG_URL=https://dev.azure.com/YOUR_ORG GH_TOKEN=...
 ado2gh discover --config migration.yaml
-ado2gh phase assign --config migration.yaml --output migration_phase.yaml
+ado2gh phase assign --config migration.yaml --input in/repo_map.txt
 ado2gh phase run --phase poc --config migration_phase.yaml --dry-run
 ```
 
-**Docker (recommended for UI + agent):**
+Full local setup (native processes, lightweight agent, state paths): **[docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)**
+
+**Production (PostgreSQL + auth):**
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
-# UI http://localhost:3000 · API :8080 · Agent :8090
+# First visit: /login?bootstrap=1 to create the platform admin
 ```
-
-First visit: `/login?bootstrap=1` to create the platform admin.
 
 ---
 
@@ -31,6 +41,7 @@ First visit: `/login?bootstrap=1` to create the platform admin.
 
 | Guide | Description |
 |-------|-------------|
+| [**Local development (SQLite)**](docs/LOCAL_DEVELOPMENT.md) | Docker compose, native stack, CLI, env vars |
 | [**Architecture**](docs/ARCHITECTURE.md) | System design, services, state, agent PEV, deployment |
 | [**Setup**](docs/SETUP_GUIDE.md) | Prerequisites, tokens, connectivity |
 | [**Execution manual**](docs/EXECUTION_MANUAL.md) | Full operational walkthrough |
@@ -67,7 +78,7 @@ tests/                  pytest + contract tests
 - **Git strategies** — `mirror` (default) or `gei` (GitHub Enterprise Importer)
 - **Pipeline conversion** — 200+ ADO task mappings to GitHub Actions
 - **Profile-based ops** — deployment profiles, discovery scan, phase assignment in UI
-- **PEV agent** — tool-driven planner/executor/validator; per-repo work items show repo migration vs metadata conversion vs blocked secrets
+- **PEV agent** — tool-driven planner/executor/validator; migration-only scope guardrails
 - **Validation** — commit SHA verification between ADO and GitHub
 - **RBAC** — admin / operator / approver; live-run approval queue
 - **LLM onboarding** — catalog picker, validate-before-enable, Ollama + cloud providers
@@ -80,10 +91,13 @@ tests/                  pytest + contract tests
 ADO_PAT=...                    # Azure DevOps PAT
 ADO_ORG_URL=https://dev.azure.com/ORG
 GH_TOKEN=...                   # or GH_TOKEN_1, GH_TOKEN_2 for load balancing
-ADO2GH_STORAGE_BACKEND=postgres  # sqlite | postgres | dynamodb
+
+# Local default (see .env.example)
+ADO2GH_STORAGE_BACKEND=sqlite
+ADO2GH_SQLITE_PATH=./migration_state.db
 ```
 
-See [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for GitHub App auth, proxy/CA, and Docker secrets.
+Production uses `ADO2GH_STORAGE_BACKEND=postgres` and `ADO2GH_DATABASE_URL`. See [SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for GitHub App auth, proxy/CA, and Docker secrets.
 
 ---
 

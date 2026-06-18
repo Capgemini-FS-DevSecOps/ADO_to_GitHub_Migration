@@ -84,10 +84,13 @@ def sync_profile_scan_to_risk_scores(
     config_path: str | None = None,
 ) -> int:
     """Copy profile discovery repos into repo_risk_scores for migration runs."""
-    data = scan or load_scan_results(profile_id)
+    db = get_state_db(db_path)
+    if scan is None and hasattr(db, "build_profile_scan_payload"):
+        data = db.build_profile_scan_payload(profile_id)
+    else:
+        data = scan or load_scan_results(profile_id)
     if not data:
         return 0
-    db = get_state_db(db_path)
     store = SettingsStore()
     profile = store.get_profile(profile_id)
     gh_org = resolve_gh_org(profile, config_path=config_path, scan=data, profile_id=profile_id)
@@ -150,22 +153,42 @@ def build_wave_from_profile_phase(
     except ProfileGovernanceError as exc:
         raise ValueError(exc.code) from exc
     db = get_state_db(db_path)
-    scores = db.get_risk_scores_for_phase(phase)
-    if not scores:
-        return None
     gh_org = resolve_gh_org(profile, config_path=config_path)
     repos: list[RepoConfig] = []
-    for row in scores:
-        target_org = (row.get("gh_org") or gh_org or "").strip()
-        repos.append(RepoConfig(
-            ado_project=row["project"],
-            ado_repo=row["repo_name"],
-            gh_org=target_org,
-            gh_repo=row.get("gh_repo") or row["repo_name"],
-            phase=phase,
-            risk_score=float(row.get("total_score", 0)),
-            scopes=["repo"],
-        ))
+
+    if hasattr(db, "get_profile_scan_repos"):
+        rows = db.get_profile_scan_repos(profile.id, phase=phase)
+        for row in rows:
+            assigned = row.get("assigned_phase") or row.get("suggested_phase") or phase
+            if assigned != phase:
+                continue
+            target_org = (row.get("gh_org") or gh_org or "").strip()
+            repos.append(RepoConfig(
+                ado_project=row["project"],
+                ado_repo=row["repo_name"],
+                gh_org=target_org,
+                gh_repo=row.get("gh_repo") or row["repo_name"],
+                phase=phase,
+                risk_score=float(row.get("total_score", 0)),
+                scopes=["repo"],
+            ))
+
+    if not repos:
+        scores = db.get_risk_scores_for_phase(phase)
+        for row in scores:
+            target_org = (row.get("gh_org") or gh_org or "").strip()
+            repos.append(RepoConfig(
+                ado_project=row["project"],
+                ado_repo=row["repo_name"],
+                gh_org=target_org,
+                gh_repo=row.get("gh_repo") or row["repo_name"],
+                phase=phase,
+                risk_score=float(row.get("total_score", 0)),
+                scopes=["repo"],
+            ))
+
+    if not repos:
+        return None
     return WaveConfig(
         wave_id=wave_id,
         name=f"profile-{phase}",

@@ -94,11 +94,15 @@ ado2gh phase run --phase poc --config migration_phase.yaml
 
 The `gh-ado2gh` extension uses a bundled .NET runtime. In slim Docker images you need either ICU libraries or invariant globalization mode.
 
-**Docker (recommended):** Rebuild accelerator and worker (the image installs `libicu-dev` and sets `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1`):
+## Docker / local stack
+
+**Local (SQLite):** `docker compose up --build` — see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md).
+
+**GEI in Docker:** Rebuild accelerator and worker if globalization errors occur:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache accelerator worker
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d accelerator worker
+docker compose build --no-cache accelerator worker
+docker compose up -d accelerator worker
 ```
 
 Verify inside the running container:

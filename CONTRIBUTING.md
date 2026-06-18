@@ -16,9 +16,11 @@ pip install -e ".[api,postgres,dev]"
 cd apps/migration-ui && npm install && npm run dev
 ```
 
-**Full stack:** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build`
+**Full stack (local SQLite):** `docker compose up --build`
 
-See [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**Production (Postgres + auth):** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build`
+
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) and [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md).
 
 ## Project structure
 
@@ -82,7 +84,7 @@ Coverage gates apply to selected `ado2gh.api.*` and `ado2gh.auth.*` modules (see
 | `migrate.sh` | Minimal phased migration from repo map |
 | `migrate-full.sh` | Full workflow including pipeline inventory |
 | `run-local-agent.ps1` / `.sh` | Lightweight accelerator + agent for IDE dev |
-| `run-local.ps1` | Full Docker stack (deprecated for agent-only; see `run-local-agent`) |
+| `run-local.ps1` | Native full stack (accelerator + agent + UI) on Windows |
 | `run-ui.ps1` / `stop-ui.ps1` | Start/stop Next.js UI only |
 | `auth-smoke.ps1` | Auth bootstrap smoke checks |
 | `ide-check.ps1` | Agent health, MCP tools, dry-run session smoke |

@@ -90,6 +90,7 @@ Dry-run pipelines finish as `dry_run_complete` and do not write migration comple
 Separate FastAPI process for Planner–Executor–Validator (PEV) sessions:
 
 - **Session orchestrator** (`ado2gh/agents/session_orchestrator.py`) — LLM routes tools; stub fallback when degraded
+- **Scope guardrails** (`ado2gh/agents/agent_scope.py`) — migration-only replies; refuses off-topic and prohibited requests
 - **PEV coordinator** (`ado2gh/agents/pev_coordinator.py`) — LLM reviews planner/executor/validator output; max 3 retries
 - **Internal tools:** `fetch_profile_discovery`, `build_migration_plan`, `run_migration_pev`, `request_user_input`
 - **Work items:** planner builds per-repo×scope tasks (repo migration, workflow conversion, secrets manifest) with ready/blocked status
@@ -203,6 +204,8 @@ Phase lookups accept `PhaseType` enum **or** plain string phase ids (e.g. `"poc"
 - **Capabilities:** `can_operate`, `can_manage_models`, `can_approve_live_execution`
 - **Live execution** — platform approval queue before non-dry-run agent/pipeline runs
 
+**Future (not in v1):** Enterprise SSO via OIDC (`ADO2GH_SSO_ISSUER`, `ADO2GH_SSO_AUDIENCE`, `ADO2GH_SSO_JWKS_URL`) — JWT middleware on accelerator, SSO login in UI, actor from JWT claims in audit.
+
 ---
 
 ## Token management
@@ -227,6 +230,7 @@ Multi-token env: `GH_TOKEN_1`, `GH_TOKEN_2`, …
 
 | Document | Purpose |
 |----------|---------|
+| [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) | **SQLite local dev** — Docker, native, CLI |
 | [SETUP_GUIDE.md](SETUP_GUIDE.md) | Install, tokens, connectivity |
 | [EXECUTION_MANUAL.md](EXECUTION_MANUAL.md) | End-to-end operational guide |
 | [MIGRATION_RUNBOOK.md](MIGRATION_RUNBOOK.md) | Phased rollout runbook |
@@ -239,14 +243,21 @@ Multi-token env: `GH_TOKEN_1`, `GH_TOKEN_2`, …
 
 ## Local development
 
+**Default local stack uses SQLite** — no Postgres required.
+
 ```bash
-# Python package + CLI
-pip install -e ".[api,postgres,dev]"
+cp .env.example .env
+docker compose up --build
+```
 
-# Full stack (UI + API + agent + Postgres)
+Native (Windows): `.\scripts\run-local.ps1` · CLI: `pip install -e ".[api,dev]"`
+
+Full guide: [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)
+
+Production (Postgres + auth):
+
+```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
-
-# Tests
 pytest tests/
 ```
 

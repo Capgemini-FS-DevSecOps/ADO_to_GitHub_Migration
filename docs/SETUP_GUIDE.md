@@ -1,10 +1,10 @@
 # Setup Guide — ADO2GitHub Migration Platform
 
+> **Local dev (SQLite):** See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for Docker Compose, native stack, and CLI setup.
+>
 > **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for services, state backends, and deployment modes.
 
 Technical setup for the CLI, Docker stack, and web console.
-
-Complete setup instructions for running ADO-to-GitHub migrations at enterprise scale.
 
 ---
 
@@ -179,7 +179,20 @@ ado2gh discover --config migration.yaml --output test_discovery.yaml
 
 ---
 
-## 6. Directory Structure After Migration
+## 6. Docker & local stack
+
+| Goal | Command |
+|------|---------|
+| **Local full stack (SQLite)** | `docker compose up --build` |
+| **Production (PostgreSQL + auth)** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build` |
+| **Native Windows stack** | `.\scripts\run-local.ps1` |
+| **Agent only** | `docker compose -f docker-compose.lightweight.yml up --build` |
+
+See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for ports, first-login steps, SQLite paths, and cleanup.
+
+---
+
+## 7. Directory Structure After Migration
 
 ```
 ADO2GH/

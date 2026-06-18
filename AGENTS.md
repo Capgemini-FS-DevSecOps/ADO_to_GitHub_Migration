@@ -29,9 +29,11 @@ For feature planning artifacts, see `specs/` and the current plan under `.specif
 pip install -e ".[api,dev]"
 ado2gh discover --config migration.yaml
 ado2gh phase run --phase poc --config migration_phase.yaml --dry-run
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+docker compose up --build          # local SQLite stack
 pytest tests/
 ```
+
+Local dev guide: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)
 
 ## Agent PEV guardrails
 

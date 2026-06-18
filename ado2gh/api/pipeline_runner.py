@@ -475,7 +475,7 @@ class PipelineRunner:
                 self._log(run, "No cached scan — running read-only ADO discovery scan")
             scan = ensure_profile_scan(profile, self.settings)
             synced = sync_profile_scan_to_risk_scores(
-                profile.id, scan, db_path=adv.db_path, config_path=adv.config_path,
+                profile.id, db_path=adv.db_path, config_path=adv.config_path,
             )
             phase_repos = repo_configs_for_phase(
                 run.phase, profile, db_path=adv.db_path, config_path=adv.config_path,

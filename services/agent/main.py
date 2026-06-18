@@ -464,6 +464,8 @@ async def _build_migration_plan(
             f"/v1/settings/profiles/{profile_id}/discovery",
             session_token=session_token,
         )
+        session["discovery_snapshot"] = discovery
+        session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
         for r in discovery.get("repos", []):
             assigned = r.get("assigned_phase") or r.get("suggested_phase") or "poc"
             if assigned == phase:
@@ -550,10 +552,20 @@ async def _ensure_migration_plan(
     session_token: str | None,
     *,
     phase: str | None = None,
+    refresh: bool = False,
 ) -> dict[str, Any]:
     """Load discovery + planner output before PEV (deterministic, no LLM required)."""
     profile_id = session.get("profile_id", "lightweight")
     chosen_phase = phase or session.get("plan_phase", "poc")
+    cached_plan = session.get("migration_plan") or {}
+    phase_changed = bool(cached_plan) and cached_plan.get("phase") != chosen_phase
+    if refresh or phase_changed or not cached_plan:
+        plan = await _build_migration_plan(session, session_token, phase=chosen_phase)
+        session["migration_plan"] = plan
+        session["plan_phase"] = chosen_phase
+        session["plan_approved"] = False
+        session.pop("pending_form", None)
+        return plan
     if not session.get("discovery_snapshot"):
         discovery = await _accel_get(
             f"/v1/settings/profiles/{profile_id}/discovery",
@@ -561,12 +573,7 @@ async def _ensure_migration_plan(
         )
         session["discovery_snapshot"] = discovery
         session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
-    plan = session.get("migration_plan")
-    if not plan:
-        plan = await _build_migration_plan(session, session_token, phase=chosen_phase)
-        session["migration_plan"] = plan
-        session["plan_phase"] = chosen_phase
-    return plan
+    return cached_plan
 
 
 def _sync_session_tasks(session_id: str | None, **updates: str) -> None:
@@ -699,6 +706,21 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
         steps.append({"phase": "error", "error": reason})
         _add_message(session_id, "system", reason)
         return
+
+    if session and session_id:
+        plan = await _build_migration_plan(
+            session,
+            session_token,
+            phase=plan.get("phase", req.phase),
+        )
+        session["migration_plan"] = plan
+        session["plan_phase"] = plan.get("phase", session.get("plan_phase", "poc"))
+        if plan.get("blocked"):
+            run["status"] = RunStatus.FAILED
+            reason = plan.get("block_reason", "plan_blocked")
+            steps.append({"phase": "error", "error": reason})
+            _add_message(session_id, "system", reason)
+            return
 
     try:
         run["status"] = RunStatus.PLANNING

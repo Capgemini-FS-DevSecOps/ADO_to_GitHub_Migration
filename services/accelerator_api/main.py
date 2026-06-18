@@ -1326,9 +1326,22 @@ def update_phase_assignments(profile_id: str, req: PhaseAssignmentRequest, reque
     if count == 0 and updates:
         raise HTTPException(status_code=404, detail="No matching repos found to update")
     from ado2gh.api.profile_discovery import sync_profile_scan_to_risk_scores
+    from ado2gh.api.migration_scan import persist_scan_results
+
     adv = _settings.load().advanced
-    sync_profile_scan_to_risk_scores(profile_id, config_path=adv.config_path)
-    return {"updated": count, "scan": load_scan_results(profile_id)}
+    synced = sync_profile_scan_to_risk_scores(profile_id, config_path=adv.config_path)
+    refreshed = load_scan_results(profile_id)
+    if refreshed:
+        persist_scan_results(profile_id, refreshed)
+    return {
+        "updated": count,
+        "synced_risk_scores": synced,
+        "scan": refreshed,
+        "message": (
+            "Phase assignments saved. Rebuild the agent migration plan or start a new "
+            "pipeline run to pick up the updated repo list."
+        ),
+    }
 
 
 @app.get("/v1/pipeline/steps", response_model=list[PipelineStepDefinition])

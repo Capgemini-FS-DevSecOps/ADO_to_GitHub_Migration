@@ -88,9 +88,12 @@ export default function DiscoveryPage() {
   const saveMut = useMutation({
     mutationFn: (assignments: { project: string; repo_name: string; assigned_phase: string }[]) =>
       savePhaseAssignments(profileId!, assignments),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['discovery', profileId] });
       qc.invalidateQueries({ queryKey: ['profile-scan', profileId] });
+      if (data.message) {
+        setBannerMessage(data.message);
+      }
     },
   });
 

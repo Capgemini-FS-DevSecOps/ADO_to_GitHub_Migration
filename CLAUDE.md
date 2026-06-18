@@ -21,9 +21,11 @@ python -m ado2gh <command> [options]
 ### Docker (UI + API + agent)
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+docker compose up --build
 # UI :3000 · Accelerator :8080 · Agent :8090
 ```
+
+Local setup: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)
 
 ## Environment Variables
 
