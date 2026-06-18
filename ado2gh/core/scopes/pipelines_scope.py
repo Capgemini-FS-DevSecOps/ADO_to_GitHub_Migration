@@ -10,9 +10,51 @@ from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, MigrationStatus, PipelineMetadata, RepoConfig
 from ado2gh.output_dirs import output_base
 from ado2gh.pipelines.transform import PipelineTransformer
-from ado2gh.tools.push_workflows import push_repo_workflows
+from ado2gh.tools.push_workflows import push_repo_workflows, remote_workflow_files
 
 DEFAULT_WORKFLOW_BRANCH = "ado2gh/migrated-workflows"
+
+
+def _workflow_branch(ctx: ScopeContext) -> str:
+    return ctx.global_cfg.get("workflow_branch") or DEFAULT_WORKFLOW_BRANCH
+
+
+def _finish_with_push(
+    stats: dict[str, Any],
+    ctx: ScopeContext,
+    repo: RepoConfig,
+    workflow_branch: str,
+) -> ScopeResult:
+    push = push_repo_workflows(
+        ctx.gh,
+        repo,
+        str(output_base() / "workflows"),
+        branch=workflow_branch,
+        dry_run=False,
+        readiness_ok=True,
+        approver_ok=True,
+    )
+    stats["workflow_branch"] = workflow_branch
+    stats["workflow_files"] = push.get("workflow_files") or []
+    stats["pr_url"] = push.get("pr_url") or ""
+    stats["workflows_pushed"] = bool(push.get("pushed"))
+
+    if not push.get("pushed"):
+        err = push.get("error") or "workflow push failed"
+        stats["push_error"] = err
+        completed = stats.get("completed", 0)
+        stats["message"] = (
+            f"Generated {completed} workflow file(s) locally but "
+            f"did not push to GitHub: {err}"
+        )
+        return ScopeResult(stats=stats, failed=max(1, completed))
+
+    pr_note = f" PR: {stats['pr_url']}" if stats["pr_url"] else ""
+    stats["message"] = (
+        f"Pushed {len(stats['workflow_files'])} workflow(s) to branch "
+        f"`{workflow_branch}` on {repo.gh_org}/{repo.gh_repo}.{pr_note}"
+    )
+    return ScopeResult(stats=stats, failed=0)
 
 
 class PipelinesScopeHandler:
@@ -24,6 +66,7 @@ class PipelinesScopeHandler:
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
         pipeline_parallel = kwargs.get("pipeline_parallel", ctx.pipeline_parallel)
         wave_id = kwargs.get("wave_id", ctx.wave_id)
+        workflow_branch = _workflow_branch(ctx)
 
         pipelines = ctx.db.get_pipelines_for_repo(repo.ado_project, repo.ado_repo)
         if repo.pipeline_filter:
@@ -64,6 +107,8 @@ class PipelinesScopeHandler:
             r["pipeline_id"] for r in existing
             if r["status"] == MigrationStatus.COMPLETED.value
                and r["project"] == repo.ado_project
+               and r["gh_org"] == repo.gh_org
+               and r["gh_repo"] == repo.gh_repo
         }
         pending = [p for p in pipelines if p.pipeline_id not in completed_ids]
         stats["skipped"] = len(pipelines) - len(pending)
@@ -83,9 +128,45 @@ class PipelinesScopeHandler:
             )
             return ScopeResult(stats=stats)
 
-        if not pending:
-            stats["message"] = "All pipelines already transformed for this wave"
+        remote_files = remote_workflow_files(ctx.gh, repo, workflow_branch)
+        if not pending and remote_files:
+            stats["workflow_branch"] = workflow_branch
+            stats["workflow_files"] = remote_files
+            stats["workflows_pushed"] = True
+            stats["message"] = (
+                f"All pipelines already transformed; {len(remote_files)} workflow(s) on "
+                f"branch `{workflow_branch}`"
+            )
             return ScopeResult(stats=stats)
+
+        if not pending and not remote_files:
+            push = push_repo_workflows(
+                ctx.gh,
+                repo,
+                str(output_base() / "workflows"),
+                branch=workflow_branch,
+                dry_run=False,
+                readiness_ok=True,
+                approver_ok=True,
+            )
+            if push.get("pushed"):
+                stats["workflow_branch"] = workflow_branch
+                stats["workflow_files"] = push.get("workflow_files") or []
+                stats["pr_url"] = push.get("pr_url") or ""
+                stats["workflows_pushed"] = True
+                pr_note = f" PR: {stats['pr_url']}" if stats["pr_url"] else ""
+                stats["message"] = (
+                    f"Pushed {len(stats['workflow_files'])} workflow(s) to branch "
+                    f"`{workflow_branch}` on {repo.gh_org}/{repo.gh_repo}.{pr_note}"
+                )
+                return ScopeResult(stats=stats)
+
+            pending = list(pipelines)
+            stats["skipped"] = 0
+            stats["warnings"].append(
+                "Prior transform recorded in state but workflows missing on GitHub — "
+                "re-transforming and pushing"
+            )
 
         cm = kwargs.get("concurrency")
         workers = min(pipeline_parallel, max(1, len(pending)))
@@ -115,39 +196,7 @@ class PipelinesScopeHandler:
             )
             return ScopeResult(stats=stats, failed=stats["failed"])
 
-        workflow_branch = (
-            ctx.global_cfg.get("workflow_branch")
-            or DEFAULT_WORKFLOW_BRANCH
-        )
-        push = push_repo_workflows(
-            ctx.gh,
-            repo,
-            str(output_base() / "workflows"),
-            branch=workflow_branch,
-            dry_run=False,
-            readiness_ok=True,
-            approver_ok=True,
-        )
-        stats["workflow_branch"] = workflow_branch
-        stats["workflow_files"] = push.get("workflow_files") or []
-        stats["pr_url"] = push.get("pr_url") or ""
-        stats["workflows_pushed"] = bool(push.get("pushed"))
-
-        if not push.get("pushed"):
-            err = push.get("error") or "workflow push failed"
-            stats["push_error"] = err
-            stats["message"] = (
-                f"Generated {stats['completed']} workflow file(s) locally but "
-                f"did not push to GitHub: {err}"
-            )
-            return ScopeResult(stats=stats, failed=max(1, stats["completed"]))
-
-        pr_note = f" PR: {stats['pr_url']}" if stats["pr_url"] else ""
-        stats["message"] = (
-            f"Pushed {len(stats['workflow_files'])} workflow(s) to branch "
-            f"`{workflow_branch}` on {repo.gh_org}/{repo.gh_repo}.{pr_note}"
-        )
-        return ScopeResult(stats=stats, failed=0)
+        return _finish_with_push(stats, ctx, repo, workflow_branch)
 
     def _do_transform(
         self, pipe: PipelineMetadata, wave_id: int, repo: RepoConfig,

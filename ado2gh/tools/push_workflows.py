@@ -12,6 +12,26 @@ from ado2gh.logging_config import console
 from ado2gh.models import RepoConfig
 
 
+def remote_workflow_files(
+    gh: GHClient,
+    repo: RepoConfig,
+    branch: str,
+) -> list[str]:
+    """Return workflow filenames on GitHub for the given branch, if any."""
+    try:
+        gh.get_branch_sha(repo.gh_org, repo.gh_repo, branch)
+    except Exception:
+        return []
+    entries = gh.list_directory(
+        repo.gh_org, repo.gh_repo, ".github/workflows", branch,
+    )
+    return sorted(
+        e["name"] for e in entries
+        if e.get("type") == "file"
+        and str(e.get("name", "")).endswith((".yml", ".yaml"))
+    )
+
+
 def push_repo_workflows(
     gh: GHClient,
     repo: RepoConfig,

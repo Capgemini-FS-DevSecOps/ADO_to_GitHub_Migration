@@ -189,6 +189,18 @@ class GHClient:
 
     # ── Validation helpers (for post-migration) ─────────────────────────────
 
+    def list_directory(self, org: str, repo: str, path: str, ref: str) -> list[dict]:
+        try:
+            data = self._get(
+                f"/repos/{org}/{repo}/contents/{quote(path, safe='/')}",
+                params={"ref": ref},
+            )
+            if isinstance(data, list):
+                return data
+            return []
+        except Exception:
+            return []
+
     def list_branches(self, org: str, repo: str) -> list[dict]:
         branches = []
         page = 1
