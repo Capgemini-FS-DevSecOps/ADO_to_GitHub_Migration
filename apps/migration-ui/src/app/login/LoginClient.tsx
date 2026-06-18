@@ -28,6 +28,7 @@ export default function LoginClient() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [bootReady, setBootReady] = useState(false);
 
@@ -63,6 +64,7 @@ export default function LoginClient() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    setNotice('');
     if ((needsBootstrap || showRegister) && password !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -72,7 +74,15 @@ export default function LoginClient() {
       if (needsBootstrap) {
         result = await bootstrapAdmin({ username, password, display_name: displayName });
       } else if (showRegister) {
-        result = await register({ username, password, display_name: displayName });
+        const registered = await register({ username, password, display_name: displayName });
+        setShowRegister(false);
+        setPassword('');
+        setConfirmPassword('');
+        setNotice(
+          registered.message ||
+            'Account submitted for approval. An administrator must approve your access before you can sign in.',
+        );
+        return;
       } else {
         result = await login({ username, password });
       }
@@ -110,7 +120,7 @@ export default function LoginClient() {
   const welcomeSub = isFirstBoot
     ? 'First-time setup for your enterprise migration platform.'
     : showRegister
-      ? 'Register as an operator to request profile access.'
+      ? 'Register for operator access. An administrator must approve your account before you can sign in.'
       : 'Sign in to continue managing your ADO → GitHub migration.';
 
   return (
@@ -142,7 +152,7 @@ export default function LoginClient() {
                 {needsBootstrap
                   ? 'Create the platform administrator to unlock discovery, migration, and agent workflows.'
                   : showRegister
-                    ? 'Self-register as an operator. Profile approval may be required.'
+                    ? 'Self-register as an operator. You cannot sign in until a platform administrator approves your account.'
                     : 'Enter your credentials to open the migration console.'}
               </p>
             </div>
@@ -155,6 +165,11 @@ export default function LoginClient() {
                   </p>
                 )}
                 {error && <p className="oai-error">{error}</p>}
+              </div>
+            )}
+            {notice && (
+              <div className="login-sequence login-sequence--alert">
+                <p className="form-hint">{notice}</p>
               </div>
             )}
 
@@ -233,6 +248,7 @@ export default function LoginClient() {
                     onClick={() => {
                       setShowRegister(false);
                       setError('');
+                      setNotice('');
                     }}
                   >
                     Back to sign in
@@ -244,6 +260,7 @@ export default function LoginClient() {
                     onClick={() => {
                       setShowRegister(true);
                       setError('');
+                      setNotice('');
                     }}
                   >
                     Create account

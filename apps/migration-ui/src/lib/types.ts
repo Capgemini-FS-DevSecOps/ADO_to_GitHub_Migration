@@ -33,6 +33,11 @@ export interface PipelineRun {
   started_by_user_id?: string | null;
   started_by_username?: string | null;
   started_by_display_name?: string | null;
+  started_by_label?: string;
+  approved_by_username?: string | null;
+  approved_by_display_name?: string | null;
+  approved_by_label?: string;
+  live_approval_status?: string | null;
   current_step?: string;
 }
 
@@ -105,6 +110,9 @@ export interface MigrationScanResult {
   gh_org: string;
   recommendations: Record<string, PhaseRecommendation>;
   project_details?: ScanProjectDetail[];
+  org_inventory?: Record<string, number>;
+  pipeline_inventory?: Record<string, unknown>;
+  inventory_gaps?: Array<Record<string, string>>;
   warnings?: string[];
   status?: string;
 }
@@ -115,6 +123,12 @@ export interface ScanProjectDetail {
   repo_count: number;
   disabled_count?: number;
   pipeline_count?: number;
+  service_connection_count?: number;
+  service_connections?: Array<{ name: string; type?: string; id?: string; is_ready?: boolean }>;
+  variable_group_count?: number;
+  variable_groups?: Array<{ name: string; id?: string; variable_count?: number; is_shared?: boolean }>;
+  environment_count?: number;
+  environments?: string[];
   error?: string | null;
 }
 
@@ -138,6 +152,9 @@ export interface DiscoverySnapshot {
   repos: DiscoveryRepoItem[];
   recommendations: Record<string, PhaseRecommendation>;
   project_details?: ScanProjectDetail[];
+  org_inventory?: Record<string, number>;
+  pipeline_inventory_count?: number;
+  inventory_gaps?: Array<Record<string, string>>;
   warnings?: string[];
   status?: string;
 }

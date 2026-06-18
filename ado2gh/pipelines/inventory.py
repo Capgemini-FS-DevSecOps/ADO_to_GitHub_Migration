@@ -18,8 +18,22 @@ from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import PipelineMetadata
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
+from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
 from ado2gh.pipelines.task_scanner import enrich_pipeline_readiness
 from ado2gh.state.db import StateDB
+
+
+def summarize_project_inventory(summary: dict[str, dict]) -> dict[str, int]:
+    """Aggregate per-project inventory counts into org-level totals."""
+    total = sum(int(v.get("total", 0)) for v in summary.values())
+    build = sum(int(v.get("build", 0)) for v in summary.values())
+    release = sum(int(v.get("release", 0)) for v in summary.values())
+    return {
+        "pipelines": total,
+        "build": build,
+        "release": release,
+        "projects": len(summary),
+    }
 
 
 def _pick_best_yaml(configured_path: str, repo_name: str,
@@ -89,8 +103,14 @@ class PipelineInventoryBuilder:
             vgs = self.ado.list_variable_groups(project)
             all_var_groups[project] = vgs
             project_scs = self.ado.list_service_connections(project)
+            try:
+                project_repos = self.ado.list_repos(project)
+            except Exception:
+                project_repos = []
 
-            build_count   = self._scan_build_pipelines(project, vgs, project_scs)
+            build_count   = self._scan_build_pipelines(
+                project, vgs, project_scs, project_repos=project_repos,
+            )
             release_count = 0
             if include_releases:
                 release_count = self._scan_release_pipelines(project)
@@ -115,8 +135,14 @@ class PipelineInventoryBuilder:
         ))
         return summary
 
-    def _scan_build_pipelines(self, project: str, var_groups: list[dict],
-                              project_scs: list[dict] | None = None) -> int:
+    def _scan_build_pipelines(
+        self,
+        project: str,
+        var_groups: list[dict],
+        project_scs: list[dict] | None = None,
+        *,
+        project_repos: list[dict] | None = None,
+    ) -> int:
         """Enumerate + enrich all build pipelines for a project in parallel."""
         # Step 1: collect pipeline stubs (fast, paginated)
         stubs = list(self.ado.list_all_pipelines(project))
@@ -141,7 +167,12 @@ class PipelineInventoryBuilder:
             with ThreadPoolExecutor(max_workers=self.parallel) as pool:
                 futures = {
                     pool.submit(
-                        self._enrich_build_pipeline, project, stub, var_groups, project_scs or []
+                        self._enrich_build_pipeline,
+                        project,
+                        stub,
+                        var_groups,
+                        project_scs or [],
+                        project_repos or [],
                     ): stub
                     for stub in stubs
                 }
@@ -158,9 +189,14 @@ class PipelineInventoryBuilder:
                         progress.advance(task)
         return count
 
-    def _enrich_build_pipeline(self, project: str, stub: dict,
-                               var_groups: list[dict],
-                               project_scs: list[dict] | None = None) -> Optional[PipelineMetadata]:
+    def _enrich_build_pipeline(
+        self,
+        project: str,
+        stub: dict,
+        var_groups: list[dict],
+        project_scs: list[dict] | None = None,
+        project_repos: list[dict] | None = None,
+    ) -> Optional[PipelineMetadata]:
         """Fetch full definition + YAML + runs for one build pipeline."""
         pipe_id = stub["id"]
         config  = stub.get("configuration", {})
@@ -280,7 +316,7 @@ class PipelineInventoryBuilder:
                     "and no usable candidates found",
                     pipe_id, stub.get("name", "?"), yaml_path,
                 )
-            return meta
+            return self._apply_repo_association(meta, project_repos or [])
         else:
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             meta = self.extractor.extract_classic_build_pipeline(
@@ -289,7 +325,28 @@ class PipelineInventoryBuilder:
             if meta:
                 enrich_pipeline_readiness(meta, project_scs or [])
                 meta.complexity = self.extractor._score_complexity(meta)
+            return self._apply_repo_association(meta, project_repos or [])
+
+    def _apply_repo_association(
+        self,
+        meta: PipelineMetadata | None,
+        project_repos: list[dict],
+    ) -> PipelineMetadata | None:
+        if not meta or not project_repos:
             return meta
+        inferred = infer_pipeline_repo_name(
+            meta.pipeline_name,
+            meta.repo_name,
+            meta.repo_id,
+            project_repos,
+        )
+        if inferred and inferred != meta.repo_name:
+            if meta.repo_name:
+                meta.migration_notes.append(
+                    f"Repo association refined from '{meta.repo_name}' to '{inferred}'."
+                )
+            meta.repo_name = inferred
+        return meta
 
     def _scan_release_pipelines(self, project: str) -> int:
         """Enumerate + enrich all classic release pipelines."""

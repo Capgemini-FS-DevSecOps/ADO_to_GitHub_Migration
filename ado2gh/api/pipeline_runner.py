@@ -114,6 +114,9 @@ class PipelineRun:
     started_by_user_id: Optional[str] = None
     started_by_username: Optional[str] = None
     started_by_display_name: Optional[str] = None
+    approved_by_username: Optional[str] = None
+    approved_by_display_name: Optional[str] = None
+    live_approval_status: Optional[str] = None
 
     def current_step_label(self) -> str:
         for step in self.steps:
@@ -140,8 +143,76 @@ class PipelineRun:
             "started_by_user_id": self.started_by_user_id,
             "started_by_username": self.started_by_username,
             "started_by_display_name": self.started_by_display_name,
+            "approved_by_username": self.approved_by_username,
+            "approved_by_display_name": self.approved_by_display_name,
+            "live_approval_status": self.live_approval_status,
             "current_step": self.current_step_label(),
         }
+
+
+def enrich_pipeline_run_dict(run_dict: dict[str, Any], db: Any | None = None) -> dict[str, Any]:
+    """Attach display-friendly started/approved labels for the migration monitor."""
+    started = (
+        run_dict.get("started_by_display_name")
+        or run_dict.get("started_by_username")
+        or "Unknown"
+    )
+    run_dict["started_by_label"] = started
+
+    status = run_dict.get("live_approval_status")
+    if not status and db and hasattr(db, "get_live_execution_approval_for_scope"):
+        row = db.get_live_execution_approval_for_scope("pipeline_run", run_dict.get("id", ""))
+        if row:
+            raw = str(row.get("status") or "")
+            if raw == "approved":
+                status = "approved"
+                run_dict.setdefault("approved_by_username", row.get("approver_username"))
+                run_dict.setdefault(
+                    "approved_by_display_name",
+                    row.get("approver_username"),
+                )
+            elif raw == "pending":
+                status = "pending"
+            elif raw == "denied":
+                status = "denied"
+                run_dict.setdefault("approved_by_username", row.get("approver_username"))
+                run_dict.setdefault(
+                    "approved_by_display_name",
+                    row.get("approver_username"),
+                )
+
+    if not status:
+        if run_dict.get("dry_run"):
+            status = "not_required"
+        elif run_dict.get("status") == "awaiting_approval":
+            status = "pending"
+        else:
+            status = "auto_approved"
+
+    run_dict["live_approval_status"] = status
+
+    if status == "not_required":
+        run_dict["approved_by_label"] = "Not required (dry run)"
+    elif status == "auto_approved":
+        run_dict["approved_by_label"] = "Auto-approved"
+    elif status == "pending":
+        run_dict["approved_by_label"] = "Awaiting approval"
+    elif status == "denied":
+        approver = (
+            run_dict.get("approved_by_display_name")
+            or run_dict.get("approved_by_username")
+            or "approver"
+        )
+        run_dict["approved_by_label"] = f"Denied by {approver}"
+    else:
+        approver = (
+            run_dict.get("approved_by_display_name")
+            or run_dict.get("approved_by_username")
+            or "Unknown"
+        )
+        run_dict["approved_by_label"] = approver
+
+    return run_dict
 
 
 class PipelineRunStore:
@@ -248,6 +319,7 @@ class PipelineRunStore:
             started_by_user_id=started_by_user_id,
             started_by_username=started_by_username,
             started_by_display_name=started_by_display_name,
+            live_approval_status=None,
         )
         with cls._lock:
             cls._runs[run.id] = run
@@ -440,9 +512,12 @@ class PipelineRunner:
 
     def _step_inventory(self, run: PipelineRun) -> None:
         from ado2gh.api.accelerator import Accelerator
+        from ado2gh.api.profile_discovery import repo_configs_for_phase
         from ado2gh.clients.ado_client import ADOClient
         from ado2gh.clients.ado_token_manager import ADOTokenManager
         from ado2gh.core.config_loader import ConfigLoader
+        from ado2gh.pipelines.inventory import summarize_project_inventory
+        from ado2gh.state.factory import create_state_db
         import os
 
         adv = self.settings.load().advanced
@@ -453,9 +528,30 @@ class PipelineRunner:
         projects = [p["name"] for p in ado.list_projects()]
         accel = Accelerator(db_path=adv.db_path)
         stats = accel.inventory(adv.config_path, projects=projects)
-        self._set_step(run, "inventory", StepStatus.COMPLETED,
-                       f"Inventory: {stats.get('pipelines', 0)} pipelines",
-                       stats)
+        project_summary = stats.get("projects", stats)
+        totals = summarize_project_inventory(project_summary) if isinstance(project_summary, dict) else {}
+        pipeline_total = stats.get("pipelines", totals.get("pipelines", 0))
+
+        phase_linked = None
+        profile = self.settings.get_active_profile()
+        if profile:
+            try:
+                db = create_state_db(adv.db_path)
+                phase_repos = repo_configs_for_phase(
+                    run.phase, profile, db_path=adv.db_path, config_path=adv.config_path,
+                )
+                if phase_repos:
+                    phase_linked = sum(
+                        db.inventory_count_for_repo(r.ado_project, r.ado_repo)
+                        for r in phase_repos
+                    )
+            except Exception:
+                phase_linked = None
+
+        message = f"Inventory: {pipeline_total} pipelines"
+        if phase_linked is not None:
+            message += f" ({phase_linked} linked to phase {run.phase})"
+        self._set_step(run, "inventory", StepStatus.COMPLETED, message, stats)
 
     def _step_readiness(self, run: PipelineRun) -> None:
         from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
@@ -465,6 +561,8 @@ class PipelineRunner:
         db = create_state_db(adv.db_path)
         report = PipelineReadinessReport(db).generate(
             migration_lookup=db.get_latest_pipeline_migrations(),
+            repo_migration_lookup=db.get_latest_repo_migrations()
+            if hasattr(db, "get_latest_repo_migrations") else {},
         )
         self._set_step(run, "readiness", StepStatus.COMPLETED,
                        f"Auto: {report.get('auto', 0)} | Assisted: {report.get('assisted', 0)} | Manual: {report.get('manual', 0)}",
@@ -499,6 +597,7 @@ class PipelineRunner:
         from ado2gh.api.migration_work_plan import (
             apply_scope_results_to_work_items,
             build_work_items_for_repos,
+            filter_work_items_for_scopes,
         )
         from ado2gh.api.profile_discovery import build_wave_from_profile_phase, require_gh_org
         from ado2gh.core.config_loader import ConfigLoader
@@ -585,7 +684,9 @@ class PipelineRunner:
                 work_items = apply_scope_results_to_work_items(
                     pre_work_items, repo_details,
                 )
-                result["work_items"] = work_items
+                result["work_items"] = filter_work_items_for_scopes(
+                    work_items, scope_filter,
+                )
                 if cancel_event.is_set():
                     self._set_step(run, step_id, StepStatus.SKIPPED,
                                    "Cancelled by user", result)

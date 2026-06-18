@@ -40,6 +40,12 @@ class CreateUserBody(BaseModel):
     display_name: str = ""
 
 
+class UpdateUserBody(BaseModel):
+    role: str | None = Field(default=None, pattern="^(coordinator|operator|approver)$")
+    status: str | None = Field(default=None, pattern="^(active|disabled|pending_approval)$")
+    display_name: str | None = None
+
+
 def _onboarding_redirect() -> str | None:
     from ado2gh.api.settings_store import SettingsStore
     from ado2gh.api.profile_governance import needs_profile_setup
@@ -77,10 +83,17 @@ def _user_payload(user) -> dict:
 @router.get("/bootstrap-status")
 def bootstrap_status():
     needs = _svc.needs_bootstrap()
+    pending = 0
+    if not needs:
+        pending = sum(
+            1 for u in _svc.list_users()
+            if u.get("status") == "pending_approval"
+        )
     return {
         "needs_bootstrap": needs,
         "auth_enabled": auth_enabled(),
         "registration_enabled": not needs,
+        "pending_user_approvals": pending,
         "message": "Create the first admin account to continue" if needs else "Sign in to continue",
     }
 
@@ -103,19 +116,20 @@ def bootstrap(body: BootstrapBody, response: Response):
 
 
 @router.post("/register", status_code=201)
-def register(body: RegisterBody, response: Response):
+def register(body: RegisterBody):
     try:
-        session = _svc.register_operator(body.username, body.password, body.display_name)
+        user = _svc.register_operator(body.username, body.password, body.display_name)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError:
         raise HTTPException(status_code=400, detail="Registration failed")
-    _set_session_cookie(response, session.token)
-    redirect = _onboarding_redirect()
     return {
-        "user": _user_payload(session.user),
-        "session_expires_at": session.expires_at,
-        "redirect_path": redirect,
+        "pending_approval": True,
+        "user": user,
+        "message": (
+            "Account created. A platform administrator must approve your access "
+            "before you can sign in."
+        ),
     }
 
 
@@ -123,8 +137,11 @@ def register(body: RegisterBody, response: Response):
 def login(body: LoginBody, response: Response):
     try:
         session = _svc.login(body.username, body.password)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    except ValueError as exc:
+        detail = str(exc)
+        if detail in ("account_pending_approval", "account_disabled"):
+            raise HTTPException(status_code=403, detail=detail) from exc
+        raise HTTPException(status_code=401, detail="Invalid credentials") from exc
     _set_session_cookie(response, session.token)
     redirect = _onboarding_redirect()
     if session.user.role.value == "admin" and redirect:
@@ -164,6 +181,61 @@ def create_user(body: CreateUserBody, request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"user": _user_payload(user)}
+
+
+@router.patch("/users/{user_id}")
+def update_user(user_id: str, body: UpdateUserBody, request: Request):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    session = _svc.get_session(token) if token else None
+    if not session or session.user.role != PlatformRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if session.user.id == user_id and body.status == "disabled":
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
+    try:
+        user = _svc.update_user(
+            user_id,
+            role=body.role,
+            status=body.status,
+            display_name=body.display_name,
+            actor=session.user.username,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="User not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"user": user}
+
+
+@router.post("/users/{user_id}/approve")
+def approve_user(user_id: str, request: Request):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    session = _svc.get_session(token) if token else None
+    if not session or session.user.role != PlatformRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    try:
+        user = _svc.approve_user(user_id, actor=session.user.username)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="User not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"user": user}
+
+
+@router.post("/users/{user_id}/disable")
+def disable_user(user_id: str, request: Request):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    session = _svc.get_session(token) if token else None
+    if not session or session.user.role != PlatformRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Admin only")
+    if session.user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot disable your own account")
+    try:
+        user = _svc.disable_user(user_id, actor=session.user.username)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="User not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"user": user}
 
 
 @router.post("/logout")

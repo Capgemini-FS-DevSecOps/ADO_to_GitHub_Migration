@@ -178,11 +178,25 @@ class DynamoDBStateDB:
         self._put("inventory", sk, meta.to_dict())
 
     def get_pipelines_for_repo(self, project: str, repo_name: str) -> list[PipelineMetadata]:
-        return [
-            PipelineMetadata.from_dict(r)
-            for r in self._query_pk("inventory")
-            if r.get("project") == project and r.get("repo_name") == repo_name
-        ]
+        from ado2gh.pipelines.repo_association import pipeline_belongs_to_repo
+
+        seen: set[int] = set()
+        pipelines: list[PipelineMetadata] = []
+        for row in self._query_pk("inventory"):
+            if row.get("project") != project:
+                continue
+            meta = PipelineMetadata.from_dict(row)
+            if not pipeline_belongs_to_repo(
+                meta.pipeline_name,
+                repo_name,
+                meta.repo_name,
+            ):
+                continue
+            if meta.pipeline_id in seen:
+                continue
+            seen.add(meta.pipeline_id)
+            pipelines.append(meta)
+        return pipelines
 
     def get_all_inventory(self, project: str = None) -> list[dict]:
         rows = self._query_pk("inventory")
@@ -197,10 +211,18 @@ class DynamoDBStateDB:
         return len(rows)
 
     def inventory_count_for_repo(self, project: str, repo_name: str) -> int:
-        return len([
-            r for r in self._query_pk("inventory")
-            if r.get("project") == project and r.get("repo_name") == repo_name
-        ])
+        return len(self.get_pipelines_for_repo(project, repo_name))
+
+    def get_latest_repo_migrations(self) -> dict[str, dict]:
+        latest: dict[str, dict] = {}
+        for row in self._query_pk("migration"):
+            if row.get("scope") != "repo":
+                continue
+            key = f"{row.get('ado_project')}:{row.get('ado_repo')}"
+            existing = latest.get(key)
+            if not existing or int(row.get("id", 0)) > int(existing.get("id", 0)):
+                latest[key] = row
+        return latest
 
     def clear_inventory(self, project: str = None):
         for r in self._query_pk("inventory"):

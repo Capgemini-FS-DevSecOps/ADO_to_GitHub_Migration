@@ -995,6 +995,36 @@ p {
   color: #ffc107;
 }
 
+.scan-complete-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #0d2a1a;
+  border: 1px solid #1f6f46;
+  color: #b8f0d0;
+  font-size: 14px;
+}
+
+.scan-complete-banner__close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.85;
+}
+
+.scan-complete-banner__close:hover {
+  opacity: 1;
+}
+
 .scan-project-table td.badge-manual {
   font-size: 11px;
   max-width: 280px;
@@ -1362,27 +1392,50 @@ p {
 
 .agent-task-item {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 8px 12px;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "status category label subagent"
+    "detail detail detail detail";
+  gap: 4px 10px;
   align-items: center;
   font-size: 13px;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: 6px;
   border: 1px solid var(--oai-border);
   background: var(--oai-bg-secondary);
 }
 
-.agent-task-detail {
-  grid-column: 1 / -1;
-  font-size: 12px;
-  color: #888;
-}
-
 .agent-task-status {
+  grid-area: status;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #888;
+  white-space: nowrap;
+}
+
+.agent-task-category {
+  grid-area: category;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #35b8ff;
+  white-space: nowrap;
+}
+
+.agent-task-label {
+  grid-area: label;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-task-detail {
+  grid-area: detail;
+  font-size: 12px;
+  color: #888;
+  line-height: 1.4;
 }
 
 .agent-task-running .agent-task-status {
@@ -1398,8 +1451,10 @@ p {
 }
 
 .agent-task-subagent {
+  grid-area: subagent;
   font-size: 11px;
   color: #666;
+  white-space: nowrap;
 }
 
 .agent-work-block {
@@ -1539,6 +1594,16 @@ p {
   padding: 12px 14px;
 }
 
+.agent-form-bubble--full {
+  max-width: 100%;
+  width: 100%;
+  align-self: stretch;
+}
+
+.agent-form-row--full {
+  width: 100%;
+}
+
 .agent-form-bubble .agent-form-panel h4 {
   margin: 0 0 6px;
   font-size: 14px;
@@ -1554,6 +1619,33 @@ p {
   border: 1px solid var(--oai-border);
   border-radius: 8px;
   background: var(--oai-bg-secondary);
+}
+
+.agent-form-panel--plan {
+  width: 100%;
+}
+
+.agent-form-description {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--oai-border);
+}
+
+.agent-form-description.agent-markdown {
+  font-size: 14px;
+}
+
+.agent-form-description.agent-markdown hr {
+  border: none;
+  border-top: 1px solid var(--oai-border);
+  margin: 12px 0;
+}
+
+.agent-form-textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
 }
 
 .agent-form-panel h4 {

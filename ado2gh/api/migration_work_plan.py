@@ -1,6 +1,7 @@
 """Build descriptive per-repo migration work items (scopes, blockers, categories)."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ado2gh.models import MigrationScope, RepoConfig
@@ -15,7 +16,10 @@ SCOPE_META: dict[str, dict[str, str]] = {
     MigrationScope.PIPELINES.value: {
         "label": "Convert pipelines → GitHub Actions",
         "category": "convert_metadata",
-        "description": "Transform ADO YAML and push workflows to ado2gh/migrated-workflows",
+        "description": (
+            "Transform ADO YAML and push workflows to the "
+            "`ado2gh/migrated-workflows` branch (opens a PR)"
+        ),
     },
     MigrationScope.SECRETS.value: {
         "label": "Map secrets & service connections",
@@ -45,6 +49,76 @@ CATEGORY_LABELS = {
     "manual_setup": "Manual setup required",
     "validate": "Post-migration validation",
 }
+
+
+def apply_operator_secret_mappings(
+    work_items: list[dict[str, Any]],
+    mappings: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Mark secrets work items ready when operator supplied GitHub secret names."""
+    if not mappings:
+        return work_items
+    for wi in work_items:
+        if wi.get("scope") != MigrationScope.SECRETS.value or wi.get("status") != "blocked":
+            continue
+        blocker = wi.get("blocker") or ""
+        if "inventory" in blocker.lower():
+            continue
+        unresolved = False
+        for key, value in mappings.items():
+            if not value.strip():
+                unresolved = True
+        if not unresolved and mappings:
+            wi["status"] = "ready"
+            wi["blocker"] = ""
+            wi["detail"] = f"Operator mapped {len(mappings)} secret(s)"
+    return work_items
+
+
+def collect_secret_gap_fields(
+    discovery: dict[str, Any] | None,
+    work_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build form fields for service connections that block secrets scope."""
+    gaps = (discovery or {}).get("inventory_gaps") or []
+    blocked = [wi for wi in work_items if wi.get("scope") == MigrationScope.SECRETS.value and wi.get("status") == "blocked"]
+    if not blocked:
+        return []
+    fields: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for gap in gaps:
+        if gap.get("type") != "service_connection":
+            continue
+        name = gap.get("name", "")
+        field = gap.get("field") or f"secret_mapping__{gap.get('project', '')}__{name}"
+        if not name or field in seen:
+            continue
+        seen.add(field)
+        fields.append({
+            "name": field,
+            "label": f"{gap.get('project')}: {name} → GitHub secret",
+            "type": "text",
+            "required": True,
+        })
+        if len(fields) >= 12:
+            break
+    if not fields:
+        for wi in blocked:
+            blocker = wi.get("blocker") or ""
+            if "Service connection '" in blocker:
+                match = re.search(r"Service connection '([^']+)'", blocker)
+                if match:
+                    sc_name = match.group(1)
+                    field = f"secret_mapping__{sc_name}"
+                    if field not in seen:
+                        seen.add(field)
+                        fields.append({
+                            "name": field,
+                            "label": f"GitHub secret for ADO connection '{sc_name}'",
+                            "type": "text",
+                            "required": True,
+                        })
+    return fields
 
 
 def _work_item_id(repo_key: str, scope: str) -> str:
@@ -183,6 +257,71 @@ def work_items_summary(work_items: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def aggregate_work_items_for_timeline(work_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse per-repo work items into scope-level rows with repo counts."""
+    scopes_order = [s.value for s in MigrationScope]
+    scope_rank = {scope: idx for idx, scope in enumerate(scopes_order)}
+    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+    for wi in work_items:
+        if wi.get("status") == "skipped":
+            continue
+        status = wi.get("status", "pending")
+        if status == "ready":
+            status = "pending"
+        scope = wi.get("scope", "")
+        category = wi.get("category", "")
+        key = (scope, category, status)
+        meta = SCOPE_META.get(scope, {})
+        base_label = meta.get("label")
+        if not base_label and " — " in (wi.get("label") or ""):
+            base_label = wi["label"].split(" — ", 1)[1]
+        base_label = base_label or wi.get("label") or scope
+
+        if key not in groups:
+            groups[key] = {
+                "scope": scope,
+                "category": category,
+                "status": status,
+                "label": base_label,
+                "description": meta.get("description") or wi.get("description", ""),
+                "category_label": wi.get("category_label")
+                or CATEGORY_LABELS.get(category, category),
+                "count": 0,
+                "blockers": [],
+            }
+        group = groups[key]
+        group["count"] += 1
+        blocker = (wi.get("blocker") or "").strip()
+        if blocker and blocker not in group["blockers"]:
+            group["blockers"].append(blocker)
+
+    aggregated: list[dict[str, Any]] = []
+    for key in sorted(groups.keys(), key=lambda k: (scope_rank.get(k[0], 99), k[1], k[2])):
+        group = groups[key]
+        count = group["count"]
+        repo_phrase = "1 repo" if count == 1 else f"{count} repos"
+        label = f"{group['label']} · {repo_phrase}"
+        blocker = ""
+        if group["blockers"]:
+            blocker = group["blockers"][0]
+            if len(group["blockers"]) > 1:
+                blocker += f" (+{len(group['blockers']) - 1} more)"
+        scope, category, status = key
+        aggregated.append({
+            "id": f"scope:{scope}:{category}:{status}",
+            "scope": scope,
+            "category": category,
+            "category_label": group["category_label"],
+            "label": label,
+            "description": group["description"],
+            "status": status,
+            "blocker": blocker,
+            "count": count,
+        })
+    return aggregated
+
+
 def apply_scope_results_to_work_items(
     work_items: list[dict[str, Any]],
     repo_details: list[dict[str, Any]],
@@ -211,6 +350,17 @@ def apply_scope_results_to_work_items(
             elif st == "skipped":
                 wi["status"] = "skipped"
     return work_items
+
+
+def filter_work_items_for_scopes(
+    work_items: list[dict[str, Any]],
+    scopes: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Return only work items for scopes executed in a pipeline step."""
+    if scopes is None:
+        return work_items
+    allowed = set(scopes)
+    return [wi for wi in work_items if wi.get("scope") in allowed]
 
 
 def scope_row_enriched(scope: str, detail: dict) -> dict[str, Any]:

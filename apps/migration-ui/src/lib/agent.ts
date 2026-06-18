@@ -75,13 +75,14 @@ export type AgentTask = {
   blocker?: string;
   category?: string;
   category_label?: string;
+  count?: number;
   updated_at?: string;
 };
 
 export type AgentFormField = {
   name: string;
   label: string;
-  type: 'select' | 'checkbox' | 'text';
+  type: 'select' | 'checkbox' | 'text' | 'textarea';
   options?: string[];
   required?: boolean;
 };

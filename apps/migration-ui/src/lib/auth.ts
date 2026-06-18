@@ -79,7 +79,27 @@ export async function register(body: {
     const t = await r.text();
     throw new Error(t || 'Registration failed');
   }
-  return r.json();
+  return r.json() as Promise<{
+    pending_approval: boolean;
+    message: string;
+    user: AuthUser & { status?: string };
+  }>;
+}
+
+function parseAuthError(text: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(text) as { detail?: string };
+    if (parsed.detail === 'account_pending_approval') {
+      return 'Your account is pending administrator approval.';
+    }
+    if (parsed.detail === 'account_disabled') {
+      return 'This account has been disabled. Contact a platform administrator.';
+    }
+    if (parsed.detail) return parsed.detail;
+  } catch {
+    /* ignore */
+  }
+  return fallback;
 }
 
 export async function login(body: { username: string; password: string }) {
@@ -89,7 +109,10 @@ export async function login(body: { username: string; password: string }) {
     body: JSON.stringify(body),
     ...creds,
   });
-  if (!r.ok) throw new Error('Invalid credentials');
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(parseAuthError(t, 'Invalid credentials'));
+  }
   return r.json();
 }
 

@@ -27,6 +27,61 @@ def _scan_results_path(profile_id: str | None = None) -> Path:
     return base / "scan_preview.json"
 
 
+DISCOVERY_DETAIL_KEY = "__discovery_detail__"
+
+DISCOVERY_DETAIL_FIELDS = (
+    "project_details",
+    "org_inventory",
+    "inventory_gaps",
+    "warnings",
+    "status",
+    "pipeline_inventory",
+)
+
+
+def pack_scan_summary_json(raw: dict[str, Any]) -> dict[str, Any]:
+    """Phase buckets + embedded discovery inventory for profile_scans.summary_json."""
+    summary = {
+        k: {kk: vv for kk, vv in v.items() if kk != "repos"}
+        for k, v in raw.get("recommendations", {}).items()
+    }
+    detail = {k: raw[k] for k in DISCOVERY_DETAIL_FIELDS if raw.get(k) is not None}
+    if detail:
+        summary[DISCOVERY_DETAIL_KEY] = detail
+    return summary
+
+
+def extract_discovery_fields(data: dict[str, Any] | None) -> dict[str, Any]:
+    """Read service-connection inventory and related fields from scan payloads."""
+    if not data:
+        return {}
+    out: dict[str, Any] = {}
+    for key in DISCOVERY_DETAIL_FIELDS:
+        if data.get(key) is not None:
+            out[key] = data[key]
+    nested = data.get(DISCOVERY_DETAIL_KEY)
+    if isinstance(nested, dict):
+        for key, value in nested.items():
+            if value is not None:
+                out[key] = value
+    return out
+
+
+def merge_scan_payload(
+    base: dict[str, Any] | None,
+    extra: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not base:
+        return extra
+    if not extra:
+        return base
+    merged = dict(base)
+    for key in DISCOVERY_DETAIL_FIELDS:
+        if not merged.get(key) and extra.get(key) is not None:
+            merged[key] = extra[key]
+    return merged
+
+
 def _build_ado_client(ado_org_url: str, ado_pat: str) -> ADOClient:
     return ADOClient(ado_org_url.rstrip("/"), token_manager=ADOTokenManager.from_single(ado_pat))
 
@@ -48,6 +103,83 @@ def _stub_pipeline(defn: dict, project: str) -> PipelineMetadata:
 
 def _phase_rationale(phase_def: PhaseDefinition, scores: list[RiskScore]) -> str:
     return phase_rationale(phase_def, scores)
+
+
+def _summarize_service_connections(svc_conns: list[dict]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": sc.get("name", ""),
+            "type": sc.get("type", ""),
+            "id": sc.get("id", ""),
+            "is_ready": sc.get("isReady", True),
+        }
+        for sc in svc_conns
+        if sc.get("name")
+    ]
+
+
+def _summarize_variable_groups(var_groups: list[dict]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": vg.get("name", ""),
+            "id": vg.get("id", ""),
+            "variable_count": len(vg.get("variables") or {}),
+            "is_shared": bool(vg.get("isShared")),
+        }
+        for vg in var_groups
+        if vg.get("name")
+    ]
+
+
+def run_pipeline_inventory_scan(
+    ado_org_url: str,
+    ado_pat: str,
+    db_path: str,
+    *,
+    projects: list[str] | None = None,
+    parallel: int = 12,
+) -> dict[str, Any]:
+    """Deep pipeline inventory stored in StateDB for conversion and secrets mapping."""
+    from ado2gh.api.state_db import create_state_db
+    from ado2gh.pipelines.inventory import PipelineInventoryBuilder
+
+    ado = _build_ado_client(ado_org_url, ado_pat)
+    db = create_state_db(db_path)
+    if not projects:
+        projects = [p["name"] for p in ado.list_projects() if p.get("name")]
+    summary = PipelineInventoryBuilder(ado, db, parallel=parallel, dry_run=False).build_for_projects(
+        projects,
+    )
+    return {
+        "projects": summary,
+        "total_pipelines": sum(int(s.get("total", 0)) for s in summary.values()),
+        "inventory_count": db.inventory_count(),
+    }
+
+
+def build_inventory_gaps(project_details: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Surface ADO assets that need operator input before secrets/pipeline conversion."""
+    gaps: list[dict[str, Any]] = []
+    for project in project_details:
+        proj_name = project.get("project", "")
+        for sc in project.get("service_connections") or []:
+            gaps.append({
+                "type": "service_connection",
+                "project": proj_name,
+                "name": sc.get("name", ""),
+                "connection_type": sc.get("type", ""),
+                "field": f"secret_mapping__{proj_name}__{sc.get('name', '')}",
+                "hint": "GitHub secret name or OIDC federated credential to use",
+            })
+        for vg in project.get("variable_groups") or []:
+            gaps.append({
+                "type": "variable_group",
+                "project": proj_name,
+                "name": vg.get("name", ""),
+                "field": f"variable_group__{proj_name}__{vg.get('name', '')}",
+                "hint": "Confirm variable group secrets were created in GitHub (values are not readable from ADO)",
+            })
+    return gaps
 
 
 class MigrationScanner:
@@ -99,6 +231,11 @@ class MigrationScanner:
             except Exception:
                 svc_conns = []
 
+            try:
+                environments = self.ado.list_environments(proj_name)
+            except Exception:
+                environments = []
+
             project_pipelines: list[PipelineMetadata] = []
             try:
                 for stub in self.ado.list_all_pipelines(proj_name):
@@ -110,6 +247,12 @@ class MigrationScanner:
             except Exception:
                 pass
             detail["pipeline_count"] = len(project_pipelines)
+            detail["service_connection_count"] = len(svc_conns)
+            detail["service_connections"] = _summarize_service_connections(svc_conns)
+            detail["variable_group_count"] = len(var_groups)
+            detail["variable_groups"] = _summarize_variable_groups(var_groups)
+            detail["environment_count"] = len(environments)
+            detail["environments"] = [e.get("name", "") for e in environments if e.get("name")]
 
             try:
                 repos = self.ado.list_repos(proj_name)
@@ -175,6 +318,13 @@ class MigrationScanner:
         warnings = build_empty_scan_warnings(projects_scanned, repos_scanned, project_details)
         scan_status = "ok" if repos_scanned else ("error" if any(p.get("error") for p in project_details) else "empty")
 
+        org_inventory = {
+            "total_service_connections": sum(p.get("service_connection_count", 0) for p in project_details),
+            "total_variable_groups": sum(p.get("variable_group_count", 0) for p in project_details),
+            "total_environments": sum(p.get("environment_count", 0) for p in project_details),
+            "total_pipeline_stubs": sum(p.get("pipeline_count", 0) for p in project_details),
+        }
+
         return {
             "scanned_at": datetime.now(timezone.utc).isoformat(),
             "projects_scanned": projects_scanned,
@@ -183,6 +333,8 @@ class MigrationScanner:
             "gh_org": self.gh_org,
             "recommendations": buckets,
             "project_details": project_details,
+            "org_inventory": org_inventory,
+            "inventory_gaps": build_inventory_gaps(project_details),
             "warnings": warnings,
             "status": scan_status,
         }
@@ -194,11 +346,32 @@ def scan_with_credentials(
     gh_org: str = "",
     max_repos: int | None = None,
     phase_definitions: list | None = None,
+    *,
+    db_path: str | None = None,
+    run_inventory: bool = True,
+    pipeline_parallel: int = 12,
 ) -> dict[str, Any]:
     ado = _build_ado_client(ado_org_url, ado_pat)
-    return MigrationScanner(ado, gh_org=gh_org, phase_definitions=phase_definitions).scan(
+    raw = MigrationScanner(ado, gh_org=gh_org, phase_definitions=phase_definitions).scan(
         max_repos=max_repos,
     )
+    if run_inventory and db_path:
+        try:
+            inventory = run_pipeline_inventory_scan(
+                ado_org_url,
+                ado_pat,
+                db_path,
+                parallel=pipeline_parallel,
+            )
+            raw["pipeline_inventory"] = inventory
+            org = raw.setdefault("org_inventory", {})
+            org["pipeline_inventory_count"] = inventory.get("inventory_count", 0)
+            org["total_pipelines_indexed"] = inventory.get("total_pipelines", 0)
+        except Exception as exc:
+            raw.setdefault("warnings", []).append(
+                f"Pipeline inventory scan failed: {exc}"
+            )
+    return raw
 
 
 def persist_scan_results(profile_id: str, results: dict[str, Any]) -> Path:
@@ -220,15 +393,22 @@ def load_scan_results(profile_id: str) -> dict[str, Any] | None:
     from ado2gh.api.state_db import get_state_db
 
     db = get_state_db()
+    payload: dict[str, Any] | None = None
     if hasattr(db, "build_profile_scan_payload"):
         payload = db.build_profile_scan_payload(profile_id)
-        if payload:
-            return payload
 
     path = _scan_results_path(profile_id)
-    if not path.exists():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("recommendations"):
-        return data
-    return data if data.get("repos_scanned", 0) > 0 else None
+    file_data: dict[str, Any] | None = None
+    if path.exists():
+        try:
+            file_data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            file_data = None
+
+    payload = merge_scan_payload(payload, file_data)
+    if payload:
+        return payload
+
+    if file_data and (file_data.get("recommendations") or file_data.get("repos_scanned", 0) > 0):
+        return file_data
+    return None

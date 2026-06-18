@@ -219,6 +219,7 @@ class StateDB:
         password_hash    TEXT NOT NULL,
         role             TEXT NOT NULL,
         display_name     TEXT NOT NULL DEFAULT '',
+        status           TEXT NOT NULL DEFAULT 'active',
         created_at       TEXT NOT NULL
     );
 
@@ -259,6 +260,14 @@ class StateDB:
         with self._conn() as conn:
             conn.executescript(self.SCHEMA)
             self._migrate_agentic_columns(conn)
+            self._migrate_platform_user_status(conn)
+
+    def _migrate_platform_user_status(self, conn: sqlite3.Connection) -> None:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(platform_users)").fetchall()}
+        if cols and "status" not in cols:
+            conn.execute(
+                "ALTER TABLE platform_users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+            )
 
     def _migrate_agentic_columns(self, conn: sqlite3.Connection):
         """Add assignment_id to migrations when upgrading existing DBs."""
@@ -425,11 +434,27 @@ class StateDB:
     def get_pipelines_for_repo(self, project: str, repo_name: str) -> list[PipelineMetadata]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT metadata_json FROM pipeline_inventory "
-                "WHERE project=? AND repo_name=? ORDER BY pipeline_id",
-                (project, repo_name)
+                """
+                SELECT metadata_json FROM pipeline_inventory
+                WHERE project=? AND (
+                    repo_name=?
+                    OR pipeline_name=?
+                    OR pipeline_name LIKE ? || '-%'
+                    OR pipeline_name LIKE ? || '_%'
+                )
+                ORDER BY pipeline_id
+                """,
+                (project, repo_name, repo_name, repo_name, repo_name),
             ).fetchall()
-        return [PipelineMetadata.from_dict(json.loads(r["metadata_json"])) for r in rows]
+        seen: set[int] = set()
+        pipelines: list[PipelineMetadata] = []
+        for row in rows:
+            meta = PipelineMetadata.from_dict(json.loads(row["metadata_json"]))
+            if meta.pipeline_id in seen:
+                continue
+            seen.add(meta.pipeline_id)
+            pipelines.append(meta)
+        return pipelines
 
     def get_all_inventory(self, project: str = None) -> list[dict]:
         with self._conn() as conn:
@@ -455,9 +480,36 @@ class StateDB:
     def inventory_count_for_repo(self, project: str, repo_name: str) -> int:
         with self._conn() as conn:
             return conn.execute(
-                "SELECT COUNT(*) FROM pipeline_inventory WHERE project=? AND repo_name=?",
-                (project, repo_name)
+                """
+                SELECT COUNT(DISTINCT pipeline_id) FROM pipeline_inventory
+                WHERE project=? AND (
+                    repo_name=?
+                    OR pipeline_name=?
+                    OR pipeline_name LIKE ? || '-%'
+                    OR pipeline_name LIKE ? || '_%'
+                )
+                """,
+                (project, repo_name, repo_name, repo_name, repo_name),
             ).fetchone()[0]
+
+    def get_latest_repo_migrations(self) -> dict[str, dict]:
+        """Latest repo-scope migration row per ADO project/repo."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT m.* FROM migrations m
+                INNER JOIN (
+                    SELECT ado_project, ado_repo, MAX(id) AS max_id
+                    FROM migrations
+                    WHERE scope='repo'
+                    GROUP BY ado_project, ado_repo
+                ) latest ON m.id = latest.max_id
+                """
+            ).fetchall()
+        return {
+            f"{r['ado_project']}:{r['ado_repo']}": dict(r)
+            for r in rows
+        }
 
     def get_latest_pipeline_migrations(self) -> dict[str, dict]:
         """Latest migration row per project:pipeline_id."""
@@ -764,12 +816,11 @@ class StateDB:
     # ── Profile scan (discovery per migration profile) ───────────────────────
 
     def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        from ado2gh.api.migration_scan import pack_scan_summary_json
+
         now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
         gh_org = raw.get("gh_org", "")
-        summary = {
-            k: {kk: vv for kk, vv in v.items() if kk != "repos"}
-            for k, v in raw.get("recommendations", {}).items()
-        }
+        summary = pack_scan_summary_json(raw)
         with self._conn() as conn:
             conn.execute("DELETE FROM profile_scan_repos WHERE profile_id=?", (profile_id,))
             conn.execute("""
@@ -854,6 +905,8 @@ class StateDB:
         return updated
 
     def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
+        from ado2gh.api.migration_scan import extract_discovery_fields
+
         meta = self.get_profile_scan_meta(profile_id)
         if not meta:
             return None
@@ -878,6 +931,8 @@ class StateDB:
             repo_data["assigned_phase"] = r.get("assigned_phase")
             repo_data["suggested_phase"] = r.get("suggested_phase")
             b["repos"].append(repo_data)
+        summary_raw = json.loads(meta.get("summary_json") or "{}")
+        discovery = extract_discovery_fields(summary_raw)
         return {
             "profile_id": profile_id,
             "scanned_at": meta["scanned_at"],
@@ -886,6 +941,7 @@ class StateDB:
             "total_repos": meta["repos_scanned"],
             "gh_org": meta["gh_org"],
             "recommendations": buckets,
+            **discovery,
         }
 
     # ── Agentic platform (assignments, audit, remediation) ─────────────────
@@ -1160,14 +1216,15 @@ class StateDB:
     def create_platform_user(
         self, user_id: str, username: str, password_hash: str,
         role: str, display_name: str, created_at: str,
+        status: str = "active",
     ):
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT INTO platform_users (id, username, password_hash, role, display_name, created_at)
-                VALUES (?,?,?,?,?,?)
+                INSERT INTO platform_users (id, username, password_hash, role, display_name, status, created_at)
+                VALUES (?,?,?,?,?,?,?)
                 """,
-                (user_id, username, password_hash, role, display_name, created_at),
+                (user_id, username, password_hash, role, display_name, status, created_at),
             )
 
     def get_platform_user_by_username(self, username: str) -> Optional[dict]:
@@ -1189,9 +1246,42 @@ class StateDB:
     def list_platform_users(self) -> list[dict]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT id, username, role, display_name, created_at FROM platform_users ORDER BY username",
+                "SELECT id, username, role, display_name, status, created_at FROM platform_users ORDER BY username",
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def update_platform_user(
+        self,
+        user_id: str,
+        *,
+        role: str | None = None,
+        status: str | None = None,
+        display_name: str | None = None,
+    ) -> bool:
+        fields: list[str] = []
+        values: list[Any] = []
+        if role is not None:
+            fields.append("role=?")
+            values.append(role)
+        if status is not None:
+            fields.append("status=?")
+            values.append(status)
+        if display_name is not None:
+            fields.append("display_name=?")
+            values.append(display_name)
+        if not fields:
+            return False
+        values.append(user_id)
+        with self._conn() as conn:
+            cur = conn.execute(
+                f"UPDATE platform_users SET {', '.join(fields)} WHERE id=?",
+                values,
+            )
+        return cur.rowcount > 0
+
+    def delete_auth_sessions_for_user(self, user_id: str) -> None:
+        with self._conn() as conn:
+            conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
 
     def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
         with self._conn() as conn:
@@ -1276,6 +1366,20 @@ class StateDB:
                 SELECT * FROM live_execution_approvals
                 WHERE scope_type=? AND scope_id=? AND status='approved'
                 ORDER BY decided_at DESC LIMIT 1
+                """,
+                (scope_type, scope_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_live_execution_approval_for_scope(
+        self, scope_type: str, scope_id: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            row = conn.execute(
+                """
+                SELECT * FROM live_execution_approvals
+                WHERE scope_type=? AND scope_id=?
+                ORDER BY requested_at DESC LIMIT 1
                 """,
                 (scope_type, scope_id),
             ).fetchone()

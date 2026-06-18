@@ -39,6 +39,7 @@ def test_planner_blocked_abort():
 def test_executor_retry_on_failure():
     pipeline = {
         "status": "failed",
+        "logs": ["repo-a: failed — connection timed out during git push"],
         "steps": [{"id": "migrate_repos", "status": "failed", "message": "git push failed"}],
     }
     review = review_executor_output(StubLLMProvider(), pipeline, attempt=1, llm_degraded=True)

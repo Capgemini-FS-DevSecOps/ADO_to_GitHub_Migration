@@ -124,14 +124,31 @@ export async function runMigrationScan(body: {
   });
 }
 
+export type ProfileScanJobStatus = {
+  profile_id: string;
+  running: boolean;
+  status?: string;
+  error?: string | null;
+  scanned_at?: string | null;
+  repos_scanned?: number | null;
+  projects_scanned?: number | null;
+  service_connections?: number | null;
+};
+
+export async function startProfileScan(profileId: string): Promise<ProfileScanJobStatus> {
+  return api<ProfileScanJobStatus>(`/v1/settings/profiles/${profileId}/scan`, { method: 'POST' });
+}
+
+/** @deprecated Use startProfileScan — scans run in the background; poll fetchProfileScanStatus */
 export async function scanMigrationProfile(profileId: string): Promise<MigrationScanResult> {
-  return api<MigrationScanResult>(`/v1/settings/profiles/${profileId}/scan`, { method: 'POST' });
+  await startProfileScan(profileId);
+  return fetchProfileScan(profileId);
 }
 
 export async function fetchProfileScanStatus(
   profileId: string,
-): Promise<{ profile_id: string; running: boolean }> {
-  return api<{ profile_id: string; running: boolean }>(
+): Promise<ProfileScanJobStatus> {
+  return api<ProfileScanJobStatus>(
     `/v1/settings/profiles/${profileId}/scan/status`,
   );
 }
@@ -398,13 +415,6 @@ export async function cancelPipelineRun(runId: string) {
   });
 }
 
-export async function listAssignments(profileId: string) {
-  const data = await api<{ assignments: Array<Record<string, unknown>> }>(
-    `/v1/profiles/${profileId}/assignments`,
-  );
-  return data.assignments;
-}
-
 function historyQueryString(params: AuditHistoryParams): string {
   const q = new URLSearchParams();
   if (params.profileId) q.set('profile_id', params.profileId);
@@ -451,10 +461,6 @@ export async function downloadAuditHistoryExport(
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-export async function fetchAssignmentGate(assignmentId: string) {
-  return api<Record<string, unknown>>(`/v1/assignments/${assignmentId}/gate-status`);
 }
 
 export type LiveApprovalItem = {

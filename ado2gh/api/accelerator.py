@@ -146,10 +146,14 @@ class Accelerator:
         ado_url: str | None = None,
         ado_pat: str | None = None,
     ) -> dict:
-        from ado2gh.pipelines.inventory import PipelineInventoryBuilder
+        from ado2gh.pipelines.inventory import PipelineInventoryBuilder, summarize_project_inventory
         global_cfg, _ = ConfigLoader.load(config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
         db = create_state_db(self.db_path)
         if not projects:
             projects = [p["name"] for p in ado.list_projects()]
-        return PipelineInventoryBuilder(ado, db, parallel=parallel).build_for_projects(projects)
+        project_summary = PipelineInventoryBuilder(ado, db, parallel=parallel).build_for_projects(
+            projects,
+        )
+        totals = summarize_project_inventory(project_summary)
+        return {"projects": project_summary, **totals}

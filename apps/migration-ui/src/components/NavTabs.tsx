@@ -8,7 +8,6 @@ import {
   BotIcon,
   ChartBarIcon,
   CheckCircleIcon,
-  ClipboardListIcon,
   HistoryIcon,
   SearchIcon,
   SettingsIcon,
@@ -18,7 +17,6 @@ import {
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: ChartBarIcon },
   { href: '/agent', label: 'Agent', icon: BotIcon },
-  { href: '/assignments', label: 'Assignments', icon: ClipboardListIcon },
   { href: '/history', label: 'History', icon: HistoryIcon },
   { href: '/migrate', label: 'Migrate', icon: ArrowRightLeftIcon },
   { href: '/runs', label: 'Monitor', icon: ActivityIcon },

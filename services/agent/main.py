@@ -29,12 +29,13 @@ from ado2gh.agents.session_access import (
     is_admin_request,
     request_username,
 )
+from ado2gh.agents.failure_analysis import format_failure_feedback, format_retry_message
 from ado2gh.agents.pev_coordinator import (
     MAX_PEV_RETRIES,
     review_executor_output,
     review_planner_output,
     review_validator_output,
-    should_retry_migration,
+    should_retry_pev,
 )
 from ado2gh.agents.local.audit_bridge import IdeAuditBridge
 from ado2gh.agents.local.profiles import capability_matrix, get_profile
@@ -496,22 +497,50 @@ async def _build_migration_plan(
     plan["repo_count"] = len(repos)
     plan["dry_run"] = dry_run
 
-    enabled_scopes = [
-        MigrationScope.REPO.value,
-        MigrationScope.PIPELINES.value,
-        MigrationScope.SECRETS.value,
-    ]
     db = None
     if db_path:
         try:
             db = create_state_db(db_path)
         except Exception:
             db = None
+
+    inventory_count = 0
+    if db:
+        try:
+            inventory_count = db.inventory_count()
+        except Exception:
+            inventory_count = 0
+    if inventory_count == 0:
+        try:
+            await _accel_post(
+                f"/v1/settings/profiles/{profile_id}/scan?sync=true",
+                {},
+                session_token=session_token,
+            )
+            if db:
+                inventory_count = db.inventory_count()
+            discovery = await _accel_get(
+                f"/v1/settings/profiles/{profile_id}/discovery",
+                session_token=session_token,
+            )
+            session["discovery_snapshot"] = discovery
+        except httpx.HTTPStatusError:
+            pass
+
+    enabled_scopes = [
+        MigrationScope.REPO.value,
+        MigrationScope.PIPELINES.value,
+        MigrationScope.SECRETS.value,
+    ]
     work_items = build_work_items_for_repos(
         repo_configs,
         enabled_scopes=enabled_scopes,
         db=db,
     )
+    mappings = session.get("operator_secret_mappings") or {}
+    if mappings:
+        from ado2gh.api.migration_work_plan import apply_operator_secret_mappings
+        work_items = apply_operator_secret_mappings(work_items, mappings)
     plan["work_items"] = work_items
     plan["work_summary"] = work_items_summary(work_items)
     plan["narrative"] = plan_narrative_from_work_items(phase, work_items, dry_run=dry_run)
@@ -809,22 +838,28 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
             migrate_step = migrate_steps[0] if migrate_steps else None
 
             if validator_review.verdict == "pass" or validator_review.next_action == "proceed":
-                pipeline_failed = False
-                _sync_session_tasks(session_id, execute="completed", validate="completed")
-                break
+                if executor_review.verdict != "fail" and not migrate_failed:
+                    pipeline_failed = False
+                    _sync_session_tasks(session_id, execute="completed", validate="completed")
+                    break
 
-            if should_retry_migration(validator_review, attempt):
+            if should_retry_pev(executor_review, validator_review, final_run, attempt):
                 _add_message(
                     session_id,
                     "validator",
-                    f"LLM recommends retry ({attempt + 1}/{MAX_PEV_RETRIES}): "
-                    + "; ".join(validator_review.issues[:3] or ["transient failure"]),
+                    format_retry_message(
+                        validator_review if validator_review.retry_recommended else executor_review,
+                        final_run,
+                        attempt,
+                        max_retries=MAX_PEV_RETRIES,
+                    ),
                     kind="progress",
                 )
                 continue
 
             pipeline_failed = (
                 validator_review.verdict == "fail"
+                or executor_review.verdict == "fail"
                 or final_run.get("status") == "failed"
                 or migrate_failed
             )
@@ -838,12 +873,15 @@ async def pev_loop(run_id: str, req: AgentRunRequest, session_id: Optional[str] 
             if session_id and session_id in _sessions:
                 _sessions[session_id]["status"] = "failed"
                 _sessions[session_id]["subagent"] = None
-            if migrate_step and migrate_step.get("status") == "failed":
-                _add_message(
-                    session_id,
-                    "validator",
-                    migrate_step.get("message") or "Migration step failed.",
-                )
+            feedback = format_failure_feedback(
+                final_run,
+                fallback_summary=(
+                    (validator_review.summary if validator_review else "")
+                    or (migrate_step.get("message") if migrate_step else "")
+                    or "Migration step failed."
+                ),
+            )
+            _add_message(session_id, "validator", feedback)
         else:
             run["status"] = RunStatus.COMPLETED
             if session_id and session_id in _sessions:
@@ -1065,6 +1103,7 @@ async def create_session(req: SessionRequest, request: Request):
             llm_degraded=llm_degraded,
             llm_unconfigured=llm_unconfigured,
             accel_get=_accel_get,
+            accel_post=_accel_post,
             build_plan=_build_migration_plan,
             session_token=session_token,
         )
@@ -1383,6 +1422,7 @@ async def session_message(session_id: str, req: SessionMessageRequest, request: 
         llm_degraded=llm_degraded,
         llm_unconfigured=llm_unconfigured,
         accel_get=_accel_get,
+        accel_post=_accel_post,
         build_plan=_build_migration_plan,
         session_token=session_token,
     )
@@ -1430,6 +1470,39 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
     session_token = _session_token_from_request(request) or _session_accel_token(session_id)
     reply = ""
 
+    if form_id == "inventory_gaps":
+        from ado2gh.agents.session_orchestrator import _plan_confirmation_form
+        from ado2gh.api.migration_work_plan import apply_operator_secret_mappings, plan_narrative_from_work_items
+
+        mappings = {
+            str(k): str(v).strip()
+            for k, v in values.items()
+            if str(v).strip()
+        }
+        session["operator_secret_mappings"] = mappings
+        plan = session.get("migration_plan") or {}
+        work_items = plan.get("work_items") or []
+        plan["work_items"] = apply_operator_secret_mappings(work_items, mappings)
+        plan["work_summary"] = work_items_summary(plan["work_items"])
+        plan["narrative"] = plan_narrative_from_work_items(
+            plan.get("phase", session.get("plan_phase", "poc")),
+            plan["work_items"],
+            dry_run=session.get("dry_run", True),
+        )
+        session["migration_plan"] = plan
+        form = _plan_confirmation_form(session)
+        session["pending_form"] = form
+        reply = (
+            f"Saved {len(mappings)} service connection mapping(s). "
+            "Review the migration plan and confirm when ready."
+        )
+        _add_message(session_id, "assistant", reply, kind="message")
+        session["updated_at"] = datetime.now(timezone.utc).isoformat()
+        payload = _session_payload(session_id)
+        payload["reply"] = reply
+        payload["pending_form"] = form
+        return payload
+
     if form_id == "plan_confirmation":
         plan_notes = str(values.get("plan_notes") or "").strip()
         plan_confirmed = bool(values.get("plan_confirmed"))
@@ -1446,6 +1519,7 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
                 llm_degraded=replan_degraded,
                 llm_unconfigured=replan_unconfigured,
                 accel_get=_accel_get,
+                accel_post=_accel_post,
                 build_plan=_build_migration_plan,
                 session_token=session_token,
             )

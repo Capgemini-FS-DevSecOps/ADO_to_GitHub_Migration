@@ -11,6 +11,7 @@ from ado2gh.logging_config import console, log
 from ado2gh.models import (
     PipelineComplexity, PipelineMetadata, PipelineType, RepoConfig,
 )
+from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
 from ado2gh.state.db import StateDB
 
 
@@ -53,12 +54,24 @@ class PipelineReadinessReport:
 
     def generate(self, repos: list[RepoConfig] = None,
                  output_path: str = None,
-                 migration_lookup: dict[str, dict] | None = None) -> dict:
+                 migration_lookup: dict[str, dict] | None = None,
+                 repo_migration_lookup: dict[str, dict] | None = None) -> dict:
         """Generate readiness report for all pipelines in inventory.
 
         Returns summary dict and optionally writes CSV + JSON reports.
         """
         migration_lookup = migration_lookup or {}
+        repo_migration_lookup = repo_migration_lookup or {}
+        project_repos: dict[str, list[dict[str, str]]] = {}
+        if hasattr(self.db, "get_all_risk_scores"):
+            try:
+                for row in self.db.get_all_risk_scores():
+                    project = row.get("project", "")
+                    repo_name = row.get("repo_name", "")
+                    if project and repo_name:
+                        project_repos.setdefault(project, []).append({"name": repo_name})
+            except Exception:
+                project_repos = {}
         all_pipelines: list[PipelineMetadata] = []
         if repos:
             for repo in repos:
@@ -70,12 +83,23 @@ class PipelineReadinessReport:
             for row in self.db.get_all_inventory():
                 try:
                     meta = PipelineMetadata.from_dict(json.loads(row["metadata_json"]))
+                    repos = project_repos.get(meta.project, [])
+                    if repos:
+                        inferred = infer_pipeline_repo_name(
+                            meta.pipeline_name,
+                            meta.repo_name,
+                            meta.repo_id,
+                            repos,
+                        )
+                        if inferred:
+                            meta.repo_name = inferred
                     all_pipelines.append(meta)
                 except Exception:
                     pass
 
         assessments = [
-            self._assess_pipeline(p, migration_lookup) for p in all_pipelines
+            self._assess_pipeline(p, migration_lookup, repo_migration_lookup)
+            for p in all_pipelines
         ]
 
         summary = self._build_summary(assessments)
@@ -99,10 +123,14 @@ class PipelineReadinessReport:
         return summary
 
     def _assess_pipeline(
-        self, pipe: PipelineMetadata, migration_lookup: dict[str, dict] | None = None,
+        self,
+        pipe: PipelineMetadata,
+        migration_lookup: dict[str, dict] | None = None,
+        repo_migration_lookup: dict[str, dict] | None = None,
     ) -> dict:
         """Assess a single pipeline's migration readiness."""
         migration_lookup = migration_lookup or {}
+        repo_migration_lookup = repo_migration_lookup or {}
         blockers: list[str] = []
         warnings: list[str] = []
         effort_hours = self.EFFORT_MATRIX.get(
@@ -174,6 +202,11 @@ class PipelineReadinessReport:
             else:
                 migration_status = raw_status
             workflow_file = str(mig_row.get("workflow_file") or "")
+        elif pipe.repo_name:
+            repo_key = f"{pipe.project}:{pipe.repo_name}"
+            repo_row = repo_migration_lookup.get(repo_key)
+            if repo_row and str(repo_row.get("status")) == "completed":
+                migration_status = "repo_migrated"
 
         return {
             "project": pipe.project,

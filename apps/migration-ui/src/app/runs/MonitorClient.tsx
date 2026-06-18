@@ -107,6 +107,13 @@ export default function MonitorClient() {
               <p style={{ fontSize: 11, margin: '8px 0 0', color: '#888' }}>
                 {r.dry_run ? 'DRY RUN' : 'LIVE'} · {r.phase.toUpperCase()} ·{' '}
                 {new Date(r.created_at).toLocaleString()}
+                {r.started_by_label && (
+                  <>
+                    <br />
+                    Started by {r.started_by_label}
+                    {r.approved_by_label ? ` · Approved by ${r.approved_by_label}` : ''}
+                  </>
+                )}
               </p>
             </button>
           ))}
@@ -191,6 +198,13 @@ export default function MonitorClient() {
                       {run.error}
                     </pre>
                   )}
+                </p>
+                <p className="form-hint" style={{ margin: '8px 0 0' }}>
+                  Started by{' '}
+                  <strong>{run.started_by_label || run.started_by_display_name || run.started_by_username || 'Unknown'}</strong>
+                  {' · '}
+                  Approved by{' '}
+                  <strong>{run.approved_by_label || '—'}</strong>
                 </p>
                 <StepPipelineBar steps={run.steps} />
                 <div className="table-responsive">

@@ -12,6 +12,12 @@ class PlatformRole(str, Enum):
     APPROVER = "approver"
 
 
+class PlatformUserStatus(str, Enum):
+    ACTIVE = "active"
+    PENDING_APPROVAL = "pending_approval"
+    DISABLED = "disabled"
+
+
 @dataclass
 class PlatformUser:
     id: str

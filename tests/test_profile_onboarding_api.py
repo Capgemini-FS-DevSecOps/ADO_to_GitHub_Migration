@@ -38,6 +38,10 @@ def _register_operator(client: TestClient, username: str = "operator1") -> None:
         json={"username": username, "password": "twelve-char-pass", "display_name": "Op"},
     )
     assert r.status_code == 201
+    users = client.get("/v1/auth/users").json()["users"]
+    user_id = next(u["id"] for u in users if u["username"] == username)
+    approve = client.post(f"/v1/auth/users/{user_id}/approve")
+    assert approve.status_code == 200
 
 
 def _valid_setup_payload(name: str = "Prod"):

@@ -193,6 +193,7 @@ class PostgresStateDB:
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL,
         display_name TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active',
         created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS auth_sessions (
@@ -252,6 +253,10 @@ class PostgresStateDB:
             with conn.cursor() as cur:
                 for stmt in statements:
                     cur.execute(stmt)
+                cur.execute(
+                    "ALTER TABLE platform_users ADD COLUMN IF NOT EXISTS "
+                    "status TEXT NOT NULL DEFAULT 'active'",
+                )
 
     def upsert_migration(self, wave_id: int, repo, scope: str,
                          status: MigrationStatus, error: str = None,
@@ -411,12 +416,28 @@ class PostgresStateDB:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
-                    "SELECT metadata_json FROM pipeline_inventory "
-                    "WHERE project=%s AND repo_name=%s ORDER BY pipeline_id",
-                    (project, repo_name),
+                    """
+                    SELECT metadata_json FROM pipeline_inventory
+                    WHERE project=%s AND (
+                        repo_name=%s
+                        OR pipeline_name=%s
+                        OR pipeline_name LIKE %s || '-%%'
+                        OR pipeline_name LIKE %s || '_%%'
+                    )
+                    ORDER BY pipeline_id
+                    """,
+                    (project, repo_name, repo_name, repo_name, repo_name),
                 )
                 rows = cur.fetchall()
-        return [PipelineMetadata.from_dict(json.loads(r["metadata_json"])) for r in rows]
+        seen: set[int] = set()
+        pipelines: list[PipelineMetadata] = []
+        for row in rows:
+            meta = PipelineMetadata.from_dict(json.loads(row["metadata_json"]))
+            if meta.pipeline_id in seen:
+                continue
+            seen.add(meta.pipeline_id)
+            pipelines.append(meta)
+        return pipelines
 
     def get_all_inventory(self, project: str = None) -> list[dict]:
         with self._conn() as conn:
@@ -448,10 +469,38 @@ class PostgresStateDB:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT COUNT(*) FROM pipeline_inventory WHERE project=%s AND repo_name=%s",
-                    (project, repo_name),
+                    """
+                    SELECT COUNT(DISTINCT pipeline_id) FROM pipeline_inventory
+                    WHERE project=%s AND (
+                        repo_name=%s
+                        OR pipeline_name=%s
+                        OR pipeline_name LIKE %s || '-%%'
+                        OR pipeline_name LIKE %s || '_%%'
+                    )
+                    """,
+                    (project, repo_name, repo_name, repo_name, repo_name),
                 )
                 return cur.fetchone()[0]
+
+    def get_latest_repo_migrations(self) -> dict[str, dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT m.* FROM migrations m
+                    INNER JOIN (
+                        SELECT ado_project, ado_repo, MAX(id) AS max_id
+                        FROM migrations
+                        WHERE scope='repo'
+                        GROUP BY ado_project, ado_repo
+                    ) latest ON m.id = latest.max_id
+                    """
+                )
+                rows = cur.fetchall()
+        return {
+            f"{r['ado_project']}:{r['ado_repo']}": dict(r)
+            for r in rows
+        }
 
     def get_latest_pipeline_migrations(self) -> dict[str, dict]:
         """Latest migration row per project:pipeline_id."""
@@ -683,12 +732,11 @@ class PostgresStateDB:
     # ── Profile scan (discovery per migration profile) ───────────────────────
 
     def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        from ado2gh.api.migration_scan import pack_scan_summary_json
+
         now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
         gh_org = raw.get("gh_org", "")
-        summary = {
-            k: {kk: vv for kk, vv in v.items() if kk != "repos"}
-            for k, v in raw.get("recommendations", {}).items()
-        }
+        summary = pack_scan_summary_json(raw)
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -782,6 +830,8 @@ class PostgresStateDB:
         return updated
 
     def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
+        from ado2gh.api.migration_scan import extract_discovery_fields
+
         meta = self.get_profile_scan_meta(profile_id)
         if not meta:
             return None
@@ -806,6 +856,10 @@ class PostgresStateDB:
             repo_data["assigned_phase"] = r.get("assigned_phase")
             repo_data["suggested_phase"] = r.get("suggested_phase")
             b["repos"].append(repo_data)
+        summary_raw = meta.get("summary_json") or "{}"
+        if isinstance(summary_raw, str):
+            summary_raw = json.loads(summary_raw)
+        discovery = extract_discovery_fields(summary_raw)
         return {
             "profile_id": profile_id,
             "scanned_at": meta["scanned_at"],
@@ -814,6 +868,7 @@ class PostgresStateDB:
             "total_repos": meta["repos_scanned"],
             "gh_org": meta["gh_org"],
             "recommendations": buckets,
+            **discovery,
         }
 
     def upsert_phase_gate(self, result):
@@ -1023,15 +1078,16 @@ class PostgresStateDB:
     def create_platform_user(
         self, user_id: str, username: str, password_hash: str,
         role: str, display_name: str, created_at: str,
+        status: str = "active",
     ):
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO platform_users (id, username, password_hash, role, display_name, created_at)
-                    VALUES (%s,%s,%s,%s,%s,%s)
+                    INSERT INTO platform_users (id, username, password_hash, role, display_name, status, created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
                     """,
-                    (user_id, username, password_hash, role, display_name, created_at),
+                    (user_id, username, password_hash, role, display_name, status, created_at),
                 )
 
     def get_platform_user_by_username(self, username: str) -> Optional[dict]:
@@ -1052,9 +1108,44 @@ class PostgresStateDB:
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
-                    "SELECT id, username, role, display_name, created_at FROM platform_users ORDER BY username",
+                    "SELECT id, username, role, display_name, status, created_at FROM platform_users ORDER BY username",
                 )
                 return [dict(r) for r in cur.fetchall()]
+
+    def update_platform_user(
+        self,
+        user_id: str,
+        *,
+        role: str | None = None,
+        status: str | None = None,
+        display_name: str | None = None,
+    ) -> bool:
+        fields: list[str] = []
+        values: list[Any] = []
+        if role is not None:
+            fields.append("role=%s")
+            values.append(role)
+        if status is not None:
+            fields.append("status=%s")
+            values.append(status)
+        if display_name is not None:
+            fields.append("display_name=%s")
+            values.append(display_name)
+        if not fields:
+            return False
+        values.append(user_id)
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE platform_users SET {', '.join(fields)} WHERE id=%s",
+                    values,
+                )
+                return cur.rowcount > 0
+
+    def delete_auth_sessions_for_user(self, user_id: str) -> None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM auth_sessions WHERE user_id=%s", (user_id,))
 
     def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
         with self._conn() as conn:
@@ -1146,6 +1237,22 @@ class PostgresStateDB:
                     SELECT * FROM live_execution_approvals
                     WHERE scope_type=%s AND scope_id=%s AND status='approved'
                     ORDER BY decided_at DESC LIMIT 1
+                    """,
+                    (scope_type, scope_id),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def get_live_execution_approval_for_scope(
+        self, scope_type: str, scope_id: str,
+    ) -> Optional[dict]:
+        with self._conn() as conn:
+            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM live_execution_approvals
+                    WHERE scope_type=%s AND scope_id=%s
+                    ORDER BY requested_at DESC LIMIT 1
                     """,
                     (scope_type, scope_id),
                 )

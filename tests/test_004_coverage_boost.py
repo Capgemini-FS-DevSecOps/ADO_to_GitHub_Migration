@@ -95,5 +95,9 @@ def test_auth_register_and_login(tmp_path):
     svc.bootstrap_admin("admin", "twelve-char-pass", "Admin")
     session = svc.login("admin", "twelve-char-pass")
     assert session.user.username == "admin"
-    op_session = svc.register_operator("operator1", "twelve-char-pass", "Op")
+    op_user = svc.register_operator("operator1", "twelve-char-pass", "Op")
+    assert op_user["role"] == "operator"
+    assert op_user["status"] == "pending_approval"
+    svc.approve_user(op_user["id"])
+    op_session = svc.login("operator1", "twelve-char-pass")
     assert op_session.user.role == PlatformRole.OPERATOR

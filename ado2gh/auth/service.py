@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from ado2gh.auth.models import AuthSession, PlatformRole, PlatformUser
+from ado2gh.auth.models import AuthSession, PlatformRole, PlatformUser, PlatformUserStatus
 from ado2gh.auth.password import hash_password, validate_password_strength, verify_password
 from ado2gh.state.factory import create_state_db
 
@@ -24,12 +24,40 @@ def _db() -> Any:
 
 
 def _user_from_row(row: dict) -> PlatformUser:
+    status_raw = row.get("status") or PlatformUserStatus.ACTIVE.value
     return PlatformUser(
         id=row["id"],
         username=row["username"],
         role=PlatformRole(row["role"]),
         display_name=row.get("display_name") or row["username"],
     )
+
+
+def _user_status(row: dict) -> PlatformUserStatus:
+    raw = row.get("status") or PlatformUserStatus.ACTIVE.value
+    try:
+        return PlatformUserStatus(raw)
+    except ValueError:
+        return PlatformUserStatus.ACTIVE
+
+
+def _user_public(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "role": row["role"],
+        "display_name": row.get("display_name") or row["username"],
+        "status": _user_status(row).value,
+        "created_at": row.get("created_at"),
+    }
+
+
+def _ensure_user_can_authenticate(row: dict) -> None:
+    status = _user_status(row)
+    if status == PlatformUserStatus.PENDING_APPROVAL:
+        raise ValueError("account_pending_approval")
+    if status == PlatformUserStatus.DISABLED:
+        raise ValueError("account_disabled")
 
 
 def permissions_for(role: PlatformRole) -> dict[str, bool]:
@@ -82,6 +110,7 @@ class AuthService:
             role=PlatformRole.ADMIN.value,
             display_name=display_name or username,
             created_at=now,
+            status=PlatformUserStatus.ACTIVE.value,
         )
         user = PlatformUser(user_id, username.strip().lower(), PlatformRole.ADMIN, display_name or username)
         session = self._create_session(user)
@@ -90,7 +119,8 @@ class AuthService:
 
     def register_operator(
         self, username: str, password: str, display_name: str = "",
-    ) -> AuthSession:
+    ) -> dict:
+        """Create operator account pending admin approval — no session issued."""
         if self.needs_bootstrap():
             raise PermissionError("Registration not allowed before bootstrap")
         validate_password_strength(password)
@@ -106,6 +136,7 @@ class AuthService:
             role=PlatformRole.OPERATOR.value,
             display_name=display_name or username,
             created_at=now,
+            status=PlatformUserStatus.PENDING_APPROVAL.value,
         )
         from ado2gh.api.profile_governance import write_profile_audit
 
@@ -113,18 +144,20 @@ class AuthService:
             "user.registered",
             profile_id="_platform",
             actor=normalized,
-            payload={"role": PlatformRole.OPERATOR.value},
+            payload={
+                "role": PlatformRole.OPERATOR.value,
+                "status": PlatformUserStatus.PENDING_APPROVAL.value,
+            },
             db_path=os.environ.get("ADO2GH_SQLITE_PATH", "migration_state.db"),
         )
-        user = PlatformUser(
-            user_id, normalized, PlatformRole.OPERATOR, display_name or username,
-        )
-        return self._create_session(user)
+        row = self.db.get_platform_user_by_id(user_id)
+        return _user_public(row or {"id": user_id, "username": normalized, "role": "operator", "display_name": display_name or username})
 
     def login(self, username: str, password: str) -> AuthSession:
         row = self.db.get_platform_user_by_username(username.strip().lower())
         if not row or not verify_password(password, row["password_hash"]):
             raise ValueError("Invalid credentials")
+        _ensure_user_can_authenticate(row)
         user = _user_from_row(row)
         session = self._create_session(user)
         _audit_auth("user.login", user.username, {"role": user.role.value})
@@ -137,7 +170,7 @@ class AuthService:
         self.db.delete_auth_session(token)
 
     def list_users(self) -> list[dict]:
-        return self.db.list_platform_users()
+        return [_user_public(row) for row in self.db.list_platform_users()]
 
     def create_user(
         self,
@@ -166,6 +199,7 @@ class AuthService:
             role=platform_role.value,
             display_name=display_name or username,
             created_at=now,
+            status=PlatformUserStatus.ACTIVE.value,
         )
         user = PlatformUser(user_id, normalized, platform_role, display_name or username)
         _audit_auth(
@@ -174,6 +208,64 @@ class AuthService:
             {"username": normalized, "role": platform_role.value},
         )
         return user
+
+    def update_user(
+        self,
+        user_id: str,
+        *,
+        role: str | None = None,
+        status: str | None = None,
+        display_name: str | None = None,
+        actor: str = "admin",
+    ) -> dict:
+        row = self.db.get_platform_user_by_id(user_id)
+        if not row:
+            raise KeyError(user_id)
+        if role is not None:
+            if role == PlatformRole.ADMIN.value:
+                raise ValueError("Cannot promote to admin via API")
+            try:
+                PlatformRole(role)
+            except ValueError:
+                raise ValueError("Invalid role") from None
+        if status is not None:
+            try:
+                PlatformUserStatus(status)
+            except ValueError:
+                raise ValueError("Invalid status") from None
+        updated = self.db.update_platform_user(
+            user_id,
+            role=role,
+            status=status,
+            display_name=display_name,
+        )
+        if not updated:
+            raise ValueError("No changes")
+        if status in (PlatformUserStatus.DISABLED.value, PlatformUserStatus.PENDING_APPROVAL.value):
+            if hasattr(self.db, "delete_auth_sessions_for_user"):
+                self.db.delete_auth_sessions_for_user(user_id)
+        fresh = self.db.get_platform_user_by_id(user_id)
+        payload = {"user_id": user_id}
+        if role is not None:
+            payload["role"] = role
+        if status is not None:
+            payload["status"] = status
+        _audit_auth("user.updated", actor, payload)
+        return _user_public(fresh or row)
+
+    def approve_user(self, user_id: str, *, actor: str = "admin") -> dict:
+        return self.update_user(
+            user_id,
+            status=PlatformUserStatus.ACTIVE.value,
+            actor=actor,
+        )
+
+    def disable_user(self, user_id: str, *, actor: str = "admin") -> dict:
+        return self.update_user(
+            user_id,
+            status=PlatformUserStatus.DISABLED.value,
+            actor=actor,
+        )
 
     def get_session(self, token: str) -> Optional[AuthSession]:
         row = self.db.get_auth_session(token)
@@ -191,6 +283,11 @@ class AuthService:
             return None
         user_row = self.db.get_platform_user_by_id(row["user_id"])
         if not user_row:
+            return None
+        try:
+            _ensure_user_can_authenticate(user_row)
+        except ValueError:
+            self.db.delete_auth_session(token)
             return None
         user = _user_from_row(user_row)
         return AuthSession(token=token, user=user, expires_at=row["expires_at"])

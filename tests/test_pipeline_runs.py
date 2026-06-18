@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from ado2gh.api.pipeline_runner import PipelineRunStore
+from ado2gh.api.pipeline_runner import PipelineRunStore, enrich_pipeline_run_dict
 from ado2gh.core.migration_engine import MigrationEngine
 from ado2gh.models import MigrationScope, RepoConfig
 
@@ -100,3 +100,46 @@ def test_migration_engine_skips_db_writes_on_dry_run():
         engine.migrate_repo(1, repo)
 
     db.upsert_migration.assert_not_called()
+
+
+def test_enrich_pipeline_run_dict_auto_approved_for_admin_live():
+    run = PipelineRunStore.create(
+        "live-admin",
+        dry_run=False,
+        phase="poc",
+        wave_id=None,
+        started_by_username="admin",
+        started_by_display_name="Admin User",
+    )
+    run.live_approval_status = "auto_approved"
+    enriched = enrich_pipeline_run_dict(run.to_dict())
+    assert enriched["started_by_label"] == "Admin User"
+    assert enriched["approved_by_label"] == "Auto-approved"
+
+
+def test_enrich_pipeline_run_dict_operator_pending():
+    run = PipelineRunStore.create(
+        "live-op",
+        dry_run=False,
+        phase="poc",
+        wave_id=None,
+        started_by_display_name="Operator One",
+    )
+    run.live_approval_status = "pending"
+    run.status = "awaiting_approval"
+    enriched = enrich_pipeline_run_dict(run.to_dict())
+    assert enriched["started_by_label"] == "Operator One"
+    assert enriched["approved_by_label"] == "Awaiting approval"
+
+
+def test_enrich_pipeline_run_dict_dry_run_not_required():
+    run = PipelineRunStore.create(
+        "dry",
+        dry_run=True,
+        phase="poc",
+        wave_id=None,
+        started_by_display_name="Operator One",
+    )
+    run.live_approval_status = "not_required"
+    enriched = enrich_pipeline_run_dict(run.to_dict())
+    assert enriched["approved_by_label"] == "Not required (dry run)"

@@ -71,3 +71,52 @@ def test_readiness_from_inventory_rows(tmp_path):
     report = PipelineReadinessReport(db).generate()
     assert report["total_pipelines"] == 1
     assert report["pipelines"][0]["pipeline_name"] == "release-flow"
+
+
+def test_readiness_repo_migrated_when_source_repo_completed(tmp_path):
+    from ado2gh.models import MigrationStatus, RepoConfig
+
+    db = StateDB(str(tmp_path / "repo_mig.db"))
+    meta = PipelineMetadata(
+        project="Proj",
+        pipeline_id=55,
+        pipeline_name="azure-pipelines-migration",
+        pipeline_type=PipelineType.YAML,
+        repo_name="azure-pipelines",
+        complexity=PipelineComplexity.SIMPLE,
+    )
+    db.upsert_pipeline_inventory(meta)
+    db.upsert_migration(
+        1,
+        RepoConfig(
+            ado_project="Proj",
+            ado_repo="azure-pipelines",
+            gh_org="gh-org",
+            gh_repo="azure-pipelines",
+        ),
+        "repo",
+        MigrationStatus.COMPLETED,
+    )
+
+    report = PipelineReadinessReport(db).generate(
+        repo_migration_lookup=db.get_latest_repo_migrations(),
+    )
+    assert report["pipelines"][0]["migration_status"] == "repo_migrated"
+
+
+def test_get_pipelines_for_repo_matches_name_prefixes(tmp_path):
+    db = StateDB(str(tmp_path / "prefix.db"))
+    for pid, name in ((1, "azure-pipelines"), (2, "azure-pipelines-migration")):
+        db.upsert_pipeline_inventory(
+            PipelineMetadata(
+                project="Proj",
+                pipeline_id=pid,
+                pipeline_name=name,
+                pipeline_type=PipelineType.YAML,
+                repo_name="azure-pipelines" if pid == 1 else "",
+                complexity=PipelineComplexity.SIMPLE,
+            )
+        )
+
+    linked = db.get_pipelines_for_repo("Proj", "azure-pipelines")
+    assert len(linked) == 2

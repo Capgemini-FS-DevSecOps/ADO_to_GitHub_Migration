@@ -19,6 +19,8 @@ function migrationLabel(status?: string): string {
       return 'In progress';
     case 'failed':
       return 'Failed';
+    case 'repo_migrated':
+      return 'Repo migrated';
     case 'not_migrated':
       return 'Not migrated';
     default:
@@ -30,6 +32,8 @@ function migrationClass(status?: string): string {
   switch (status) {
     case 'migrated':
       return 'badge-auto';
+    case 'repo_migrated':
+      return 'badge-assisted';
     case 'in_progress':
       return 'badge-assisted';
     case 'failed':

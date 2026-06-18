@@ -1,6 +1,7 @@
 """Unit tests for tool-driven PEV session orchestrator guardrails."""
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -104,6 +105,51 @@ async def test_request_user_input_auto_resolves_with_discovery(base_session):
     assert result.get("auto_resolved") is True
     assert base_session.get("plan_phase") == "poc"
     assert base_session.get("pending_form") is None
+
+
+@pytest.mark.asyncio
+async def test_auto_resolved_phase_chains_build_plan_with_user_reply(base_session):
+    base_session["discovery_snapshot"] = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+    }
+    base_session["dry_run"] = True
+    build_plan = AsyncMock(return_value={
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "work_items": [],
+        "pipeline_steps": ["connect", "migrate_repos", "validate"],
+        "repos": ["P/r1"],
+    })
+
+    class PhaseRequestLLM(StubLLMProvider):
+        def complete(self, prompt: str, system: str | None = None) -> str:
+            return json.dumps({
+                "tool_calls": [{
+                    "name": "request_user_input",
+                    "arguments": {
+                        "reason": "missing_phase",
+                        "prompt": "Please specify the migration phase",
+                    },
+                }],
+            })
+
+    result = await process_user_message(
+        base_session,
+        "rebuild the migration plan in dry-run mode",
+        llm=PhaseRequestLLM(),
+        llm_degraded=False,
+        accel_get=AsyncMock(return_value={"repos": [], "repos_scanned": 0}),
+        build_plan=build_plan,
+        session_token=None,
+        max_iterations=2,
+    )
+
+    assert build_plan.called
+    assert base_session.get("migration_plan")
+    assert result.reply
+    assert "poc" in result.reply.lower()
+    assert result.pending_form is not None
 
 
 @pytest.mark.asyncio
@@ -251,6 +297,8 @@ def test_sync_work_items_to_tasks_preserves_pev_tasks(base_session):
     work_items = [
         {
             "id": "Proj__app:repo",
+            "repo": "Proj/app",
+            "scope": "repo",
             "label": "Proj/app — Migrate repository (git / GEI)",
             "category": "migrate_repo",
             "category_label": "Repository migration",
@@ -260,6 +308,8 @@ def test_sync_work_items_to_tasks_preserves_pev_tasks(base_session):
         },
         {
             "id": "Proj__app:secrets",
+            "repo": "Proj/app",
+            "scope": "secrets",
             "label": "Proj/app — Map secrets",
             "category": "manual_setup",
             "category_label": "Manual setup required",
@@ -268,8 +318,20 @@ def test_sync_work_items_to_tasks_preserves_pev_tasks(base_session):
             "description": "Create secrets",
         },
         {
+            "id": "Proj__other:repo",
+            "repo": "Proj/other",
+            "scope": "repo",
+            "label": "Proj/other — Migrate repository (git / GEI)",
+            "category": "migrate_repo",
+            "category_label": "Repository migration",
+            "status": "ready",
+            "blocker": "",
+            "description": "Transfer branches",
+        },
+        {
             "id": "Proj__app:wiki",
             "label": "Proj/app — wiki",
+            "scope": "wiki",
             "status": "skipped",
         },
     ]
@@ -277,9 +339,151 @@ def test_sync_work_items_to_tasks_preserves_pev_tasks(base_session):
     ids = [t["id"] for t in base_session["tasks"]]
     assert "discovery" in ids
     assert "plan" in ids
-    assert "Proj__app:repo" in ids
-    assert "Proj__app:secrets" in ids
-    assert "Proj__app:wiki" not in ids
-    blocked = next(t for t in base_session["tasks"] if t["id"] == "Proj__app:secrets")
+    assert "Proj__app:repo" not in ids
+    assert "scope:repo:migrate_repo:pending" in ids
+    repo_task = next(t for t in base_session["tasks"] if t["id"] == "scope:repo:migrate_repo:pending")
+    assert repo_task["count"] == 2
+    assert "2 repos" in repo_task["label"]
+    assert "Proj/app" not in repo_task["label"]
+    blocked = next(t for t in base_session["tasks"] if t["id"] == "scope:secrets:manual_setup:blocked")
     assert blocked["status"] == "blocked"
+    assert blocked["count"] == 1
     assert blocked["blocker"] == "Service connection 'azure-sub'"
+
+
+@pytest.mark.asyncio
+async def test_retry_after_repo_deleted_chains_scan_discovery_and_plan(base_session):
+    """Retry clears stale plan and auto-chains build after scan + discovery."""
+    base_session["migration_plan"] = {
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "repos": ["P/r1"],
+        "pipeline_steps": ["connect", "migrate", "validate"],
+    }
+    base_session["plan_approved"] = True
+    base_session["discovery_snapshot"] = {
+        "repos_scanned": 1,
+        "projects_scanned": 1,
+        "pipeline_inventory_count": 1,
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+    }
+
+    scan_result = {
+        "repos_scanned": 34,
+        "projects_scanned": 3,
+        "scanned_at": "2026-06-16T00:00:00Z",
+        "org_inventory": {"pipeline_inventory_count": 17, "total_service_connections": 5},
+        "status": "ok",
+    }
+    discovery = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+        "repos_scanned": 1,
+        "projects_scanned": 1,
+        "pipeline_inventory_count": 17,
+    }
+    plan_doc = {
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "repos": ["P/r1"],
+        "pipeline_steps": ["connect", "migrate", "validate"],
+        "narrative": "Ready to retry migration for 1 repo.",
+    }
+
+    async def mock_post(path, body, **kwargs):
+        assert "scan" in path
+        return scan_result
+
+    async def mock_get(path, **kwargs):
+        assert "discovery" in path
+        return discovery
+
+    async def mock_build(session, token, phase="poc"):
+        return plan_doc
+
+    mock_build_fn = AsyncMock(side_effect=mock_build)
+
+    class ScanDiscoveryLLM(StubLLMProvider):
+        def complete(self, prompt: str, system: str | None = None) -> str:
+            return json.dumps({
+                "thinking": "Rescanning ADO after target repo deletion.",
+                "tool_calls": [
+                    {"name": "run_profile_scan", "arguments": {}},
+                    {"name": "fetch_profile_discovery", "arguments": {}},
+                ],
+                "reply": "I'll rescan the ADO organization to update inventory data.",
+            })
+
+    result = await process_user_message(
+        base_session,
+        "Retry the migration — the repo is deleted",
+        llm=ScanDiscoveryLLM(),
+        llm_degraded=False,
+        accel_get=mock_get,
+        accel_post=mock_post,
+        build_plan=mock_build_fn,
+        session_token=None,
+        max_iterations=3,
+    )
+
+    assert mock_build_fn.called
+    assert base_session.get("migration_plan") == plan_doc
+    assert base_session.get("plan_approved") is False
+    assert base_session.get("migration_retry") is None
+    assert result.pending_form is not None
+    assert result.pending_form.get("form_id") == "plan_confirmation"
+    assert "retry" in (result.reply or "").lower()
+    assert not result.start_pev
+
+
+@pytest.mark.asyncio
+async def test_retry_with_stub_llm_chains_full_workflow(base_session):
+    base_session["migration_plan"] = {"phase": "poc", "repo_count": 1, "blocked": False}
+    base_session["plan_approved"] = True
+
+    scan_result = {
+        "repos_scanned": 2,
+        "projects_scanned": 1,
+        "org_inventory": {"pipeline_inventory_count": 3},
+        "status": "ok",
+    }
+    discovery = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+        "repos_scanned": 1,
+        "pipeline_inventory_count": 3,
+    }
+    plan_doc = {
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "repos": ["P/r1"],
+        "pipeline_steps": ["connect", "migrate", "validate"],
+    }
+
+    async def mock_post(path, body, **kwargs):
+        return scan_result
+
+    async def mock_get(path, **kwargs):
+        return discovery
+
+    async def mock_build(session, token, phase="poc"):
+        return plan_doc
+
+    mock_build_fn = AsyncMock(side_effect=mock_build)
+
+    result = await process_user_message(
+        base_session,
+        "retry migration repo deleted",
+        llm=StubLLMProvider(),
+        llm_degraded=True,
+        accel_get=mock_get,
+        accel_post=mock_post,
+        build_plan=mock_build_fn,
+        session_token=None,
+        max_iterations=6,
+    )
+
+    assert mock_build_fn.called
+    assert base_session.get("migration_plan") == plan_doc
+    assert result.pending_form is not None

@@ -23,6 +23,7 @@ from ado2gh.api.pipeline_runner import (
     MIGRATE_UI_PIPELINE_STEPS,
     PipelineRunStore,
     PipelineRunner,
+    enrich_pipeline_run_dict,
     resolve_pipeline_step_defs,
 )
 from ado2gh.api.settings_store import SettingsStore
@@ -418,8 +419,14 @@ def pipeline_readiness(req: ReadinessRequest):
     migration_lookup = {}
     if hasattr(db, "get_latest_pipeline_migrations"):
         migration_lookup = db.get_latest_pipeline_migrations()
+    repo_migration_lookup = {}
+    if hasattr(db, "get_latest_repo_migrations"):
+        repo_migration_lookup = db.get_latest_repo_migrations()
 
-    report = PipelineReadinessReport(db).generate(migration_lookup=migration_lookup)
+    report = PipelineReadinessReport(db).generate(
+        migration_lookup=migration_lookup,
+        repo_migration_lookup=repo_migration_lookup,
+    )
     return ReadinessResponse(
         auto=report.get("auto", 0),
         assisted=report.get("assisted", 0),
@@ -881,6 +888,9 @@ def _scan_response(raw: dict) -> MigrationScanResponse:
         gh_org=raw.get("gh_org", ""),
         recommendations=recs,
         project_details=raw.get("project_details", []),
+        org_inventory=raw.get("org_inventory", {}),
+        pipeline_inventory=raw.get("pipeline_inventory", {}),
+        inventory_gaps=raw.get("inventory_gaps", []),
         warnings=raw.get("warnings", []),
         status=raw.get("status", "ok"),
     )
@@ -903,28 +913,25 @@ def migration_scan_inline(req: MigrationScanRequest):
     return _scan_response(raw)
 
 
-@app.post("/v1/settings/profiles/{profile_id}/scan", response_model=MigrationScanResponse)
-def migration_scan_profile(profile_id: str, max_repos: int | None = None):
+@app.post("/v1/settings/profiles/{profile_id}/scan")
+def migration_scan_profile(
+    profile_id: str,
+    max_repos: int | None = None,
+    sync: bool = False,
+):
     p = _require_profile(profile_id, require_active=True)
     if not p.ado_org_url or not p.ado_pat:
         raise HTTPException(status_code=400, detail="Profile missing ADO credentials")
-    try:
-        from ado2gh.api.profile_discovery import resolve_gh_org
-        adv = _settings.load().advanced
-        gh_org = resolve_gh_org(p, config_path=adv.config_path)
-        raw = scan_with_credentials(
-            p.ado_org_url, p.ado_pat, gh_org=gh_org, max_repos=max_repos,
-            phase_definitions=[ph.to_dict() for ph in _settings.get_phases()],
-        )
-        if gh_org and not raw.get("gh_org"):
-            raw["gh_org"] = gh_org
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    persist_scan_results(profile_id, raw)
-    _settings.record_scan_summary(profile_id, raw)
-    from ado2gh.api.profile_discovery import sync_profile_scan_to_risk_scores
-    sync_profile_scan_to_risk_scores(profile_id, raw, config_path=adv.config_path)
-    return _scan_response(raw)
+    if sync:
+        try:
+            raw = _settings._execute_profile_scan(profile_id, max_repos=max_repos)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return _scan_response(raw)
+    job = _settings.start_profile_scan(profile_id, max_repos=max_repos)
+    if job.get("status") == "error":
+        raise HTTPException(status_code=400, detail=job.get("error", "Scan failed to start"))
+    return job
 
 
 @app.get("/v1/settings/profiles/{profile_id}/scan/status")
@@ -1265,6 +1272,13 @@ def get_profile_discovery(profile_id: str):
         repos=repos,
         recommendations=data.get("recommendations", {}) if data else {},
         project_details=data.get("project_details", []) if data else [],
+        org_inventory=data.get("org_inventory", {}) if data else {},
+        pipeline_inventory_count=(
+            (data.get("org_inventory") or {}).get("pipeline_inventory_count")
+            or (data.get("pipeline_inventory") or {}).get("inventory_count")
+            or (db.inventory_count() if hasattr(db, "inventory_count") else 0)
+        ),
+        inventory_gaps=data.get("inventory_gaps", []) if data else [],
         warnings=data.get("warnings", []) if data else [],
         status=data.get("status", "ok") if data else "empty",
     )
@@ -1305,8 +1319,11 @@ def pipeline_steps(context: str = "migrate"):
 @app.get("/v1/pipeline/runs")
 def list_pipeline_runs(limit: int = 20, offset: int = 0):
     runs, total = PipelineRunStore.list_runs(limit=limit, offset=offset)
+    db = create_state_db(_settings.load().advanced.db_path)
     return {
-        "runs": [r.to_dict() for r in runs],
+        "runs": [
+            enrich_pipeline_run_dict(r.to_dict(), db=db) for r in runs
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -1319,7 +1336,8 @@ def get_pipeline_run(run_id: str):
     run = PipelineRunStore.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    return {"run": run.to_dict()}
+    db = create_state_db(_settings.load().advanced.db_path)
+    return {"run": enrich_pipeline_run_dict(run.to_dict(), db=db)}
 
 
 @app.post("/v1/pipeline/runs/{run_id}/cancel")
@@ -1367,13 +1385,17 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
             reason_request=f"Pipeline live run: {req.name}",
             context={"run_id": run.id, "steps": step_ids},
         )
+        run.live_approval_status = "pending"
         run.status = "awaiting_approval"
         run.updated_at = run.created_at
         if run.steps:
             run.steps[0].message = "Waiting for live execution approval"
-        return PipelineRunResponse(run=run.to_dict())
+        db = create_state_db(adv.db_path)
+        return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
+    run.live_approval_status = "auto_approved" if not dry else "not_required"
     _runner.start_async(run.id, step_ids)
-    return PipelineRunResponse(run=run.to_dict())
+    db = create_state_db(adv.db_path)
+    return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
 
 
 # ── Unified live execution approval queue ────────────────────────────────────

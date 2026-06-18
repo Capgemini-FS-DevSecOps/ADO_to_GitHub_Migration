@@ -212,9 +212,17 @@ function AgentFormPanel({
   };
 
   return (
-    <div className="agent-form-panel">
+    <div
+      className={
+        form.form_id === 'plan_confirmation'
+          ? 'agent-form-panel agent-form-panel--plan'
+          : 'agent-form-panel'
+      }
+    >
       <h4>{form.title}</h4>
-      {form.description ? <p className="form-hint">{form.description}</p> : null}
+      {form.description ? (
+        <MarkdownMessage content={form.description} className="agent-form-description" />
+      ) : null}
       {localError ? <p className="oai-error">{localError}</p> : null}
       {executionPolicy?.requires_live_approval ? (
         <p className="form-hint agent-approval-hint">
@@ -250,6 +258,13 @@ function AgentFormPanel({
               disabled={executionPolicy?.requires_live_approval && field.name === 'confirm_execute'}
               checked={Boolean(values[field.name])}
               onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.checked }))}
+            />
+          ) : field.type === 'textarea' ? (
+            <textarea
+              className="oai-input agent-form-textarea"
+              rows={4}
+              value={String(values[field.name] ?? '')}
+              onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
             />
           ) : (
             <input
@@ -939,8 +954,20 @@ export function AgentChat() {
       <div className="agent-chat-messages" ref={listRef}>
         {renderMessageRows()}
         {agentSession?.pending_form ? (
-          <div className="agent-message-row agent-form-row">
-            <div className="agent-chat-bubble agent-chat-assistant agent-form-bubble">
+          <div
+            className={
+              agentSession.pending_form.form_id === 'plan_confirmation'
+                ? 'agent-message-row agent-form-row agent-form-row--full'
+                : 'agent-message-row agent-form-row'
+            }
+          >
+            <div
+              className={
+                agentSession.pending_form.form_id === 'plan_confirmation'
+                  ? 'agent-chat-bubble agent-chat-assistant agent-form-bubble agent-form-bubble--full'
+                  : 'agent-chat-bubble agent-chat-assistant agent-form-bubble'
+              }
+            >
               <AgentFormPanel
                 form={agentSession.pending_form}
                 busy={formPending || messagePending || polling}

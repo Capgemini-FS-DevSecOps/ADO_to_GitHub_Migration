@@ -36,11 +36,15 @@ def _register(client, name: str):
         "/v1/auth/register",
         json={"username": name, "password": "twelve-char-pass", "display_name": name},
     )
+    users = client.get("/v1/auth/users").json()["users"]
+    user_id = next(u["id"] for u in users if u["username"] == name)
+    client.post(f"/v1/auth/users/{user_id}/approve")
 
 
 def _login(client, username: str):
     client.post("/v1/auth/logout")
-    client.post("/v1/auth/login", json={"username": username, "password": "twelve-char-pass"})
+    r = client.post("/v1/auth/login", json={"username": username, "password": "twelve-char-pass"})
+    assert r.status_code == 200
 
 
 def _setup_payload(name: str):
@@ -63,7 +67,7 @@ def test_operator_submit_pending_admin_approves(mock_gh, mock_ado, mock_scan, cl
     _login(client, "operator")
     pending = client.post("/v1/settings/profiles/setup", json=_setup_payload("Op profile")).json()
     assert pending["status"] == "pending_approval"
-    scan = client.post(f"/v1/settings/profiles/{pending['id']}/scan")
+    scan = client.post(f"/v1/settings/profiles/{pending['id']}/scan?sync=true")
     assert scan.status_code == 403
     _login(client, "admin")
     approved = client.post(f"/v1/settings/profiles/{pending['id']}/approve").json()

@@ -7,6 +7,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ado2gh.agents.failure_analysis import (
+    analyze_pipeline_run,
+    apply_failure_analysis,
+    extract_pipeline_failures,
+)
 from ado2gh.agents.llm_provider import LLMProvider
 
 MAX_PEV_RETRIES = 3
@@ -63,8 +68,10 @@ Analyze the structured subagent output below. Respond with JSON only:
 
 Rules:
 - pass + proceed when work succeeded or dry-run completed as expected
-- retry + retry_migration when transient failures may succeed on retry (git push, rate limits, partial pipeline)
-- fail + abort when plan is blocked, approval required, or errors are not retryable
+- retry + retry_migration only when failures look transient (rate limits, timeouts, git push flakes)
+- fail + abort when errors are not retryable (target repo already exists, bad credentials, missing config, approval required)
+- Always cite concrete failure reasons from logs and repo_details in summary and issues
+- Include operator remediation in summary when aborting (what to fix before retrying)
 - Never recommend retry beyond attempt {MAX_PEV_RETRIES}
 """
 
@@ -137,7 +144,8 @@ def _executor_fallback(pipeline_run: dict[str, Any], attempt: int) -> PevReview:
         s for s in pipeline_run.get("steps", [])
         if s.get("status") == "failed"
     ]
-    if status in ("completed", "dry_run_complete") and not failed_steps:
+    analysis = analyze_pipeline_run(pipeline_run)
+    if status in ("completed", "dry_run_complete") and not failed_steps and not analysis.has_failures:
         return PevReview(
             role="executor",
             verdict="pass",
@@ -145,12 +153,19 @@ def _executor_fallback(pipeline_run: dict[str, Any], attempt: int) -> PevReview:
             next_action="proceed",
             attempt=attempt,
         )
-    issues = [s.get("message") or s.get("id", "step") for s in failed_steps[:5]]
-    retryable = status == "failed" and attempt < MAX_PEV_RETRIES
+    issues = analysis.issues[:8] if analysis.issues else [
+        s.get("message") or s.get("id", "step") for s in failed_steps[:5]
+    ]
+    retryable = analysis.should_retry and attempt < MAX_PEV_RETRIES
+    summary = analysis.operator_summary or (
+        f"Pipeline {status}" + (f" — {len(failed_steps)} step(s) failed" if failed_steps else "")
+    )
+    if not retryable and analysis.remediation_steps:
+        summary = f"{summary}\n\n{analysis.remediation_steps[0]}"
     return PevReview(
         role="executor",
         verdict="retry" if retryable else "fail",
-        summary=f"Pipeline {status}" + (f" — {len(failed_steps)} step(s) failed" if failed_steps else ""),
+        summary=summary,
         retry_recommended=retryable,
         issues=issues or [f"pipeline status: {status}"],
         next_action="retry_migration" if retryable else "abort",
@@ -186,35 +201,70 @@ def _validator_fallback(
     repo_details = result.get("repo_details") or []
     failed = [d for d in repo_details if d.get("overall") == "FAIL" or d.get("status") == "failed"]
     if vstatus == "skipped":
-        return PevReview(
-            role="validator",
-            verdict="pass",
-            summary=message,
-            next_action="proceed",
-            attempt=attempt,
-        )
+        analysis = analyze_pipeline_run(pipeline_run)
+        if not analysis.has_failures:
+            return PevReview(
+                role="validator",
+                verdict="pass",
+                summary=message,
+                next_action="proceed",
+                attempt=attempt,
+            )
     if vstatus == "completed" and not failed:
-        return PevReview(
-            role="validator",
-            verdict="pass",
-            summary=message,
-            next_action="proceed",
-            attempt=attempt,
-        )
-    issues = [
+        analysis = analyze_pipeline_run(pipeline_run)
+        if not analysis.has_failures:
+            return PevReview(
+                role="validator",
+                verdict="pass",
+                summary=message,
+                next_action="proceed",
+                attempt=attempt,
+            )
+    analysis = analyze_pipeline_run(pipeline_run)
+    issues = analysis.issues[:8] if analysis.issues else [
         d.get("primary_reason") or d.get("summary") or d.get("repo", "repo")
         for d in failed[:5]
     ]
-    retryable = bool(failed) and attempt < MAX_PEV_RETRIES
+    has_failures = bool(failed) or analysis.has_failures
+    retryable = analysis.should_retry and has_failures and attempt < MAX_PEV_RETRIES
+    summary = analysis.operator_summary or message
+    if not retryable and analysis.remediation_steps:
+        summary = f"{summary}\n\n{analysis.remediation_steps[0]}"
     return PevReview(
         role="validator",
         verdict="retry" if retryable else "fail",
-        summary=message,
+        summary=summary,
         retry_recommended=retryable,
         issues=issues or [message],
         next_action="retry_migration" if retryable else "abort",
         attempt=attempt,
     )
+
+
+def _pipeline_review_payload(pipeline_run: dict[str, Any], *, extra: dict | None = None) -> str:
+    failures = extract_pipeline_failures(pipeline_run)
+    steps_summary = [
+        {
+            "id": s.get("id"),
+            "label": s.get("label"),
+            "status": s.get("status"),
+            "message": s.get("message"),
+        }
+        for s in pipeline_run.get("steps", [])
+    ]
+    body: dict[str, Any] = {
+        "pipeline_status": pipeline_run.get("status"),
+        "steps": steps_summary,
+        "error": pipeline_run.get("error"),
+        "recent_logs": (pipeline_run.get("logs") or [])[-80:],
+        "extracted_failures": [
+            {"message": f.message, "retryable": f.retryable, "remediation": f.remediation}
+            for f in failures[:15]
+        ],
+    }
+    if extra:
+        body.update(extra)
+    return json.dumps(body, default=str)
 
 
 def review_planner_output(
@@ -250,26 +300,15 @@ def review_executor_output(
     fallback = _executor_fallback(pipeline_run, attempt)
     if llm_degraded:
         return fallback
-    steps_summary = [
-        {
-            "id": s.get("id"),
-            "label": s.get("label"),
-            "status": s.get("status"),
-            "message": s.get("message"),
-        }
-        for s in pipeline_run.get("steps", [])
-    ]
-    payload = json.dumps({
+    payload = _pipeline_review_payload(pipeline_run, extra={
         "attempt": attempt,
         "max_retries": MAX_PEV_RETRIES,
-        "pipeline_status": pipeline_run.get("status"),
-        "steps": steps_summary,
-        "error": pipeline_run.get("error"),
-    }, default=str)
+    })
     raw = llm.complete(payload, system=_review_system("executor"))
-    return _build_review(
+    review = _build_review(
         "executor", _parse_review_json(raw), attempt=attempt, fallback=fallback,
     )
+    return apply_failure_analysis(review, pipeline_run)
 
 
 def review_validator_output(
@@ -284,18 +323,18 @@ def review_validator_output(
     if llm_degraded:
         return fallback
     result = (validate_step or {}).get("result") or {}
-    payload = json.dumps({
+    payload = _pipeline_review_payload(pipeline_run, extra={
         "attempt": attempt,
         "max_retries": MAX_PEV_RETRIES,
-        "pipeline_status": pipeline_run.get("status"),
         "validate_status": (validate_step or {}).get("status"),
         "validate_message": (validate_step or {}).get("message"),
         "repo_details": (result.get("repo_details") or [])[:15],
-    }, default=str)
+    })
     raw = llm.complete(payload, system=_review_system("validator"))
-    return _build_review(
+    review = _build_review(
         "validator", _parse_review_json(raw), attempt=attempt, fallback=fallback,
     )
+    return apply_failure_analysis(review, pipeline_run)
 
 
 def should_retry_migration(review: PevReview, attempt: int) -> bool:
@@ -303,4 +342,20 @@ def should_retry_migration(review: PevReview, attempt: int) -> bool:
         attempt < MAX_PEV_RETRIES
         and review.retry_recommended
         and review.next_action == "retry_migration"
+        and review.verdict == "retry"
+    )
+
+
+def should_retry_pev(
+    executor_review: PevReview,
+    validator_review: PevReview,
+    pipeline_run: dict[str, Any],
+    attempt: int,
+) -> bool:
+    analysis = analyze_pipeline_run(pipeline_run)
+    if analysis.has_failures and not analysis.should_retry:
+        return False
+    return (
+        should_retry_migration(executor_review, attempt)
+        or should_retry_migration(validator_review, attempt)
     )

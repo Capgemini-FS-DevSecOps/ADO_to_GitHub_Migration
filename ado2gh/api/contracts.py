@@ -309,6 +309,9 @@ class MigrationScanResponse(BaseModel):
     gh_org: str = ""
     recommendations: dict[str, PhaseRecommendation] = Field(default_factory=dict)
     project_details: list[dict[str, Any]] = Field(default_factory=list)
+    org_inventory: dict[str, Any] = Field(default_factory=dict)
+    pipeline_inventory: dict[str, Any] = Field(default_factory=dict)
+    inventory_gaps: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     status: str = "ok"
 
@@ -437,6 +440,9 @@ class DiscoveryResponse(BaseModel):
     repos: list[DiscoveryRepoItem] = Field(default_factory=list)
     recommendations: dict[str, Any] = Field(default_factory=dict)
     project_details: list[dict[str, Any]] = Field(default_factory=list)
+    org_inventory: dict[str, Any] = Field(default_factory=dict)
+    pipeline_inventory_count: int = 0
+    inventory_gaps: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     status: str = "ok"
 

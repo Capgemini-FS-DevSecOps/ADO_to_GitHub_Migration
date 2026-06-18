@@ -142,6 +142,8 @@ class LiveApprovalStore:
             now,
         )
         assert updated is not None
+        if updated["scope_type"] == "pipeline_run":
+            self._stamp_pipeline_approval(updated, "approved", approver)
         assignment_id = updated.get("assignment_id")
         if assignment_id:
             try:
@@ -202,6 +204,7 @@ class LiveApprovalStore:
         if updated["scope_type"] == "agent_session":
             self._notify_agent_denied(updated["scope_id"], reason)
         elif updated["scope_type"] == "pipeline_run":
+            self._stamp_pipeline_approval(updated, "denied", approver)
             self._mark_pipeline_denied(updated["scope_id"], reason)
         write_profile_audit(
             "platform.live_execution.denied",
@@ -271,8 +274,25 @@ class LiveApprovalStore:
         run = PipelineRunStore.get(run_id)
         if run:
             run.status = "denied"
+            run.live_approval_status = "denied"
             run.error = reason
             run.updated_at = datetime.now(timezone.utc).isoformat()
+
+    def _stamp_pipeline_approval(
+        self,
+        row: dict,
+        status: str,
+        approver: PlatformUser,
+    ) -> None:
+        from ado2gh.api.pipeline_runner import PipelineRunStore
+
+        run = PipelineRunStore.get(row.get("scope_id", ""))
+        if not run:
+            return
+        run.live_approval_status = status
+        run.approved_by_username = approver.username
+        run.approved_by_display_name = approver.display_name or approver.username
+        run.updated_at = datetime.now(timezone.utc).isoformat()
 
 
 def migrate_scope_id(profile_id: str | None, wave_id: int | None, config_path: str) -> str:

@@ -18,7 +18,7 @@ def migrate_repo_detail(key: str, res: dict[str, Any]) -> dict[str, Any]:
             "category": meta.get("category", "convert_metadata"),
             "status": detail.get("status", "?"),
             "error": detail.get("error"),
-            "detail": _stringify(detail.get("detail")),
+            "detail": _scope_detail_message(scope, detail),
         })
     errors = list(res.get("errors") or [])
     for row in scope_rows:
@@ -102,6 +102,21 @@ def validation_message(results: list[dict[str, Any]]) -> str:
     if warned:
         parts.append(f"{len(warned)} warnings")
     return "Validated: " + "; ".join(parts)
+
+
+def _scope_detail_message(scope: str, detail: dict[str, Any]) -> str:
+    stats = detail.get("detail")
+    if isinstance(stats, dict):
+        if stats.get("message"):
+            return str(stats["message"])
+        if scope == "pipelines" and stats.get("pr_url"):
+            branch = stats.get("workflow_branch", "ado2gh/migrated-workflows")
+            return f"Pushed to {branch}: {stats['pr_url']}"
+        if scope == "pipelines" and stats.get("push_error"):
+            return str(stats["push_error"])
+    if detail.get("error"):
+        return str(detail["error"])
+    return _stringify(detail.get("detail"))
 
 
 def _stringify(val: Any) -> str:
