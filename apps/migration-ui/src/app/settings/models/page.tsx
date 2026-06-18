@@ -12,6 +12,7 @@ import {
   validationBadgeLabel,
   type CatalogEntry,
   type ValidationResult,
+  type LlmModelRecord,
 } from '@/lib/llmSettings';
 import { fetchSession } from '@/lib/auth';
 import { modelsAccessDeniedMessage, modelsPageAllowed } from '@/lib/permissions';
@@ -29,9 +30,9 @@ function isLikelyOllamaUrl(url: string): boolean {
 }
 
 async function listModels() {
-  const r = await fetch(`${ACCEL}/v1/settings/llm-models`, { credentials: 'include' });
+  const r = await fetch(`${ACCEL}/v1/settings/llm-models`, { credentials: 'include', cache: 'no-store' });
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return r.json() as Promise<{ models: LlmModelRecord[] }>;
 }
 
 export default function LlmModelsPage() {
@@ -161,8 +162,19 @@ export default function LlmModelsPage() {
         validation_status: validation?.status === 'passed' ? 'passed' : 'never_validated',
         validation_at: validation?.validated_at ?? null,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['llm-models-admin', 'llm-models'] });
+    onSuccess: (saved) => {
+      qc.setQueryData<{ models: LlmModelRecord[] }>(['llm-models-admin'], (old) => {
+        const models = old?.models ?? [];
+        const idx = models.findIndex((m) => m.id === saved.id);
+        if (idx >= 0) {
+          const next = [...models];
+          next[idx] = saved;
+          return { models: next };
+        }
+        return { models: [...models, saved] };
+      });
+      void qc.invalidateQueries({ queryKey: ['llm-models-admin'] });
+      void qc.invalidateQueries({ queryKey: ['llm-models'] });
       setDisplayName('');
       setApiKey('');
       setSelectedModelId('');
@@ -175,9 +187,13 @@ export default function LlmModelsPage() {
 
   const deleteMut = useMutation({
     mutationFn: (modelId: string) => deleteModel(modelId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['llm-models-admin'] });
-      qc.invalidateQueries({ queryKey: ['llm-models'] });
+    onSuccess: (_, modelId) => {
+      qc.setQueryData<{ models: LlmModelRecord[] }>(['llm-models-admin'], (old) => {
+        if (!old?.models) return old;
+        return { models: old.models.filter((m) => m.id !== modelId) };
+      });
+      void qc.invalidateQueries({ queryKey: ['llm-models-admin'] });
+      void qc.invalidateQueries({ queryKey: ['llm-models'] });
       setError('');
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'Delete failed'),
@@ -233,16 +249,7 @@ export default function LlmModelsPage() {
         For local Ollama, use Search models or Validate to discover installed models.
       </p>
       <div className="oai-card" style={{ marginBottom: 16 }}>
-        {(data?.models ?? []).map(
-          (m: {
-            id: string;
-            display_name: string;
-            provider: string;
-            catalog_label?: string;
-            model_id: string;
-            validation_status?: string;
-            validation_at?: string | null;
-          }) => (
+        {(data?.models ?? []).map((m) => (
             <div key={m.id} className="credential-meta" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <p style={{ flex: 1, margin: 0 }}>
                 <strong>{m.display_name}</strong> — {m.provider} / {m.catalog_label || m.model_id}{' '}
@@ -264,8 +271,7 @@ export default function LlmModelsPage() {
                 Delete
               </button>
             </div>
-          ),
-        )}
+          ))}
         {!data?.models?.length && (
           <p className="form-hint">No models configured — the agent chat will prompt you to add one.</p>
         )}
