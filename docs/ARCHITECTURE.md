@@ -162,8 +162,8 @@ ADO pipeline definition
         │
         ▼
 PipelineMetadataExtractor  (YAML / classic / release)
-        │
-        ▼
+     │
+     ▼
 PipelineMetadata (normalized)
         │
         ▼

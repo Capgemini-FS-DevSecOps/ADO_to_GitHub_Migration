@@ -175,7 +175,8 @@ class ApprovalRequest(BaseModel):
 
 _CHAT_SYSTEM = (
     "You are an ADO to GitHub migration assistant. "
-    "Answer questions and help plan migrations in conversation. "
+    "ONLY help with Azure DevOps to GitHub migrations — planning, discovery, execution, validation, pipelines, and secrets. "
+    "Refuse all off-topic requests (recipes, general knowledge, hacking, illegal activity). "
     "When summarizing a migration plan, list phase, repo count, and ordered steps clearly. "
     "Do not claim you executed migrations unless a pipeline run was explicitly started."
 )
@@ -1079,55 +1080,44 @@ async def create_session(req: SessionRequest, request: Request):
     }
     attach_actor_to_session(_sessions[session_id], getattr(request.state, "platform_user", None))
 
-    migrate_intent = any(
-        w in user_prompt.lower()
-        for w in ("migrate", "migration", "plan phase", "dry-run", "dry run", "execute")
-    )
-    if migrate_intent or req.execute_pev:
-        from ado2gh.agents.session_orchestrator import process_user_message
+    from ado2gh.agents.session_orchestrator import process_user_message
 
-        orch = await process_user_message(
-            _sessions[session_id],
-            user_prompt,
-            llm=llm,
-            llm_degraded=llm_degraded,
-            llm_unconfigured=llm_unconfigured,
-            accel_get=_accel_get,
-            accel_post=_accel_post,
-            build_plan=_build_migration_plan,
-            session_token=session_token,
-        )
-        if orch.start_pev or (
-            req.execute_pev
-            and can_execute_live_without_approval(_sessions[session_id])
-        ):
-            plan = await _ensure_migration_plan(_sessions[session_id], session_token)
-            if plan.get("blocked"):
-                raise HTTPException(
-                    status_code=409,
-                    detail=plan.get("block_reason", "migration_plan_blocked"),
-                )
-            started = await _try_start_pev_run(session_id, request)
-            if not started:
-                _sessions[session_id]["status"] = "awaiting_approval"
-        elif req.execute_pev and session_requires_live_approval(_sessions[session_id]):
-            _add_message(
-                session_id,
-                "assistant",
-                live_execution_block_message(_sessions[session_id]),
-                kind="message",
+    orch = await process_user_message(
+        _sessions[session_id],
+        user_prompt,
+        llm=llm,
+        llm_degraded=llm_degraded,
+        llm_unconfigured=llm_unconfigured,
+        accel_get=_accel_get,
+        accel_post=_accel_post,
+        build_plan=_build_migration_plan,
+        session_token=session_token,
+    )
+    if orch.start_pev or (
+        req.execute_pev
+        and can_execute_live_without_approval(_sessions[session_id])
+    ):
+        plan = await _ensure_migration_plan(_sessions[session_id], session_token)
+        if plan.get("blocked"):
+            raise HTTPException(
+                status_code=409,
+                detail=plan.get("block_reason", "migration_plan_blocked"),
             )
-            try:
-                await _enqueue_session_live_approval(session_id, _sessions[session_id], request)
-            except Exception:
-                pass
+        started = await _try_start_pev_run(session_id, request)
+        if not started:
             _sessions[session_id]["status"] = "awaiting_approval"
-    else:
-        llm_text = llm.complete(user_prompt, system=_CHAT_SYSTEM)
-        _sessions[session_id]["messages"] = [
-            {"role": "user", "content": user_prompt, "kind": "message", "timestamp": datetime.now(timezone.utc).isoformat()},
-            {"role": "assistant", "content": llm_text, "kind": "message", "timestamp": datetime.now(timezone.utc).isoformat()},
-        ]
+    elif req.execute_pev and session_requires_live_approval(_sessions[session_id]):
+        _add_message(
+            session_id,
+            "assistant",
+            live_execution_block_message(_sessions[session_id]),
+            kind="message",
+        )
+        try:
+            await _enqueue_session_live_approval(session_id, _sessions[session_id], request)
+        except Exception:
+            pass
+        _sessions[session_id]["status"] = "awaiting_approval"
     _audit.record(
         "session.start",
         profile_id=req.profile_id,

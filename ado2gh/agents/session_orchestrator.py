@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
+from ado2gh.agents.agent_scope import (
+    is_out_of_scope_message,
+    scope_refusal_reply,
+)
 from ado2gh.agents.live_execution_policy import (
     live_execution_block_message,
     session_requires_live_approval,
@@ -42,6 +46,7 @@ Rules:
 11. run_migration_pev starts the executor+validator pipeline; the LLM reviews each subagent phase and may retry up to 3 times.
 12. ONLY use phase values listed in session.available_phases (from discovery/settings). If the operator names a phase that is not in that list, reply with tool_calls=[] explaining the valid phases — do NOT call build_migration_plan with a guessed or default phase.
 13. When the request is ambiguous, malformed, or refers to a non-existent phase, explain what is wrong and ask for clarification instead of proceeding.
+14. REFUSE off-topic requests (recipes, general knowledge, hacking, illegal activity). Reply with tool_calls=[] and a brief refusal — never answer outside migration scope.
 
 Respond with JSON only:
 {
@@ -52,24 +57,27 @@ Respond with JSON only:
 """
 
 GENERAL_CHAT_SYSTEM = """You are the ADO→GitHub migration assistant.
-Answer general questions briefly and accurately (time, greetings, capabilities, etc.).
-You help operators plan and run Azure DevOps → GitHub migrations, but not every message is a migration request.
-If a migration plan is already waiting for review, you may remind them to use the confirmation form — do NOT rebuild plans or start execution unless asked.
-Never invent migration status or repo lists.
+ONLY discuss Azure DevOps → GitHub migration and how to use this assistant.
+Brief in-scope replies: greetings, what you can help with (discovery, planning, execution, validation).
+REFUSE all other topics — recipes, general knowledge, unrelated coding, hacking, illegal activity.
+Never invent migration status or repo lists. Never search the web or answer off-topic requests.
+If a migration plan is waiting for review, you may remind the operator to use the confirmation form.
 """
 
 INTENT_CLASSIFIER_SYSTEM = """Classify the user's message for an Azure DevOps → GitHub migration assistant.
 Return JSON only:
 {
-  "intent": "general_chat" | "migration_info" | "migration_action",
+  "intent": "out_of_scope" | "general_chat" | "migration_info" | "migration_action",
   "reason": "brief explanation"
 }
 
-- general_chat: greetings, time/date, unrelated topics, general capabilities — NOT asking about this migration
+- out_of_scope: unrelated topics (recipes, general knowledge, entertainment, hacking, illegal activity, web search for non-migration topics) — NOT migration work
+- general_chat: brief greetings or questions about what this migration assistant can do
 - migration_info: questions ABOUT the migration (status, plan summary, what will happen, tell me about, overview) — user is NOT asking to plan, scan, execute, or change configuration
 - migration_action: user wants to build/replan/execute migration, scan/discover/inventory, retry/remigrate, approve plan, or change migration settings
 
-When unsure between migration_info and migration_action, prefer migration_info if the user only wants to understand or summarize."""
+When unsure between migration_info and migration_action, prefer migration_info if the user only wants to understand or summarize.
+When the request is clearly unrelated to ADO/GitHub migration, use out_of_scope."""
 
 MIGRATION_INFO_SYSTEM = """You answer questions about the ADO→GitHub migration using ONLY the provided context.
 - Distinguish what is planned vs what has actually been executed/migrated.
@@ -343,6 +351,8 @@ def _migration_intent(user_message: str) -> bool:
 
 def _classify_user_intent_heuristic(user_message: str, session: dict[str, Any]) -> str:
     del session  # reserved for future session-aware heuristics
+    if is_out_of_scope_message(user_message):
+        return "out_of_scope"
     if _migration_action_intent(user_message):
         return "migration_action"
     if _migration_info_intent(user_message):
@@ -368,7 +378,9 @@ def _classify_user_intent(
     raw = llm.complete(prompt, system=INTENT_CLASSIFIER_SYSTEM)
     parsed = _parse_llm_json(raw)
     intent = str(parsed.get("intent", "")).lower().replace("-", "_")
-    if intent in ("general_chat", "migration_info", "migration_action"):
+    if intent in ("out_of_scope", "general_chat", "migration_info", "migration_action"):
+        if intent != "out_of_scope" and is_out_of_scope_message(user_message):
+            return "out_of_scope"
         return intent
     return _classify_user_intent_heuristic(user_message, session)
 
@@ -383,6 +395,8 @@ def _general_chat_reply(
     llm: LLMProvider,
     session: dict[str, Any],
 ) -> str:
+    if is_out_of_scope_message(user_message):
+        return scope_refusal_reply(user_message)
     raw = llm.complete(user_message, system=GENERAL_CHAT_SYSTEM)
     parsed = _parse_llm_json(raw)
     reply = (parsed.get("reply") or raw or "").strip()
@@ -1356,6 +1370,13 @@ async def process_user_message(
     user_intent = _classify_user_intent(
         user_message, session, llm, llm_degraded=llm_degraded,
     )
+
+    if user_intent == "out_of_scope" or is_out_of_scope_message(user_message):
+        result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
+        result.reply = scope_refusal_reply(user_message)
+        _append_event(session, role="assistant", content=result.reply, kind="message")
+        session["subagent"] = None
+        return result
 
     if user_intent == "general_chat":
         result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
