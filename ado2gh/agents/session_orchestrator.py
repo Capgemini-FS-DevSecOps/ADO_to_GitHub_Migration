@@ -40,6 +40,8 @@ Rules:
 9. For general questions (time, greetings, unrelated topics), reply in plain text with tool_calls=[] — never call migration tools. For migration status, use fetch_migration_status.
 10. Chain discovery → plan only until the operator confirms the plan; then run_migration_pev only after explicit execute approval (e.g. "execute", "run migration", or form confirm+execute).
 11. run_migration_pev starts the executor+validator pipeline; the LLM reviews each subagent phase and may retry up to 3 times.
+12. ONLY use phase values listed in session.available_phases (from discovery/settings). If the operator names a phase that is not in that list, reply with tool_calls=[] explaining the valid phases — do NOT call build_migration_plan with a guessed or default phase.
+13. When the request is ambiguous, malformed, or refers to a non-existent phase, explain what is wrong and ask for clarification instead of proceeding.
 
 Respond with JSON only:
 {
@@ -53,8 +55,28 @@ GENERAL_CHAT_SYSTEM = """You are the ADO→GitHub migration assistant.
 Answer general questions briefly and accurately (time, greetings, capabilities, etc.).
 You help operators plan and run Azure DevOps → GitHub migrations, but not every message is a migration request.
 If a migration plan is already waiting for review, you may remind them to use the confirmation form — do NOT rebuild plans or start execution unless asked.
-Never invent migration status — if asked about progress, say to ask for migration status explicitly.
+Never invent migration status or repo lists.
 """
+
+INTENT_CLASSIFIER_SYSTEM = """Classify the user's message for an Azure DevOps → GitHub migration assistant.
+Return JSON only:
+{
+  "intent": "general_chat" | "migration_info" | "migration_action",
+  "reason": "brief explanation"
+}
+
+- general_chat: greetings, time/date, unrelated topics, general capabilities — NOT asking about this migration
+- migration_info: questions ABOUT the migration (status, plan summary, what will happen, tell me about, overview) — user is NOT asking to plan, scan, execute, or change configuration
+- migration_action: user wants to build/replan/execute migration, scan/discover/inventory, retry/remigrate, approve plan, or change migration settings
+
+When unsure between migration_info and migration_action, prefer migration_info if the user only wants to understand or summarize."""
+
+MIGRATION_INFO_SYSTEM = """You answer questions about the ADO→GitHub migration using ONLY the provided context.
+- Distinguish what is planned vs what has actually been executed/migrated.
+- Summarize clearly: phase, repos, dry-run vs live, approval state.
+- Do NOT rebuild plans or prompt confirmation forms unless the user asked how to proceed with execution.
+- If no plan exists yet, say so and mention they can ask to build a migration plan when ready.
+- Be concise and accurate; never invent repos or counts not in context."""
 
 INTERNAL_TOOLS = {
     "fetch_profile_discovery": {
@@ -216,26 +238,144 @@ def _migration_status_intent(user_message: str) -> bool:
     return False
 
 
-def _migration_workflow_active(user_message: str) -> bool:
-    """True when the user is asking for migration planning/execution work."""
+def _migration_action_signals(user_message: str) -> bool:
     return any(
         (
-            _migration_intent(user_message),
             _user_wants_retry_migration(user_message),
             _user_wants_replan_only(user_message),
             _wants_migration_execute(user_message),
             _user_approves_plan(user_message),
             _user_requests_plan_changes(user_message),
+            _explicit_migration_action_phrases(user_message),
         )
     )
 
 
-def _direct_general_answer(user_message: str) -> str | None:
-    msg = user_message.lower().strip()
-    if any(p in msg for p in ("what time is it", "what's the time", "whats the time", "current time")):
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        return f"The current time is **{now}**."
-    return None
+def _explicit_migration_action_phrases(user_message: str) -> bool:
+    msg = user_message.lower()
+    action_phrases = (
+        "migrate ",
+        "migrating ",
+        "remigrate",
+        "re-migrate",
+        "to migrate",
+        "please migrate",
+        "migration plan",
+        "build plan",
+        "build the plan",
+        "build migration",
+        "build a migration",
+        "create a plan",
+        "make a plan",
+        "plan migration",
+        "dry-run",
+        "dry run",
+        "discover ",
+        "discovery",
+        "inventory",
+        "service connection",
+        "pipeline inventory",
+        "scan ado",
+        "scan the org",
+        "re-scan",
+        "rescan",
+        "execute",
+        "start migration",
+        "run migration",
+        "pev",
+    )
+    if any(p in msg for p in action_phrases):
+        return True
+    if "plan" in msg and any(w in msg for w in ("build", "create", "make", "poc", "pilot", "wave", "phase")):
+        return True
+    if "scan" in msg and any(w in msg for w in ("ado", "org", "profile", "inventory")):
+        return True
+    return False
+
+
+def _migration_info_intent(user_message: str) -> bool:
+    """Informational questions about migration state/plan — not requests to plan or execute."""
+    if _migration_action_signals(user_message):
+        return False
+    msg = user_message.lower()
+    info_phrases = (
+        "tell me about",
+        "tell me more",
+        "what is the migration",
+        "what's the migration",
+        "about the migration",
+        "about this migration",
+        "describe the migration",
+        "summarize the migration",
+        "summary of the migration",
+        "explain the migration",
+        "what does the plan",
+        "what's in the plan",
+        "what is the plan",
+        "current plan",
+        "migration overview",
+        "overview of the migration",
+        "how does the migration work",
+        "what will be migrated",
+        "what are we migrating",
+    )
+    if any(p in msg for p in info_phrases):
+        return True
+    if _migration_status_intent(user_message):
+        return True
+    if "migration" in msg and any(
+        w in msg
+        for w in ("tell", "about", "describe", "explain", "summarize", "overview", "what is", "what's", "how does")
+    ):
+        return True
+    return False
+
+
+def _migration_action_intent(user_message: str) -> bool:
+    """True when the user wants planning, scanning, execution, or plan changes."""
+    return _migration_action_signals(user_message)
+
+
+def _migration_intent(user_message: str) -> bool:
+    """Backward-compatible alias for migration action intent."""
+    return _migration_action_intent(user_message)
+
+
+def _classify_user_intent_heuristic(user_message: str, session: dict[str, Any]) -> str:
+    del session  # reserved for future session-aware heuristics
+    if _migration_action_intent(user_message):
+        return "migration_action"
+    if _migration_info_intent(user_message):
+        return "migration_info"
+    return "general_chat"
+
+
+def _classify_user_intent(
+    user_message: str,
+    session: dict[str, Any],
+    llm: LLMProvider,
+    *,
+    llm_degraded: bool,
+) -> str:
+    if llm_degraded:
+        return _classify_user_intent_heuristic(user_message, session)
+    context = {
+        "has_plan": bool(session.get("migration_plan")),
+        "plan_approved": bool(session.get("plan_approved")),
+        "pending_form": bool(session.get("pending_form")),
+    }
+    prompt = f"User message: {user_message!r}\n\nSession hints: {json.dumps(context)}"
+    raw = llm.complete(prompt, system=INTENT_CLASSIFIER_SYSTEM)
+    parsed = _parse_llm_json(raw)
+    intent = str(parsed.get("intent", "")).lower().replace("-", "_")
+    if intent in ("general_chat", "migration_info", "migration_action"):
+        return intent
+    return _classify_user_intent_heuristic(user_message, session)
+
+
+def _migration_workflow_active(user_message: str) -> bool:
+    """True when the user is asking for migration planning/execution work."""
+    return _migration_action_intent(user_message)
 
 
 def _general_chat_reply(
@@ -243,14 +383,6 @@ def _general_chat_reply(
     llm: LLMProvider,
     session: dict[str, Any],
 ) -> str:
-    direct = _direct_general_answer(user_message)
-    if direct:
-        if session.get("pending_form"):
-            return (
-                f"{direct}\n\n"
-                "A migration plan is still waiting for your review in the form below."
-            )
-        return direct
     raw = llm.complete(user_message, system=GENERAL_CHAT_SYSTEM)
     parsed = _parse_llm_json(raw)
     reply = (parsed.get("reply") or raw or "").strip()
@@ -259,18 +391,74 @@ def _general_chat_reply(
     return reply
 
 
-def _migration_intent(user_message: str) -> bool:
-    if _migration_status_intent(user_message):
-        return False
-    msg = user_message.lower()
-    return any(
-        w in msg
-        for w in (
-            "migrate", "migration", "plan phase", "dry-run", "dry run",
-            "execute", "pev", "discovery", "inventory", "service connection",
-            "pipeline inventory", "scan", "retry", "try again", "deleted",
+async def _migration_info_reply(
+    user_message: str,
+    session: dict[str, Any],
+    llm: LLMProvider,
+    accel_get: Callable[..., Awaitable[dict]],
+    session_token: str | None,
+    *,
+    llm_degraded: bool,
+) -> str:
+    status_result = await _tool_fetch_migration_status(accel_get, session_token)
+    plan = session.get("migration_plan") or {}
+    context = {
+        "execution": {
+            "summary": status_result.get("summary"),
+            "narrative": status_result.get("narrative"),
+            "migrated_count": status_result.get("migrated_count"),
+            "failed_count": status_result.get("failed_count"),
+        },
+        "session_plan": {
+            "exists": bool(plan),
+            "phase": plan.get("phase") or session.get("plan_phase"),
+            "repo_count": plan.get("repo_count"),
+            "dry_run": session.get("dry_run", True),
+            "plan_approved": bool(session.get("plan_approved")),
+            "blocked": plan.get("blocked"),
+            "narrative": plan.get("narrative"),
+            "repos": (plan.get("repos") or [])[:20],
+            "pipeline_steps": plan.get("pipeline_steps"),
+            "work_items_ready": plan.get("work_items_ready"),
+            "work_items_skipped": plan.get("work_items_skipped"),
+        },
+        "pending_review_form": bool(session.get("pending_form")),
+    }
+    if llm_degraded:
+        parts: list[str] = []
+        msg = user_message.lower()
+        status_only = _migration_status_intent(user_message) and not any(
+            p in msg for p in ("tell me", "about the migration", "about this migration", "overview")
         )
-    )
+        if plan and not status_only:
+            parts.append(
+                plan.get("narrative")
+                or f"Session plan: phase {context['session_plan']['phase']}, "
+                f"{context['session_plan']['repo_count'] or 0} repo(s), "
+                f"{'dry-run' if context['session_plan']['dry_run'] else 'live'}."
+            )
+        narrative = status_result.get("narrative")
+        if narrative:
+            parts.append(narrative)
+        if not parts:
+            parts.append(
+                "No migration plan has been built in this session yet. "
+                "Ask to build a migration plan when you are ready to configure a run."
+            )
+        reply = "\n\n".join(parts)
+    else:
+        raw = llm.complete(
+            f"User question: {user_message}\n\nContext:\n{json.dumps(context, indent=2, default=str)}",
+            system=MIGRATION_INFO_SYSTEM,
+        )
+        parsed = _parse_llm_json(raw)
+        reply = (parsed.get("reply") or raw or "").strip()
+    if session.get("pending_form") and "form" not in reply.lower() and "review" not in reply.lower():
+        reply += (
+            "\n\nA migration plan review form is available below if you want to "
+            "confirm or change settings before execution."
+        )
+    return reply
 
 
 def _user_wants_replan_only(user_message: str) -> bool:
@@ -319,13 +507,73 @@ def _discovery_needs_fetch(session: dict[str, Any]) -> bool:
     return False
 
 
-def _phase_from_message(user_message: str, session: dict[str, Any]) -> str:
-    phase = session.get("plan_phase", "poc")
+def _available_migration_phases(session: dict[str, Any]) -> list[str]:
+    snap = session.get("discovery_snapshot") or {}
+    recs = snap.get("recommendations") or {}
+    if recs:
+        return sorted(recs.keys())
+    from_repos = {
+        (r.get("assigned_phase") or r.get("suggested_phase") or "").strip().lower()
+        for r in (snap.get("repos") or [])
+        if r
+    }
+    from_repos.discard("")
+    if from_repos:
+        return sorted(from_repos)
+    from ado2gh.api.phase_definitions import default_phase_definitions
+
+    return [p.id for p in default_phase_definitions()]
+
+
+def _extract_requested_phase(user_message: str) -> str | None:
     msg = user_message.lower()
-    for p in ("poc", "pilot", "wave1", "wave2", "wave3"):
-        if p in msg:
-            return p
-    return phase
+    patterns = (
+        r"migrate\s+(?:the\s+)?([a-z0-9][a-z0-9_-]*)\s+phase",
+        r"for\s+(?:the\s+)?([a-z0-9][a-z0-9_-]*)\s+phase",
+        r"in\s+(?:the\s+)?([a-z0-9][a-z0-9_-]*)\s+phase",
+        r"phase\s+([a-z0-9][a-z0-9_-]*)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, msg)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _resolve_migration_phase(
+    user_message: str,
+    session: dict[str, Any],
+    *,
+    explicit_phase: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Return (phase, error_message). error_message is set when the phase is invalid."""
+    available = _available_migration_phases(session)
+    candidate = (explicit_phase or _extract_requested_phase(user_message) or "").strip().lower() or None
+    if candidate:
+        if candidate in available:
+            return candidate, None
+        listed = ", ".join(f"`{p}`" for p in available)
+        return None, (
+            f"Unknown migration phase `{candidate}`. "
+            f"Valid phases for this profile: {listed}."
+        )
+
+    msg = user_message.lower()
+    for phase in available:
+        if re.search(rf"\b{re.escape(phase)}\b", msg):
+            return phase, None
+
+    default = (session.get("plan_phase") or "poc").strip().lower()
+    if default in available:
+        return default, None
+    return (available[0] if available else "poc"), None
+
+
+def _phase_from_message(user_message: str, session: dict[str, Any]) -> str:
+    phase, err = _resolve_migration_phase(user_message, session)
+    if err:
+        return session.get("plan_phase", "poc")
+    return phase or session.get("plan_phase", "poc")
 
 
 def _wants_migration_execute(user_message: str) -> bool:
@@ -610,19 +858,29 @@ def migration_ready_reply(session: dict[str, Any]) -> str:
 
 def _stub_orchestrate(user_message: str, session: dict[str, Any]) -> dict[str, Any]:
     """Deterministic tool routing when LLM is stub/degraded."""
-    if _migration_status_intent(user_message):
-        return {
-            "thinking": "Fetching migration status from platform state.",
-            "tool_calls": [{"name": "fetch_migration_status", "arguments": {}}],
-            "reply": "",
-        }
-    if not _migration_workflow_active(user_message):
+    intent = _classify_user_intent_heuristic(user_message, session)
+    if intent == "general_chat":
         return {
             "thinking": "General question — answering without migration tools.",
             "tool_calls": [],
             "reply": "",
         }
-    if _migration_intent(user_message):
+    if intent == "migration_info":
+        return {
+            "thinking": "Informational migration question — summarizing without rebuilding plan.",
+            "tool_calls": [],
+            "reply": "",
+        }
+    if _migration_action_intent(user_message):
+        extracted = _extract_requested_phase(user_message)
+        if extracted:
+            _, phase_err = _resolve_migration_phase(user_message, session)
+            if phase_err:
+                return {
+                    "thinking": "Invalid migration phase — not proceeding.",
+                    "tool_calls": [],
+                    "reply": phase_err,
+                }
         calls = _migration_tool_calls(session, user_message)
         if not calls:
             return {
@@ -725,13 +983,25 @@ async def _tool_build_plan(
     llm: LLMProvider,
     *,
     llm_degraded: bool = False,
+    user_message: str = "",
 ) -> dict[str, Any]:
     if not session.get("discovery_snapshot"):
         return {
             "error": "discovery_required",
             "message": "Call fetch_profile_discovery before build_migration_plan.",
         }
-    phase = arguments.get("phase") or session.get("plan_phase", "poc")
+    phase_arg = arguments.get("phase")
+    phase, phase_err = _resolve_migration_phase(
+        user_message or session.get("_last_user_message", ""),
+        session,
+        explicit_phase=str(phase_arg) if phase_arg else None,
+    )
+    if phase_err:
+        return {
+            "error": "invalid_phase",
+            "message": phase_err,
+            "available_phases": _available_migration_phases(session),
+        }
     session["plan_phase"] = phase
     plan = await build_plan(session, session_token, phase=phase)
     if plan.get("work_items"):
@@ -932,7 +1202,13 @@ async def execute_tool(
         return await _tool_run_profile_scan(session, accel_post, session_token)
     if name == "build_migration_plan":
         return await _tool_build_plan(
-            session, arguments, build_plan, session_token, llm, llm_degraded=llm_degraded,
+            session,
+            arguments,
+            build_plan,
+            session_token,
+            llm,
+            llm_degraded=llm_degraded,
+            user_message=session.get("_last_user_message", ""),
         )
     if name == "run_migration_pev":
         plan = session.get("migration_plan")
@@ -1073,13 +1349,40 @@ async def process_user_message(
         session["tasks"] = _init_tasks()
 
     _append_event(session, role="user", content=user_message, kind="message")
+    session["_last_user_message"] = user_message
 
     apply_execution_mode_from_message(session, user_message)
 
-    if _migration_status_intent(user_message):
-        status_result = await _tool_fetch_migration_status(accel_get, session_token)
+    user_intent = _classify_user_intent(
+        user_message, session, llm, llm_degraded=llm_degraded,
+    )
+
+    if user_intent == "general_chat":
         result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
-        result.reply = status_result.get("narrative") or "No migration status available."
+        if llm_unconfigured:
+            from ado2gh.agents.llm_provider import NO_LLM_CONFIGURED_MESSAGE
+            result.reply = NO_LLM_CONFIGURED_MESSAGE
+        else:
+            result.reply = _general_chat_reply(user_message, llm, session)
+        _append_event(session, role="assistant", content=result.reply, kind="message")
+        session["subagent"] = None
+        return result
+
+    if user_intent == "migration_info":
+        result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
+        if llm_unconfigured:
+            from ado2gh.agents.llm_provider import NO_LLM_CONFIGURED_MESSAGE
+            result.reply = NO_LLM_CONFIGURED_MESSAGE
+        else:
+            result.reply = await _migration_info_reply(
+                user_message,
+                session,
+                llm,
+                accel_get,
+                session_token,
+                llm_degraded=llm_degraded,
+            )
+        result.pending_form = None
         _append_event(session, role="assistant", content=result.reply, kind="message")
         session["subagent"] = "validator"
         return result
@@ -1106,16 +1409,15 @@ async def process_user_message(
     ):
         session["plan_approved"] = True
 
-    if not _migration_workflow_active(user_message):
-        result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
-        if llm_unconfigured:
-            from ado2gh.agents.llm_provider import NO_LLM_CONFIGURED_MESSAGE
-            result.reply = NO_LLM_CONFIGURED_MESSAGE
-        else:
-            result.reply = _general_chat_reply(user_message, llm, session)
-        _append_event(session, role="assistant", content=result.reply, kind="message")
-        session["subagent"] = None
-        return result
+    extracted_phase = _extract_requested_phase(user_message)
+    if extracted_phase:
+        _, phase_err = _resolve_migration_phase(user_message, session)
+        if phase_err:
+            result = OrchestratorResult(tasks=session.get("tasks") or _init_tasks())
+            result.reply = phase_err
+            _append_event(session, role="assistant", content=phase_err, kind="message")
+            session["subagent"] = None
+            return result
 
     result = OrchestratorResult(tasks=session["tasks"])
     if llm_unconfigured:
@@ -1149,6 +1451,8 @@ async def process_user_message(
                 "can_approve_live_execution": bool(
                     (session.get("permissions") or {}).get("can_approve_live_execution"),
                 ),
+                "available_phases": _available_migration_phases(session),
+                "requested_phase": _extract_requested_phase(user_message),
             }
             prompt = (
                 f"User message: {orchestration_prompt}\n\n"
@@ -1160,11 +1464,6 @@ async def process_user_message(
             tool_calls = parsed.get("tool_calls") or []
             if tool_calls and not _migration_workflow_active(user_message):
                 tool_calls = []
-            if not tool_calls and _migration_intent(user_message):
-                stub = _stub_orchestrate(orchestration_prompt, session)
-                if stub.get("tool_calls"):
-                    parsed = stub
-                    tool_calls = stub["tool_calls"]
 
         thinking = parsed.get("thinking")
         if thinking:
@@ -1182,17 +1481,19 @@ async def process_user_message(
                 _append_event(session, role="assistant", content=reply, kind="message")
                 result.reply = reply
                 break
-            should_return, chain_start_pev = await _auto_chain_migration_tools(
-                session,
-                user_message,
-                result,
-                accel_get=accel_get,
-                accel_post=accel_post,
-                build_plan=build_plan,
-                session_token=session_token,
-                llm=llm,
-                llm_degraded=llm_degraded,
-            )
+            should_return, chain_start_pev = (False, False)
+            if llm_degraded:
+                should_return, chain_start_pev = await _auto_chain_migration_tools(
+                    session,
+                    user_message,
+                    result,
+                    accel_get=accel_get,
+                    accel_post=accel_post,
+                    build_plan=build_plan,
+                    session_token=session_token,
+                    llm=llm,
+                    llm_degraded=llm_degraded,
+                )
             if should_return:
                 return result
             if chain_start_pev:
@@ -1204,7 +1505,7 @@ async def process_user_message(
                     session["subagent"] = "executor"
                     result.tasks = session["tasks"]
                     return result
-            if _auto_migration_chain_step(session, user_message):
+            if llm_degraded and _auto_migration_chain_step(session, user_message):
                 orchestration_prompt = (
                     f"Original request: {user_message}\n"
                     "(auto-chained migration tools; continue if more steps are needed.)"

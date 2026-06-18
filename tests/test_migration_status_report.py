@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from ado2gh.agents.session_orchestrator import (
-    _migration_intent,
+    _migration_action_intent,
+    _migration_info_intent,
     _migration_status_intent,
     process_user_message,
 )
@@ -21,12 +22,14 @@ from ado2gh.state.db import StateDB
 
 def test_migration_status_intent_detects_which_repos_question():
     assert _migration_status_intent("Which repos have been migrated so far?")
-    assert not _migration_intent("Which repos have been migrated so far?")
+    assert _migration_info_intent("Which repos have been migrated so far?")
+    assert not _migration_action_intent("Which repos have been migrated so far?")
 
 
-def test_migration_intent_still_detects_execute():
-    assert _migration_intent("migrate live now")
+def test_migration_action_intent_detects_execute():
+    assert _migration_action_intent("migrate live now")
     assert not _migration_status_intent("migrate live now")
+    assert not _migration_info_intent("migrate live now")
 
 
 def test_status_report_empty_state(tmp_path):

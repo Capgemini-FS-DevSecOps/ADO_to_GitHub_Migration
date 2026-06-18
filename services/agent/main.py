@@ -476,16 +476,6 @@ async def _build_migration_plan(
                     phase=phase,
                     risk_score=float(r.get("total_score") or 0),
                 ))
-        if not repos:
-            for r in discovery.get("repos", [])[:100]:
-                repos.append(f"{r['project']}/{r['repo_name']}")
-                repo_configs.append(RepoConfig(
-                    ado_project=r["project"],
-                    ado_repo=r["repo_name"],
-                    gh_org=(r.get("gh_org") or gh_org or "").strip(),
-                    gh_repo=r.get("gh_repo") or r["repo_name"],
-                    phase=phase,
-                ))
     except httpx.HTTPStatusError:
         pass
 

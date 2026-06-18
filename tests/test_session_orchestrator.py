@@ -178,11 +178,12 @@ async def test_request_user_input_sets_pending_form(base_session):
 
 
 @pytest.mark.asyncio
-async def test_migration_intent_chains_with_stub_llm_fallback(base_session):
-    """Migration prompts use LLM orchestration with stub fallback when model returns non-JSON."""
+async def test_migration_intent_chains_in_degraded_mode(base_session):
+    """Deterministic tool chaining when LLM is degraded (no model configured)."""
     discovery = {
         "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
         "repos_scanned": 1,
+        "recommendations": {"poc": {"repo_count": 1}},
     }
     plan_doc = {
         "phase": "poc",
@@ -202,7 +203,7 @@ async def test_migration_intent_chains_with_stub_llm_fallback(base_session):
         base_session,
         "Plan migration for poc",
         llm=StubLLMProvider(),
-        llm_degraded=False,
+        llm_degraded=True,
         accel_get=mock_get,
         build_plan=mock_build,
         session_token=None,
@@ -564,15 +565,110 @@ async def test_general_question_does_not_run_migration_tools(base_session):
         session_token=None,
     )
 
-    assert "UTC" in (result.reply or "")
+    assert "[stub]" in (result.reply or "")
+    assert "UTC" not in (result.reply or "")
     assert not result.start_pev
     assert result.pending_form is None
     accel_get.assert_not_called()
     build_plan.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_tell_me_about_migration_does_not_build_plan_or_show_form(base_session):
+    base_session["discovery_snapshot"] = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+        "repos_scanned": 1,
+    }
+    base_session["migration_plan"] = {
+        "phase": "poc",
+        "repo_count": 1,
+        "blocked": False,
+        "narrative": "Dry-run migration plan for 1 repository in poc phase.",
+        "repos": ["P/r1"],
+    }
+
+    accel_get = AsyncMock(
+        return_value={
+            "summary": {"git_migrated_count": 0},
+            "migrated_repos": [],
+            "failed_repos": [],
+        }
+    )
+    build_plan = AsyncMock()
+
+    result = await process_user_message(
+        base_session,
+        "Tell me about the migration",
+        llm=StubLLMProvider(),
+        llm_degraded=True,
+        accel_get=accel_get,
+        build_plan=build_plan,
+        session_token=None,
+    )
+
+    assert result.pending_form is None
+    assert not result.start_pev
+    assert "Dry-run migration plan" in (result.reply or "")
+    build_plan.assert_not_called()
+    discovery_calls = [c for c in accel_get.call_args_list if "discovery" in str(c)]
+    assert not discovery_calls
+
+
+def test_migration_info_intent_detects_tell_me_about():
+    from ado2gh.agents.session_orchestrator import (
+        _migration_action_intent,
+        _migration_info_intent,
+    )
+
+    assert _migration_info_intent("Tell me about the migration")
+    assert not _migration_action_intent("Tell me about the migration")
+
+
 def test_migration_workflow_inactive_for_time_question():
     from ado2gh.agents.session_orchestrator import _migration_workflow_active
 
     assert not _migration_workflow_active("What time is it?")
+    assert not _migration_workflow_active("Tell me about the migration")
     assert _migration_workflow_active("build migration plan for poc")
+
+
+def test_invalid_phase_extracted_and_rejected():
+    from ado2gh.agents.session_orchestrator import (
+        _extract_requested_phase,
+        _resolve_migration_phase,
+    )
+
+    session = {"plan_phase": "poc", "discovery_snapshot": {"recommendations": {"poc": {}, "pilot": {}}}}
+    assert _extract_requested_phase("Migrate the nonpdsafjdeghb phase") == "nonpdsafjdeghb"
+    phase, err = _resolve_migration_phase("Migrate the nonpdsafjdeghb phase", session)
+    assert phase is None
+    assert err and "nonpdsafjdeghb" in err
+    assert "poc" in err
+
+
+@pytest.mark.asyncio
+async def test_invalid_phase_does_not_build_plan(base_session):
+    base_session["discovery_snapshot"] = {
+        "repos": [{"assigned_phase": "poc", "project": "P", "repo_name": "r1"}],
+        "recommendations": {"poc": {"repo_count": 1}, "pilot": {"repo_count": 0}},
+        "repos_scanned": 1,
+    }
+
+    accel_get = AsyncMock()
+    build_plan = AsyncMock()
+
+    result = await process_user_message(
+        base_session,
+        "Migrate the nonpdsafjdeghb phase",
+        llm=StubLLMProvider(),
+        llm_degraded=True,
+        accel_get=accel_get,
+        build_plan=build_plan,
+        session_token=None,
+    )
+
+    assert "Unknown migration phase" in (result.reply or "")
+    assert "nonpdsafjdeghb" in (result.reply or "")
+    assert result.pending_form is None
+    assert not result.start_pev
+    build_plan.assert_not_called()
