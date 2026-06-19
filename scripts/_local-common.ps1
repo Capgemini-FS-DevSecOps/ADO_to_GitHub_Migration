@@ -68,12 +68,13 @@ Fix:
 
 function Invoke-Python {
     param(
-        [hashtable]$Python,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Args
+        [Parameter(Mandatory = $true)][hashtable]$Python,
+        [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)][string[]]$PythonArgumentList
     )
-    & $Python.Exe @($Python.PrefixArgs + $Args)
+  # Pass pip/python flags as an array so PowerShell does not treat -e/-r as common parameters.
+    & $Python.Exe @($Python.PrefixArgs + $PythonArgumentList)
     if ($LASTEXITCODE -ne 0) {
-        throw "Python command failed (exit $LASTEXITCODE): $($Args -join ' ')"
+        throw "Python command failed (exit $LASTEXITCODE): $($PythonArgumentList -join ' ')"
     }
 }
 
@@ -117,9 +118,9 @@ function Install-PythonDeps {
         throw "requirements.txt not found at $req"
     }
     Write-Host "Installing Python dependencies from requirements.txt..."
-    Invoke-Python $Python -m pip install -r $req
+    Invoke-Python -Python $Python -PythonArgumentList @("-m", "pip", "install", "-r", $req)
     Write-Host "Installing ado2gh package (editable)..."
-    Invoke-Python $Python -m pip install -e ".[api]"
+    Invoke-Python -Python $Python -PythonArgumentList @("-m", "pip", "install", "-e", ".[api]")
 }
 
 function Ensure-LocalDataDir {
