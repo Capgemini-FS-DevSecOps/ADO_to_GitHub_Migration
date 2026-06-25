@@ -1583,15 +1583,16 @@ async def _gather_planner_baseline_context(
         )
 
         if accel_get and entry.get("github_org") and entry.get("github_repo"):
+            from ado2gh.agents.migration_agent.operator_input import parse_github_target_probe
+
             try:
                 gh_path = f"/v1/github/repos/{entry['github_org']}/{entry['github_repo']}"
                 gh_resp = await accel_get(gh_path, session_token=session_token)
-                entry["github_target"] = {
-                    "exists": not (isinstance(gh_resp, dict) and gh_resp.get("error")),
-                    "default_branch": (gh_resp or {}).get("default_branch") if isinstance(gh_resp, dict) else None,
-                }
+                entry["github_target"] = parse_github_target_probe(
+                    gh_resp if isinstance(gh_resp, dict) else None,
+                )
             except Exception as exc:
-                entry["github_target"] = {"exists": False, "error": str(exc)}
+                entry["github_target"] = parse_github_target_probe(error=exc)
 
         project = repo.get("project") or (repo_key.split("/", 1)[0] if "/" in repo_key else "")
         repo_name = repo.get("repo_name") or repo.get("name") or ""
@@ -3281,15 +3282,16 @@ async def _gather_validator_baseline_probes(
             continue
 
         if accel_get and entry.get("github_org") and entry.get("github_repo"):
+            from ado2gh.agents.migration_agent.operator_input import parse_github_target_probe
+
             try:
                 gh_path = f"/v1/github/repos/{entry['github_org']}/{entry['github_repo']}"
                 gh_resp = await accel_get(gh_path, session_token=session_token)
-                entry["github_target"] = {
-                    "exists": not (isinstance(gh_resp, dict) and gh_resp.get("error")),
-                    "default_branch": (gh_resp or {}).get("default_branch") if isinstance(gh_resp, dict) else None,
-                }
+                entry["github_target"] = parse_github_target_probe(
+                    gh_resp if isinstance(gh_resp, dict) else None,
+                )
             except Exception as exc:
-                entry["github_target"] = {"exists": False, "error": str(exc)}
+                entry["github_target"] = parse_github_target_probe(error=exc)
 
         project = repo_dict.get("project") or (repo_key.split("/", 1)[0] if "/" in repo_key else "")
         repo_name = repo_dict.get("repo_name") or repo_dict.get("name") or ""

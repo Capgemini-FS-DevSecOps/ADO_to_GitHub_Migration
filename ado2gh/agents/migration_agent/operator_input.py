@@ -119,6 +119,38 @@ def operator_input_from_blockers(
     )
 
 
+def _github_not_found_error(text: str) -> bool:
+    lower = (text or "").lower()
+    return "404" in lower or "not found" in lower
+
+
+def parse_github_target_probe(
+    gh_resp: dict[str, Any] | None = None,
+    *,
+    error: BaseException | str | None = None,
+) -> dict[str, Any]:
+    """Classify GitHub target probe — missing repo is expected before first migration."""
+    if isinstance(gh_resp, dict) and not gh_resp.get("error"):
+        return {
+            "exists": True,
+            "default_branch": gh_resp.get("default_branch"),
+        }
+    err_text = str(error or (gh_resp or {}).get("error") or "").strip()
+    if err_text and _github_not_found_error(err_text):
+        return {
+            "exists": False,
+            "absent_expected": True,
+            "note": "GitHub repository does not exist yet — migrate_repos will create or import it.",
+        }
+    if err_text:
+        return {"exists": False, "error": err_text}
+    return {
+        "exists": False,
+        "absent_expected": True,
+        "note": "GitHub repository does not exist yet — migrate_repos will create or import it.",
+    }
+
+
 def blockers_from_baseline_probes(
     baseline_findings: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -147,7 +179,7 @@ def blockers_from_baseline_probes(
         if isinstance(gh, dict) and entry.get("github_org") and entry.get("github_repo"):
             if gh.get("error"):
                 issues.append(f"GitHub target could not be verified: {gh['error']}")
-            elif gh.get("exists") is False:
+            elif gh.get("exists") is False and not gh.get("absent_expected"):
                 issues.append(
                     f"GitHub repository `{entry.get('github_org')}/{entry.get('github_repo')}` "
                     "does not exist yet."

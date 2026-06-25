@@ -925,26 +925,27 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
 
     synthetic_msg: str | None = None
 
-    if outcome["status"] == "operator_remediate" and outcome.get("remediation") == "run_pipeline_inventory":
-        profile_id = session.get("profile_id", "lightweight")
-        try:
-            await _accel_post(
-                f"/v1/settings/profiles/{profile_id}/scan?sync=true",
-                json={},
-                session_token=session_token,
-            )
-            discovery = await _accel_get(
-                f"/v1/settings/profiles/{profile_id}/discovery",
-                session_token=session_token,
-            )
-            session["discovery_snapshot"] = discovery
-            session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Pipeline inventory scan failed: {exc}") from exc
-        session.pop("migration_plan", None)
-        session["plan_approved"] = False
-        session.pop("plan_review_presented", None)
-        synthetic_msg = outcome["message"]
+    if outcome["status"] == "operator_remediate":
+        if outcome.get("remediation") == "run_pipeline_inventory":
+            profile_id = session.get("profile_id", "lightweight")
+            try:
+                await _accel_post(
+                    f"/v1/settings/profiles/{profile_id}/scan?sync=true",
+                    json={},
+                    session_token=session_token,
+                )
+                discovery = await _accel_get(
+                    f"/v1/settings/profiles/{profile_id}/discovery",
+                    session_token=session_token,
+                )
+                session["discovery_snapshot"] = discovery
+                session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"Pipeline inventory scan failed: {exc}") from exc
+            session.pop("migration_plan", None)
+            session["plan_approved"] = False
+            session.pop("plan_review_presented", None)
+        synthetic_msg = outcome.get("message") or outcome.get("reply", "Continue operator remediation.")
     elif outcome["status"] == "operator_input_continue":
         from ado2gh.agents.migration_agent.forms import sanitize_form, _plan_confirmation_reply
         from ado2gh.agents.migration_agent.intake import build_plan_review_form
@@ -973,7 +974,22 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
         session.pop("migration_plan", None)
         session["plan_approved"] = False
         session.pop("plan_review_presented", None)
-        synthetic_msg = outcome["message"]
+        synthetic_msg = outcome.get("message") or outcome.get("reply", "Revise the migration plan.")
+    elif outcome["status"] == "operator_input_unresolved":
+        pending = outcome.get("form") or form
+        session["pending_form"] = pending
+        reply = outcome.get("reply", "Unresolved operator input")
+
+        async def operator_input_unresolved_stream():
+            yield f"data: {json.dumps({'kind': 'message', 'role': 'assistant', 'content': reply}, default=str)}\n\n"
+            yield f"data: {json.dumps({'kind': 'form_request', 'content': pending.get('title', ''), 'meta': pending}, default=str)}\n\n"
+            yield f"data: {json.dumps({'kind': '__done__', 'reply': reply, 'pending_form': pending}, default=str)}\n\n"
+
+        return StreamingResponse(
+            operator_input_unresolved_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
     elif outcome["status"] == "plan_unconfirmed":
         pending = outcome["form"]
         session["pending_form"] = pending
@@ -1028,7 +1044,7 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
             f"{session.get('plan_repository_id', '')}."
         )
     elif outcome["status"] == "plan_revise":
-        synthetic_msg = outcome["message"]
+        synthetic_msg = outcome.get("message") or outcome.get("reply", "Revise the migration plan.")
     elif outcome["status"] == "inventory_gaps":
         from ado2gh.api.migration_work_plan import apply_operator_secret_mappings, plan_narrative_from_work_items
         from ado2gh.agents.migration_agent.intake import build_plan_review_form
@@ -1074,7 +1090,12 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
     elif synthetic_msg is None:
-        synthetic_msg = outcome["message"]
+        synthetic_msg = outcome.get("message") or outcome.get("reply")
+        if not synthetic_msg:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unhandled form outcome status: {outcome.get('status')}",
+            )
 
     session["status"] = "idle"
     session["pending_clarification"] = None

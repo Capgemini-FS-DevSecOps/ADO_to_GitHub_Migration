@@ -55,6 +55,25 @@ def test_assess_operator_input_prefers_validator_failures():
     assert request.source == "validator"
 
 
+def test_blockers_from_baseline_probes():
+    from ado2gh.agents.migration_agent.operator_input import (
+        blockers_from_baseline_probes,
+        parse_github_target_probe,
+    )
+
+    assert parse_github_target_probe(error="404 Not Found").get("absent_expected") is True
+    blockers = blockers_from_baseline_probes([
+        {
+            "repo": "proj/repo",
+            "github_org": "org",
+            "github_repo": "repo",
+            "ado_repo": {"id": "abc"},
+            "github_target": parse_github_target_probe(error="404 Not Found"),
+        },
+    ])
+    assert blockers == []
+
+
 def test_validator_failures_without_operator_hints_return_none():
     failures = [{"error": "transient network timeout"}]
     assert operator_input_from_validator_failures(failures, {}) is None
