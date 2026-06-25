@@ -24,7 +24,7 @@ SCOPE_META: dict[str, dict[str, str]] = {
     MigrationScope.SECRETS.value: {
         "label": "Map secrets & service connections",
         "category": "manual_setup",
-        "description": "Generate secrets manifest — values must be created in GitHub manually",
+        "description": "Map ADO service connections to GitHub secrets (agent provisions via accelerator when mappings are supplied)",
     },
     MigrationScope.BRANCH_POLICIES.value: {
         "label": "Convert branch policies",
@@ -53,9 +53,20 @@ CATEGORY_LABELS = {
 
 def apply_operator_secret_mappings(
     work_items: list[dict[str, Any]],
-    mappings: dict[str, str],
+    mappings_or_profile: str | dict[str, str],
+    settings_store: Any | None = None,
 ) -> list[dict[str, Any]]:
     """Mark secrets work items ready when operator supplied GitHub secret names."""
+    if isinstance(mappings_or_profile, dict):
+        mappings = {
+            str(k): str(v).strip()
+            for k, v in mappings_or_profile.items()
+            if str(v).strip()
+        }
+    else:
+        mappings = {}
+        if settings_store is not None:
+            mappings = settings_store.get_operator_resolutions(mappings_or_profile) or {}
     if not mappings:
         return work_items
     for wi in work_items:
@@ -140,7 +151,7 @@ def _pipeline_blockers_for_repo(db, project: str, repo_name: str) -> list[str]:
         for b in assessment.get("blockers", []):
             blockers.append(f"{pipe.pipeline_name}: {b}")
         for w in assessment.get("warnings", []):
-            if "service connection" in w.lower() or "variable group" in w.lower():
+            if "variable group" in w.lower():
                 blockers.append(f"{pipe.pipeline_name}: {w}")
     return blockers[:8]
 
@@ -205,15 +216,19 @@ def build_work_items_for_repos(
     repos: list[RepoConfig],
     *,
     enabled_scopes: list[str] | None = None,
+    enabled_scopes_per_repo: dict[str, list[str]] | None = None,
     db=None,
+    repo_pipeline_counts: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """One work item per repo × scope with human labels and blocker hints."""
     scopes_order = [s.value for s in MigrationScope]
-    enabled = set(enabled_scopes or [MigrationScope.REPO.value])
+    default_enabled = set(enabled_scopes or [MigrationScope.REPO.value])
+    per_repo = enabled_scopes_per_repo or {}
     items: list[dict[str, Any]] = []
 
     for repo in repos:
         repo_key = f"{repo.ado_project}/{repo.ado_repo}"
+        repo_enabled = set(per_repo.get(repo_key) or default_enabled)
         pipeline_blockers = _pipeline_blockers_for_repo(db, repo.ado_project, repo.ado_repo) if db else []
         secrets_blockers = _secrets_blockers(db, repo.ado_project, repo.ado_repo) if db else []
         pipeline_count = 0
@@ -222,10 +237,12 @@ def build_work_items_for_repos(
                 pipeline_count = len(db.get_pipelines_for_repo(repo.ado_project, repo.ado_repo))
             except Exception:
                 pipeline_count = 0
+        elif repo_pipeline_counts is not None:
+            pipeline_count = int(repo_pipeline_counts.get(repo_key, 0) or 0)
 
         for scope in scopes_order:
             meta = SCOPE_META.get(scope, {"label": scope, "category": "convert_metadata", "description": ""})
-            in_scope = scope in enabled
+            in_scope = scope in repo_enabled
             status, blocker = _scope_status(
                 scope,
                 enabled=in_scope,
@@ -236,7 +253,15 @@ def build_work_items_for_repos(
             items.append({
                 "id": _work_item_id(repo_key, scope),
                 "repo": repo_key,
-                "gh_target": f"{repo.gh_org}/{repo.gh_repo}",
+                "project": repo.ado_project,
+                "repo_name": repo.ado_repo,
+                "gh_target": (
+                    f"{repo.gh_org}/{repo.gh_repo}"
+                    if (repo.gh_org or "").strip()
+                    else repo.gh_repo
+                ),
+                "github_org": (repo.gh_org or "").strip(),
+                "github_repo": repo.gh_repo,
                 "scope": scope,
                 "category": meta["category"],
                 "category_label": CATEGORY_LABELS.get(meta["category"], meta["category"]),
@@ -363,6 +388,35 @@ def filter_work_items_for_scopes(
     return [wi for wi in work_items if wi.get("scope") in allowed]
 
 
+def executable_work_items(work_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Work items the executor should run now (ready only)."""
+    result: list[dict[str, Any]] = []
+    for wi in work_items:
+        if not isinstance(wi, dict):
+            continue
+        status = wi.get("status")
+        if status is None:
+            status = "ready"
+        if status == "ready":
+            result.append(wi)
+    return result
+
+
+def group_work_items_by_repo(
+    work_items: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Group work items by repo id, preserving plan order."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for wi in work_items:
+        if not isinstance(wi, dict):
+            continue
+        repo_id = str(wi.get("repo") or "").strip()
+        if not repo_id:
+            continue
+        groups.setdefault(repo_id, []).append(wi)
+    return groups
+
+
 def scope_row_enriched(scope: str, detail: dict) -> dict[str, Any]:
     meta = SCOPE_META.get(scope, {})
     return {
@@ -376,17 +430,25 @@ def scope_row_enriched(scope: str, detail: dict) -> dict[str, Any]:
 
 
 def plan_narrative_from_work_items(
-    phase: str,
+    phase: str | None,
     work_items: list[dict[str, Any]],
     *,
     dry_run: bool,
+    repository_id: str | None = None,
+    include_blocked: bool = True,
 ) -> str:
     summary = work_items_summary(work_items)
     mode = "dry-run" if dry_run else "live"
     repos = sorted({wi["repo"] for wi in work_items if wi.get("status") != "skipped"})
     blocked = [wi for wi in work_items if wi.get("status") == "blocked"]
+    if repository_id:
+        header = f"### Migration plan — `{repository_id}` ({mode})"
+    elif phase:
+        header = f"### Migration plan — phase **{phase}** ({mode})"
+    else:
+        header = f"### Migration plan ({mode})"
     lines = [
-        f"### Migration plan — phase **{phase}** ({mode})",
+        header,
         "",
         f"- **Repositories:** {len(repos)}",
         f"- **Work items:** {len(work_items)} "
@@ -394,7 +456,7 @@ def plan_narrative_from_work_items(
         f"{summary.get('skipped', 0)} out of scope)",
         "",
     ]
-    if blocked:
+    if include_blocked and blocked:
         lines.append("**Blocked (needs secrets, inventory, or manual setup):**")
         for wi in blocked[:8]:
             lines.append(f"- {wi['label']}: {wi.get('blocker', 'blocked')}")
@@ -405,13 +467,13 @@ def plan_narrative_from_work_items(
     for wi in work_items:
         if wi.get("status") == "skipped":
             continue
+        if not include_blocked and wi.get("status") == "blocked":
+            continue
         by_cat.setdefault(wi.get("category_label", "Other"), []).append(wi)
     for cat, wis in by_cat.items():
         lines.append(f"**{cat}**")
         for wi in wis[:6]:
-            icon = {"ready": "○", "blocked": "⊘", "completed": "✓", "failed": "✗"}.get(
-                wi.get("status", "ready"), "·",
-            )
-            lines.append(f"- {icon} {wi['label']}")
+            status = wi.get("status", "ready")
+            lines.append(f"- [{status}] {wi['label']}")
         lines.append("")
     return "\n".join(lines).strip()

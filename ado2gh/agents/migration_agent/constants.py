@@ -1,0 +1,17 @@
+"""Shared constants for the migration agent."""
+
+NO_LLM_CONFIGURED_MESSAGE = (
+    "No LLM models are configured. Go to **Settings → LLM models** to add, "
+    "validate, and enable a model, then start a new chat."
+)
+
+LLM_TIMEOUT_SECONDS = 60
+MAX_PEV_RETRIES = 3
+MAX_ITERATIONS = 20
+GRAPH_RECURSION_LIMIT = 40
+PLANNER_MAX_RESEARCH_ROUNDS = 10
+PLANNER_MIN_RESEARCH_TOOL_CALLS = 2
+VALIDATOR_MAX_TOOL_ROUNDS = 12
+VALIDATOR_MIN_TOOL_CALLS_PIPELINES = 4
+SSE_HEARTBEAT_INTERVAL_SECONDS = 15
+TOOL_CATALOG_VERSION = "2.0.0"

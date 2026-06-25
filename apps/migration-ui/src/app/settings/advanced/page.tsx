@@ -1,7 +1,6 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { PhaseConfigurator } from '@/components/PhaseConfigurator';
 import { fetchSettings, updateAdvanced } from '@/lib/api';
 
 export default function AdvancedSettingsPage() {
@@ -26,20 +25,10 @@ export default function AdvancedSettingsPage() {
 
   const adv = settings?.advanced;
   if (!adv) return null;
-  const phaseOptions = adv.phases ?? [];
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      <div className="oai-card form-page" style={{ marginBottom: 24 }}>
-        <h2 className="oai-subsection-title">Migration phases</h2>
-        <p style={{ fontSize: 13, marginBottom: 16 }}>
-          Default phases: POC, Pilot, Wave 1–3. Rename, add, or remove phases. Risk score ceilings
-          must increase and the last phase must reach 100.
-        </p>
-        <PhaseConfigurator profileId={settings?.active_profile_id} />
-      </div>
-
-      <div className="oai-card form-page" style={{ maxWidth: 560 }}>
+    <div style={{ maxWidth: 560 }}>
+      <div className="oai-card form-page">
         <h2 className="oai-subsection-title">Accelerator defaults</h2>
         <div className="form-grid">
           {[
@@ -60,16 +49,6 @@ export default function AdvancedSettingsPage() {
               />
             </div>
           ))}
-          <div className="form-row">
-            <label>Default phase</label>
-            <select className="oai-input" id="adv-default_phase" defaultValue={adv.default_phase}>
-              {phaseOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
           <div className="form-row form-row-checkbox">
             <label htmlFor="adv-dry_run_default">
               <input type="checkbox" id="adv-dry_run_default" defaultChecked={adv.dry_run_default} />
@@ -84,7 +63,6 @@ export default function AdvancedSettingsPage() {
           onClick={() => {
             const payload: Record<string, unknown> = {
               dry_run_default: (document.getElementById('adv-dry_run_default') as HTMLInputElement)?.checked,
-              default_phase: (document.getElementById('adv-default_phase') as HTMLSelectElement)?.value,
             };
             ['config_path', 'db_path', 'output_dir', 'migration_strategy'].forEach((k) => {
               const el = document.getElementById(`adv-${k}`) as HTMLInputElement;

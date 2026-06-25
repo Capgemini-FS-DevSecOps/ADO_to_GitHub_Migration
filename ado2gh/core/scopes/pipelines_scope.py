@@ -10,7 +10,9 @@ from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, MigrationStatus, PipelineMetadata, RepoConfig
 from ado2gh.output_dirs import output_base
 from ado2gh.pipelines.transform import PipelineTransformer
-from ado2gh.tools.push_workflows import push_repo_workflows, remote_workflow_files
+from ado2gh.pipelines.push_workflows import push_repo_workflows, remote_workflow_files
+from ado2gh.pipelines.resolve.template_resolver import make_ado_git_fetcher
+from ado2gh.pipelines.validation import WorkflowValidator
 
 DEFAULT_WORKFLOW_BRANCH = "ado2gh/migrated-workflows"
 
@@ -62,6 +64,7 @@ class PipelinesScopeHandler:
 
     def __init__(self):
         self.transformer = PipelineTransformer()
+        self.validator = WorkflowValidator()
 
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
         pipeline_parallel = kwargs.get("pipeline_parallel", ctx.pipeline_parallel)
@@ -120,13 +123,56 @@ class PipelinesScopeHandler:
         stats["output_dir"] = str(output_root)
 
         if ctx.dry_run:
+            # Dry-run: transform and validate locally without pushing
             stats["dry_run"] = True
-            stats["would_transform"] = len(pending)
-            stats["message"] = (
-                f"Dry-run: would transform {len(pending)} pipeline(s) to "
-                f"{output_root} (not pushed to GitHub)"
-            )
-            return ScopeResult(stats=stats)
+            stats["validation_mode"] = self.validator.validation_mode
+            validation_passed = 0
+            validation_failed = 0
+            validation_errors: list[str] = []
+
+            for pipe in pending:
+                try:
+                    fetch_template = make_ado_git_fetcher(
+                        ctx.ado,
+                        pipe.project,
+                        pipe.repo_id,
+                        pipe.repo_branch,
+                        pipe.yaml_path,
+                    )
+                    result = self.transformer.transform(
+                        pipe, output_root, fetch_template=fetch_template,
+                    )
+                    workflow_file = result.get("workflow_file")
+                    if workflow_file:
+                        validation = self.validator.validate(workflow_file)
+                        if validation.validation_status == "valid":
+                            validation_passed += 1
+                        else:
+                            validation_failed += 1
+                            validation_errors.extend(validation.validation_errors)
+                        stats["completed"] += 1
+                    else:
+                        stats["failed"] += 1
+                        validation_errors.append(f"No workflow file generated for {pipe.pipeline_name}")
+                except Exception as exc:
+                    stats["failed"] += 1
+                    validation_errors.append(f"{pipe.pipeline_name}: {exc}")
+
+            stats["validation_passed"] = validation_passed
+            stats["validation_failed"] = validation_failed
+            stats["validation_errors"] = validation_errors[:10]  # First 10 errors
+
+            if validation_failed > 0:
+                stats["message"] = (
+                    f"Dry-run: transformed {len(pending)} pipeline(s), "
+                    f"{validation_passed} validated, {validation_failed} failed validation"
+                )
+                return ScopeResult(stats=stats, failed=validation_failed)
+            else:
+                stats["message"] = (
+                    f"Dry-run: transformed and validated {len(pending)} pipeline(s) successfully"
+                )
+                return ScopeResult(stats=stats)
 
         remote_files = remote_workflow_files(ctx.gh, repo, workflow_branch)
         if not pending and remote_files:
@@ -206,7 +252,16 @@ class PipelinesScopeHandler:
             wave_id, pipe, repo.gh_org, repo.gh_repo, MigrationStatus.IN_PROGRESS,
         )
         try:
-            result = self.transformer.transform(pipe, output_root)
+            fetch_template = make_ado_git_fetcher(
+                ctx.ado,
+                pipe.project,
+                pipe.repo_id,
+                pipe.repo_branch,
+                pipe.yaml_path,
+            )
+            result = self.transformer.transform(
+                pipe, output_root, fetch_template=fetch_template,
+            )
             ctx.db.upsert_pipeline_migration(
                 wave_id, pipe, repo.gh_org, repo.gh_repo,
                 MigrationStatus.COMPLETED,

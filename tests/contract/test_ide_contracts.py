@@ -2,7 +2,7 @@
 from fastapi.testclient import TestClient
 
 from services.agent.main import app
-from ado2gh.agents.local.tool_catalog import TOOL_CATALOG_VERSION
+from ado2gh.agents.migration_agent.constants import TOOL_CATALOG_VERSION
 
 
 client = TestClient(app)
@@ -27,7 +27,7 @@ def test_create_session_contract():
     data = r.json()
     assert data["session_id"].startswith("ses_")
     assert data["dry_run"] is True
-    assert data["status"] in ("planning", "executing", "completed", "validating")
+    assert data["status"] in ("idle", "planning", "executing", "completed", "validating")
 
 
 def test_llm_status_contract():

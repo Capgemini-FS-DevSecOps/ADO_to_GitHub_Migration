@@ -143,7 +143,37 @@ Core tables: `migrations`, `wave_runs`, `pipeline_inventory`, `pipeline_migratio
 
 ## Agent PEV
 
-Tool-driven orchestrator: `ado2gh/agents/session_orchestrator.py`. Tools must load profile discovery before planning. UI chat in `apps/migration-ui` — no manual plan/execute buttons.
+Continuous PEV loop: Orchestrator → Planner → Executor → Validator cycle with retry logic, session persistence, and batch migration support.
+
+**Architecture:**
+- `ado2gh/agents/session_orchestrator.py` — re-exports from `orchestration/` modules
+- `ado2gh/agents/planner.py` — LLM-driven migration plan generation with dependency ordering
+- `ado2gh/agents/executor.py` — deterministic execution with guardrail integration, hybrid API routing
+- `ado2gh/agents/validator.py` — evidence-based validation with structured feedback to planner
+- `ado2gh/agents/pev_cycle.py` — continuous loop orchestrator with inter-agent messaging, batch queue, repo locking
+- `ado2gh/agents/session_store.py` — persistent session state (plans, messages, executor results, validation results)
+- `ado2gh/agents/session_state_machine.py` — state transitions (idle→thinking→planning→executing→validating→completed|failed)
+- `ado2gh/agents/rollback_tracker.py` — tracks GitHub resources created during session for rollback on cancellation
+- `ado2gh/agents/repo_lock_store.py` — repo-level locks preventing concurrent migration
+- `ado2gh/agents/metrics.py` — Prometheus-compatible metrics collector
+- `ado2gh/agents/context_window.py` — context window management for LLM sessions
+- `ado2gh/agents/resource_mapping.py` — ADO→GitHub resource type mapping
+- `ado2gh/agents/local/tool_catalog.py` — tool registry with role-based access and guardrails
+
+**Resource types supported:** repos, pipelines→workflows, Bicep→Actions, secrets, service connections, Boards→Issues, Test Plans, Artifacts→Packages, Wiki
+
+**Key behaviors:**
+- Max 20 total iterations, 3 PEV retries per cycle
+- Dry-run is default; live execution requires explicit user confirmation (CA-001)
+- Secret values masked in all messages, logs, and audit records (CA-003)
+- Destructive operations highlighted in plan summary with individual confirmation (CA-002)
+- Session state persists across server restarts; resume from last persisted state
+- Batch migration queue for 50+ repos with sequential processing and per-repo validation
+- Inter-agent communication via structured JSON messages (instruction, clarification_request, feedback, result)
+
+**Endpoints:** `/health`, `/metrics`, `/v1/sessions/{id}/plan-summary`, `/v1/sessions/{id}/confirm-live`, `/v1/sessions/{id}/cancel`
+
+UI chat in `apps/migration-ui` — no manual plan/execute buttons.
 
 ## Key Patterns
 

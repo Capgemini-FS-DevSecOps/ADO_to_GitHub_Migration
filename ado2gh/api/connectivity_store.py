@@ -82,7 +82,7 @@ class ConnectivityStore:
         payload["_secrets"] = secrets
         self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         if _connectivity_sensitive_changed(previous, profile):
-            from ado2gh.api.llm_model_store import invalidate_all_model_validations
+            from ado2gh.api.llm.llm_model_store import invalidate_all_model_validations
 
             invalidate_all_model_validations()
         return profile

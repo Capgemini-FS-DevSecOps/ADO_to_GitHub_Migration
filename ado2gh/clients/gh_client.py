@@ -7,7 +7,6 @@ from urllib.parse import quote
 import requests
 
 from ado2gh.clients.token_manager import TokenManager
-from ado2gh.infra.sessions import get_thread_session
 
 
 class GHClient:
@@ -20,6 +19,7 @@ class GHClient:
 
     @property
     def _session(self):
+        from ado2gh.core.sessions import get_thread_session
         sess = get_thread_session()
         if "Accept" not in sess.headers:
             sess.headers.update({

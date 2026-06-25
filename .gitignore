@@ -37,6 +37,11 @@ out/
 /data/*
 !/data/.gitkeep
 
+# Runtime-generated root artifacts (FR-005)
+/cloud_credentials.json
+/llm_models.json
+/ui_settings.json
+
 *.db
 *.db-wal
 *.db-shm
@@ -80,3 +85,7 @@ Desktop.ini
 !.vscode/mcp.json.example
 *.swp
 *~
+
+# Windsurf / Specify
+.windsurf/
+.specify/

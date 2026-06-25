@@ -1,131 +1,50 @@
-"""Persistent migration profiles (source ADO + target GitHub) for the accelerator UI."""
+"""Persistent migration profiles (source ADO + target GitHub) for the accelerator UI.
+
+Decomposed into:
+  - settings_models: data models (GitHubToken, MigrationProfile, AdvancedSettings, UISettings)
+  - settings_profiles: profile management mixin
+  - settings_scan: scan management mixin
+  - settings_store: core load/save/token/phase methods (this file)
+
+Re-exports all public names for backward compatibility (FR-013).
+"""
 from __future__ import annotations
 
 import json
 import os
-import threading
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 from ado2gh.api.phase_definitions import (
     PhaseDefinition,
-    default_phase_definitions,
     evaluate_coverage,
     parse_phase_definitions,
     span_phases_to_scan,
     validate_phases,
 )
-from ado2gh.models import DEFAULT_MIGRATION_STRATEGY
+from ado2gh.api.settings_models import (
+    AdvancedSettings,
+    GitHubToken,
+    MigrationProfile,
+    UISettings,
+    _settings_path,
+)
+from ado2gh.api.settings_profiles import ProfileMixin
+from ado2gh.api.settings_scan import ScanMixin
+
+__all__ = [
+    "AdvancedSettings",
+    "GitHubToken",
+    "MigrationProfile",
+    "SettingsStore",
+    "UISettings",
+]
 
 
-def _settings_path() -> Path:
-    base = os.environ.get("ADO2GH_DATA_DIR", ".")
-    return Path(base) / "ui_settings.json"
-
-
-@dataclass
-class GitHubToken:
-    id: str
-    name: str
-    token: str = ""
-    note: str = ""
-    created_at: str = ""
-    updated_at: str = ""
-    last_validated_at: str = ""
-    last_validation: dict[str, Any] = field(default_factory=dict)
-
-    def to_public(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "token": "***" if self.token else "",
-            "note": self.note,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "last_validated_at": self.last_validated_at,
-            "last_validation": self.last_validation,
-        }
-
-
-@dataclass
-class MigrationProfile:
-    """One source ADO org → target GitHub org migration configuration."""
-
-    id: str
-    name: str
-    ado_org_url: str = ""
-    ado_pat: str = ""
-    gh_org: str = ""
-    github_tokens: list[GitHubToken] = field(default_factory=list)
-    status: str = "active"
-    is_default: bool = False
-    submitted_by: str = ""
-    approval: dict[str, Any] = field(default_factory=dict)
-    created_at: str = ""
-    updated_at: str = ""
-    last_scan_at: str = ""
-    scan_summary: dict[str, Any] = field(default_factory=dict)
-
-    def to_public(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "ado_org_url": self.ado_org_url,
-            "ado_pat": "***" if self.ado_pat else "",
-            "gh_org": self.gh_org,
-            "github_tokens": [t.to_public() for t in self.github_tokens],
-            "status": self.status,
-            "is_default": self.is_default,
-            "submitted_by": self.submitted_by,
-            "approval": self.approval,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "last_scan_at": self.last_scan_at,
-            "scan_summary": self.scan_summary,
-        }
-
-
-@dataclass
-class AdvancedSettings:
-    config_path: str = "migration.yaml"
-    db_path: str = "migration_state.db"
-    dry_run_default: bool = True
-    migration_strategy: str = DEFAULT_MIGRATION_STRATEGY
-    default_phase: str = "poc"
-    repo_parallel: int = 4
-    pipeline_parallel: int = 8
-    output_dir: str = "output"
-    phases: list[dict[str, Any]] = field(default_factory=list)
-    workflow_layout_policy: str = "modular"
-    policy_rules: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class UISettings:
-    active_profile_id: Optional[str] = None
-    migration_profiles: list[MigrationProfile] = field(default_factory=list)
-    advanced: AdvancedSettings = field(default_factory=AdvancedSettings)
-
-    def to_public(self) -> dict[str, Any]:
-        adv = asdict(self.advanced)
-        if not adv.get("phases"):
-            adv["phases"] = [p.to_dict() for p in default_phase_definitions()]
-        return {
-            "active_profile_id": self.active_profile_id,
-            "migration_profiles": [p.to_public() for p in self.migration_profiles],
-            "advanced": adv,
-        }
-
-
-class SettingsStore:
-    _rescan_lock = threading.Lock()
-    _rescan_running: set[str] = set()
-    _scan_jobs: dict[str, dict[str, Any]] = {}
-
-    def __init__(self, path: Path | None = None):
+class SettingsStore(ProfileMixin, ScanMixin):
+    def __init__(self, path=None):
         self.path = path or _settings_path()
 
     def load(self) -> UISettings:
@@ -146,7 +65,6 @@ class SettingsStore:
         return settings
 
     def _normalize_defaults(self, settings: UISettings) -> None:
-        """Ensure active_profile_id points to an active profile; pick default when unset."""
         active_profiles = [
             p for p in settings.migration_profiles
             if p.status == "active"
@@ -214,9 +132,12 @@ class SettingsStore:
             active_profile_id=data.get("active_profile_id"),
             migration_profiles=profiles,
             advanced=AdvancedSettings(**{**asdict(AdvancedSettings()), **adv}),
+            operator_resolutions=data.get("operator_resolutions", {}) or {},
         )
         self._normalize_defaults(settings)
         return settings
+
+    def _migrate_v1(self, data: dict[str, Any], secrets: dict[str, Any]) -> UISettings:
         """Upgrade legacy flat profiles + global tokens."""
         token_secrets = secrets.get("_tokens", {})
         global_tokens: list[GitHubToken] = []
@@ -241,7 +162,7 @@ class SettingsStore:
                 if val:
                     prof_tokens.append(GitHubToken(
                         id=str(uuid.uuid4()),
-                        name=f"{p['name']} — {label}",
+                        name=f"{p['name']}  {label}",
                         token=val,
                         created_at=p.get("created_at", ""),
                         updated_at=p.get("updated_at", ""),
@@ -287,38 +208,23 @@ class SettingsStore:
             "active_profile_id": settings.active_profile_id,
             "migration_profiles": public_profiles,
             "advanced": asdict(settings.advanced),
+            "operator_resolutions": settings.operator_resolutions,
             "_secrets": {"profiles": profile_secrets},
         }
         self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    def get_profile(self, profile_id: str) -> Optional[MigrationProfile]:
-        return next((p for p in self.load().migration_profiles if p.id == profile_id), None)
+    def get_operator_resolutions(self, profile_id: str) -> dict[str, str]:
+        return dict(self.load().operator_resolutions.get(profile_id, {}))
 
-        adv = data.get("advanced", {})
-        settings = UISettings(
-            active_profile_id=data.get("active_profile_id"),
-            migration_profiles=profiles,
-            advanced=AdvancedSettings(**{**asdict(AdvancedSettings()), **adv}),
-        )
-        self._normalize_defaults(settings)
-        return settings
-
-    def get_active_profiles(self) -> list[MigrationProfile]:
-        return [p for p in self.load().migration_profiles if p.status == "active"]
-
-    def get_default_profile(self) -> Optional[MigrationProfile]:
-        from ado2gh.api.profile_governance import get_default_profile
-
-        return get_default_profile(self.load().migration_profiles)
-
-    def get_active_profile(self) -> Optional[MigrationProfile]:
-        s = self.load()
-        if not s.active_profile_id:
-            return self.get_default_profile()
-        prof = next((p for p in s.migration_profiles if p.id == s.active_profile_id), None)
-        if prof and prof.status == "active":
-            return prof
-        return self.get_default_profile()
+    def set_operator_resolutions(
+        self, profile_id: str, resolutions: dict[str, str],
+    ) -> dict[str, str]:
+        settings = self.load()
+        current = dict(settings.operator_resolutions.get(profile_id, {}))
+        current.update(resolutions or {})
+        settings.operator_resolutions[profile_id] = current
+        self.save(settings)
+        return current
 
     def apply_to_process_env(self, profile: MigrationProfile | None = None) -> None:
         p = profile or self.get_active_profile()
@@ -340,243 +246,6 @@ class SettingsStore:
                 continue
             env_key = "GH_TOKEN" if i == 0 else f"GH_TOKEN_{i + 1}"
             os.environ[env_key] = tok.token
-
-    def setup_profile(
-        self,
-        data: dict[str, Any],
-        *,
-        role: str = "admin",
-        submitted_by: str = "",
-    ) -> MigrationProfile:
-        """Atomically create profile with source, target, and initial GitHub token."""
-        from ado2gh.auth.models import PlatformRole
-
-        settings = self.load()
-        now = datetime.now(timezone.utc).isoformat()
-        tok = GitHubToken(
-            id=str(uuid.uuid4()),
-            name=data.get("github_token_name", "Primary"),
-            token=data.get("github_token", ""),
-            created_at=now,
-            updated_at=now,
-        )
-        active_count = len([p for p in settings.migration_profiles if p.status == "active"])
-        is_admin = role == PlatformRole.ADMIN.value
-        status = "active" if is_admin else "pending_approval"
-        if not is_admin and active_count == 0:
-            raise ValueError("operator_submit_blocked")
-
-        prof = MigrationProfile(
-            id=str(uuid.uuid4()),
-            name=data["name"],
-            ado_org_url=data.get("ado_org_url", ""),
-            ado_pat=data.get("ado_pat", ""),
-            gh_org=data.get("gh_org", ""),
-            github_tokens=[tok] if tok.token else [],
-            status=status,
-            is_default=is_admin and active_count == 0,
-            submitted_by=submitted_by if not is_admin else "",
-            approval={},
-            created_at=now,
-            updated_at=now,
-        )
-        settings.migration_profiles.append(prof)
-        if is_admin:
-            if not settings.active_profile_id or active_count == 0:
-                settings.active_profile_id = prof.id
-            if active_count == 0:
-                prof.is_default = True
-        self.save(settings)
-        return prof
-
-    def record_scan_summary(self, profile_id: str, scan: dict[str, Any]) -> MigrationProfile:
-        settings = self.load()
-        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if not prof:
-            raise KeyError(profile_id)
-        prof.last_scan_at = scan.get("scanned_at", datetime.now(timezone.utc).isoformat())
-        prof.scan_summary = {
-            "projects_scanned": scan.get("projects_scanned", 0),
-            "repos_scanned": scan.get("repos_scanned", 0),
-            "recommendations": {
-                phase: {
-                    "repo_count": bucket.get("repo_count", 0),
-                    "risk_min": bucket.get("risk_min", 0),
-                    "risk_max": bucket.get("risk_max", 0),
-                    "rationale": bucket.get("rationale", ""),
-                }
-                for phase, bucket in scan.get("recommendations", {}).items()
-            },
-        }
-        prof.updated_at = datetime.now(timezone.utc).isoformat()
-        self.save(settings)
-        return prof
-
-    def upsert_profile(self, data: dict[str, Any], profile_id: str | None = None) -> MigrationProfile:
-        settings = self.load()
-        now = datetime.now(timezone.utc).isoformat()
-        if profile_id:
-            existing = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-            if not existing:
-                raise KeyError(profile_id)
-            if data.get("ado_pat") and data["ado_pat"] != "***":
-                existing.ado_pat = data["ado_pat"]
-            existing.name = data.get("name", existing.name)
-            existing.ado_org_url = data.get("ado_org_url", existing.ado_org_url)
-            existing.gh_org = data.get("gh_org", existing.gh_org)
-            existing.updated_at = now
-            prof = existing
-        else:
-            prof = MigrationProfile(
-                id=str(uuid.uuid4()),
-                name=data["name"],
-                ado_org_url=data.get("ado_org_url", ""),
-                ado_pat=data.get("ado_pat", ""),
-                gh_org=data.get("gh_org", ""),
-                github_tokens=[],
-                created_at=now,
-                updated_at=now,
-            )
-            settings.migration_profiles.append(prof)
-        if not settings.active_profile_id:
-            settings.active_profile_id = prof.id
-        self.save(settings)
-        return prof
-
-    def delete_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> None:
-        from ado2gh.api.profile_governance import assert_can_delete, ProfileGovernanceError
-
-        settings = self.load()
-        try:
-            assert_can_delete(settings.migration_profiles, profile_id, new_default_profile_id)
-        except ProfileGovernanceError as exc:
-            raise ValueError(exc.code) from exc
-
-        target = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if target and target.is_default and new_default_profile_id:
-            replacement = next(
-                (p for p in settings.migration_profiles if p.id == new_default_profile_id),
-                None,
-            )
-            if replacement:
-                replacement.is_default = True
-                target.is_default = False
-
-        settings.migration_profiles = [p for p in settings.migration_profiles if p.id != profile_id]
-        if settings.active_profile_id == profile_id:
-            active = [p for p in settings.migration_profiles if p.status == "active"]
-            settings.active_profile_id = active[0].id if active else None
-        self._normalize_defaults(settings)
-        self.save(settings)
-
-    def deactivate_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> MigrationProfile:
-        from ado2gh.api.profile_governance import assert_can_delete, ProfileGovernanceError
-
-        settings = self.load()
-        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if not prof:
-            raise KeyError(profile_id)
-        if prof.status != "active":
-            return prof
-        try:
-            assert_can_delete(settings.migration_profiles, profile_id, new_default_profile_id)
-        except ProfileGovernanceError as exc:
-            raise ValueError(exc.code) from exc
-
-        if prof.is_default and new_default_profile_id:
-            replacement = next(
-                (p for p in settings.migration_profiles if p.id == new_default_profile_id),
-                None,
-            )
-            if replacement:
-                replacement.is_default = True
-                prof.is_default = False
-
-        prof.status = "inactive"
-        prof.updated_at = datetime.now(timezone.utc).isoformat()
-        self._normalize_defaults(settings)
-        self.save(settings)
-        return prof
-
-    def set_default_profile(self, profile_id: str) -> MigrationProfile:
-        settings = self.load()
-        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if not prof:
-            raise KeyError(profile_id)
-        if prof.status != "active":
-            raise ValueError("profile_not_active")
-        for p in settings.migration_profiles:
-            p.is_default = p.id == profile_id
-        prof.updated_at = datetime.now(timezone.utc).isoformat()
-        settings.active_profile_id = profile_id
-        self.save(settings)
-        return prof
-
-    def approve_profile(self, profile_id: str) -> MigrationProfile:
-        settings = self.load()
-        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if not prof:
-            raise KeyError(profile_id)
-        if prof.status != "pending_approval":
-            raise ValueError("not_pending")
-        now = datetime.now(timezone.utc).isoformat()
-        active_before = len([p for p in settings.migration_profiles if p.status == "active"])
-        prof.status = "active"
-        prof.updated_at = now
-        prof.approval = {
-            **prof.approval,
-            "approved_at": now,
-            "denied_at": None,
-            "denial_reason": None,
-        }
-        if active_before == 0:
-            prof.is_default = True
-            settings.active_profile_id = prof.id
-        self._normalize_defaults(settings)
-        self.save(settings)
-        return prof
-
-    def deny_profile(self, profile_id: str, reason: str = "") -> MigrationProfile:
-        settings = self.load()
-        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if not prof:
-            raise KeyError(profile_id)
-        if prof.status != "pending_approval":
-            raise ValueError("not_pending")
-        now = datetime.now(timezone.utc).isoformat()
-        prof.status = "denied"
-        prof.updated_at = now
-        prof.approval = {
-            **prof.approval,
-            "denied_at": now,
-            "denial_reason": reason,
-            "approved_at": None,
-        }
-        if prof.is_default:
-            prof.is_default = False
-        self._normalize_defaults(settings)
-        self.save(settings)
-        return prof
-
-    def appeal_profile(self, profile_id: str, actor: str) -> MigrationProfile:
-        settings = self.load()
-        prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
-        if not prof:
-            raise KeyError(profile_id)
-        if prof.status != "denied":
-            raise ValueError("not_denied")
-        if prof.submitted_by and prof.submitted_by != actor:
-            raise PermissionError("not_submitter")
-        now = datetime.now(timezone.utc).isoformat()
-        prof.status = "pending_approval"
-        prof.updated_at = now
-        prof.approval = {
-            **prof.approval,
-            "appealed_at": now,
-            "appeal_count": int(prof.approval.get("appeal_count", 0)) + 1,
-        }
-        self.save(settings)
-        return prof
 
     def upsert_github_token(
         self, profile_id: str, data: dict[str, Any], token_id: str | None = None,
@@ -710,7 +379,7 @@ class SettingsStore:
                 target = removal_map.get(old.id)
                 if not target or target not in new_ids:
                     raise ValueError(
-                        f"Phase {old.name} ({old.id}) has {total} assigned repo(s) — "
+                        f"Phase {old.name} ({old.id}) has {total} assigned repo(s)  "
                         "choose a target phase to move them to before removing."
                     )
                 if hasattr(db, "reassign_phase_repos"):
@@ -730,169 +399,6 @@ class SettingsStore:
                 target_profile, phases,
             )
         return payload
-
-    def profile_rescan_status(self, profile_id: str) -> dict[str, Any]:
-        with self._rescan_lock:
-            running = profile_id in self._rescan_running
-            job = dict(self._scan_jobs.get(profile_id) or {})
-        return {
-            "profile_id": profile_id,
-            "running": running,
-            "status": job.get("status", "running" if running else "idle"),
-            "error": job.get("error"),
-            "scanned_at": job.get("scanned_at"),
-            "repos_scanned": job.get("repos_scanned"),
-            "projects_scanned": job.get("projects_scanned"),
-            "service_connections": job.get("service_connections"),
-        }
-
-    def start_profile_scan(
-        self,
-        profile_id: str,
-        *,
-        max_repos: int | None = None,
-    ) -> dict[str, Any]:
-        profile = self.get_profile(profile_id)
-        if not profile:
-            return {"status": "error", "profile_id": profile_id, "error": "profile not found"}
-        if not profile.ado_org_url or not profile.ado_pat:
-            return {
-                "status": "error",
-                "profile_id": profile_id,
-                "error": "profile missing ADO credentials",
-            }
-
-        with self._rescan_lock:
-            if profile_id in self._rescan_running:
-                return {"status": "already_running", "profile_id": profile_id, "running": True}
-            self._rescan_running.add(profile_id)
-            self._scan_jobs[profile_id] = {
-                "status": "running",
-                "error": None,
-                "scanned_at": None,
-                "repos_scanned": None,
-                "projects_scanned": None,
-                "service_connections": None,
-            }
-
-        def _run() -> None:
-            try:
-                raw = self._execute_profile_scan(profile_id, max_repos=max_repos)
-                org = raw.get("org_inventory") or {}
-                self._scan_jobs[profile_id] = {
-                    "status": "completed",
-                    "error": None,
-                    "scanned_at": raw.get("scanned_at"),
-                    "repos_scanned": raw.get("repos_scanned", 0),
-                    "projects_scanned": raw.get("projects_scanned", 0),
-                    "service_connections": org.get("total_service_connections", 0),
-                }
-            except Exception as exc:
-                self._scan_jobs[profile_id] = {
-                    "status": "failed",
-                    "error": str(exc),
-                    "scanned_at": None,
-                    "repos_scanned": None,
-                    "projects_scanned": None,
-                    "service_connections": None,
-                }
-            finally:
-                with self._rescan_lock:
-                    self._rescan_running.discard(profile_id)
-
-        threading.Thread(
-            target=_run,
-            daemon=True,
-            name=f"profile-scan-{profile_id}",
-        ).start()
-        return {"status": "started", "profile_id": profile_id, "running": True}
-
-    def _execute_profile_scan(
-        self,
-        profile_id: str,
-        *,
-        max_repos: int | None = None,
-        phases: list[PhaseDefinition] | None = None,
-    ) -> dict[str, Any]:
-        from ado2gh.api.migration_scan import persist_scan_results, scan_with_credentials
-        from ado2gh.api.profile_discovery import resolve_gh_org, sync_profile_scan_to_risk_scores
-
-        profile = self.get_profile(profile_id)
-        if not profile:
-            raise KeyError(profile_id)
-        if not profile.ado_org_url or not profile.ado_pat:
-            raise ValueError("profile missing ADO credentials")
-
-        adv = self.load().advanced
-        gh_org = resolve_gh_org(profile, config_path=adv.config_path)
-        phase_defs = phases or self.get_phases()
-        raw = scan_with_credentials(
-            profile.ado_org_url,
-            profile.ado_pat,
-            gh_org=gh_org,
-            max_repos=max_repos,
-            phase_definitions=[p.to_dict() for p in phase_defs],
-            db_path=adv.db_path,
-            run_inventory=True,
-            pipeline_parallel=int(adv.pipeline_parallel or 12),
-        )
-        if gh_org and not raw.get("gh_org"):
-            raw["gh_org"] = gh_org
-        preserve = phases is None
-        persist_scan_results(
-            profile_id,
-            raw,
-            preserve_manual_assignments=preserve,
-        )
-        self.record_scan_summary(profile_id, raw)
-        sync_profile_scan_to_risk_scores(profile_id, config_path=adv.config_path)
-        return raw
-
-    def _start_rescan_after_phase_change(
-        self,
-        profile_id: str,
-        phases: list[PhaseDefinition],
-    ) -> dict[str, Any]:
-        profile = self.get_profile(profile_id)
-        if not profile:
-            return {"skipped": True, "reason": "profile not found"}
-        if not profile.ado_org_url or not profile.ado_pat:
-            return {"skipped": True, "reason": "profile missing ADO credentials"}
-
-        with self._rescan_lock:
-            if profile_id in self._rescan_running:
-                return {"status": "already_running", "profile_id": profile_id}
-            self._rescan_running.add(profile_id)
-
-        def _run() -> None:
-            try:
-                self._rescan_profile_after_phase_change(profile_id, phases)
-            finally:
-                with self._rescan_lock:
-                    self._rescan_running.discard(profile_id)
-
-        threading.Thread(target=_run, daemon=True, name=f"phase-rescan-{profile_id}").start()
-        return {"status": "started", "profile_id": profile_id}
-
-    def _rescan_profile_after_phase_change(
-        self,
-        profile_id: str,
-        phases: list[PhaseDefinition],
-    ) -> dict[str, Any]:
-        """Re-scan ADO and re-bucket repos using updated phase bands (read-only on ADO)."""
-        try:
-            raw = self._execute_profile_scan(profile_id, phases=phases)
-        except KeyError:
-            return {"skipped": True, "reason": "profile not found"}
-        except ValueError as exc:
-            return {"skipped": True, "reason": str(exc)}
-        return {
-            "profile_id": profile_id,
-            "repos_scanned": raw.get("repos_scanned", 0),
-            "projects_scanned": raw.get("projects_scanned", 0),
-            "scanned_at": raw.get("scanned_at", ""),
-            "synced": True,
-        }
 
     def update_advanced(self, data: dict[str, Any]) -> AdvancedSettings:
         settings = self.load()

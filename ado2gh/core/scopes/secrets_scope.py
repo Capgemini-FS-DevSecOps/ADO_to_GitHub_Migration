@@ -1,7 +1,15 @@
-"""Secrets mapping manifest scope."""
+"""Secrets mapping manifest scope.
+
+@deprecated SecretsScopeHandler is deprecated as of v1.0.0.
+The map_secrets functionality has been merged into the analyze_deps step
+(see FR-013 in Spec 009). This handler will be removed in v2.0.0.
+Use the analyze_deps step for dependency analysis including service connections
+and variable groups.
+"""
 from __future__ import annotations
 
 import json
+import warnings
 from typing import Any
 
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
@@ -10,7 +18,16 @@ from ado2gh.output_dirs import output_base
 
 
 class SecretsScopeHandler:
+    """@deprecated Use analyze_deps step instead. Removal in v2.0.0."""
     scope = MigrationScope.SECRETS.value
+
+    def __init__(self) -> None:
+        warnings.warn(
+            "SecretsScopeHandler is deprecated. Use analyze_deps step instead. "
+            "This will be removed in v2.0.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
         var_groups = ctx.ado.list_variable_groups(repo.ado_project)

@@ -24,6 +24,11 @@ from ado2gh.pipelines.transform.task_registry import (
     lookup_task,
 )
 from ado2gh.pipelines.transform.triggers import build_triggers
+from ado2gh.pipelines.resolve.template_resolver import (
+    TemplateFetcher,
+    apply_template_resolution_to_meta,
+)
+from ado2gh.pipelines.extractor import PipelineMetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +41,20 @@ class PipelineTransformer:
         meta: PipelineMetadata,
         output_dir: Path,
         workflow_layout: str = "modular",
+        fetch_template: Optional[TemplateFetcher] = None,
     ) -> dict[str, Any]:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         warnings: list[str] = []
         unsupported: list[str] = list(meta.unsupported_tasks)
+
+        if meta.pipeline_type == PipelineType.YAML and fetch_template:
+            warnings.extend(
+                apply_template_resolution_to_meta(
+                    meta, fetch_template, PipelineMetadataExtractor(),
+                )
+            )
 
         if meta.pipeline_type == PipelineType.YAML:
             workflow = self._build_yaml_workflow(meta, warnings, unsupported)
@@ -191,6 +204,13 @@ class PipelineTransformer:
         enabled = step.get("enabled", True)
 
         if not enabled:
+            return None
+
+        if step.get("template") and not task_name:
+            warnings.append(
+                f"Unresolved ADO template reference '{step['template']}' — "
+                f"re-run pipeline inventory or ensure template files are in the repo."
+            )
             return None
 
         gha_step: dict[str, Any] = {}

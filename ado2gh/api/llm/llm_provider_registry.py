@@ -108,7 +108,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
     ),
     "ollama": LLMProviderSpec(
         id="ollama",
-        label="Local / Ollama",
+        label="Ollama",
         kind="ollama",
         description="Self-hosted Ollama or compatible runtime",
         requires_api_key=False,

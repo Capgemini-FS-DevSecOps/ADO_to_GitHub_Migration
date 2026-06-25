@@ -764,5 +764,78 @@ h3 {
 }
 
 /* ============================================
+   DISCOVERY DETAIL LISTS
+   ============================================ */
+
+.discovery-details-group {
+  margin-top: 16px;
+}
+
+.discovery-details-group summary {
+  cursor: pointer;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.discovery-details-section {
+  margin-top: 12px;
+}
+
+.discovery-details-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--oai-primary);
+  margin-bottom: 6px;
+}
+
+.discovery-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.discovery-details-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--oai-surface);
+  border: 1px solid var(--oai-border-subtle);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.discovery-details-name {
+  color: var(--oai-text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discovery-details-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--oai-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--oai-bg-secondary);
+  border: 1px solid var(--oai-border-subtle);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.discovery-details-line {
+  font-size: 13px;
+  color: var(--oai-text-primary);
+  line-height: 1.6;
+}
+
+/* ============================================
    RESPONSIVE DESIGN — see responsive.css
    ============================================ */

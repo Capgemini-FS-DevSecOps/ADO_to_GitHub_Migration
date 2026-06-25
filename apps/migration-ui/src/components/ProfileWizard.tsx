@@ -6,20 +6,16 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ValidationResult } from '@/components/CredentialActions';
 import { CloudIcon, GithubIcon, SearchIcon } from '@/components/Icons';
-import { ScanRecommendations } from '@/components/ScanRecommendations';
 import {
-  runMigrationScan,
-  scanMigrationProfile,
   setupMigrationProfile,
   validateAdoInline,
   validateGitHubInline,
 } from '@/lib/api';
-import type { MigrationScanResult } from '@/lib/types';
 
 const STEPS = [
   { id: 'source', label: 'Source (ADO)', icon: CloudIcon },
   { id: 'target', label: 'Target (GitHub)', icon: GithubIcon },
-  { id: 'scan', label: 'Scan & Create', icon: SearchIcon },
+  { id: 'confirm', label: 'Confirm', icon: SearchIcon },
 ];
 
 type ProfileWizardMode = 'onboarding' | 'settings-admin' | 'settings-operator';
@@ -38,23 +34,13 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
   });
   const [adoValidation, setAdoValidation] = useState<{ valid: boolean; message: string } | null>(null);
   const [ghValidation, setGhValidation] = useState<{ valid: boolean; message: string } | null>(null);
-  const [scanResult, setScanResult] = useState<MigrationScanResult | null>(null);
   const [validating, setValidating] = useState(false);
-  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const setupMut = useMutation({
     mutationFn: () => setupMigrationProfile(form),
     onSuccess: async (p) => {
-      try {
-        if (p.status === 'active') {
-          await scanMigrationProfile(p.id);
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Profile created but scan failed — re-run from Discovery');
-      }
       qc.invalidateQueries({ queryKey: ['settings'] });
-      qc.invalidateQueries({ queryKey: ['discovery', p.id] });
       if (mode === 'onboarding' || p.status === 'active') {
         router.push(mode === 'onboarding' ? '/' : `/settings/profiles/${p.id}/tokens`);
       } else {
@@ -96,23 +82,6 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
     }
   };
 
-  const runScan = async () => {
-    setScanning(true);
-    setError(null);
-    try {
-      const result = await runMigrationScan({
-        ado_org_url: form.ado_org_url,
-        ado_pat: form.ado_pat,
-        gh_org: form.gh_org,
-      });
-      setScanResult(result);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Scan failed');
-    } finally {
-      setScanning(false);
-    }
-  };
-
   const goNext = async () => {
     if (step === 0) {
       if (!form.name || !form.ado_pat) {
@@ -129,10 +98,7 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
         return;
       }
       const ok = await validateGh();
-      if (ok) {
-        setStep(2);
-        if (!scanResult) runScan();
-      }
+      if (ok) setStep(2);
     }
   };
 
@@ -250,15 +216,15 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
             {ghValidation && <ValidationResult valid={ghValidation.valid} message={ghValidation.message} />}
           </div>
 
-          {/* Step 3: Scan & Create */}
+          {/* Step 3: Confirm & Create */}
           <div className="wizard-slide oai-card">
             <h3 className="wizard-slide-title">
-              <SearchIcon size={22} color="#35b8ff" /> Scan &amp; create profile
+              <SearchIcon size={22} color="#35b8ff" /> Confirm &amp; create profile
             </h3>
             <p className="form-hint">
               {mode === 'settings-operator'
                 ? 'Your profile will be submitted for admin approval before it can be used for migrations.'
-                : 'Review migration recommendations, then create the profile in one step.'}
+                : 'Review the profile details, then create it. Scanning and phase assignment happen on the Discovery tab.'}
             </p>
             <div className="wizard-review-summary">
               <p><strong>{form.name}</strong></p>
@@ -268,22 +234,10 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
               <p className="credential-meta">
                 <span className="endpoint-label">Target</span> {form.gh_org}
               </p>
+              <p className="credential-meta">
+                <span className="endpoint-label">Token label</span> {form.github_token_name}
+              </p>
             </div>
-
-            {scanning && (
-              <div className="oai-loading" style={{ padding: '1rem 0' }}>
-                <div className="oai-spinner" />
-                <p>Scanning ADO repositories…</p>
-              </div>
-            )}
-
-            {scanResult && !scanning && <ScanRecommendations scan={scanResult} />}
-
-            {!scanning && !scanResult && (
-              <button type="button" className="oai-button oai-button-secondary" onClick={runScan}>
-                Run repo scan
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -296,7 +250,7 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
             type="button"
             className="oai-button oai-button-secondary"
             onClick={() => setStep(step - 1)}
-            disabled={validating || scanning || setupMut.isPending}
+            disabled={validating || setupMut.isPending}
           >
             Back
           </button>
@@ -311,28 +265,18 @@ export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizar
             {validating ? 'Validating…' : 'Next'}
           </button>
         ) : (
-          <>
-            <button
-              type="button"
-              className="oai-button oai-button-secondary"
-              onClick={runScan}
-              disabled={scanning || setupMut.isPending}
-            >
-              {scanning ? 'Scanning…' : 'Re-scan'}
-            </button>
-            <button
-              type="button"
-              className="oai-button oai-button-primary"
-              disabled={setupMut.isPending || !adoValidation?.valid || !ghValidation?.valid}
-              onClick={() => setupMut.mutate()}
-            >
-              {setupMut.isPending
-                ? 'Creating…'
-                : mode === 'settings-operator'
-                  ? 'Submit for approval'
-                  : 'Create profile'}
-            </button>
-          </>
+          <button
+            type="button"
+            className="oai-button oai-button-primary"
+            disabled={setupMut.isPending || !adoValidation?.valid || !ghValidation?.valid}
+            onClick={() => setupMut.mutate()}
+          >
+            {setupMut.isPending
+              ? 'Creating…'
+              : mode === 'settings-operator'
+                ? 'Submit for approval'
+                : 'Create profile'}
+          </button>
         )}
       </div>
     </div>

@@ -33,14 +33,26 @@ export type BootstrapStatus = {
 
 const creds: RequestInit = { credentials: 'include' };
 
+const AUTH_CHECK_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AUTH_CHECK_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function fetchBootstrapStatus(): Promise<BootstrapStatus> {
-  const r = await fetch(`${ACCEL}/v1/auth/bootstrap-status`, { cache: 'no-store', ...creds });
+  const r = await fetchWithTimeout(`${ACCEL}/v1/auth/bootstrap-status`, { cache: 'no-store', ...creds });
   if (!r.ok) throw new Error('Auth status unavailable');
   return r.json();
 }
 
 export async function fetchSession(): Promise<AuthSession | null> {
-  const r = await fetch(`${ACCEL}/v1/auth/session`, { cache: 'no-store', ...creds });
+  const r = await fetchWithTimeout(`${ACCEL}/v1/auth/session`, { cache: 'no-store', ...creds });
   if (r.status === 401) return null;
   if (!r.ok) throw new Error('Session check failed');
   return r.json();

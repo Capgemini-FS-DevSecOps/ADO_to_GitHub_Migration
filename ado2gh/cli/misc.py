@@ -62,7 +62,7 @@ def register(cli):
     def push_workflows(config, input_file, workflows_dir, branch, base, dry_run):
         """Push locally generated workflow YAML to GitHub via branch + PR."""
         from ado2gh.core.config_loader import ConfigLoader
-        from ado2gh.tools.push_workflows import push_workflows_for_repos
+        from ado2gh.pipelines.push_workflows import push_workflows_for_repos
 
         global_cfg, waves = ConfigLoader.load(config)
         _, gh = load_clients(global_cfg)

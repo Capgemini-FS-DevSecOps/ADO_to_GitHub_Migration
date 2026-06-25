@@ -47,8 +47,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           setBlockedMessage(onboarding.blocked_message);
         }
         setReady(true);
-      } catch {
-        if (!cancelled) router.replace('/login?error=api');
+      } catch (err) {
+        if (!cancelled) {
+          const timedOut =
+            err instanceof DOMException && err.name === 'AbortError';
+          router.replace(
+            timedOut ? '/login?error=api_busy' : '/login?error=api',
+          );
+        }
       }
     })();
     return () => {

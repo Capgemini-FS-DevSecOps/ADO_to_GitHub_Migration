@@ -433,3 +433,18 @@ ado2gh report -c migration_phase.yaml --format csv -o output/final_report.csv
 ado2gh ado-cleanup -c migration_phase.yaml --dry-run
 ado2gh ado-cleanup -c migration_phase.yaml --archive
 ```
+
+---
+
+## Removed Scripts
+
+The following shell scripts were removed as they purely wrapped existing CLI commands (FR-033). Use the equivalent CLI commands directly:
+
+| Removed Script | Replacement |
+|----------------|-------------|
+| `scripts/discover.sh` | `ado2gh discover -c migration.yaml -o output/discovery` |
+| `scripts/migrate.sh` | `ado2gh phase run` + `ado2gh validate` + `ado2gh push-workflows` + `ado2gh report` |
+| `scripts/migrate-full.sh` | Same as above plus `ado2gh pipeline-readiness` + `ado2gh service-connections` + `ado2gh phase plan` |
+
+Local development helpers are now in `scripts/dev/`.
+

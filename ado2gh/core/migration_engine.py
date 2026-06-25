@@ -1,15 +1,17 @@
 """Per-repo migration engine — thin scope dispatcher."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ado2gh.clients import ADOClient, GHClient
 from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.registry import SCOPE_REGISTRY
-from ado2gh.infra.concurrency import ConcurrencyManager
+from ado2gh.core.concurrency import ConcurrencyManager
 from ado2gh.logging_config import log
 from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, MigrationScope, MigrationStatus, RepoConfig
 from ado2gh.state.db import StateDB
+
+if TYPE_CHECKING:
+    from ado2gh.clients import ADOClient, GHClient
 
 
 class MigrationEngine:
@@ -27,6 +29,7 @@ class MigrationEngine:
         concurrency: ConcurrencyManager | None = None,
         assignment_id: str | None = None,
         allowed_repo_keys: set[str] | None = None,
+        pipeline_run_id: str | None = None,
     ):
         self.cfg = global_cfg
         self.ado = ado
@@ -37,6 +40,19 @@ class MigrationEngine:
         self.concurrency = concurrency or ConcurrencyManager.from_dict(global_cfg)
         self.assignment_id = assignment_id
         self.allowed_repo_keys = allowed_repo_keys
+        self.pipeline_run_id = pipeline_run_id
+
+    def _try_clear_orphaned_in_progress(self, repo: RepoConfig) -> bool:
+        """Clear stale in_progress rows when no other pipeline run holds the repo."""
+        from ado2gh.core.migration_fr036 import clear_stale_in_progress_migrations
+
+        cleared = clear_stale_in_progress_migrations(
+            self.db,
+            repo.ado_project,
+            repo.ado_repo,
+            current_run_id=self.pipeline_run_id,
+        )
+        return cleared > 0
 
     def migrate_repo(
         self,
@@ -54,11 +70,12 @@ class MigrationEngine:
                 "errors": ["cross-cohort mutation blocked"],
             }
         if not self.dry_run and self.db.has_repo_in_progress(repo.ado_project, repo.ado_repo):
-            return {
-                "status": "failed",
-                "scopes": {},
-                "errors": ["repo already has active live migration (FR-036)"],
-            }
+            if not self._try_clear_orphaned_in_progress(repo):
+                return {
+                    "status": "failed",
+                    "scopes": {},
+                    "errors": ["repo already has active live migration (FR-036)"],
+                }
         results: dict[str, dict] = {}
         requested = repo.scopes or self.SCOPES
         ctx = ScopeContext(

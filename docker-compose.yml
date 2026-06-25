@@ -1,8 +1,78 @@
 # Development / local — SQLite (default). No Postgres required.
-# Usage: docker compose up --build
+# Lightweight mode (accelerator + agent only):  docker compose up --build
+# Full stack (accelerator + agent + redis + worker + web):
+#   docker compose --profile default up --build
 
 services:
+  accelerator:
+    build:
+      context: .
+      dockerfile: services/accelerator_api/Dockerfile
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    environment:
+      ADO2GH_STORAGE_BACKEND: sqlite
+      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_DATA_DIR: /app/data
+      ADO2GH_CONFIG: /app/migration.yaml
+      ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
+      ADO2GH_LIGHTWEIGHT_MODE: "true"
+      ADO_ORG_URL: ${ADO_ORG_URL:-}
+      ADO_PAT: ${ADO_PAT:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_REGION: ${AWS_REGION:-}
+      ADO2GH_BEDROCK_MODEL_ID: ${ADO2GH_BEDROCK_MODEL_ID:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    volumes:
+      - ./migration.yaml:/app/migration.yaml:ro
+      - ado2gh-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  agent:
+    build:
+      context: .
+      dockerfile: services/agent/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      ACCELERATOR_URL: http://accelerator:8080
+      ADO2GH_DATA_DIR: /app/data
+      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
+      ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
+      ADO2GH_LIGHTWEIGHT_MODE: "true"
+      ADO2GH_AUTH_ENABLED: "false"
+      LLM_PROVIDER: stub
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_REGION: ${AWS_REGION:-}
+      ADO2GH_BEDROCK_MODEL_ID: ${ADO2GH_BEDROCK_MODEL_ID:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+      AGENT_METRICS_ENABLED: "true"
+      AGENT_SESSION_RETENTION_DAYS: "90"
+      AGENT_MAX_ITERATIONS: "20"
+      AGENT_MAX_PEV_RETRIES: "3"
+    volumes:
+      - ado2gh-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      accelerator:
+        condition: service_healthy
+
   redis:
+    profiles: ["default"]
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -12,40 +82,8 @@ services:
       timeout: 3s
       retries: 5
 
-  accelerator:
-    build:
-      context: .
-      dockerfile: services/accelerator_api/Dockerfile
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-    environment:
-      ADO2GH_STORAGE_BACKEND: sqlite
-      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
-      ADO2GH_DATA_DIR: /app/data
-      ADO2GH_CONFIG: /app/migration.yaml
-      ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
-      REDIS_URL: redis://redis:6379/0
-      ADO_ORG_URL: ${ADO_ORG_URL:-}
-      ADO_PAT: ${ADO_PAT:-}
-      GH_TOKEN: ${GH_TOKEN:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
-    volumes:
-      - ./migration.yaml:/app/migration.yaml:ro
-      - ado2gh-data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      redis:
-        condition: service_healthy
-
   worker:
+    profiles: ["default"]
     build:
       context: .
       dockerfile: services/accelerator_api/Dockerfile
@@ -64,30 +102,13 @@ services:
       - ./migration.yaml:/app/migration.yaml:ro
       - ado2gh-data:/app/data
     depends_on:
-      - accelerator
-      - redis
-
-  agent:
-    build:
-      context: .
-      dockerfile: services/agent/Dockerfile
-    ports:
-      - "8090:8090"
-    environment:
-      ACCELERATOR_URL: http://accelerator:8080
-      ADO2GH_DATA_DIR: /app/data
-      ADO2GH_SQLITE_PATH: /app/data/migration_state.db
-      ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
-    volumes:
-      - ado2gh-data:/app/data
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - accelerator
+      accelerator:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   web:
+    profiles: ["default"]
     build:
       context: ./apps/migration-ui
       dockerfile: Dockerfile

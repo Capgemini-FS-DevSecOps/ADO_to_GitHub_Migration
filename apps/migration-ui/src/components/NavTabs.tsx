@@ -1,5 +1,10 @@
 'use client';
 
+/**
+ * @deprecated NavTabs is deprecated. Use UnifiedNavigation instead.
+ * Scheduled for removal after all routes are verified under /settings.
+ */
+
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -7,23 +12,18 @@ import {
   ArrowRightLeftIcon,
   BotIcon,
   ChartBarIcon,
-  CheckCircleIcon,
   HistoryIcon,
   SearchIcon,
   SettingsIcon,
-  WorkflowIcon,
 } from '@/components/Icons';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: ChartBarIcon },
-  { href: '/agent', label: 'Agent', icon: BotIcon },
+  { href: '/settings/agent', label: 'Agent', icon: BotIcon },
   { href: '/history', label: 'History', icon: HistoryIcon },
-  { href: '/migrate', label: 'Migrate', icon: ArrowRightLeftIcon },
+  { href: '/settings/migrate', label: 'Migrate', icon: ArrowRightLeftIcon },
   { href: '/runs', label: 'Monitor', icon: ActivityIcon },
-  { href: '/discovery', label: 'Discovery', icon: SearchIcon },
-  { href: '/readiness', label: 'Readiness', icon: CheckCircleIcon },
-  { href: '/workflows', label: 'Workflows', icon: WorkflowIcon },
-  { href: '/validation', label: 'Validation', icon: CheckCircleIcon },
+  { href: '/settings/discovery', label: 'Discovery', icon: SearchIcon },
   { href: '/settings', label: 'Settings', icon: SettingsIcon },
 ] as const;
 

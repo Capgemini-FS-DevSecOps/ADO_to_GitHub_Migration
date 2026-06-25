@@ -6,6 +6,19 @@
 
 **Status**: Clarified
 
+> **Note**: This is the umbrella spec for the agentic migration platform. Major concern areas have been split into dedicated specs:
+> - **RBAC & access control** → see [004-agent-pev-rbac](../004-agent-pev-rbac/spec.md)
+> - **Audit & compliance** → see [010-enterprise-audit-simplification](../010-enterprise-audit-simplification/spec.md)
+> - **Boards / work tracking** → covered by this spec (FR-050–FR-055)
+> - **Pipelines** → see [009-pipeline-step-decoupling](../009-pipeline-step-decoupling/spec.md)
+> - **Assignments & cohorts** → covered by this spec (FR-006–FR-013)
+> - **Login & auth** → see [002-login-bootstrap](../archive/002-login-bootstrap/spec.md) (archived/implemented)
+> - **Profile onboarding** → see [005-profile-onboarding](../archive/005-profile-onboarding/spec.md) (archived/implemented)
+> - **LLM model catalog** → see [006-llm-model-catalog](../006-llm-model-catalog/spec.md)
+> - **Cloud credentials** → see [007-cloud-llm-credentials](../007-cloud-llm-credentials/spec.md)
+> - **UI** → see [008-migration-ui-refactor](../008-migration-ui-refactor/spec.md)
+> - **Agent PEV rebuild** → see [011-agent-pev-rebuild](../011-agent-pev-rebuild/spec.md)
+
 **Input**: User description: "The overall project is a agentic AI implementation of a azure devops to github actions migration. It must contain 2 parts: (1) accelerator for manual migration, (2) LLM-backed migration agent with natural language, (3) frontend conforming to internal Agentic Platform (OrchestrateAI) standards. Architecture follows planner → executor → validator with retry or human escalation. Executor has API access but only runs authorized steps from planner or validator. Subagents with specific skills to be designed. Migration agent UI supports team assignments: specific repositories, wave-based cohorts (Wave 1–N), pilots, and proof-of-concept assignments; all agents/subagents must possess tools and skills to handle every assignment type."
 
 ## Clarifications

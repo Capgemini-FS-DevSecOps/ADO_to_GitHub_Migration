@@ -19,6 +19,11 @@ from ado2gh.logging_config import console, log
 from ado2gh.models import PipelineMetadata
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
 from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
+from ado2gh.pipelines.resolve.template_resolver import (
+    extract_template_refs,
+    make_ado_git_fetcher,
+    resolve_templates,
+)
 from ado2gh.pipelines.task_scanner import enrich_pipeline_readiness
 from ado2gh.state.db import StateDB
 
@@ -268,12 +273,24 @@ class PipelineInventoryBuilder:
                             cfg = definition.setdefault("configuration", {})
                             cfg["path"] = picked
 
+            if (yaml_content or "").strip() and extract_template_refs(yaml_content):
+                fetcher = make_ado_git_fetcher(
+                    self.ado,
+                    project,
+                    repo.get("id", ""),
+                    branch,
+                    yaml_path,
+                )
+                yaml_content = resolve_templates(
+                    yaml_content, fetcher, source_path=yaml_path,
+                )
+
             runs = self.ado.get_pipeline_runs(project, pipe_id, top=10)
             meta = self.extractor.extract_yaml_pipeline(
                 project, stub, definition, build_def, yaml_content, runs, var_groups
             )
             if meta:
-                enrich_pipeline_readiness(meta, project_scs or [])
+                enrich_pipeline_readiness(meta, project_scs or [], build_def=build_def)
                 meta.complexity = self.extractor._score_complexity(meta)
 
             if meta and fallback_used:
@@ -323,7 +340,7 @@ class PipelineInventoryBuilder:
                 project, stub, build_def, runs, var_groups
             )
             if meta:
-                enrich_pipeline_readiness(meta, project_scs or [])
+                enrich_pipeline_readiness(meta, project_scs or [], build_def=build_def)
                 meta.complexity = self.extractor._score_complexity(meta)
             return self._apply_repo_association(meta, project_repos or [])
 

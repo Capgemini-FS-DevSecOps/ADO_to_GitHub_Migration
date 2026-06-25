@@ -42,14 +42,15 @@ class PostMigrationValidator:
 
     def validate(self, repos: list[RepoConfig],
                  output_path: str = None,
-                 max_workers: int = 6) -> list[dict]:
+                 max_workers: int = 6,
+                 workflow_files: list[dict] = None) -> list[dict]:
         results: list[dict] = []
 
         console.print(f"[bold]Validating {len(repos)} repos...[/bold]")
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(self._validate_one, repo): repo
+                pool.submit(self._validate_one, repo, workflow_files): repo
                 for repo in repos
             }
             for future in as_completed(futures):
@@ -76,7 +77,7 @@ class PostMigrationValidator:
 
         return results
 
-    def _validate_one(self, repo: RepoConfig) -> dict:
+    def _validate_one(self, repo: RepoConfig, workflow_files: list[dict] = None) -> dict:
         result: dict[str, Any] = {
             "ado_project": repo.ado_project,
             "ado_repo": repo.ado_repo,
@@ -106,7 +107,7 @@ class PostMigrationValidator:
 
         # 5. Workflows present (if pipelines scope was migrated)
         if "pipelines" in (repo.scopes or []):
-            checks["workflows"] = self._check_workflows(repo)
+            checks["workflows"] = self._check_workflows(repo, workflow_files)
 
         # 6. Branch protection (if branch_policies scope was migrated)
         if "branch_policies" in (repo.scopes or []):
@@ -224,7 +225,7 @@ class PostMigrationValidator:
         return {"verdict": FAIL, "ado_count": ado_count, "gh_count": gh_count,
                 "detail": f"{ado_count - gh_count} branches missing"}
 
-    def _check_workflows(self, repo: RepoConfig) -> dict:
+    def _check_workflows(self, repo: RepoConfig, workflow_files: list[dict] = None) -> dict:
         ado_count = self.db.inventory_count_for_repo(repo.ado_project, repo.ado_repo)
         try:
             gh_workflows = self.gh.list_workflows(repo.gh_org, repo.gh_repo)
@@ -239,9 +240,33 @@ class PostMigrationValidator:
             return {"verdict": WARN, "ado_pipelines": ado_count, "gh_workflows": -1,
                     "detail": "Cannot read GH workflows"}
         if gh_count >= ado_count:
+            # Workflow integrity check: verify expected files exist
+            integrity_result = {"verdict": PASS, "detail": "All pipelines have corresponding workflows"}
+            if workflow_files:
+                repo_key = f"{repo.ado_project}/{repo.ado_repo}"
+                repo_workflows = [wf for wf in workflow_files if repo_key in str(wf.get("repo", ""))]
+                missing_files = []
+                for wf in repo_workflows:
+                    wf_path = wf.get("output_path", "")
+                    if wf_path:
+                        # Check if file exists in GitHub via Contents API
+                        try:
+                            parts = wf_path.replace(".github/workflows/", "").split("/")
+                            if len(parts) >= 2:
+                                wf_name = parts[-1]
+                                self.gh._get(f"/repos/{repo.gh_org}/{repo.gh_repo}/contents/.github/workflows/{wf_name}")
+                        except Exception:
+                            missing_files.append(wf_path)
+                if missing_files:
+                    integrity_result = {
+                        "verdict": FAIL,
+                        "detail": f"{len(missing_files)} workflow files missing in GitHub",
+                        "missing_files": missing_files[:5]  # First 5
+                    }
             return {"verdict": PASS, "ado_pipelines": ado_count,
                     "gh_workflows": gh_count,
-                    "detail": "All pipelines have corresponding workflows"}
+                    "detail": "All pipelines have corresponding workflows",
+                    "workflow_integrity": integrity_result}
         return {"verdict": WARN, "ado_pipelines": ado_count, "gh_workflows": gh_count,
                 "detail": f"{ado_count - gh_count} workflows missing"}
 

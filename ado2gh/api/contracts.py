@@ -34,6 +34,22 @@ class RunWaveResult(BaseModel):
     dry_run: bool = False
 
 
+class CreateWaveRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    repository_ids: list[str] = Field(..., min_length=1)
+    organization_id: Optional[str] = None
+    description: Optional[str] = None
+
+
+class WaveResponse(BaseModel):
+    wave_id: str
+    name: str
+    description: Optional[str] = None
+    status: str = "draft"
+    created_at: str = ""
+    repository_ids: list[str] = Field(default_factory=list)
+
+
 class PhaseRunRequest(BaseModel):
     config_path: str
     phase: Literal["poc", "pilot", "wave1", "wave2", "wave3"]
@@ -186,8 +202,9 @@ class ActiveMigrationItem(BaseModel):
     name: str
     status: str
     dry_run: bool = True
-    phase: str = "poc"
+    phase: str = ""
     wave_id: Optional[int] = None
+    repository_id: Optional[str] = None
     current_step: str = ""
     started_by_username: str = ""
     started_by_display_name: str = ""
@@ -395,9 +412,22 @@ class ValidateConnectionResponse(BaseModel):
 class PipelineRunStartRequest(BaseModel):
     name: str = "Manual migration"
     dry_run: bool = True
-    phase: str = "poc"
+    phase: str = ""
     wave_id: Optional[int] = None
     steps: Optional[list[str]] = None
+    repository_id: Optional[str] = None
+    migrate_deps_only: bool = True
+    agent_live_approved: bool = Field(
+        default=False,
+        description="Skip platform live gate when agent session already approved live execution",
+    )
+
+
+class PipelineRunStartApprovedRequest(BaseModel):
+    agent_live_approved: bool = Field(
+        default=False,
+        description="Start a run left in awaiting_approval after agent live approval",
+    )
 
 
 class PipelineRunResponse(BaseModel):

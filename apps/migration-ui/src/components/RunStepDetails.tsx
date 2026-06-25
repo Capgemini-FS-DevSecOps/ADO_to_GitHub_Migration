@@ -391,14 +391,14 @@ export function RunStepDetails({ steps }: { steps: PipelineStep[] }) {
         migrateSteps.map((step) => (
           <section key={step.id} style={{ marginBottom: 24 }}>
             <h3 className="oai-detail-heading">{step.label}</h3>
-            <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>{step.message}</p>
+            <p style={{ fontSize: 12, color: '#888', marginBottom: 8, whiteSpace: 'pre-wrap' }}>{step.message}</p>
             <MigrateResults step={step} />
           </section>
         ))}
       {hasValidate && validate && (
         <section>
           <h3 className="oai-detail-heading">Validation</h3>
-          <p style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>{validate.message}</p>
+          <p style={{ fontSize: 12, color: '#888', marginBottom: 8, whiteSpace: 'pre-wrap' }}>{validate.message}</p>
           <ValidateResults step={validate} />
         </section>
       )}

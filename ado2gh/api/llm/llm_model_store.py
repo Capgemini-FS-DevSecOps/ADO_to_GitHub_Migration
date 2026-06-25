@@ -41,6 +41,7 @@ class LLMModelConfig:
     credential_mode: str = "byok"
     platform_supplied: bool = False
     ambient_provider: str = ""
+    capabilities: dict[str, Any] | None = None
 
     def to_public(self) -> dict[str, Any]:
         return {
@@ -63,6 +64,7 @@ class LLMModelConfig:
             "credential_mode": self.credential_mode,
             "platform_supplied": self.platform_supplied,
             "ambient_provider": self.ambient_provider or None,
+            "capabilities": self.capabilities or None,
         }
 
 
@@ -93,6 +95,7 @@ def _parse_model(raw: dict[str, Any], secrets: dict[str, str]) -> LLMModelConfig
         credential_mode=raw.get("credential_mode", "byok"),
         platform_supplied=bool(raw.get("platform_supplied", False)),
         ambient_provider=raw.get("ambient_provider", "") or "",
+        capabilities=raw.get("capabilities") or None,
     )
 
 
@@ -240,6 +243,8 @@ class LLMModelStore:
                 existing.catalog_source = data["catalog_source"]
             if "catalog_label" in data:
                 existing.catalog_label = data.get("catalog_label") or ""
+            if "capabilities" in data:
+                existing.capabilities = data.get("capabilities") or None
             _assert_enable_gate(existing, data)
             existing.enabled = bool(data.get("enabled", existing.enabled))
             if "default_for_agent" in data:
@@ -268,6 +273,14 @@ class LLMModelStore:
             if data.get("validation_status") == "passed":
                 model.validation_status = "passed"
                 model.validation_at = data.get("validation_at", now)
+            if "capabilities" in data:
+                model.capabilities = data.get("capabilities") or None
+            # T028: Validate supports_tool_calling on registration
+            caps = model.capabilities or {}
+            if caps.get("supports_tool_calling") is False:
+                raise ValueError(
+                    "This model does not support tool-calling, which is required for the migration agent."
+                )
             _assert_enable_gate(model, data)
             models.append(model)
         if model.default_for_agent:

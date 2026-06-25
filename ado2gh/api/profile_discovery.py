@@ -52,12 +52,11 @@ def require_gh_org(
 
 
 def risk_score_from_repo_dict(repo: dict[str, Any], gh_org: str = "") -> RiskScore:
-    phase_str = repo.get("assigned_phase") or repo.get("suggested_phase") or "poc"
     return RiskScore(
         project=repo.get("project", ""),
         repo_name=repo.get("repo_name", ""),
         total_score=float(repo.get("total_score", 0)),
-        assigned_phase=phase_str,
+        assigned_phase=None,
         gh_org=repo.get("gh_org") or gh_org,
         gh_repo=repo.get("gh_repo") or repo.get("repo_name", ""),
         pipeline_count=int(repo.get("pipeline_count", 0)),
@@ -67,17 +66,13 @@ def risk_score_from_repo_dict(repo: dict[str, Any], gh_org: str = "") -> RiskSco
 
 
 def manual_phase_overrides(repos: list[dict[str, Any]]) -> dict[tuple[str, str], str]:
-    """Repo keys where the operator assigned a phase different from the risk suggestion."""
+    """Detect repos where assigned_phase differs from suggested_phase (manual overrides)."""
     overrides: dict[tuple[str, str], str] = {}
-    for repo in repos:
-        project = (repo.get("project") or "").strip()
-        repo_name = (repo.get("repo_name") or "").strip()
-        if not project or not repo_name:
-            continue
-        assigned = (repo.get("assigned_phase") or "").strip()
-        suggested = (repo.get("suggested_phase") or "").strip()
+    for r in repos:
+        assigned = r.get("assigned_phase")
+        suggested = r.get("suggested_phase")
         if assigned and suggested and assigned != suggested:
-            overrides[(project, repo_name)] = assigned
+            overrides[(r.get("project", ""), r.get("repo_name", ""))] = assigned
     return overrides
 
 
@@ -86,8 +81,8 @@ def iter_scan_repos(scan: dict[str, Any]) -> list[dict[str, Any]]:
     for bucket in scan.get("recommendations", {}).values():
         for repo in bucket.get("repos", []):
             item = dict(repo)
-            if not item.get("assigned_phase"):
-                item["assigned_phase"] = bucket.get("phase") or item.get("suggested_phase")
+            item.pop("assigned_phase", None)
+            item.pop("suggested_phase", None)
             repos.append(item)
     return repos
 
@@ -143,7 +138,6 @@ def ensure_profile_scan(profile: MigrationProfile, settings: SettingsStore | Non
         profile.ado_org_url,
         profile.ado_pat,
         gh_org=gh_org,
-        phase_definitions=[p.to_dict() for p in store_ref.get_phases()],
     )
     if gh_org and not raw.get("gh_org"):
         raw["gh_org"] = gh_org
@@ -162,7 +156,11 @@ def build_wave_from_profile_phase(
     pipeline_parallel: int = 8,
     config_path: str | None = None,
 ) -> WaveConfig | None:
-    """Build a migration wave from profile discovery assignments."""
+    """Build a migration wave from all profile discovery repos.
+
+    The phase parameter is kept for API compatibility but is ignored; waves are now
+    created from user-selected repo groups in the Discovery UI.
+    """
     try:
         assert_profile_active_for_run(profile)
     except ProfileGovernanceError as exc:
@@ -172,10 +170,8 @@ def build_wave_from_profile_phase(
     repos: list[RepoConfig] = []
 
     if hasattr(db, "get_profile_scan_repos"):
-        rows = db.get_profile_scan_repos(profile.id, phase=phase)
-        for row in rows:
-            assigned = row.get("assigned_phase") or row.get("suggested_phase") or phase
-            if assigned != phase:
+        for row in db.get_profile_scan_repos(profile.id):
+            if phase and row.get("assigned_phase") and row["assigned_phase"] != phase:
                 continue
             target_org = (row.get("gh_org") or gh_org or "").strip()
             repos.append(RepoConfig(
@@ -183,13 +179,13 @@ def build_wave_from_profile_phase(
                 ado_repo=row["repo_name"],
                 gh_org=target_org,
                 gh_repo=row.get("gh_repo") or row["repo_name"],
-                phase=phase,
+                phase="",
                 risk_score=float(row.get("total_score", 0)),
                 scopes=["repo"],
             ))
 
     if not repos:
-        scores = db.get_risk_scores_for_phase(phase)
+        scores = db.get_risk_scores_for_phase(None)
         for row in scores:
             target_org = (row.get("gh_org") or gh_org or "").strip()
             repos.append(RepoConfig(
@@ -197,7 +193,7 @@ def build_wave_from_profile_phase(
                 ado_repo=row["repo_name"],
                 gh_org=target_org,
                 gh_repo=row.get("gh_repo") or row["repo_name"],
-                phase=phase,
+                phase="",
                 risk_score=float(row.get("total_score", 0)),
                 scopes=["repo"],
             ))
@@ -207,11 +203,11 @@ def build_wave_from_profile_phase(
     return WaveConfig(
         wave_id=wave_id,
         name=f"profile-{phase}",
-        description=f"Repos assigned to {phase} from profile discovery",
+        description=f"Repos from profile discovery (phase {phase} ignored)",
         repos=repos,
         parallel=parallel,
         pipeline_parallel=pipeline_parallel,
-        phase=phase,
+        phase="",
     )
 
 
@@ -221,6 +217,7 @@ def repo_configs_for_phase(
     db_path: str | None = None,
     config_path: str | None = None,
 ) -> list[RepoConfig]:
+    """Return all discovery repos; phase is no longer used for filtering."""
     wave = build_wave_from_profile_phase(
         phase, profile, db_path=db_path, config_path=config_path,
     )

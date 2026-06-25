@@ -1,3 +1,1 @@
-{
-  "feature_directory": "specs/006-llm-model-catalog"
-}
+{"feature_directory": "specs/012-langgraph-agent-refactor"}

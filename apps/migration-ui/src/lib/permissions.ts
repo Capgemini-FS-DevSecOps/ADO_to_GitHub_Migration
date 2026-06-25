@@ -34,6 +34,7 @@ export type SettingsTabDef = {
 
 export const SETTINGS_TABS: SettingsTabDef[] = [
   { href: '/settings/profiles', label: 'Profiles', hint: 'View & manage deployment profiles' },
+  { href: '/settings/history', label: 'History', hint: 'Past migration runs and audit history' },
   { href: '/settings/advanced', label: 'Advanced', hint: 'Global migration settings' },
   { href: '/settings/models', label: 'LLM models', cap: 'can_manage_models', hint: 'Admin only' },
   {
@@ -41,6 +42,12 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     label: 'Connectivity',
     cap: 'can_manage_models',
     hint: 'Proxy, CA, model override toggle',
+  },
+  {
+    href: '/settings/cloud-credentials',
+    label: 'Cloud credentials',
+    cap: 'can_manage_models',
+    hint: 'Approve ambient AWS, Foundry, or GCP LLM credentials',
   },
   {
     href: '/settings/approvals',

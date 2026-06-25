@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { NavTabs } from '@/components/NavTabs';
+import { UnifiedNavigation } from '@/components/UnifiedNavigation';
 import { AuthGate } from '@/components/AuthGate';
 import { UserSessionBar } from '@/components/UserSessionBar';
 import { BrandLogo, BrandWordmark } from '@/components/BrandLogo';
@@ -31,7 +31,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <UserSessionBar />
           </div>
           <div className="oai-container oai-header-nav">
-            <NavTabs />
+            <UnifiedNavigation />
           </div>
         </header>
 

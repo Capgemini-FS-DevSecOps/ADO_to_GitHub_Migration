@@ -6,12 +6,29 @@ import os
 import shutil
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from typing import Any
 
 from ado2gh.core.gei_runtime import gei_subprocess_env
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, RepoConfig
+
+
+@dataclass
+class FeasibilityReport:
+    """Repository migration feasibility analysis."""
+    repo_id: str
+    size_kb: int
+    size_mb: float
+    size_gb: float
+    branch_count: int
+    lfs_objects: int
+    lfs_size_gb: float
+    strategy: str  # "mirror", "gei", "manual"
+    status: str  # "ok", "warn", "fail_soft", "fail_hard"
+    warnings: list[str]
+    gei_available: bool
 
 
 def _clean_clone_url(clone_url: str) -> str:
@@ -40,6 +57,57 @@ def _ado_git_env(pat: str) -> dict[str, str]:
 class GitScopeHandler:
     scope = MigrationScope.REPO.value
 
+    def _analyze_feasibility(self, repo: RepoConfig, source: dict, repo_stats: dict, ctx: ScopeContext) -> FeasibilityReport:
+        """Analyze repository migration feasibility and recommend strategy."""
+        size_kb = source.get("size", 0)
+        size_mb = size_kb / 1024
+        size_gb = size_mb / 1024
+        branch_count = repo_stats.get("branch_count", 0)
+        repo_id = f"{repo.ado_project}/{repo.ado_repo}"
+
+        # Check GEI availability
+        gei_available = shutil.which("gh") is not None
+
+        warnings = []
+        status = "ok"
+        strategy = ctx.strategy or "mirror"
+
+        # Size thresholds per research.md R-001
+        if size_gb > 10:
+            status = "fail_hard"
+            strategy = "manual"
+            warnings.append(f"Repository size ({size_gb:.2f} GB) exceeds 10 GB threshold - manual migration required")
+        elif size_gb > 2:
+            status = "fail_soft"
+            strategy = "gei" if gei_available else "manual"
+            warnings.append(f"Repository size ({size_gb:.2f} GB) exceeds 2 GB - GEI recommended if available")
+        elif size_gb > 0.5:
+            status = "warn"
+            warnings.append(f"Repository size ({size_gb:.2f} GB) is large - consider GEI for faster migration")
+
+        # LFS check (simplified - actual LFS size requires cloning)
+        lfs_objects = -1  # Unknown without clone
+        lfs_size_gb = 0
+
+        # Branch count warning
+        if branch_count > 500:
+            status = "warn" if status == "ok" else status
+            warnings.append(f"High branch count ({branch_count}) - may require longer migration time")
+
+        return FeasibilityReport(
+            repo_id=repo_id,
+            size_kb=size_kb,
+            size_mb=size_mb,
+            size_gb=size_gb,
+            branch_count=branch_count,
+            lfs_objects=lfs_objects,
+            lfs_size_gb=lfs_size_gb,
+            strategy=strategy,
+            status=status,
+            warnings=warnings,
+            gei_available=gei_available,
+        )
+
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
         log.info(
             "git: %s/%s -> %s/%s [strategy=%s]%s",
@@ -54,12 +122,21 @@ class GitScopeHandler:
         )
         repo_stats = ctx.ado.get_repo_stats(repo.ado_project, source.get("id", ""))
 
+        # Run feasibility analysis
+        feasibility = self._analyze_feasibility(repo, source, repo_stats, ctx)
+
         stats: dict[str, Any] = {
-            "strategy": ctx.strategy,
+            "strategy": ctx.strategy or feasibility.strategy,
             "source_url": clone_url,
             "default_branch": default_branch,
             "branches": repo_stats.get("branch_count", 0),
             "size_kb": source.get("size", 0),
+            "feasibility_report": {
+                "size_gb": feasibility.size_gb,
+                "status": feasibility.status,
+                "strategy": feasibility.strategy,
+                "warnings": feasibility.warnings,
+            },
         }
 
         if ctx.dry_run:
@@ -72,20 +149,22 @@ class GitScopeHandler:
                 "Configure gh_org on the migration profile or global.gh_org in migration.yaml."
             )
 
-        if ctx.strategy != "gei" and not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
-            ctx.gh.create_repo(
-                repo.gh_org, repo.gh_repo, private=True,
-                description=f"Migrated from ADO: {repo.ado_project}/{repo.ado_repo}",
-            )
-
         cm = kwargs.get("concurrency")
         if ctx.strategy == "gei":
-            if cm:
+            existing = self._verify_existing_target_repo(repo, source, ctx)
+            if existing:
+                stats.update(existing)
+            elif cm:
                 with cm.git_slot():
                     stats.update(self._run_gei(repo, source, ctx))
             else:
                 stats.update(self._run_gei(repo, source, ctx))
         else:
+            if not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
+                ctx.gh.create_repo(
+                    repo.gh_org, repo.gh_repo, private=True,
+                    description=f"Migrated from ADO: {repo.ado_project}/{repo.ado_repo}",
+                )
             if cm:
                 with cm.git_slot():
                     stats.update(self._run_mirror(repo, clone_url, ctx))
@@ -108,6 +187,69 @@ class GitScopeHandler:
             stats["default_branch_present"] = None
 
         return ScopeResult(stats=stats)
+
+    def _verify_existing_target_repo(
+        self,
+        repo: RepoConfig,
+        source: dict,
+        ctx: ScopeContext,
+    ) -> dict[str, Any] | None:
+        """Skip GEI when the GitHub repo exists and default-branch HEAD matches ADO."""
+        try:
+            if not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
+                return None
+        except Exception:
+            return None
+
+        default_branch = (
+            source.get("defaultBranch", "refs/heads/main").replace("refs/heads/", "")
+        )
+        repo_id = source.get("id", "")
+        ado_sha = ""
+        try:
+            commits = ctx.ado.get_repo_commits(
+                repo.ado_project, repo_id, top=1, branch=default_branch,
+            )
+            ado_sha = commits[0].get("commitId", "") if commits else ""
+        except Exception as exc:
+            log.warning("could not read ADO HEAD for %s/%s: %s",
+                        repo.ado_project, repo.ado_repo, exc)
+
+        gh_sha = ""
+        try:
+            for branch in ctx.gh.list_branches(repo.gh_org, repo.gh_repo):
+                if branch.get("name") == default_branch:
+                    gh_sha = branch.get("commit", {}).get("sha", "")
+                    break
+        except Exception as exc:
+            log.warning("could not read GitHub HEAD for %s/%s: %s",
+                        repo.gh_org, repo.gh_repo, exc)
+
+        if ado_sha and gh_sha and ado_sha == gh_sha:
+            return {
+                "gei": "skipped",
+                "mirror": "already_migrated",
+                "message": (
+                    "Target repo exists and default-branch HEAD matches ADO — "
+                    "skipping GEI import"
+                ),
+                "ado_sha": ado_sha[:12],
+                "gh_sha": gh_sha[:12],
+            }
+
+        if gh_sha:
+            raise RuntimeError(
+                f"Target repo {repo.gh_org}/{repo.gh_repo} already exists on GitHub "
+                f"but HEAD commit does not match ADO "
+                f"(ADO={ado_sha[:12] if ado_sha else 'unknown'}, "
+                f"GH={gh_sha[:12]}). Delete the GitHub repo or choose a different name."
+            )
+
+        raise RuntimeError(
+            f"Target repo {repo.gh_org}/{repo.gh_repo} already exists on GitHub. "
+            "GEI cannot import into an existing repo. Delete it or choose a different "
+            "github_repo name."
+        )
 
     def _run_mirror(self, repo: RepoConfig, clone_url: str, ctx: ScopeContext) -> dict:
         clone_url = _clean_clone_url(clone_url)
@@ -230,6 +372,9 @@ class GitScopeHandler:
                 "gh ado2gh migrate-repo printed usage help — check gh-ado2gh extension install"
             )
         if "no operation will be performed" in combined.lower():
+            existing = self._verify_existing_target_repo(repo, source, ctx)
+            if existing:
+                return existing
             raise RuntimeError(
                 "gh ado2gh skipped migration: target repo already exists on GitHub. "
                 "Delete the empty target repo or choose a different github_repo name."

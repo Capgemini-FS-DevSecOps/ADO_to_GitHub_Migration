@@ -36,6 +36,9 @@ DISCOVERY_DETAIL_FIELDS = (
     "warnings",
     "status",
     "pipeline_inventory",
+    "artifacts",
+    "boards",
+    "test_plans",
 )
 
 
@@ -236,6 +239,37 @@ class MigrationScanner:
             except Exception:
                 environments = []
 
+            try:
+                artifact_feeds = self.ado.list_artifacts(proj_name)
+            except Exception:
+                artifact_feeds = []
+
+            try:
+                teams = self.ado.list_teams(proj_name)
+            except Exception:
+                teams = []
+
+            try:
+                iterations = self.ado.list_iterations(proj_name)
+            except Exception:
+                iterations = []
+
+            try:
+                work_item_types = self.ado.list_work_item_types(proj_name)
+            except Exception:
+                work_item_types = []
+
+            try:
+                work_items = self.ado.list_work_items(proj_name, top=1)
+                work_item_count = len(work_items)
+            except Exception:
+                work_item_count = 0
+
+            try:
+                test_plans = self.ado.list_test_plans(proj_name)
+            except Exception:
+                test_plans = []
+
             project_pipelines: list[PipelineMetadata] = []
             try:
                 for stub in self.ado.list_all_pipelines(proj_name):
@@ -253,6 +287,22 @@ class MigrationScanner:
             detail["variable_groups"] = _summarize_variable_groups(var_groups)
             detail["environment_count"] = len(environments)
             detail["environments"] = [e.get("name", "") for e in environments if e.get("name")]
+            detail["artifact_feed_count"] = len(artifact_feeds)
+            detail["artifact_feeds"] = [
+                {"name": f.get("name", ""), "id": f.get("id", ""), "is_public": bool(f.get("isPublic"))}
+                for f in artifact_feeds if f.get("name")
+            ]
+            detail["team_count"] = len(teams)
+            detail["teams"] = [t.get("name", "") for t in teams if t.get("name")]
+            detail["iteration_count"] = len(iterations)
+            detail["work_item_types"] = [w.get("name", "") for w in work_item_types if w.get("name")]
+            detail["work_item_type_count"] = len(work_item_types)
+            detail["work_item_count"] = work_item_count
+            detail["test_plan_count"] = len(test_plans)
+            detail["test_plans"] = [
+                {"name": p.get("name", ""), "id": p.get("id", ""), "state": p.get("state", "")}
+                for p in test_plans if p.get("name")
+            ]
 
             try:
                 repos = self.ado.list_repos(proj_name)
@@ -301,19 +351,19 @@ class MigrationScanner:
                 break
 
         assigned = self.assigner.assign(all_scores, gh_org=self.gh_org)
-        buckets: dict[str, Any] = {}
-        for phase_def in self.phase_defs:
-            phase_scores = assigned.get(phase_def.id, [])
-            buckets[phase_def.id] = {
-                "phase": phase_def.id,
-                "phase_name": phase_def.name,
-                "repo_count": len(phase_scores),
-                "risk_min": round(min((s.total_score for s in phase_scores), default=0), 1),
-                "risk_max": round(max((s.total_score for s in phase_scores), default=0), 1),
-                "risk_band_max": phase_def.risk_max,
-                "rationale": _phase_rationale(phase_def, phase_scores),
-                "repos": [s.to_dict() for s in phase_scores],
-            }
+        all_assigned = assigned.get("unassigned", [])
+        buckets: dict[str, Any] = {
+            "unassigned": {
+                "phase": "unassigned",
+                "phase_name": "Unassigned",
+                "repo_count": len(all_assigned),
+                "risk_min": round(min((s.total_score for s in all_assigned), default=0), 1),
+                "risk_max": round(max((s.total_score for s in all_assigned), default=0), 1),
+                "risk_band_max": 100,
+                "rationale": f"{len(all_assigned)} repos with risk scores — no automatic phase assignment.",
+                "repos": [s.to_dict() for s in all_assigned],
+            },
+        }
 
         warnings = build_empty_scan_warnings(projects_scanned, repos_scanned, project_details)
         scan_status = "ok" if repos_scanned else ("error" if any(p.get("error") for p in project_details) else "empty")
@@ -323,6 +373,12 @@ class MigrationScanner:
             "total_variable_groups": sum(p.get("variable_group_count", 0) for p in project_details),
             "total_environments": sum(p.get("environment_count", 0) for p in project_details),
             "total_pipeline_stubs": sum(p.get("pipeline_count", 0) for p in project_details),
+            "total_artifact_feeds": sum(p.get("artifact_feed_count", 0) for p in project_details),
+            "total_teams": sum(p.get("team_count", 0) for p in project_details),
+            "total_iterations": sum(p.get("iteration_count", 0) for p in project_details),
+            "total_work_items": sum(p.get("work_item_count", 0) for p in project_details),
+            "total_work_item_types": sum(p.get("work_item_type_count", 0) for p in project_details),
+            "total_test_plans": sum(p.get("test_plan_count", 0) for p in project_details),
         }
 
         return {

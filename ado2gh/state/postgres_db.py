@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 from typing import Any, Iterator, Optional
 
 from ado2gh.models import MigrationStatus, PipelineMetadata
+from ado2gh.state.base import StateDBBase
+from ado2gh.state.postgres_risk_gates_scan_mixin import PostgresRiskGatesScanMixin
+from ado2gh.state.postgres_agentic_users_mixin import PostgresAgenticUsersMixin
 
 
 def _phase_value(phase) -> str:
@@ -14,7 +17,7 @@ def _phase_value(phase) -> str:
     return phase.value if hasattr(phase, "value") else str(phase)
 
 
-class PostgresStateDB:
+class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, StateDBBase):
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS migrations (
         id SERIAL PRIMARY KEY,
@@ -221,6 +224,102 @@ class PostgresStateDB:
     );
     CREATE INDEX IF NOT EXISTS idx_live_approval_scope
         ON live_execution_approvals(scope_type, scope_id, status);
+
+    -- Feature 008: Unified Migration UI tables
+    CREATE TABLE IF NOT EXISTS discovery_results (
+        id               TEXT PRIMARY KEY,
+        organization_id  TEXT NOT NULL,
+        repository_id    TEXT NOT NULL,
+        repository_name  TEXT NOT NULL,
+        pipeline_count   INTEGER NOT NULL DEFAULT 0,
+        last_scanned_at  TEXT,
+        scan_status      TEXT NOT NULL DEFAULT 'pending',
+        metadata_json    JSONB NOT NULL DEFAULT '{}',
+        UNIQUE(organization_id, repository_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_discovery_results_org_repo
+        ON discovery_results(organization_id, repository_id);
+    CREATE TABLE IF NOT EXISTS discovery_dependency_edges (
+        id                    TEXT PRIMARY KEY,
+        source_repository_id  TEXT NOT NULL,
+        target_repository_id  TEXT NOT NULL,
+        dependency_type       TEXT NOT NULL DEFAULT 'pipeline',
+        created_at            TEXT,
+        CHECK(source_repository_id <> target_repository_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dep_edges_source
+        ON discovery_dependency_edges(source_repository_id);
+    CREATE INDEX IF NOT EXISTS idx_dep_edges_target
+        ON discovery_dependency_edges(target_repository_id);
+    CREATE TABLE IF NOT EXISTS migration_waves (
+        id           TEXT PRIMARY KEY,
+        name         TEXT NOT NULL,
+        description  TEXT,
+        status       TEXT NOT NULL DEFAULT 'draft',
+        created_at   TEXT NOT NULL,
+        started_at   TEXT,
+        completed_at TEXT,
+        created_by   TEXT NOT NULL DEFAULT '',
+        CHECK(length(name) BETWEEN 1 AND 100)
+    );
+    CREATE INDEX IF NOT EXISTS idx_migration_waves_status
+        ON migration_waves(status);
+    CREATE INDEX IF NOT EXISTS idx_migration_waves_created_by
+        ON migration_waves(created_by);
+    CREATE TABLE IF NOT EXISTS wave_repositories (
+        id              TEXT PRIMARY KEY,
+        wave_id         TEXT NOT NULL,
+        repository_id   TEXT NOT NULL,
+        organization_id TEXT NOT NULL,
+        migration_order INTEGER NOT NULL DEFAULT 0,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        UNIQUE(wave_id, repository_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wave_repos_wave_order
+        ON wave_repositories(wave_id, migration_order);
+    CREATE TABLE IF NOT EXISTS pre_migration_forms (
+        id                TEXT PRIMARY KEY,
+        repository_id     TEXT NOT NULL,
+        organization_id   TEXT NOT NULL,
+        target_github_org TEXT NOT NULL,
+        team_mapping_json JSONB NOT NULL DEFAULT '{}',
+        pipeline_config_json JSONB NOT NULL DEFAULT '{}',
+        repo_description  TEXT,
+        topics_json       JSONB NOT NULL DEFAULT '[]',
+        labels_json       JSONB NOT NULL DEFAULT '[]',
+        form_status       TEXT NOT NULL DEFAULT 'draft',
+        created_at        TEXT NOT NULL,
+        submitted_at      TEXT
+    );
+    CREATE TABLE IF NOT EXISTS migration_operations (
+        id                     TEXT PRIMARY KEY,
+        repository_id          TEXT NOT NULL,
+        organization_id        TEXT NOT NULL,
+        operation_type         TEXT NOT NULL DEFAULT 'on_demand',
+        wave_id                TEXT,
+        pre_migration_form_id  TEXT,
+        status                 TEXT NOT NULL DEFAULT 'pending',
+        dry_run                INTEGER NOT NULL DEFAULT 0,
+        confirmed_at           TEXT,
+        started_at             TEXT,
+        completed_at           TEXT,
+        error_message          TEXT,
+        audit_log_json         JSONB NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_migration_ops_repo_status
+        ON migration_operations(repository_id, status);
+    CREATE TABLE IF NOT EXISTS migration_audit_events (
+        id              TEXT PRIMARY KEY,
+        operation_id    TEXT NOT NULL,
+        event_type      TEXT NOT NULL,
+        previous_state_json JSONB NOT NULL DEFAULT '{}',
+        new_state_json  JSONB NOT NULL DEFAULT '{}',
+        user_id         TEXT NOT NULL DEFAULT '',
+        reason          TEXT,
+        timestamp       TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_migration_audit_ops_ts
+        ON migration_audit_events(operation_id, timestamp);
     """
 
     def __init__(self, dsn: str):
@@ -618,800 +717,3 @@ class PostgresStateDB:
                     "DELETE FROM pipeline_migrations WHERE wave_id=%s AND status='failed'",
                     (wave_id,),
                 )
-
-    def upsert_risk_score(self, score):
-        now = datetime.now(timezone.utc).isoformat()
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO repo_risk_scores
-                        (project,repo_name,total_score,assigned_phase,gh_org,gh_repo,score_json,scored_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT(project,repo_name) DO UPDATE SET
-                        total_score=EXCLUDED.total_score,
-                        assigned_phase=EXCLUDED.assigned_phase,
-                        gh_org=EXCLUDED.gh_org, gh_repo=EXCLUDED.gh_repo,
-                        score_json=EXCLUDED.score_json, scored_at=EXCLUDED.scored_at
-                """, (
-                    score.project, score.repo_name, score.total_score,
-                    score.assigned_phase if score.assigned_phase else None,
-                    score.gh_org, score.gh_repo,
-                    json.dumps(score.to_dict()), now,
-                ))
-
-    def get_all_risk_scores(self) -> list:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM repo_risk_scores ORDER BY total_score")
-                return [dict(r) for r in cur.fetchall()]
-
-    def get_risk_scores_for_phase(self, phase) -> list:
-        phase_val = _phase_value(phase)
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM repo_risk_scores WHERE assigned_phase=%s ORDER BY total_score",
-                    (phase_val,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def risk_score_count(self) -> int:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM repo_risk_scores")
-                return cur.fetchone()[0]
-
-    def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
-        counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM repo_risk_scores WHERE assigned_phase=%s",
-                    (phase_id,),
-                )
-                counts["risk_scores"] = cur.fetchone()[0]
-                if profile_id:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM profile_scan_repos "
-                        "WHERE profile_id=%s AND assigned_phase=%s",
-                        (profile_id, phase_id),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM profile_scan_repos WHERE assigned_phase=%s",
-                        (phase_id,),
-                    )
-                counts["profile_scan"] = cur.fetchone()[0]
-        return counts
-
-    def reassign_phase_repos(
-        self,
-        from_phase: str,
-        to_phase: str,
-        profile_id: str | None = None,
-    ) -> dict[str, int]:
-        updated = {"risk_scores": 0, "profile_scan": 0}
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE repo_risk_scores SET assigned_phase=%s WHERE assigned_phase=%s",
-                    (to_phase, from_phase),
-                )
-                updated["risk_scores"] = cur.rowcount
-                if profile_id:
-                    cur.execute(
-                        "UPDATE profile_scan_repos SET assigned_phase=%s "
-                        "WHERE profile_id=%s AND assigned_phase=%s",
-                        (to_phase, profile_id, from_phase),
-                    )
-                else:
-                    cur.execute(
-                        "UPDATE profile_scan_repos SET assigned_phase=%s WHERE assigned_phase=%s",
-                        (to_phase, from_phase),
-                    )
-                updated["profile_scan"] = cur.rowcount
-        return updated
-
-    def scan_repo_scores(self, profile_id: str | None = None) -> list[float]:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                if profile_id:
-                    cur.execute(
-                        "SELECT total_score FROM profile_scan_repos WHERE profile_id=%s",
-                        (profile_id,),
-                    )
-                else:
-                    cur.execute("SELECT total_score FROM profile_scan_repos")
-                rows = cur.fetchall()
-                if rows:
-                    return [float(r[0]) for r in rows]
-                cur.execute("SELECT total_score FROM repo_risk_scores")
-                rows = cur.fetchall()
-        return [float(r[0]) for r in rows]
-
-    # ── Profile scan (discovery per migration profile) ───────────────────────
-
-    def save_profile_scan(
-        self,
-        profile_id: str,
-        raw: dict[str, Any],
-        *,
-        preserve_manual_assignments: bool = True,
-    ) -> None:
-        from ado2gh.api.migration_scan import pack_scan_summary_json
-        from ado2gh.api.profile_discovery import manual_phase_overrides
-
-        now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
-        gh_org = raw.get("gh_org", "")
-        summary = pack_scan_summary_json(raw)
-        overrides: dict[tuple[str, str], str] = {}
-        if preserve_manual_assignments:
-            overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM profile_scan_repos WHERE profile_id=%s",
-                    (profile_id,),
-                )
-                cur.execute("""
-                    INSERT INTO profile_scans
-                        (profile_id, scanned_at, gh_org, projects_scanned, repos_scanned, summary_json)
-                    VALUES (%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT(profile_id) DO UPDATE SET
-                        scanned_at=EXCLUDED.scanned_at,
-                        gh_org=EXCLUDED.gh_org,
-                        projects_scanned=EXCLUDED.projects_scanned,
-                        repos_scanned=EXCLUDED.repos_scanned,
-                        summary_json=EXCLUDED.summary_json
-                """, (
-                    profile_id, now, gh_org,
-                    raw.get("projects_scanned", 0),
-                    raw.get("repos_scanned", 0),
-                    json.dumps(summary),
-                ))
-                for phase_key, bucket in raw.get("recommendations", {}).items():
-                    for repo in bucket.get("repos", []):
-                        suggested = repo.get("assigned_phase") or phase_key
-                        cur.execute("""
-                            INSERT INTO profile_scan_repos
-                                (profile_id, project, repo_name, total_score, suggested_phase,
-                                 assigned_phase, gh_org, gh_repo, pipeline_count, repo_json)
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        """, (
-                            profile_id,
-                            repo.get("project", ""),
-                            repo.get("repo_name", ""),
-                            repo.get("total_score", 0),
-                            suggested,
-                            suggested,
-                            repo.get("gh_org", gh_org),
-                            repo.get("gh_repo", repo.get("repo_name", "")),
-                            repo.get("pipeline_count", 0),
-                            json.dumps(repo),
-                        ))
-                for (project, repo_name), phase in overrides.items():
-                    cur.execute(
-                        "UPDATE profile_scan_repos SET assigned_phase=%s "
-                        "WHERE profile_id=%s AND project=%s AND repo_name=%s",
-                        (phase, profile_id, project, repo_name),
-                    )
-
-    def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM profile_scans WHERE profile_id=%s",
-                    (profile_id,),
-                )
-                row = cur.fetchone()
-        return dict(row) if row else None
-
-    def get_profile_scan_repos(
-        self, profile_id: str, phase: str | None = None,
-    ) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                if phase:
-                    cur.execute(
-                        "SELECT * FROM profile_scan_repos WHERE profile_id=%s AND assigned_phase=%s "
-                        "ORDER BY total_score, project, repo_name",
-                        (profile_id, phase),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT * FROM profile_scan_repos WHERE profile_id=%s "
-                        "ORDER BY assigned_phase, total_score, project, repo_name",
-                        (profile_id,),
-                    )
-                return [dict(r) for r in cur.fetchall()]
-
-    def update_profile_repo_phases(
-        self, profile_id: str, assignments: list[dict[str, str]],
-    ) -> int:
-        updated = 0
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                for item in assignments:
-                    cur.execute(
-                        "UPDATE profile_scan_repos SET assigned_phase=%s "
-                        "WHERE profile_id=%s AND project=%s AND repo_name=%s",
-                        (
-                            item["assigned_phase"],
-                            profile_id,
-                            item["project"],
-                            item["repo_name"],
-                        ),
-                    )
-                    updated += cur.rowcount
-        return updated
-
-    def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
-        from ado2gh.api.migration_scan import extract_discovery_fields
-
-        meta = self.get_profile_scan_meta(profile_id)
-        if not meta:
-            return None
-        repos = self.get_profile_scan_repos(profile_id)
-        buckets: dict[str, dict] = {}
-        for r in repos:
-            phase = r.get("assigned_phase") or r.get("suggested_phase") or "unassigned"
-            if phase not in buckets:
-                buckets[phase] = {
-                    "phase": phase,
-                    "repo_count": 0,
-                    "risk_min": r["total_score"],
-                    "risk_max": r["total_score"],
-                    "rationale": f"User-assigned and recommended repos in {phase}",
-                    "repos": [],
-                }
-            b = buckets[phase]
-            b["repo_count"] += 1
-            b["risk_min"] = min(b["risk_min"], r["total_score"])
-            b["risk_max"] = max(b["risk_max"], r["total_score"])
-            repo_data = json.loads(r.get("repo_json") or "{}")
-            repo_data["assigned_phase"] = r.get("assigned_phase")
-            repo_data["suggested_phase"] = r.get("suggested_phase")
-            b["repos"].append(repo_data)
-        summary_raw = meta.get("summary_json") or "{}"
-        if isinstance(summary_raw, str):
-            summary_raw = json.loads(summary_raw)
-        discovery = extract_discovery_fields(summary_raw)
-        return {
-            "profile_id": profile_id,
-            "scanned_at": meta["scanned_at"],
-            "projects_scanned": meta["projects_scanned"],
-            "repos_scanned": meta["repos_scanned"],
-            "total_repos": meta["repos_scanned"],
-            "gh_org": meta["gh_org"],
-            "recommendations": buckets,
-            **discovery,
-        }
-
-    def upsert_phase_gate(self, result):
-        now = datetime.now(timezone.utc).isoformat()
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO phase_gates
-                        (phase,status,repo_success_pct,pipeline_success_pct,
-                         repos_completed,repos_total,pipelines_completed,pipelines_total,
-                         failures_json,override_reason,checked_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT(phase) DO UPDATE SET
-                        status=EXCLUDED.status,
-                        repo_success_pct=EXCLUDED.repo_success_pct,
-                        pipeline_success_pct=EXCLUDED.pipeline_success_pct,
-                        repos_completed=EXCLUDED.repos_completed,
-                        repos_total=EXCLUDED.repos_total,
-                        pipelines_completed=EXCLUDED.pipelines_completed,
-                        pipelines_total=EXCLUDED.pipelines_total,
-                        failures_json=EXCLUDED.failures_json,
-                        override_reason=EXCLUDED.override_reason,
-                        checked_at=EXCLUDED.checked_at
-                """, (
-                    result.phase.value, result.status.value,
-                    result.repo_success_pct, result.pipeline_success_pct,
-                    result.repos_completed, result.repos_total,
-                    result.pipelines_completed, result.pipelines_total,
-                    json.dumps(result.failures), result.override_reason,
-                    result.checked_at or now,
-                ))
-
-    def get_phase_gate(self, phase) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM phase_gates WHERE phase=%s", (_phase_value(phase),))
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def get_all_phase_gates(self) -> list:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM phase_gates ORDER BY id")
-                return [dict(r) for r in cur.fetchall()]
-
-    def upsert_batch_checkpoint(self, cp):
-        now = datetime.now(timezone.utc).isoformat()
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO batch_checkpoints
-                        (phase,batch_num,total_batches,repos_done,repos_total,status,started_at,completed_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT(phase,batch_num) DO UPDATE SET
-                        repos_done=EXCLUDED.repos_done, status=EXCLUDED.status,
-                        completed_at=EXCLUDED.completed_at
-                """, (
-                    cp.phase.value, cp.batch_num, cp.total_batches,
-                    cp.repos_done, cp.repos_total, cp.status,
-                    cp.started_at or now, cp.completed_at,
-                ))
-
-    def get_batch_checkpoints(self, phase) -> list:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM batch_checkpoints WHERE phase=%s ORDER BY batch_num",
-                    (_phase_value(phase),),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def get_last_completed_batch(self, phase) -> int:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT MAX(batch_num) FROM batch_checkpoints "
-                    "WHERE phase=%s AND status='completed'",
-                    (_phase_value(phase),),
-                )
-                row = cur.fetchone()
-                return row[0] if row and row[0] is not None else -1
-
-    def insert_audit_event(
-        self,
-        event_id: str,
-        event_type: str,
-        profile_id: str,
-        actor: str,
-        assignment_id: str | None,
-        payload_json: str,
-        created_at: str,
-    ):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO audit_events
-                    (id, event_type, profile_id, actor, assignment_id, payload_json, created_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        event_id, event_type, profile_id, actor,
-                        assignment_id, payload_json, created_at,
-                    ),
-                )
-
-    def list_audit_events(
-        self, profile_id: str | None = None, limit: int = 100,
-    ) -> list[dict]:
-        return self.search_audit_events(
-            profile_id=profile_id, limit=limit, offset=0,
-        )
-
-    def search_audit_events(
-        self,
-        *,
-        profile_id: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-        actor: str | None = None,
-        event_type: str | None = None,
-        search: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-    ) -> list[dict]:
-        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
-
-        filters = AuditEventFilters(
-            profile_id=profile_id,
-            actor=actor,
-            event_type=event_type,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-        )
-        clauses, params = build_audit_filters(filters)
-        where = " AND ".join(clauses).replace("?", "%s")
-        sql = (
-            f"SELECT * FROM audit_events WHERE {where} "
-            "ORDER BY created_at DESC LIMIT %s OFFSET %s"
-        )
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(sql, (*params, limit, offset))
-                return [dict(r) for r in cur.fetchall()]
-
-    def count_audit_events(
-        self,
-        *,
-        profile_id: str | None = None,
-        actor: str | None = None,
-        event_type: str | None = None,
-        search: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-    ) -> int:
-        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
-
-        filters = AuditEventFilters(
-            profile_id=profile_id,
-            actor=actor,
-            event_type=event_type,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-        )
-        clauses, params = build_audit_filters(filters)
-        where = " AND ".join(clauses).replace("?", "%s")
-        sql = f"SELECT COUNT(*) AS c FROM audit_events WHERE {where}"
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                row = cur.fetchone()
-        return int(row[0]) if row else 0
-
-    def list_audit_event_types(
-        self,
-        profile_id: str | None = None,
-        limit: int = 200,
-        actor: str | None = None,
-    ) -> list[str]:
-        clauses = ["1=1"]
-        params: list[Any] = []
-        if profile_id:
-            clauses.append("profile_id=%s")
-            params.append(profile_id)
-        if actor:
-            clauses.append("actor=%s")
-            params.append(actor)
-        where = " AND ".join(clauses)
-        sql = (
-            f"SELECT DISTINCT event_type FROM audit_events WHERE {where} "
-            "ORDER BY event_type LIMIT %s"
-        )
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (*params, limit))
-                return [str(row[0]) for row in cur.fetchall()]
-
-    def count_platform_users(self) -> int:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM platform_users")
-                row = cur.fetchone()
-                return int(row[0]) if row else 0
-
-    def create_platform_user(
-        self, user_id: str, username: str, password_hash: str,
-        role: str, display_name: str, created_at: str,
-        status: str = "active",
-    ):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO platform_users (id, username, password_hash, role, display_name, status, created_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (user_id, username, password_hash, role, display_name, status, created_at),
-                )
-
-    def get_platform_user_by_username(self, username: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM platform_users WHERE username=%s", (username,))
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def get_platform_user_by_id(self, user_id: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM platform_users WHERE id=%s", (user_id,))
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def list_platform_users(self) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT id, username, role, display_name, status, created_at FROM platform_users ORDER BY username",
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def update_platform_user(
-        self,
-        user_id: str,
-        *,
-        role: str | None = None,
-        status: str | None = None,
-        display_name: str | None = None,
-    ) -> bool:
-        fields: list[str] = []
-        values: list[Any] = []
-        if role is not None:
-            fields.append("role=%s")
-            values.append(role)
-        if status is not None:
-            fields.append("status=%s")
-            values.append(status)
-        if display_name is not None:
-            fields.append("display_name=%s")
-            values.append(display_name)
-        if not fields:
-            return False
-        values.append(user_id)
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"UPDATE platform_users SET {', '.join(fields)} WHERE id=%s",
-                    values,
-                )
-                return cur.rowcount > 0
-
-    def delete_auth_sessions_for_user(self, user_id: str) -> None:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM auth_sessions WHERE user_id=%s", (user_id,))
-
-    def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO auth_sessions (token, user_id, expires_at, created_at)
-                    VALUES (%s,%s,%s,%s)
-                    """,
-                    (token, user_id, expires_at, created_at),
-                )
-
-    def get_auth_session(self, token: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM auth_sessions WHERE token=%s", (token,))
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def delete_auth_session(self, token: str):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM auth_sessions WHERE token=%s", (token,))
-
-    def create_live_execution_approval(
-        self,
-        approval_id: str,
-        requester_user_id: str,
-        requester_username: str,
-        scope_type: str,
-        scope_id: str,
-        requested_at: str,
-        assignment_id: str | None = None,
-        profile_id: str | None = None,
-        reason_request: str | None = None,
-        context_json: str | None = None,
-    ) -> dict:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO live_execution_approvals (
-                        id, requester_user_id, requester_username, scope_type, scope_id,
-                        assignment_id, profile_id, status, reason_request, context_json,
-                        requested_at
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        approval_id, requester_user_id, requester_username,
-                        scope_type, scope_id, assignment_id, profile_id,
-                        "pending", reason_request, context_json, requested_at,
-                    ),
-                )
-        return self.get_live_execution_approval(approval_id) or {}
-
-    def get_live_execution_approval(self, approval_id: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM live_execution_approvals WHERE id=%s",
-                    (approval_id,),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def find_pending_live_execution_approval(
-        self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT * FROM live_execution_approvals
-                    WHERE scope_type=%s AND scope_id=%s AND status='pending'
-                    ORDER BY requested_at DESC LIMIT 1
-                    """,
-                    (scope_type, scope_id),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def find_approved_live_execution_approval(
-        self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT * FROM live_execution_approvals
-                    WHERE scope_type=%s AND scope_id=%s AND status='approved'
-                    ORDER BY decided_at DESC LIMIT 1
-                    """,
-                    (scope_type, scope_id),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def get_live_execution_approval_for_scope(
-        self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT * FROM live_execution_approvals
-                    WHERE scope_type=%s AND scope_id=%s
-                    ORDER BY requested_at DESC LIMIT 1
-                    """,
-                    (scope_type, scope_id),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def list_live_execution_approvals(
-        self, status: str | None = None, limit: int = 100,
-    ) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                if status and status != "all":
-                    cur.execute(
-                        """
-                        SELECT * FROM live_execution_approvals
-                        WHERE status=%s ORDER BY requested_at DESC LIMIT %s
-                        """,
-                        (status, limit),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT * FROM live_execution_approvals
-                        ORDER BY requested_at DESC LIMIT %s
-                        """,
-                        (limit,),
-                    )
-                rows = cur.fetchall()
-        return [dict(r) for r in rows]
-
-    def get_assignment(self, assignment_id: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM migration_assignments WHERE id=%s",
-                    (assignment_id,),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def list_assignments(self, profile_id: str) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM migration_assignments WHERE profile_id=%s ORDER BY created_at",
-                    (profile_id,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def upsert_cohort_membership(
-        self,
-        assignment_id: str,
-        profile_id: str,
-        ado_project: str,
-        ado_repo: str,
-        gh_org: str,
-        gh_repo: str,
-        active: bool,
-    ):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                if active:
-                    cur.execute(
-                        "UPDATE cohort_membership SET active=0 "
-                        "WHERE profile_id=%s AND ado_project=%s AND ado_repo=%s AND active=1",
-                        (profile_id, ado_project, ado_repo),
-                    )
-                cur.execute(
-                    """
-                    INSERT INTO cohort_membership
-                    (assignment_id, profile_id, ado_project, ado_repo, gh_org, gh_repo, active)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        assignment_id, profile_id, ado_project, ado_repo,
-                        gh_org, gh_repo, 1 if active else 0,
-                    ),
-                )
-
-    def get_cohort_repos(self, assignment_id: str) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT ado_project, ado_repo, gh_org, gh_repo FROM cohort_membership "
-                    "WHERE assignment_id=%s AND active=1",
-                    (assignment_id,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM migrations WHERE ado_project=%s AND ado_repo=%s "
-                    "AND status='in_progress' LIMIT 1",
-                    (ado_project, ado_repo),
-                )
-                row = cur.fetchone()
-        return row is not None
-
-    def is_repo_in_assignment_cohort(
-        self, assignment_id: str, ado_project: str, ado_repo: str,
-    ) -> bool:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM cohort_membership WHERE assignment_id=%s "
-                    "AND ado_project=%s AND ado_repo=%s AND active=1 LIMIT 1",
-                    (assignment_id, ado_project, ado_repo),
-                )
-                row = cur.fetchone()
-        return row is not None
-
-    def decide_live_execution_approval(
-        self,
-        approval_id: str,
-        status: str,
-        approver_user_id: str,
-        approver_username: str,
-        reason_decision: str,
-        decided_at: str,
-    ) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT status FROM live_execution_approvals WHERE id=%s",
-                    (approval_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return None
-                if row["status"] != "pending":
-                    return self.get_live_execution_approval(approval_id)
-                cur.execute(
-                    """
-                    UPDATE live_execution_approvals
-                    SET status=%s, approver_user_id=%s, approver_username=%s,
-                        reason_decision=%s, decided_at=%s
-                    WHERE id=%s
-                    """,
-                    (
-                        status, approver_user_id, approver_username,
-                        reason_decision, decided_at, approval_id,
-                    ),
-                )
-        return self.get_live_execution_approval(approval_id)

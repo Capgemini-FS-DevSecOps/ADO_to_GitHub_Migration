@@ -45,7 +45,7 @@ export default function LoginClient() {
         setLoading(false);
       })
       .catch(() => {
-        setError(`Cannot reach API at ${ACCEL}. Start docker compose or run-local.ps1.`);
+        setError(`Cannot reach API at ${ACCEL}. Start docker compose or run .\\scripts\\dev\\run-local-agent.ps1 and .\\scripts\\dev\\run-ui.ps1.`);
         setLoading(false);
       });
   }, [router]);

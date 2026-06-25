@@ -1,6 +1,5 @@
-"""LLM agent package — Planner, Executor, Validator (PEV loop)."""
-from ado2gh.agents.executor import AgentExecutor
-from ado2gh.agents.planner import AgentPlanner
-from ado2gh.agents.validator import AgentValidator
+"""Agent package — migration agent via LangGraph (spec 012).
 
-__all__ = ["AgentPlanner", "AgentExecutor", "AgentValidator"]
+Legacy PEV modules (planner, executor, validator) have been replaced by
+the migration_agent package with LangGraph nodes.
+"""

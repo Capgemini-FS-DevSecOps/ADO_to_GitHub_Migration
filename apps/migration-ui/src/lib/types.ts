@@ -2,6 +2,7 @@ export type StepStatus =
   | 'pending'
   | 'running'
   | 'completed'
+  | 'warn'
   | 'failed'
   | 'skipped'
   | 'dry_run_complete'
@@ -25,6 +26,8 @@ export interface PipelineRun {
   dry_run: boolean;
   phase: string;
   wave_id?: number | null;
+  repository_id?: string | null;
+  migrate_deps_only?: boolean;
   steps: PipelineStep[];
   logs: string[];
   error?: string | null;
@@ -129,6 +132,16 @@ export interface ScanProjectDetail {
   variable_groups?: Array<{ name: string; id?: string; variable_count?: number; is_shared?: boolean }>;
   environment_count?: number;
   environments?: string[];
+  artifact_feed_count?: number;
+  artifact_feeds?: Array<{ name: string; id?: string; is_public?: boolean }>;
+  team_count?: number;
+  teams?: string[];
+  iteration_count?: number;
+  work_item_count?: number;
+  work_item_types?: string[];
+  work_item_type_count?: number;
+  test_plan_count?: number;
+  test_plans?: Array<{ name: string; id?: string | number; state?: string }>;
   error?: string | null;
 }
 
@@ -318,6 +331,7 @@ export interface ActiveMigration {
   dry_run: boolean;
   phase: string;
   wave_id?: number | null;
+  repository_id?: string | null;
   current_step: string;
   started_by_username: string;
   started_by_display_name: string;

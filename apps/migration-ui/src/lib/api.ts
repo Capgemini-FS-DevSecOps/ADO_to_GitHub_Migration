@@ -15,9 +15,6 @@ import type {
   ValidationResult,
   TokenValidationResult,
   UISettings,
-  PhaseDefinition,
-  PhaseRemoval,
-  PhasesPayload,
 } from './types';
 
 export const ACCEL = process.env.NEXT_PUBLIC_ACCELERATOR_URL || 'http://localhost:8080';
@@ -38,7 +35,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch {
     throw new Error(
-      `Cannot reach Accelerator API at ${ACCEL}. If using Docker, ensure the accelerator container is running on port 8080. Otherwise start with .\\scripts\\run-local.ps1 or docker compose up.`,
+      `Cannot reach Accelerator API at ${ACCEL}. If using Docker, ensure the accelerator container is running on port 8080. Otherwise start with .\\scripts\\dev\\run-local-agent.ps1 and .\\scripts\\dev\\run-ui.ps1.`,
     );
   }
     if (!r.ok) {
@@ -301,45 +298,12 @@ export async function updateAdvanced(data: Partial<AdvancedSettings>) {
   });
 }
 
-export async function fetchPhases(profileId?: string): Promise<PhasesPayload> {
-  const q = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
-  return api<PhasesPayload>(`/v1/settings/phases${q}`);
-}
-
-export async function updatePhases(body: {
-  phases: PhaseDefinition[];
-  removals?: PhaseRemoval[];
-  span_to_scan?: boolean;
-  profile_id?: string;
-}): Promise<PhasesPayload> {
-  return api<PhasesPayload>('/v1/settings/phases', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
 export async function fetchPipelineSteps(context: 'migrate' | 'full' = 'migrate'): Promise<StepDefinition[]> {
   return api<StepDefinition[]>(`/v1/pipeline/steps?context=${context}`);
 }
 
 export async function fetchDiscovery(profileId: string): Promise<DiscoverySnapshot> {
   return api<DiscoverySnapshot>(`/v1/settings/profiles/${profileId}/discovery`);
-}
-
-export async function savePhaseAssignments(
-  profileId: string,
-  assignments: { project: string; repo_name: string; assigned_phase: string }[],
-) {
-  return api<{
-    updated: number;
-    synced_risk_scores?: number;
-    message?: string;
-  }>(`/v1/settings/profiles/${profileId}/phase-assignments`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ assignments }),
-  });
 }
 
 export async function runValidation(body: {
@@ -405,6 +369,8 @@ export async function startPipelineRun(body: {
   phase: string;
   wave_id?: number | null;
   steps?: string[];
+  repository_id?: string | null;
+  migrate_deps_only?: boolean;
 }) {
   return api<{ run: PipelineRun }>('/v1/pipeline/runs', {
     method: 'POST',

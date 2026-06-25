@@ -319,6 +319,82 @@ class ADOClient:
                 pass
         return out
 
+    # ── Artifacts ───────────────────────────────────────────────────────────
+
+    def list_artifacts(self, project: str) -> list[dict]:
+        """List artifact feeds in a project."""
+        url = (f"{self.org_url}/{self._p(project)}"
+               f"/_apis/packaging/feeds?{self.API}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    def list_build_artifacts(self, project: str, top: int = 50) -> list[dict]:
+        """List recent build artifacts (outputs published by pipelines)."""
+        url = (f"{self.org_url}/{self._p(project)}/_apis/build/artifacts"
+               f"?{self.API}&$top={top}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    # ── Azure Boards ─────────────────────────────────────────────────────────
+
+    def list_teams(self, project: str) -> list[dict]:
+        """List teams in a project."""
+        url = (f"{self.org_url}/_apis/projects/{self._p(project)}/teams?{self.API}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    def list_iterations(self, project: str) -> list[dict]:
+        """List iteration paths (sprints) for a project."""
+        url = (f"{self.org_url}/{self._p(project)}"
+               f"/_apis/work/teamsettings/iterations?{self.API}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    def list_work_item_types(self, project: str) -> list[dict]:
+        """List work item types defined in a project."""
+        url = (f"{self.org_url}/{self._p(project)}"
+               f"/_apis/wit/workitemtypes?{self.API}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    def list_queries(self, project: str) -> list[dict]:
+        """List stored queries in a project."""
+        url = (f"{self.org_url}/{self._p(project)}/_apis/wit/queries?{self.API}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    # ── Test Plans ───────────────────────────────────────────────────────────
+
+    def list_test_plans(self, project: str) -> list[dict]:
+        """List test plans in a project."""
+        url = (f"{self.org_url}/{self._p(project)}"
+               f"/_apis/test/plans?{self.API}&includePlanDetails=true")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
+    def list_test_suites(self, project: str, plan_id: int) -> list[dict]:
+        """List test suites in a test plan."""
+        url = (f"{self.org_url}/{self._p(project)}"
+               f"/_apis/test/Plans/{plan_id}/suites?{self.API}")
+        try:
+            return self._get(url).get("value", [])
+        except Exception:
+            return []
+
     def list_branch_policies(self, project: str, repo_id: str) -> list[dict]:
         url = (f"{self.org_url}/{self._p(project)}"
                f"/_apis/policy/configurations?{self.API}")

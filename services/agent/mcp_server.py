@@ -5,8 +5,8 @@ import json
 import os
 import sys
 
-from ado2gh.agents.local.audit_bridge import IdeAuditBridge
-from ado2gh.agents.local.tool_catalog import (
+from ado2gh.agents.migration_agent.utils import IdeAuditBridge
+from ado2gh.agents.migration_agent.tool_catalog import (
     get_tool,
     invoke_tool_http,
     list_tools,

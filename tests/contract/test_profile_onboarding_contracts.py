@@ -2,7 +2,7 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_DIR = ROOT / "specs" / "005-profile-onboarding" / "contracts"
+CONTRACT_DIR = ROOT / "specs" / "archive" / "005-profile-onboarding" / "contracts"
 
 
 def test_onboarding_contract_paths_exist():

@@ -211,27 +211,14 @@ class ConfigurableWaveAssigner:
         scores: list[RiskScore],
         gh_org: str = "your-github-org",
     ) -> dict[str, list[RiskScore]]:
-        result: dict[str, list[RiskScore]] = {p.id: [] for p in self.phases}
-        last = self.phases[-1]
-        for score in sorted(scores, key=lambda s: s.total_score):
+        # Phase-based assignment is deprecated; all repos are returned in a single
+        # unassigned bucket so the UI can use risk scores and bulk waves instead.
+        for score in scores:
             if not score.gh_org:
                 score.gh_org = gh_org
             if not score.gh_repo:
                 score.gh_repo = re.sub(r"[^a-zA-Z0-9\-_.]", "-", score.repo_name)
-            assigned = False
-            for phase in self.phases:
-                if score.total_score > phase.risk_max:
-                    continue
-                if phase.id != last.id and len(result[phase.id]) >= phase.repo_cap:
-                    continue
-                score.assigned_phase = phase.id
-                result[phase.id].append(score)
-                assigned = True
-                break
-            if not assigned:
-                score.assigned_phase = last.id
-                result[last.id].append(score)
-        return result
+        return {"unassigned": scores}
 
     def phase_label(self, phase_id: str) -> str:
         for p in self.phases:

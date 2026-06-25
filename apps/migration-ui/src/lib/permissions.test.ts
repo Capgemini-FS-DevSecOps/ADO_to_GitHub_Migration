@@ -69,6 +69,7 @@ describe('platform permission gates (FR-010, SC-002)', () => {
     expect(hrefs).toContain('/settings/profiles');
     expect(hrefs).not.toContain('/settings/models');
     expect(hrefs).not.toContain('/settings/connectivity');
+    expect(hrefs).not.toContain('/settings/cloud-credentials');
     expect(hrefs).not.toContain('/settings/users');
     expect(hrefs).not.toContain('/settings/approvals');
   });
@@ -78,6 +79,7 @@ describe('platform permission gates (FR-010, SC-002)', () => {
     const hrefs = tabs.map((t) => t.href);
     expect(hrefs).toContain('/settings/models');
     expect(hrefs).toContain('/settings/connectivity');
+    expect(hrefs).toContain('/settings/cloud-credentials');
     expect(hrefs).toContain('/settings/users');
     expect(hrefs).toContain('/settings/approvals');
   });
