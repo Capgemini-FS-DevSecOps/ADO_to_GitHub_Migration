@@ -1,236 +1,363 @@
-# Troubleshooting Guide
+# Troubleshooting ado2gh v6
 
-Common issues and solutions when running ADO-to-GitHub migrations.
+Diagnose from the immutable plan, `agent status`, task errors, validation CSV,
+and pipeline evidence together. Do not edit SQLite status rows or create a new
+plan merely to clear a failed control.
 
----
-
-## Authentication Errors
+## Connectivity and authentication
 
 ### `ADO_ORG_URL + ADO_PAT required`
 
 ```bash
-export ADO_PAT="your-pat-here"
+export ADO_PAT="..."
 export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
 ```
 
-### `GH_TOKEN required`
+Verify PAT expiry, organization access, IP allow-listing, and only the ADO
+scopes used by the plan.
 
-```bash
-export GH_TOKEN="ghp_your_token"
-# OR for multi-token:
-export GH_TOKEN_1="ghp_token_one"
-```
+### GitHub 401/403
 
-### ADO PAT authentication failures
+Set `GH_TOKEN`, a pool named `GH_TOKEN_1` through `GH_TOKEN_19`, or the complete
+GitHub App variables. Check repository/organization permissions for the planned
+scopes and SSO authorization. Use `ado2gh token-status -c migration.yaml` to
+inspect the active pool.
 
-- Verify PAT hasn't expired at `https://dev.azure.com/YOUR_ORG/_usersSettings/tokens`
-- Verify the PAT has the required scopes (see [Setup Guide](SETUP_GUIDE.md#required-scopes))
-- For orgs with IP allowlisting, ensure your machine's IP is allowed
+### Endpoint rejected as unsafe
 
-### GitHub 401/403 errors
+`ado_org_url`, `gh_api_url`, `gh_web_url`, and `OPENAI_BASE_URL` must be
+absolute HTTPS URLs. ADO and GitHub URL fields also reject embedded
+user/password data, query strings, and fragments. Plain HTTP is rejected even
+for internal endpoints; configure TLS and a trusted certificate rather than
+weakening validation.
 
-- Classic token: needs `repo`, `admin:org`, `workflow` scopes
-- Fine-grained token: needs Read/Write for Administration, Contents, Workflows, Environments
-- Token may be expired — create a new one
-- For GHEC with SSO: authorize the token for the organization
+On GHES, configure both `global.gh_api_url: https://HOST/api/v3` and
+`global.gh_web_url: https://HOST`. A missing web URL or mismatched authority
+blocks clone/redirect operations instead of deriving an unsafe URL.
 
----
+## Plan and preview failures
 
-## Rate Limiting
+### Plan integrity or configuration digest mismatch
 
-### `All tokens rate-limited. Waiting Xs for reset...`
+The JSON or non-secret runtime configuration differs from the reviewed plan.
+Restore the exact reviewed files. If the change was intentional—including a
+mapping, action pin, manual approval manifest, cleanup permission, or delivery
+change—create a new plan and obtain a new approval.
 
-GitHub API allows 5000 requests/hour per token. Solutions:
+### Runtime authority mismatch
 
-1. **Add more tokens** — the tool auto-rotates `GH_TOKEN_1` through `GH_TOKEN_19`
-2. **Check token health**: `ado2gh token-status --config migration.yaml`
-3. **Reduce parallelism** — lower `parallel` in config (fewer concurrent API calls)
-4. **Use GitHub App auth** — App tokens get higher rate limits in some configurations
+Plan schema v7 binds the canonical ADO and GitHub API origins and each service's
+immutable organization identity. A different hostname, enterprise endpoint,
+or tenant identity is not interchangeable even when organization and repository
+names match. Use the reviewed endpoints and credentials, or create and approve
+a new plan for an intentional authority change.
 
-### ADO rate limiting (HTTP 429)
+### Source repository/ref drift
 
-The tool has built-in retry with exponential backoff. If persistent:
-- Reduce `pipeline_parallel` setting
-- Run during off-hours when other ADO consumers are less active
+Execution compares the immutable ADO repository ID, default branch, every
+branch/tag name and SHA, default-branch HEAD, and full-ref digest with the plan.
+Freeze ADO writes and investigate the change. Intentional drift requires a new
+plan; do not retry against the old snapshot.
 
----
+### Pipeline inventory/source drift
 
-## Git Migration Failures
+The plan contains normalized pipeline receipts and source/YAML digests.
+Execution rescans them before conversion. A changed/deleted definition,
+association, source file, or incomplete inventory blocks the pipeline scope.
+Stabilize ADO and generate a new plan. Do not copy stale inventory rows.
 
-### `git clone --mirror failed`
+### Non-Git source snapshot drift
 
-- **Check PAT scope**: needs `Code (Read)`
-- **Large repos**: increase timeout in config or check disk space
-- **Network**: verify connectivity to `dev.azure.com`
-- **Firewall**: some corporate networks block git protocol
+`work_items`, `wiki`, `secrets`, and `branch_policies` are bound by a plan-time
+content digest and aggregate counts. Execution fetches one payload, verifies
+it, and transforms that same in-memory object. Freeze the relevant ADO source,
+investigate the changed item set, and create a new plan for intentional drift;
+there is no count-only or second-read bypass.
 
-### `git push --mirror failed`
+### Unlinked work items appear under only one repository
 
-- **GitHub repo already has content**: delete and recreate, or use rollback first
-- **Protected branches**: the mirror push may conflict with branch protection — ensure protection isn't set before migration
-- **Size limit**: GitHub has a 100MB file limit. Large files need Git LFS
-- **Token scope**: needs `repo` scope on GitHub
+This is intentional when `include_unlinked_work_items: true`. ADO work items
+without repository links are project-scoped; the planner assigns each once to
+the case-insensitive lexicographically first planned source repository in that
+project. Copying them into every target would multiply the project backlog.
 
-### LFS push failed
+### Target appeared after planning
 
-```bash
-# Verify git-lfs is installed
-git lfs install
+The default `existing_target_policy: fail` prevents accidental adoption. Do not
+delete an unknown repository just to continue. Establish ownership, then either
+select a new target or explicitly approve reuse/nonempty-target policy in a new
+plan.
 
-# If "git: 'lfs' is not a git command"
-# Install from https://git-lfs.github.com/
-```
+For an approved existing target, a changed immutable repository ID, size,
+visibility, default branch, branch/tag SHA, or full-ref digest is also target drift. Restore
+the approved state or create a new plan; matching owner/repository text is not
+ownership evidence.
 
-If LFS push partially fails, the migration continues with a warning. Re-run:
-```bash
-ado2gh phase run --phase poc --config migration_phase.yaml
-```
+### Dry-run status requires attention
 
----
+`dry_run_passed` is the only successful preview. `dry_run_needs_review` means a
+human/external gate remains; `dry_run_failed` means a required check failed.
+Dry runs use isolated in-memory state, so none can be resumed as a live run.
+They still run nested pipeline planning, conversion, and local validation;
+inspect those receipts instead of assuming conversion was skipped.
 
-## GEI Migration Failures
+## Execution and resume
 
-### `gh gei` not found
+### `Plan ... is already executing in another process`
 
-```bash
-gh extension install github/gh-gei
-gh gei --version
-```
+One renewable cross-process lease protects a plan. Confirm the other process is
+healthy and let it finish. If it crashed, stop it, wait for
+`execution_lease_seconds` to expire, and resume the same `run_id` using the same
+plan, approval, and database. Never work around the lease with a copied DB.
 
-### GEI blob storage errors
+### Task is leased or exhausted attempts
 
-GEI requires blob storage configured on the ADO side:
-- AWS S3 bucket with appropriate permissions, or
-- Azure Blob Storage container
+An active worker owns the task, its lease has not expired, or the retry limit
+was reached. Inspect `agent status`, process health, and the task error. Resume
+after an expired crash lease; diagnose exhausted attempts instead of resetting
+state manually.
 
-See: https://docs.github.com/en/migrations/using-github-enterprise-importer
+### Target remains quarantined after a crash
 
-### GEI timeout
-
-GEI migrations are queued server-side. The `--wait` flag keeps the CLI waiting. For very large repos, this can timeout. Check migration status:
-
-```bash
-gh gei wait-for-migration --migration-id <ID>
-```
-
----
-
-## Phase & Gate Issues
-
-### `Gate BLOCKED — Phase 'poc' gate has not passed yet`
-
-The previous phase must pass its gate before the next phase can start.
-
-```bash
-# Check what's failing
-ado2gh phase gate-check --phase poc --config migration_phase.yaml
-
-# Fix failures and re-run (resumes automatically)
-ado2gh phase run --phase poc --config migration_phase.yaml
-
-# Or override with documented reason
-ado2gh phase gate-check --phase poc --override --reason "2 repos excluded by design"
-```
+Git, LFS, GEI, and deletion dispatch first write a durable remote-operation
+barrier. If the process exits while it is `in_flight`, ordinary plan/task lease
+expiry does not authorize another writer. Reconcile the exact target and
+operation under a ticket, then use `agent release-quarantine`; do not delete the
+row, copy the database, or retry by assumption.
 
 ### Interrupted run
 
-Just re-run the same command. The tool tracks completed batches in SQLite and resumes from the last checkpoint.
-
 ```bash
-# This is safe to run multiple times
-ado2gh phase run --phase wave1 --config migration_phase.yaml
+ado2gh agent run \
+  -c migration.yaml \
+  --plan output/pev_plan.json \
+  --approve-plan plan_REVIEWED_ID \
+  --resume run_EMITTED_ID \
+  --db migration_state.db
 ```
 
-### `No waves for phase wave1`
+Use the original plan and DB. A resume rechecks source and target state before
+reusing completed receipts.
 
-The `migration_phase.yaml` doesn't have repos assigned to this phase. Re-run:
+### Legacy live command is disabled
 
-```bash
-ado2gh phase assign --config migration.yaml --output migration_phase.yaml
-```
+`run`, `phase run`, `pipelines retry-failed`, and `push-workflows` reject live
+use in v6. Their `--dry-run` forms are compatibility assessments only. Create a
+cohort plan or resume the PEV run; there is no live bypass flag.
 
----
+## Git and LFS transfer
 
-## Validation Failures
+### `git clone --mirror failed`
 
-### HEAD commit SHA mismatch
+Check ADO Code Read permission, disk capacity, TLS/proxy policy, and access to
+the exact source. Tokens are passed through an ephemeral askpass helper, so do
+not add a PAT to the clone URL while debugging.
 
-This means the code didn't fully transfer. Possible causes:
-- Someone pushed to ADO after migration
-- Git mirror had network issues
-- LFS objects not fully transferred
+### Git heads/tags push failed
 
-**Fix:** Re-run the phase. The tool will re-mirror repos that failed.
+Check GitHub Contents/Administration permission, target ownership/preflight,
+branch rules, object limits, and network errors. Do not delete/recreate or
+reuse a target unless the immutable plan explicitly governs that action.
 
-### Branch count mismatch
-
-Some branches may have been filtered during mirror. This is usually a `WARN` not `FAIL`. Common for repos with many stale branches.
-
-### Workflows missing
-
-Workflow files are generated locally in `output/workflows/`. They're NOT automatically pushed to the GitHub repo. You need to commit them:
+### LFS failure
 
 ```bash
-cd output/workflows/{gh_org}/{gh_repo}
-git add .github/workflows/
-git commit -m "Add migrated workflows from ADO"
-git push
+git lfs version
+git lfs install
 ```
 
----
+LFS detection or push failure is a required migration failure, not a warning.
+Fix Git LFS, network, storage, or permissions and resume the same PEV run if the
+source snapshot is unchanged. `skip_lfs` must be an explicit reviewed repository
+decision in a new plan.
 
-## Rollback Issues
+## Pipeline conversion and delivery
 
-### Want to undo only branch protection, not delete the repo
+### Pipeline remains `needs_review`
+
+Inspect `.ado2gh/pipeline-evidence/` for the exact finding. Common gates are an
+open review PR, secrets/OIDC, environment protection, a self-hosted runner,
+manual-only semantics, or missing provider configuration. Satisfy the named
+gate; do not mark the DB completed.
+
+### LLM ambiguity could not be resolved
+
+Deterministic pipelines do not need an LLM. For eligible ambiguity, verify the
+plan-bound `pipeline_conversion.llm_provider`, model, HTTPS base URL,
+organization/project, approved API-key environment name, model access, timeout,
+schema response, and confidence threshold. Legacy routing environment values
+must exactly match the plan. A refusal, low-confidence result, validator
+rejection, or successful proposal correctly remains a review gate: model output
+is never inserted into workflow YAML.
+
+### Manual approval rejected
+
+Use the current evidence's exact pipeline identity, `ambiguity_id`, and
+`source_fingerprint`. Generate canonical IDs with
+`ManualApprovalRecord.create(...)` and `ManualApprovalManifest`; do not
+hand-write them. Check ticket, approver, timestamp/timezone, compatible typed
+target mapping, and SHA-256 evidence. After changing the manifest, create and
+approve a new organization plan because the digest is part of `plan_id`.
+The root must be approval manifest schema v2. To promote an LLM proposal,
+approve the exact fragment through this same process; do not paste it into the
+workflow or resume the old plan with changed content.
+
+### Action is not pinned or not in the reviewed catalog
+
+The production policy requires a full commit SHA. Prefer the built-in approved
+catalog. For another action, review publisher and commit provenance, add a
+40-character `pipeline_conversion.action_pins` entry, then create and approve a
+new plan. Do not disable pinning to clear the finding.
+
+### Workflow PR is open or workflow/evidence content is missing
+
+This is `needs_review`, not success. Review and merge the agent-created PR
+through normal branch protection, provision external requirements, then resume
+the same run. The validator accepts only exact plan/run/wave/source-bound
+workflow and evidence blob receipts. If the default branch advanced, it must be
+a strict descendant of the approved source commit whose complete tree diff
+contains exactly those artifacts. Do not manually push local output or use
+legacy `push-workflows` live.
+
+### External pipeline resource is still missing or drifted
+
+Approval evidence is not live-state evidence. The validator reads Actions
+enablement and selected-actions policy, expected workflow state,
+repository-secret names, approved environment-protection digests, required
+online runner labels, and external checkout repository IDs/refs/resolved SHAs
+from GitHub. A repository-checkout approval must carry explicit ref,
+token-secret name, and `checkout-access-canary` evidence. Provision or restore
+the exact resource, then resume; secret values are never supplied to the agent.
+
+## Validation failures
+
+### Branch or tag mismatch
+
+Validation compares exact names and commit SHAs, not counts. Determine whether
+the source changed, transfer failed, or the target diverged. Source drift needs
+a new plan; a retryable transfer failure may be repaired only through the
+bounded PEV repair/resume path.
+
+The configured pipeline staging branch and default branch may differ only by
+the exact approved workflow/evidence overlay. Every other branch and every tag
+must remain identical to source; unrelated or unverified tree changes fail.
+
+### Branch protection mismatch
+
+Confirm the planned policy is supported, the token has Administration access,
+and the default branch exists. A phase gate override does not override PEV
+validation.
+
+### Access policy remains `needs_review`
+
+Full-organization discovery cannot infer ADO ACL equivalence. Supply explicit
+per-repository `team_mapping` entries of source team to `{github_team,
+permission}`, obtain an access-owner review, and set
+`access_policy_approved: true` in a newly approved plan. The validator reads
+every declared GitHub role back; false approval or role drift also blocks ADO
+cleanup.
+
+## Rollback
+
+### Live rollback asks for plan/run/ticket
+
+Supply the exact plan, a terminal `run_id` belonging to it, and the external
+incident/change ticket. The CLI derives targets and its stable wave key from
+the plan; `--wave` is only required for a legacy `--dry-run` preview.
 
 ```bash
-ado2gh rollback --wave 1 --scopes branch_policies --config migration_phase.yaml
+ado2gh rollback \
+  -c migration.yaml \
+  --plan output/pev_plan.json \
+  --run-id run_TERMINAL_ID \
+  --approval-ticket INC-12345 \
+  --scopes branch_policies
 ```
 
-### Rollback failed — repo doesn't exist
+### Repository deletion is blocked
 
-The repo may have already been deleted or never created. The tool logs this and continues.
+Deletion requires a created-by-the-authorized-run ownership receipt and the
+same live immutable GitHub repository ID. Its one-shot capability also binds
+visibility, default branch, every ref, issue/pull-request and release
+identities, and activity timestamps. Drift, a later plan/run target-use receipt,
+adopted/pre-existing repos, renamed or recreated targets, incomplete receipts,
+and mismatched provenance are intentionally blocked. Escalate for manual
+incident handling; do not edit the receipt.
 
-### Want to retry specific repos
+The request may also fail closed even when ownership and the snapshot match,
+because GitHub cannot enumerate every external clone, integration, deployment,
+or dependency. Use a safe scope inverse or forward repair, or follow a
+separately reviewed manual deletion procedure.
 
-```bash
-# See what failed
-ado2gh export-failed --phase wave1 --output retry.txt
+### Scope rollback is blocked
 
-# Edit retry.txt if needed, then re-run the phase
-ado2gh phase run --phase wave1 --config migration_phase.yaml
-```
+An automated inverse requires an artifact-level creation receipt and a current
+target fingerprint matching the exact artifact produced by the approved run.
+Missing provenance or drift fails closed so a similarly named pre-existing or
+operator-modified artifact is not deleted. Preserve evidence and use a reviewed
+manual or forward-repair procedure.
 
----
+### Pipeline rollback is unsupported
 
-## ADO Cleanup Issues
+`--scopes pipelines` fails deliberately because resetting state cannot remove
+merged workflows. Prepare a reviewed reverse PR and validate target behavior.
+Other scopes without a safe inverse also fail closed.
 
-### `ado-cleanup` failed to disable a pipeline
+## ADO cleanup
 
-The PAT needs `Build (Read & Execute)` scope. Some pipelines may be locked by retention policies.
+### Cleanup action is outside the approved plan
 
-### `MIGRATION_NOTICE.md` push failed
+CLI flags cannot widen approval. The immutable plan must enable the action in
+`global.cleanup`; pipeline disabling also requires the `pipelines` scope, and
+archival requires `archive_source: true` for every selected repository. Create
+and approve a new plan if governance authorizes a changed cleanup policy.
 
-The PAT needs `Code (Read & Write)` scope. The repo may be read-only or have policies preventing direct pushes to the default branch.
+### Redirect requires source-mutation acknowledgment
 
-### Archive failed
+The plan must contain `cleanup.allow_redirect: true`, and the command requires
+both `--add-redirect` and `--allow-source-mutation`. A successful redirect
+changes the source HEAD and returns the run to `needs_review`; preserve and
+revalidate the new evidence.
 
-ADO repo archival requires project-level admin permissions. Verify the PAT owner has the necessary role.
+### Cleanup detects source drift
 
----
+Cleanup requires a completed plan-bound run and, before every mutation,
+rechecks the immutable ADO repository ID/name, default branch, every branch/tag
+SHA, and full-ref digest. Re-establish the write freeze and investigate the
+drift. Never suppress the check.
 
-## Performance Tuning
+### Cleanup detects pipeline receipt drift
 
-| Setting | Default | When to Change |
-|---|---|---|
-| `parallel` | 4 | Increase to 6-8 if network is fast and tokens are plentiful |
-| `pipeline_parallel` | 12 | CPU-bound transform; 12-16 safe on modern machines |
-| `batch_size` | varies by phase | Smaller = more checkpoints, larger = fewer DB writes |
+Pipeline disabling requires exact equality of each approved YAML/classic/release
+identity, name, type, and `source_revision`. The disabled state and advanced
+revision must pass immediate readback. Missing or unexpected definitions,
+definition-read failures, stale revisions, or ambiguous update outcomes fail
+closed. Re-inventory and obtain a new plan for an intentional change; do not
+disable only the subset that happened to match.
 
-### Memory usage
+### Cleanup/rollback capability is already claimed or has an in-flight action
 
-The tool is lightweight — most operations are I/O bound (network + disk). The SQLite DB stays small even at 5000 repos.
+Destructive requests are one-shot and content-addressed. Each action writes a
+before receipt before dispatch and an after receipt only for a known outcome.
+Do not issue a changed request or delete state to retry an `in_progress` action;
+reconcile the external system and preserve the capability/action evidence.
 
-### Disk space
+### Cleanup reports pipeline runtime dependency drift
 
-Mirror clones are created in temp directories and cleaned up after push. A single large repo (5GB+) needs that much temp space. Ensure adequate disk on the machine running the tool.
+Cleanup holds the target fence and rechecks the selected Actions policy against
+workflow `uses`, required labels on online runners, external checkout immutable
+ID/ref/SHA, repository-secret names, and environment configuration. Restore the
+exact approved runtime dependency or approve a new plan; do not destroy ADO
+while the GitHub runtime cannot be proven usable.
+
+## GEI and rate limits
+
+For GEI, verify `gh extension install github/gh-gei`, destination support, and
+the required blob-storage configuration. Server-side GEI state remains subject
+to the same plan mapping and validator.
+
+When all GitHub tokens are limited, add approved token identities, use GitHub
+App authentication, or reduce `parallel`/`pipeline_parallel`. ADO HTTP 429
+responses use bounded backoff; persistent limits require lower concurrency or a
+different window. Do not increase parallelism until API, Git, disk, and SQLite
+capacity have been measured.

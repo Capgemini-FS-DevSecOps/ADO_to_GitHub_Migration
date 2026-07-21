@@ -1,9 +1,12 @@
-click>=8.1.0
-requests>=2.31.0
-PyYAML>=6.0
-rich>=13.0.0
-urllib3>=2.0.0
+click>=8.1.0,<9
+requests>=2.31.0,<3
+PyYAML>=6.0,<7
+rich>=13.0.0,<15
+urllib3>=2.0.0,<3
 
 # Optional: GitHub App authentication
-# cryptography>=41.0.7
-# PyJWT>=2.8.0
+# cryptography>=41.0.7,<47
+# PyJWT>=2.8.0,<3
+
+# Optional: Ed25519 enterprise signed approvals
+# cryptography>=41.0.7,<50

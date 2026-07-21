@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from typing import Optional
 
 import yaml
 
@@ -23,6 +24,8 @@ class PipelineMetadataExtractor:
     Handles YAML pipelines, classic build pipelines, and classic release pipelines.
     """
 
+    RULESET_VERSION = "pipeline-extractor-3"
+
     POOL_MAP = {
         "windows-latest": "windows-latest",
         "ubuntu-latest":  "ubuntu-latest",
@@ -37,7 +40,8 @@ class PipelineMetadataExtractor:
     def extract_yaml_pipeline(self, project: str, pipe: dict,
                                definition: dict, build_def: dict,
                                yaml_content: str, runs: list[dict],
-                               var_groups: list[dict]) -> PipelineMetadata:
+                               var_groups: list[dict],
+                               service_connections: Optional[list[dict]] = None) -> PipelineMetadata:
         """Extract metadata from a YAML build pipeline."""
         config = definition.get("configuration", {})
         repo   = config.get("repository", {})
@@ -52,6 +56,7 @@ class PipelineMetadataExtractor:
             repo_name     = repo.get("name", pipe.get("name", "")),
             repo_type     = repo.get("type", "TfsGit"),
             repo_branch   = repo.get("defaultBranch", "main").replace("refs/heads/", ""),
+            source_revision = int(build_def.get("revision", 0) or 0),
             yaml_path     = config.get("path", "azure-pipelines.yml"),
             yaml_content  = yaml_content,
         )
@@ -65,6 +70,7 @@ class PipelineMetadataExtractor:
         # Parse stages from YAML content
         if yaml_content:
             self._extract_yaml_structure(meta, yaml_content, var_groups)
+            self._extract_task_dependencies(meta, service_connections or [])
 
         # Run history stats
         self._extract_run_stats(meta, runs)
@@ -75,7 +81,8 @@ class PipelineMetadataExtractor:
 
     def extract_classic_build_pipeline(self, project: str, pipe: dict,
                                        build_def: dict, runs: list[dict],
-                                       var_groups: list[dict]) -> PipelineMetadata:
+                                       var_groups: list[dict],
+                                       service_connections: Optional[list[dict]] = None) -> PipelineMetadata:
         """Extract metadata from a classic (non-YAML) build pipeline."""
         repo = build_def.get("repository", {})
 
@@ -89,6 +96,7 @@ class PipelineMetadataExtractor:
             repo_name     = repo.get("name", ""),
             repo_type     = repo.get("type", "TfsGit"),
             repo_branch   = repo.get("defaultBranch", "main"),
+            source_revision = int(build_def.get("revision", 0) or 0),
         )
         meta.migration_notes.append(
             "Classic build pipeline — auto-transform limited. "
@@ -101,6 +109,11 @@ class PipelineMetadataExtractor:
 
         # Extract phases -> stages (classic)
         for phase in build_def.get("process", {}).get("phases", []):
+            phase_steps = [
+                self._normalise_classic_task(task)
+                for task in phase.get("workflowTasks", phase.get("steps", []))
+                if isinstance(task, dict)
+            ]
             stage = PipelineStage(
                 name        = re.sub(r"[^a-zA-Z0-9_]", "_",
                                      phase.get("name", "build")),
@@ -108,14 +121,30 @@ class PipelineMetadataExtractor:
                 agent_pool  = self._map_pool(
                     phase.get("target", {}).get("queue", {}).get("name", "ubuntu-latest")
                 ),
+                condition   = phase.get("condition", ""),
+                depends_on  = (
+                    phase.get("dependsOn", [])
+                    if isinstance(phase.get("dependsOn"), list)
+                    else ([phase["dependsOn"]] if phase.get("dependsOn") else [])
+                ),
+                jobs         = [{
+                    "job": phase.get("name", "build"),
+                    "displayName": phase.get("name", "Build"),
+                    "steps": phase_steps,
+                }],
             )
             meta.stages.append(stage)
+
+        self._extract_task_dependencies(meta, service_connections or [])
 
         self._extract_run_stats(meta, runs)
         meta.complexity = self._score_complexity(meta)
         return meta
 
-    def extract_release_pipeline(self, project: str, rel_def: dict) -> PipelineMetadata:
+    def extract_release_pipeline(self, project: str, rel_def: dict,
+                                 service_connections: Optional[list[dict]] = None,
+                                 artifact_repositories: Optional[dict[str, dict]] = None
+                                 ) -> PipelineMetadata:
         """Extract metadata from a classic release pipeline."""
         meta = PipelineMetadata(
             pipeline_id   = rel_def.get("id", 0),
@@ -123,21 +152,66 @@ class PipelineMetadataExtractor:
             pipeline_type = PipelineType.RELEASE,
             folder        = rel_def.get("path", "\\").strip("\\"),
             project       = project,
+            source_revision = int(rel_def.get("revision", 0) or 0),
         )
         meta.migration_notes.append(
             "Classic release pipeline — map stages to GitHub Environments "
             "with deployment jobs and required reviewers."
         )
 
-        # Source artifacts -> repo associations
+        # Source artifacts -> repo associations. A release artifact's
+        # definitionReference.definition.name is a *build pipeline name*, not
+        # a repository. Inventory resolves definition ids through the Build
+        # Definitions API and passes the repository map explicitly.
+        build_artifacts: list[tuple[str, str]] = []
+        resolved_repositories: list[dict] = []
+        artifact_repositories = artifact_repositories or {}
         for artifact in rel_def.get("artifacts", []):
             if artifact.get("type") == "Build":
                 alias = artifact.get("alias", "")
                 src   = artifact.get("definitionReference", {})
-                meta.repo_name = src.get("definition", {}).get("name", "")
+                definition = src.get("definition", {}) or {}
+                definition_id = str(
+                    definition.get("id", definition.get("value", "")) or ""
+                )
+                build_artifacts.append((alias, definition_id))
+                repository = artifact_repositories.get(definition_id)
+                if repository:
+                    resolved_repositories.append(repository)
                 meta.migration_notes.append(
                     f"Build artifact '{alias}' -> use needs: + download-artifact action"
                 )
+
+        unresolved = [alias for alias, definition_id in build_artifacts
+                      if not definition_id or definition_id not in artifact_repositories]
+        unique_repositories: dict[str, dict] = {}
+        for repository in resolved_repositories:
+            identity = str(repository.get("id") or repository.get("name", "")).lower()
+            if identity:
+                unique_repositories[identity] = repository
+        if build_artifacts and not unresolved and len(unique_repositories) == 1:
+            repository = next(iter(unique_repositories.values()))
+            meta.repo_id = str(repository.get("id", ""))
+            meta.repo_name = str(repository.get("name", ""))
+            meta.repo_type = str(repository.get("type", "TfsGit"))
+            meta.repo_branch = str(repository.get("defaultBranch", "main")).replace(
+                "refs/heads/", ""
+            )
+        elif build_artifacts:
+            detail = (
+                f"unresolved artifacts: {', '.join(unresolved)}"
+                if unresolved else
+                f"artifacts resolve to {len(unique_repositories)} repositories"
+            )
+            meta.migration_notes.append(
+                "Release pipeline repository association left unmapped because "
+                f"{detail}. A release pipeline is assigned only when every Build "
+                "artifact resolves to exactly one repository."
+            )
+        else:
+            meta.migration_notes.append(
+                "Release pipeline has no ADO Build artifact from which to resolve a repository."
+            )
 
         # Environments -> stages with deployment metadata
         for env in rel_def.get("environments", []):
@@ -168,6 +242,8 @@ class PipelineMetadataExtractor:
                 display_name  = env_name,
                 environment   = gh_env,
                 is_deployment = True,
+                condition     = env.get("condition", ""),
+                jobs          = self._release_environment_jobs(env),
             )
             meta.stages.append(stage)
             meta.environments.append(gh_env)
@@ -180,6 +256,7 @@ class PipelineMetadataExtractor:
                 is_secret = val.get("isSecret", False),
             ))
 
+        self._extract_task_dependencies(meta, service_connections or [])
         meta.complexity = self._score_complexity(meta)
         return meta
 
@@ -189,23 +266,94 @@ class PipelineMetadataExtractor:
         """Extract CI, PR, and schedule triggers from a build definition."""
         # CI triggers
         for trigger in build_def.get("triggers", []):
-            t_type = trigger.get("triggerType", 0)
+            try:
+                t_type = int(trigger.get("triggerType", 0))
+            except (TypeError, ValueError):
+                t_type = 0
+            raw_branches = trigger.get("branchFilters", []) or []
             branches = [
-                b.lstrip("+") for b in trigger.get("branchFilters", [])
-                if not b.startswith("-")
+                self._normalise_branch(str(branch).lstrip("+"))
+                for branch in raw_branches
+                if not str(branch).startswith("-")
             ]
-            if t_type == 2:    # ContinuousIntegration
-                meta.trigger_branches.extend(branches)
+            excluded_branches = [
+                self._normalise_branch(str(branch).lstrip("-"))
+                for branch in raw_branches
+                if str(branch).startswith("-")
+            ]
+            raw_paths = trigger.get("pathFilters", []) or []
+            included_paths = [
+                self._normalise_path_filter(str(path).lstrip("+"))
+                for path in raw_paths
+                if not str(path).startswith("-")
+            ]
+            excluded_paths = [
+                self._normalise_path_filter(str(path).lstrip("-"))
+                for path in raw_paths
+                if str(path).startswith("-")
+            ]
+            if t_type in {2, 4}:  # ContinuousIntegration / BatchedCI
+                meta.trigger_branches.extend(branches or ["**"])
+                meta.trigger_branch_excludes.extend(excluded_branches)
+                meta.trigger_path_includes.extend(included_paths)
+                meta.trigger_path_excludes.extend(excluded_paths)
+                meta.trigger_batch = (
+                    meta.trigger_batch
+                    or t_type == 4
+                    or self._coerce_bool(
+                        trigger.get("batchChanges", trigger.get("batch", False)),
+                        default=False,
+                    )
+                )
+                self._record_trigger_filter_notes(
+                    meta, "Classic CI", excluded_branches,
+                    included_paths, excluded_paths,
+                )
+                if meta.trigger_batch:
+                    meta.migration_notes.append(
+                        "Classic CI batched changes require trigger parity review."
+                    )
             elif t_type == 64:  # PullRequest
-                meta.trigger_pr_branches.extend(branches)
+                meta.trigger_pr_branches.extend(branches or ["**"])
+                meta.trigger_pr_branch_excludes.extend(excluded_branches)
+                meta.trigger_pr_path_includes.extend(included_paths)
+                meta.trigger_pr_path_excludes.extend(excluded_paths)
+                meta.trigger_pr_auto_cancel = self._coerce_bool(
+                    trigger.get("autoCancel", True), default=True,
+                )
+                meta.trigger_pr_drafts = self._coerce_bool(
+                    trigger.get("drafts", True), default=True,
+                )
+                self._record_trigger_filter_notes(
+                    meta, "Classic PR", excluded_branches,
+                    included_paths, excluded_paths,
+                )
+                if meta.trigger_pr_auto_cancel:
+                    meta.migration_notes.append(
+                        "Classic PR auto-cancel requires trigger parity review."
+                    )
+                if meta.trigger_pr_drafts is False:
+                    meta.migration_notes.append(
+                        "Classic PR draft exclusion requires trigger parity review."
+                    )
         # Schedules
         for sched in build_def.get("schedules", []):
+            raw_branch_filters = sched.get("branchFilters", []) or []
             meta.trigger_schedules.append({
-                "cron":           sched.get("daysToBuild", ""),
-                "branch_filters": sched.get("branchFilters", []),
-                "always":         sched.get("scheduleOnlyWithChanges", False),
-                "start_hours":    sched.get("startHours", 0),
-                "start_minutes":  sched.get("startMinutes", 0),
+                "daysToRun":      sched.get("daysToBuild", sched.get("daysToRun", 0)),
+                "branch_filters": [
+                    self._normalise_branch(str(branch).lstrip("+"))
+                    for branch in raw_branch_filters
+                    if not str(branch).startswith("-")
+                ],
+                "excluded_branches": [
+                    self._normalise_branch(str(branch).lstrip("-"))
+                    for branch in raw_branch_filters
+                    if str(branch).startswith("-")
+                ],
+                "always":         not sched.get("scheduleOnlyWithChanges", False),
+                "hour":           sched.get("startHours", sched.get("hour", 0)),
+                "minute":         sched.get("startMinutes", sched.get("minute", 0)),
             })
 
     def _extract_build_variables(self, meta: PipelineMetadata,
@@ -242,6 +390,13 @@ class PipelineMetadataExtractor:
         except Exception:
             meta.migration_notes.append("Could not parse YAML — manual review required.")
             return
+        if not isinstance(doc, dict):
+            meta.migration_notes.append(
+                "Pipeline YAML root is not a mapping — manual review required."
+            )
+            return
+
+        self._extract_yaml_triggers(meta, doc)
 
         # Top-level variables — supports both list-form and mapping-form.
         raw_vars = doc.get("variables", [])
@@ -291,24 +446,30 @@ class PipelineMetadataExtractor:
             for s in raw_stages:
                 if not isinstance(s, dict):
                     continue
-                env_name   = None
-                is_deploy  = "deployment" in str(s)
-                deploy_job = s.get("jobs", [{}])[0] if s.get("jobs") else {}
-                if isinstance(deploy_job, dict) and "deployment" in str(deploy_job):
-                    env_name = (deploy_job.get("environment", {}).get("name", "")
-                                if isinstance(deploy_job.get("environment"), dict)
-                                else str(deploy_job.get("environment", "")))
+                env_name = None
+                is_deploy = False
+                for deploy_job in s.get("jobs", []) or []:
+                    if not isinstance(deploy_job, dict) or "deployment" not in deploy_job:
+                        continue
+                    raw_environment = deploy_job.get("environment", "")
+                    env_name = (
+                        raw_environment.get("name", "")
+                        if isinstance(raw_environment, dict)
+                        else str(raw_environment)
+                    )
                     is_deploy = True
+                    if env_name:
+                        break
 
                 gh_env = None
                 if env_name:
                     gh_env = PipelineEnvironment(name=env_name)
                     meta.environments.append(gh_env)
 
-                pool = s.get("pool", {})
+                pool = s.get("pool", doc.get("pool", {}))
                 runner = self._map_pool(
-                    pool.get("vmImage", "ubuntu-latest") if isinstance(pool, dict)
-                    else "ubuntu-latest"
+                    pool.get("vmImage", pool.get("name", "ubuntu-latest"))
+                    if isinstance(pool, dict) else str(pool or "ubuntu-latest")
                 )
 
                 stage = PipelineStage(
@@ -330,6 +491,7 @@ class PipelineMetadataExtractor:
             meta.stages.append(PipelineStage(
                 name    = "build",
                 jobs    = doc.get("jobs", []),
+                agent_pool = self._pool_from_yaml(doc.get("pool")),
             ))
         elif doc.get("steps"):
             # Bare-steps pipeline — wrap them in a synthetic single job so
@@ -337,6 +499,7 @@ class PipelineMetadataExtractor:
             meta.stages.append(PipelineStage(
                 name = "build",
                 jobs = [{"job": "build", "steps": doc.get("steps", [])}],
+                agent_pool = self._pool_from_yaml(doc.get("pool")),
             ))
         else:
             # Implicit single stage
@@ -346,7 +509,282 @@ class PipelineMetadataExtractor:
         pool = doc.get("pool", {})
         if isinstance(pool, dict):
             meta.agent_pools.append(
-                self._map_pool(pool.get("vmImage", "ubuntu-latest"))
+                self._map_pool(pool.get("vmImage", pool.get("name", "ubuntu-latest")))
+            )
+
+    def _extract_yaml_triggers(self, meta: PipelineMetadata, doc: dict) -> None:
+        """Normalize YAML-native CI/PR/schedule triggers."""
+
+        def branch_rules(raw: object) -> tuple[list[str], list[str]]:
+            if raw in (None, "none", False):
+                return [], []
+            if isinstance(raw, str):
+                return [self._normalise_branch(raw)], []
+            if isinstance(raw, list):
+                return [self._normalise_branch(str(item)) for item in raw], []
+            if not isinstance(raw, dict):
+                return [], []
+            branches = raw.get("branches", raw)
+            if isinstance(branches, list):
+                return [self._normalise_branch(str(item)) for item in branches], []
+            if not isinstance(branches, dict):
+                return [], []
+            include = branches.get("include", []) or []
+            exclude = branches.get("exclude", []) or []
+            if isinstance(include, str):
+                include = [include]
+            if isinstance(exclude, str):
+                exclude = [exclude]
+            return (
+                [self._normalise_branch(str(item)) for item in include],
+                [self._normalise_branch(str(item)) for item in exclude],
+            )
+
+        def path_rules(raw: object) -> tuple[list[str], list[str]]:
+            if not isinstance(raw, dict):
+                return [], []
+            paths = raw.get("paths", {})
+            if isinstance(paths, str):
+                return [self._normalise_path_filter(paths)], []
+            if isinstance(paths, list):
+                return [
+                    self._normalise_path_filter(str(item)) for item in paths
+                ], []
+            if not isinstance(paths, dict):
+                return [], []
+            include = paths.get("include", []) or []
+            exclude = paths.get("exclude", []) or []
+            if isinstance(include, str):
+                include = [include]
+            if isinstance(exclude, str):
+                exclude = [exclude]
+            return (
+                [self._normalise_path_filter(str(item)) for item in include],
+                [self._normalise_path_filter(str(item)) for item in exclude],
+            )
+
+        trigger = doc.get("trigger")
+        includes, excludes = branch_rules(trigger)
+        if trigger not in (None, "none", False):
+            meta.trigger_branches.extend(includes or ["**"])
+            meta.trigger_branch_excludes.extend(excludes)
+            path_includes, path_excludes = path_rules(trigger)
+            meta.trigger_path_includes.extend(path_includes)
+            meta.trigger_path_excludes.extend(path_excludes)
+            if isinstance(trigger, dict):
+                meta.trigger_batch = meta.trigger_batch or self._coerce_bool(
+                    trigger.get("batch", False), default=False,
+                )
+            self._record_trigger_filter_notes(
+                meta, "CI", excludes, path_includes, path_excludes,
+            )
+            if meta.trigger_batch:
+                meta.migration_notes.append(
+                    "CI trigger batch=true requires trigger parity review."
+                )
+
+        pr = doc.get("pr")
+        includes, excludes = branch_rules(pr)
+        if pr not in (None, "none", False):
+            meta.trigger_pr_branches.extend(includes or ["**"])
+            meta.trigger_pr_branch_excludes.extend(excludes)
+            path_includes, path_excludes = path_rules(pr)
+            meta.trigger_pr_path_includes.extend(path_includes)
+            meta.trigger_pr_path_excludes.extend(path_excludes)
+            meta.trigger_pr_auto_cancel = self._coerce_bool(
+                pr.get("autoCancel", True) if isinstance(pr, dict) else True,
+                default=True,
+            )
+            meta.trigger_pr_drafts = self._coerce_bool(
+                pr.get("drafts", True) if isinstance(pr, dict) else True,
+                default=True,
+            )
+            self._record_trigger_filter_notes(
+                meta, "PR", excludes, path_includes, path_excludes,
+            )
+            if meta.trigger_pr_auto_cancel:
+                meta.migration_notes.append(
+                    "PR trigger autoCancel=true requires trigger parity review."
+                )
+            if meta.trigger_pr_drafts is False:
+                meta.migration_notes.append(
+                    "PR trigger drafts=false requires trigger parity review."
+                )
+
+        for schedule in doc.get("schedules", []) or []:
+            if not isinstance(schedule, dict) or not schedule.get("cron"):
+                continue
+            branches, excluded = branch_rules(schedule.get("branches", {}))
+            meta.trigger_schedules.append({
+                "cron": str(schedule["cron"]).strip(),
+                "branch_filters": branches,
+                "excluded_branches": excluded,
+                "always": bool(schedule.get("always", False)),
+                "display_name": str(schedule.get("displayName", "")),
+            })
+
+    def _extract_task_dependencies(
+        self,
+        meta: PipelineMetadata,
+        service_connections: list[dict],
+    ) -> None:
+        """Discover unsupported tasks and referenced service connections."""
+        from ado2gh.pipelines.transformer import ADO_TASK_MAP
+
+        known_connections: dict[str, dict] = {}
+        for connection in service_connections:
+            for value in (connection.get("id"), connection.get("name")):
+                if value:
+                    known_connections[str(value).lower()] = connection
+        connection_key = re.compile(
+            r"(?i)(connectedservice|serviceconnection|subscription|endpoint|azure_rm)"
+        )
+        unsupported: set[str] = set(meta.unsupported_tasks)
+        found_connections: dict[str, dict] = {
+            str(item.get("id", item.get("name", ""))): item
+            for item in meta.service_connections
+        }
+        for stage in meta.stages:
+            for raw_job in stage.jobs:
+                if not isinstance(raw_job, dict):
+                    continue
+                steps = raw_job.get("steps", [raw_job])
+                if not isinstance(steps, list):
+                    continue
+                for step in steps:
+                    if not isinstance(step, dict):
+                        continue
+                    task_name = str(step.get("task", step.get("taskName", "")))
+                    if task_name and task_name not in ADO_TASK_MAP:
+                        unsupported.add(task_name)
+                    inputs = step.get("inputs", {})
+                    if not isinstance(inputs, dict):
+                        continue
+                    for key, raw_value in inputs.items():
+                        if not connection_key.search(str(key)) or not raw_value:
+                            continue
+                        value = str(raw_value)
+                        if value.startswith("$(") or value.startswith("${{"):
+                            continue
+                        match = known_connections.get(value.lower())
+                        item = (
+                            {
+                                "id": match.get("id", ""),
+                                "name": match.get("name", value),
+                                "type": match.get("type", "unknown"),
+                            }
+                            if match else {"id": "", "name": value, "type": "unknown"}
+                        )
+                        found_connections[str(item.get("id") or item["name"])] = item
+        meta.unsupported_tasks = sorted(unsupported)
+        meta.service_connections = list(found_connections.values())
+
+    @classmethod
+    def _normalise_classic_task(cls, raw: dict) -> dict:
+        result: dict = {
+            "displayName": raw.get("displayName", raw.get("name", "")),
+            "inputs": dict(raw.get("inputs", {})),
+            "enabled": raw.get("enabled", True),
+            "condition": raw.get("condition", ""),
+        }
+        task_ref = raw.get("task", {})
+        task_name = raw.get("taskName", "")
+        version = ""
+        task_id = raw.get("taskId", "")
+        if isinstance(task_ref, str):
+            task_name = task_ref
+        elif isinstance(task_ref, dict):
+            task_name = task_name or task_ref.get("name", "")
+            task_id = task_id or task_ref.get("id", "")
+            version = task_ref.get("versionSpec", task_ref.get("version", ""))
+        raw_version = raw.get("version", version)
+        if isinstance(raw_version, dict):
+            version = str(raw_version.get("major", ""))
+        else:
+            version = str(raw_version or version)
+        version = version.split(".", 1)[0].rstrip("*")
+        if task_name and "@" not in str(task_name) and version:
+            task_name = f"{task_name}@{version}"
+        if not task_name:
+            task_name = f"ClassicTask:{task_id or 'unknown'}"
+            if version:
+                task_name += f"@{version}"
+        result["task"] = str(task_name)
+        if raw.get("environment"):
+            result["env"] = dict(raw["environment"])
+        return result
+
+    @classmethod
+    def _release_environment_jobs(cls, environment: dict) -> list[dict]:
+        jobs: list[dict] = []
+        for index, phase in enumerate(environment.get("deployPhases", []) or []):
+            if not isinstance(phase, dict):
+                continue
+            tasks = [
+                cls._normalise_classic_task(task)
+                for task in phase.get("workflowTasks", []) or []
+                if isinstance(task, dict)
+            ]
+            phase_name = phase.get("name", f"deployment_{index + 1}")
+            deployment_input = phase.get("deploymentInput", {}) or {}
+            queue = deployment_input.get("queue", {}) or {}
+            jobs.append({
+                "deployment": phase_name,
+                "displayName": phase_name,
+                "environment": environment.get("name", ""),
+                "pool": {"name": queue.get("name", "ubuntu-latest")},
+                "steps": tasks,
+            })
+        return jobs
+
+    def _pool_from_yaml(self, pool: object) -> str:
+        if isinstance(pool, dict):
+            return self._map_pool(str(pool.get("vmImage", pool.get("name", "ubuntu-latest"))))
+        return self._map_pool(str(pool or "ubuntu-latest"))
+
+    @staticmethod
+    def _normalise_branch(branch: str) -> str:
+        value = str(branch or "").strip()
+        return value.replace("refs/heads/", "", 1) if value.startswith("refs/heads/") else value
+
+    @staticmethod
+    def _normalise_path_filter(path: str) -> str:
+        return str(path or "").strip().replace("\\", "/")
+
+    @staticmethod
+    def _coerce_bool(value: object, *, default: bool) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().casefold()
+            if normalized == "true":
+                return True
+            if normalized == "false":
+                return False
+        return default
+
+    @staticmethod
+    def _record_trigger_filter_notes(
+        meta: PipelineMetadata,
+        label: str,
+        excluded_branches: list[str],
+        included_paths: list[str],
+        excluded_paths: list[str],
+    ) -> None:
+        if excluded_branches:
+            meta.migration_notes.append(
+                f"{label} branch excludes require trigger parity review: "
+                + ", ".join(excluded_branches)
+            )
+        if included_paths:
+            meta.migration_notes.append(
+                f"{label} path includes require trigger parity review: "
+                + ", ".join(included_paths)
+            )
+        if excluded_paths:
+            meta.migration_notes.append(
+                f"{label} path excludes require trigger parity review: "
+                + ", ".join(excluded_paths)
             )
 
     def _extract_run_stats(self, meta: PipelineMetadata, runs: list[dict]):
@@ -374,7 +812,20 @@ class PipelineMetadataExtractor:
 
     def _map_pool(self, pool_name: str) -> str:
         """Map an ADO agent pool name to a GitHub Actions runner label."""
-        return self.POOL_MAP.get(pool_name, "ubuntu-latest")
+        raw = str(pool_name or "ubuntu-latest").strip()
+        lower = raw.lower()
+        exact = {key.lower(): value for key, value in self.POOL_MAP.items()}
+        if lower in exact:
+            return exact[lower]
+        if "ubuntu" in lower:
+            return "ubuntu-latest"
+        if "windows" in lower or "vs20" in lower:
+            return "windows-latest"
+        if "macos" in lower or lower.startswith("mac"):
+            return "macos-latest"
+        # Preserve unknown/self-hosted pool names so the planner can require an
+        # explicit enterprise runner mapping instead of silently using Ubuntu.
+        return raw
 
     def _score_complexity(self, meta: PipelineMetadata) -> PipelineComplexity:
         """Score pipeline complexity based on structural signals."""

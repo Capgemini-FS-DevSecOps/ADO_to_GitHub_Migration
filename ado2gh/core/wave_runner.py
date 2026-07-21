@@ -57,7 +57,9 @@ class WaveRunner:
             wave.parallel, " [DRY RUN]" if dry_run else "",
         )
 
-        run_id = self.db.mark_wave_run(wave.wave_id, "started", dry_run=dry_run)
+        run_id = None
+        if not dry_run:
+            run_id = self.db.mark_wave_run(wave.wave_id, "started", dry_run=False)
         engine = MigrationEngine(self.cfg, self.ado, self.gh, self.db, dry_run=dry_run)
 
         start = time.monotonic()
@@ -123,14 +125,24 @@ class WaveRunner:
 
         # Determine overall wave status
         statuses = [r["status"] for r in repo_results.values()]
-        if all(s == "completed" for s in statuses):
+        if dry_run:
+            overall = "dry_run"
+        elif not statuses:
+            overall = "failed"
+        elif all(s == "completed" for s in statuses):
             overall = "completed"
         elif any(s == "completed" for s in statuses):
             overall = "partial"
         else:
             overall = "failed"
 
-        self.db.mark_wave_run(wave.wave_id, overall)
+        if not dry_run:
+            try:
+                self.db.mark_wave_run(wave.wave_id, overall, run_id=run_id)
+            except TypeError:
+                # Backward compatibility for StateDBs created before run-id
+                # specific completion was added.
+                self.db.mark_wave_run(wave.wave_id, overall)
 
         summary = {
             "wave_id": wave.wave_id,

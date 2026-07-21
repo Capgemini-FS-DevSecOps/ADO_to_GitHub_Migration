@@ -10,6 +10,7 @@ class MigrationStatus(str, Enum):
     COMPLETED   = "completed"
     FAILED      = "failed"
     SKIPPED     = "skipped"
+    NEEDS_REVIEW = "needs_review"
     ROLLED_BACK = "rolled_back"
 
 
@@ -56,6 +57,9 @@ class RepoConfig:
     gh_repo:           str
     scopes:            list[str]  = field(default_factory=lambda: ["repo"])
     team_mapping:      dict       = field(default_factory=dict)
+    access_policy_approved: bool  = False
+    access_policy_evidence: dict  = field(default_factory=dict)
+    source_access_snapshot: dict  = field(default_factory=dict)
     skip_lfs:          bool       = False
     archive_source:    bool       = False
     tags:              list[str]  = field(default_factory=list)
@@ -171,10 +175,20 @@ class PipelineMetadata:
     repo_name:           str              = ""
     repo_type:           str              = "TfsGit"
     repo_branch:         str              = "main"
+    source_revision:     int              = 0
     yaml_path:           str              = ""
     yaml_content:        str              = ""
     trigger_branches:    list[str]        = field(default_factory=list)
+    trigger_branch_excludes: list[str]    = field(default_factory=list)
+    trigger_path_includes: list[str]      = field(default_factory=list)
+    trigger_path_excludes: list[str]      = field(default_factory=list)
+    trigger_batch:       bool             = False
     trigger_pr_branches: list[str]        = field(default_factory=list)
+    trigger_pr_branch_excludes: list[str] = field(default_factory=list)
+    trigger_pr_path_includes: list[str]   = field(default_factory=list)
+    trigger_pr_path_excludes: list[str]   = field(default_factory=list)
+    trigger_pr_auto_cancel: Optional[bool] = None
+    trigger_pr_drafts:   Optional[bool]   = None
     trigger_schedules:   list[dict]       = field(default_factory=list)
     variables:           list[PipelineVariable]    = field(default_factory=list)
     variable_groups:     list[dict]       = field(default_factory=list)
@@ -205,9 +219,19 @@ class PipelineMetadata:
             "repo_name":           self.repo_name,
             "repo_type":           self.repo_type,
             "repo_branch":         self.repo_branch,
+            "source_revision":     self.source_revision,
             "yaml_path":           self.yaml_path,
             "trigger_branches":    self.trigger_branches,
+            "trigger_branch_excludes": self.trigger_branch_excludes,
+            "trigger_path_includes": self.trigger_path_includes,
+            "trigger_path_excludes": self.trigger_path_excludes,
+            "trigger_batch":       self.trigger_batch,
             "trigger_pr_branches": self.trigger_pr_branches,
+            "trigger_pr_branch_excludes": self.trigger_pr_branch_excludes,
+            "trigger_pr_path_includes": self.trigger_pr_path_includes,
+            "trigger_pr_path_excludes": self.trigger_pr_path_excludes,
+            "trigger_pr_auto_cancel": self.trigger_pr_auto_cancel,
+            "trigger_pr_drafts":   self.trigger_pr_drafts,
             "trigger_schedules":   self.trigger_schedules,
             "variables":           [v.__dict__ for v in self.variables],
             "variable_groups":     self.variable_groups,
@@ -222,6 +246,7 @@ class PipelineMetadata:
                     "agent_pool":    s.agent_pool,
                     "environment":   s.environment.__dict__ if s.environment else None,
                     "jobs":          s.jobs,
+                    "variables":     [v.__dict__ for v in s.variables],
                 }
                 for s in self.stages
             ],
@@ -251,10 +276,20 @@ class PipelineMetadata:
             repo_name      = d.get("repo_name", ""),
             repo_type      = d.get("repo_type", "TfsGit"),
             repo_branch    = d.get("repo_branch", "main"),
+            source_revision = d.get("source_revision", 0),
             yaml_path      = d.get("yaml_path", ""),
             yaml_content   = "",
             trigger_branches     = d.get("trigger_branches", []),
+            trigger_branch_excludes = d.get("trigger_branch_excludes", []),
+            trigger_path_includes = d.get("trigger_path_includes", []),
+            trigger_path_excludes = d.get("trigger_path_excludes", []),
+            trigger_batch = bool(d.get("trigger_batch", False)),
             trigger_pr_branches  = d.get("trigger_pr_branches", []),
+            trigger_pr_branch_excludes = d.get("trigger_pr_branch_excludes", []),
+            trigger_pr_path_includes = d.get("trigger_pr_path_includes", []),
+            trigger_pr_path_excludes = d.get("trigger_pr_path_excludes", []),
+            trigger_pr_auto_cancel = d.get("trigger_pr_auto_cancel"),
+            trigger_pr_drafts = d.get("trigger_pr_drafts"),
             trigger_schedules    = d.get("trigger_schedules", []),
             variable_groups      = d.get("variable_groups", []),
             parameters           = d.get("parameters", []),
@@ -282,6 +317,9 @@ class PipelineMetadata:
                 environment   = PipelineEnvironment(**s["environment"])
                                 if s.get("environment") else None,
                 jobs          = s.get("jobs", []),
+                variables     = [
+                    PipelineVariable(**v) for v in s.get("variables", [])
+                ],
             )
             for s in d.get("stages", [])
         ]

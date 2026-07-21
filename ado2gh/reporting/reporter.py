@@ -1,6 +1,7 @@
 """Rich-based reporting for ADO-to-GitHub migration status."""
 from __future__ import annotations
 
+import html
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -302,30 +303,30 @@ def _html_status_badge(status: str) -> str:
     }
     bg = colours.get(status, "#6b7280")
     return (f'<span style="background:{bg};color:#fff;padding:2px 8px;'
-            f'border-radius:4px;font-size:0.85em;">{status}</span>')
+            f'border-radius:4px;font-size:0.85em;">{html.escape(status)}</span>')
 
 
 def _html_complexity_badge(complexity: str) -> str:
     colours = {"simple": "#22c55e", "medium": "#eab308", "complex": "#ef4444"}
     bg = colours.get(complexity, "#6b7280")
     return (f'<span style="background:{bg};color:#fff;padding:2px 8px;'
-            f'border-radius:4px;font-size:0.85em;">{complexity}</span>')
+            f'border-radius:4px;font-size:0.85em;">{html.escape(complexity)}</span>')
 
 
 def _html_repo_rows(migrations: list[dict]) -> str:
     rows = []
     for m in migrations:
-        error = (m.get("error_message") or "")[:60]
+        error = html.escape((m.get("error_message") or "")[:60])
         rows.append(
             f"<tr>"
             f"<td>{m['wave_id']}</td>"
-            f"<td>{m['ado_project']}</td>"
-            f"<td>{m['ado_repo']}</td>"
-            f"<td>{m['gh_org']}/{m['gh_repo']}</td>"
-            f"<td>{m['scope']}</td>"
+            f"<td>{html.escape(str(m['ado_project']))}</td>"
+            f"<td>{html.escape(str(m['ado_repo']))}</td>"
+            f"<td>{html.escape(str(m['gh_org']))}/{html.escape(str(m['gh_repo']))}</td>"
+            f"<td>{html.escape(str(m['scope']))}</td>"
             f"<td>{_html_status_badge(m['status'])}</td>"
-            f"<td>{_fmt_ts(m.get('started_at'))}</td>"
-            f"<td>{_fmt_ts(m.get('completed_at'))}</td>"
+            f"<td>{html.escape(_fmt_ts(m.get('started_at')))}</td>"
+            f"<td>{html.escape(_fmt_ts(m.get('completed_at')))}</td>"
             f"<td class='err'>{error}</td>"
             f"</tr>"
         )
@@ -335,17 +336,17 @@ def _html_repo_rows(migrations: list[dict]) -> str:
 def _html_pipeline_rows(pipelines: list[dict]) -> str:
     rows = []
     for p in pipelines:
-        error = (p.get("error_message") or "")[:60]
+        error = html.escape((p.get("error_message") or "")[:60])
         rows.append(
             f"<tr>"
             f"<td>{p['wave_id']}</td>"
-            f"<td>{p['pipeline_name']}</td>"
-            f"<td>{p['project']}</td>"
-            f"<td>{p['repo_name']}</td>"
-            f"<td>{p['gh_org']}/{p['gh_repo']}</td>"
+            f"<td>{html.escape(str(p['pipeline_name']))}</td>"
+            f"<td>{html.escape(str(p['project']))}</td>"
+            f"<td>{html.escape(str(p['repo_name']))}</td>"
+            f"<td>{html.escape(str(p['gh_org']))}/{html.escape(str(p['gh_repo']))}</td>"
             f"<td>{_html_complexity_badge(p.get('complexity') or 'simple')}</td>"
             f"<td>{_html_status_badge(p['status'])}</td>"
-            f"<td>{p.get('workflow_file') or ''}</td>"
+            f"<td>{html.escape(str(p.get('workflow_file') or ''))}</td>"
             f"<td class='err'>{error}</td>"
             f"</tr>"
         )

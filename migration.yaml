@@ -1,21 +1,138 @@
-# ado2gh — Connection Settings & Phase Thresholds
-# Repo lists come from input files, not this file.
-# Run: ado2gh discover -c migration.yaml → then select repos into in/repos.txt
+# ado2gh enterprise Planner–Executor–Validator configuration
+#
+# Credentials are environment-only:
+#   ADO_PAT, ADO_ORG_URL, GH_TOKEN (or GH_TOKEN_1..N / GitHub App variables)
+#   OPENAI_API_KEY (optional; name is selected by plan-bound llm_api_key_env)
+#
+# Plan the full organization:
+#   ado2gh agent plan -c migration.yaml -o output/pev_plan.json
 
 global:
-  ado_org_url: "https://dev.azure.com/cloud-sre"
-  gh_org: "destination-org-test"
-  migration_strategy: mirror    # "mirror" or "gei"
+  ado_org_url: "https://dev.azure.com/YOUR_ORG"
+  gh_org: "your-github-org"
+  # GitHub.com defaults are implicit. For GitHub Enterprise Server, configure
+  # both values; clone/redirect links use gh_web_url and its HTTPS authority
+  # must agree with gh_api_url.
+  # gh_api_url: "https://github.example.com/api/v3"
+  # gh_web_url: "https://github.example.com"
+
+  # mirror transfers Git refs/LFS. gei delegates repository migration to gh-gei.
+  migration_strategy: mirror
   parallel: 4
   pipeline_parallel: 12
+  enforce_scope_dependencies: true
+  allow_inline_secrets: false
+  # If true, each unlinked project work item is assigned once to the
+  # lexicographically first planned source repository in that ADO project.
+  # It is never duplicated across every repository.
+  include_unlinked_work_items: false
+
   default_scopes:
     - repo
     - pipelines
-    - work_items
-    - wiki
-    - secrets
     - branch_policies
+    # These produce review-required artifacts rather than false completion:
+    # - wiki
+    # - secrets
+    # Add work_items only when repository-link selection has been reviewed:
+    # - work_items
 
+  # Source-to-target mapping is deterministic and part of the immutable plan.
+  # The default prefix avoids collisions when projects contain equal repo names.
+  mapping:
+    target_org: "your-github-org"
+    strategy: project-prefix       # "project-prefix" or "preserve"
+    separator: "-"
+    lowercase: true
+    include_disabled: false
+    apply_to_explicit: false
+    preflight_targets: true
+    existing_target_policy: fail   # explicit "reuse" is required for adoption
+    allow_nonempty_target: false
+    allowed_target_visibilities: [private, internal]
+
+    # Optional per-project prefix and/or target organization overrides.
+    projects: {}
+    # projects:
+    #   "Example ADO Project":
+    #     prefix: "example"
+    #     gh_org: "another-approved-org"
+
+    # Optional project-to-organization routing without a prefix override.
+    project_to_org: {}
+
+    # Optional exact repository overrides (highest mapping precedence).
+    repositories: {}
+    # repositories:
+    #   "Legacy Project/Orders API":
+    #     gh_org: "your-github-org"
+    #     gh_repo: "orders-api"
+
+  # pipeline-pev-3 is intentionally strict: only its exact allow-listed
+  # task/input and recursively parsed condition grammar is deterministic.
+  # A task merely having a renderer does not make every input shape safe.
+  # An LLM-eligible ambiguity may produce a review proposal, but provider
+  # egress contains only control metadata plus container/type shape—no source
+  # strings, keys, numeric values, identifiers, hashes, scripts, or secrets.
+  # Model output is never inserted into workflow YAML. Executable ambiguous
+  # content requires an exact schema-v2 manual approval and a newly approved
+  # organization plan.
+  pipeline_conversion:
+    # Non-secret provider routing is immutable plan policy. Set provider to
+    # openai-responses only after provider/data-governance review. Only the
+    # value named by llm_api_key_env comes from the environment.
+    llm_provider: disabled
+    llm_model: gpt-5.6
+    llm_base_url: "https://api.openai.com/v1"
+    llm_organization: ""
+    llm_project: ""
+    llm_api_key_env: OPENAI_API_KEY
+    min_llm_confidence: 0.80
+    max_llm_resolutions: 32
+    # Optional JSON/YAML manifest, resolved relative to this configuration.
+    # Every record is content-addressed and bound to one ambiguity plus source
+    # fingerprint; a boolean/manual bypass is never accepted.
+    # manual_approval_manifest: "pipeline-manual-approvals.yaml"
+    require_permissions: true
+    require_pinned_action_sha: true
+    forbid_remote_script_execution: true
+    # Every remote action must ultimately resolve at its full commit SHA to a
+    # unique runnable entrypoint and pass target Actions/private-sharing policy.
+    # Direct/service-connection mappings carry secret names only. A run: step
+    # may not reference or inherit GitHub secrets; use an approved action input.
+    max_workflow_bytes: 1000000
+    max_jobs: 256
+    max_steps_per_job: 1000
+
+  # Access is never inferred from ADO ACLs. A per-repository explicit record
+  # can carry the following plan-v7 fields. access_policy_approved defaults to
+  # false; false leaves validation needs_review and blocks source cleanup.
+  #
+  # team_mapping:
+  #   "ADO Contributors":
+  #     github_team: "service-contributors"
+  #     permission: push   # pull | triage | push | maintain | admin
+  # access_policy_approved: true
+
+  # Validated workflows are staged for review and never auto-merged.
+  # Local-only delivery is non-production and leaves the run needs_review.
+  pipeline_delivery:
+    mode: pull_request
+    branch: "ado2gh/migrated-workflows"
+    title: "Review migrated GitHub Actions workflows"
+
+  validation:
+    # Only deterministic validator failures can be replayed automatically.
+    max_repair_attempts: 1
+
+  # Post-cutover source mutations are also part of the immutable approval.
+  cleanup:
+    allow_disable_pipelines: true
+    allow_redirect: false
+    allow_archive: false
+
+# Risk-based phases remain available for segmentation/reporting. Production
+# authorization still comes from an exact `agent plan` / `agent run` plan_id.
 phases:
   poc:
     repo_cap: 10
@@ -25,6 +142,7 @@ phases:
     pipeline_parallel: 4
     gate_repo_success_pct: 0.90
     gate_pipeline_success_pct: 0.80
+    gate_min_completed: 9
   pilot:
     repo_cap: 100
     risk_max: 45
@@ -33,6 +151,7 @@ phases:
     pipeline_parallel: 8
     gate_repo_success_pct: 0.95
     gate_pipeline_success_pct: 0.90
+    gate_min_completed: 95
   wave1:
     repo_cap: 500
     risk_max: 65
@@ -41,6 +160,7 @@ phases:
     pipeline_parallel: 12
     gate_repo_success_pct: 0.97
     gate_pipeline_success_pct: 0.95
+    gate_min_completed: 485
   wave2:
     repo_cap: 1000
     risk_max: 80
@@ -49,6 +169,7 @@ phases:
     pipeline_parallel: 16
     gate_repo_success_pct: 0.98
     gate_pipeline_success_pct: 0.97
+    gate_min_completed: 980
   wave3:
     repo_cap: 999999
     risk_max: 100
@@ -57,3 +178,4 @@ phases:
     pipeline_parallel: 16
     gate_repo_success_pct: 0.98
     gate_pipeline_success_pct: 0.97
+    gate_min_completed: 1

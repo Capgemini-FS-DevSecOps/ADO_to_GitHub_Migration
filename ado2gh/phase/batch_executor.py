@@ -102,7 +102,9 @@ class BatchExecutor:
         return summary
 
     def _run_batch(self, wave: WaveConfig, dry_run: bool) -> dict:
-        self.db.mark_wave_run(wave.wave_id, "started", dry_run)
+        run_id = None
+        if not dry_run:
+            run_id = self.db.mark_wave_run(wave.wave_id, "started", False)
         result = {"completed": 0, "failed": 0}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
@@ -119,13 +121,17 @@ class BatchExecutor:
                     repo = futures[future]
                     try:
                         res = future.result(timeout=1800)
-                        if res["errors"]:
+                        if res.get("status") != "completed" or res.get("errors"):
                             result["failed"] += 1
                         else:
                             result["completed"] += 1
                     except Exception as e:
                         log.error(f"Batch error [{repo.ado_repo}]: {e}")
                         result["failed"] += 1
-        self.db.mark_wave_run(wave.wave_id,
-                              "completed" if result["failed"] == 0 else "partial")
+        if not dry_run:
+            self.db.mark_wave_run(
+                wave.wave_id,
+                "completed" if result["failed"] == 0 else "partial",
+                run_id=run_id,
+            )
         return result

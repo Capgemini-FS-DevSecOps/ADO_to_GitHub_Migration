@@ -1,463 +1,651 @@
 # ado2gh — Azure DevOps to GitHub Migration Accelerator
 
-Enterprise-grade CLI tool for migrating repositories, pipelines, work items, and metadata from **Azure DevOps** to **GitHub** at scale (5000+ repos). Risk-based phasing with automatic checkpointing, gate enforcement, and post-migration validation.
+`ado2gh` is an enterprise migration agent for moving an Azure DevOps (ADO)
+organization to GitHub. Its primary control plane is a
+Planner–Executor–Validator (PEV) loop: it discovers the source, emits an
+immutable source-to-target plan for approval, executes only that plan, and
+records validation evidence before a run can complete.
 
-## Table of Contents
+Repository mapping and routine transformations are deterministic. An LLM is
+used only for pipeline constructs that the deterministic planner classifies as
+ambiguous. Its schema-constrained output is retained only as a proposal and is
+never inserted into an executable workflow. An authorized reviewer must approve
+the exact proposed fragment in a content-addressed manifest and approve a new
+organization plan before that fragment can execute. Workflows are staged in a
+pull request and are never auto-merged.
 
-- [Quick Start](#quick-start)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Migration Workflow](#migration-workflow)
-- [Migration Strategies](#migration-strategies)
-- [Configuration](#configuration)
-- [Commands Reference](#commands-reference)
-- [Phase Model](#phase-model)
-- [Pipeline Transformation](#pipeline-transformation)
-- [Post-Migration](#post-migration)
-- [Troubleshooting](#troubleshooting)
-- [Architecture](#architecture)
+The current immutable artifact is plan schema **v8**. Durable execution and
+audit state use SQLite schema **v13**; manual pipeline approvals use manifest
+schema **v2**. Newer plans/databases and unknown approval schemas are rejected
+by older binaries instead of being interpreted approximately.
 
----
-
-## Quick Start
+## Quick start: enterprise PEV path
 
 ```bash
-# 1. Install
-pip install -e .
+# 1. Install the CLI.
+python -m pip install -e .
 
-# 2. Set credentials
-export ADO_PAT="your-ado-pat"
+# 2. Supply credentials through the environment, never migration.yaml.
+export ADO_PAT="..."
 export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
-export GH_TOKEN="your-github-token"
+export GH_TOKEN="..."
 
-# 3. Discover repos in your ADO org
-ado2gh discover --config migration.yaml
+# Optional: after approving non-secret llm_provider/model/base settings in
+# migration.yaml, inject only the configured key value.
+export OPENAI_API_KEY="..."
 
-# 4. Build pipeline inventory
-ado2gh pipelines inventory --config migration.yaml
+# 3. Discover the full ADO organization and write an immutable plan.
+ado2gh agent plan \
+  --config migration.yaml \
+  --output output/pev_plan.json
 
-# 5. Assess pipeline readiness (before committing)
-ado2gh pipeline-readiness --config migration.yaml
+# 4. Review output/pev_plan.json and copy the emitted plan_id.
+# This performs preflights without authorizing live writes.
+ado2gh agent run \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --dry-run
 
-# 6. Score repos and assign to phases
-ado2gh phase assign --config migration.yaml --output migration_phase.yaml
+# 5. Execute exactly the reviewed plan. The approval value must match.
+ado2gh agent run \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --approve-plan plan_REPLACE_WITH_REVIEWED_ID \
+  --output output/pev_validation.csv
 
-# 7. Dry-run the POC phase
-ado2gh phase run --phase poc --config migration_phase.yaml --dry-run
+# 6. Inspect the durable run and task receipts.
+ado2gh agent status --run-id run_REPLACE_WITH_EMITTED_ID
 
-# 8. Execute POC for real
-ado2gh phase run --phase poc --config migration_phase.yaml
+# 7. Review and merge each generated workflow PR, provision external secrets,
+# environments, runners, and approvals, then resume the same run. The resumed
+# publisher verifies workflows on the default branch before completion.
+ado2gh agent run \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --approve-plan plan_REPLACE_WITH_REVIEWED_ID \
+  --resume run_REPLACE_WITH_EMITTED_ID \
+  --output output/pev_validation.csv
 
-# 9. Validate — checks commit SHAs, not just counts
-ado2gh validate --config migration_phase.yaml
-
-# 10. Advance through phases
-ado2gh phase gate-check --phase poc
-ado2gh phase run --phase pilot --config migration_phase.yaml
-# ... wave1, wave2, wave3
-
-# 11. Post-migration ADO cleanup
-ado2gh ado-cleanup --config migration_phase.yaml
+# 8. Optional remote-read-only source/target validation recheck (records local evidence).
+ado2gh agent validate \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --run-id run_REPLACE_WITH_EMITTED_ID \
+  --output output/pev_validation.csv
 ```
 
----
+Omit `--input` from `agent plan` to migrate every eligible repository in the
+organization. To plan a reviewed subset, pass `--input repos.txt` or a CSV
+manifest. Creating a new plan after a source or configuration change is
+intentional: a live executor refuses a changed plan or configuration digest.
 
-## Prerequisites
+## What PEV guarantees
 
-| Requirement | Version | Notes |
-|---|---|---|
-| Python | >= 3.9 | |
-| Git | >= 2.30 | Must be on PATH. `git lfs` for LFS repos |
-| GitHub CLI | >= 2.0 | Only if using `migration_strategy: gei` |
-| GEI extension | latest | `gh extension install github/gh-gei` (GEI strategy only) |
+### Planner
 
-### Required Permissions
+- Enumerates every paginated source and target collection used as evidence.
+  ADO continuation-token loops reject repeated tokens; work items use ascending
+  ID keyset pagination beyond WIQL's 20,000-row limit. GitHub workflows,
+  secrets, runners, collaborators, teams, members, refs, issues, pull requests,
+  and releases are traversed to completion; unstable totals, duplicates, or
+  malformed pages fail closed instead of becoming partial evidence.
+- Binds the canonical ADO and GitHub API origins plus each immutable
+  organization identity into `policy.runtime_context`. Matching display names
+  or repository mappings cannot redirect an approved run to another tenant or
+  server.
+- Captures the immutable ADO repository ID, default branch, every branch/tag
+  name and SHA, and a digest of that full ref snapshot.
+- Binds either the complete eligible organization inventory or an explicitly
+  labeled subset, including the source repository count and content digest.
+- Captures the immutable GitHub repository ID, size, default branch, every
+  branch/tag name and SHA, and a full-ref digest whenever an existing target is
+  explicitly approved for reuse. It also binds the intended/observed target
+  visibility and the allowed visibility policy. A target is not approved by
+  name alone.
+- For repositories with the `pipelines` scope, records a normalized pipeline
+  inventory, exact pipeline receipts, source fingerprints/YAML digests, and an
+  inventory digest in the plan. Definition or YAML drift requires a new plan
+  and approval.
+- For `work_items`, `wiki`, `secrets`, and `branch_policies`, stores a
+  content-addressed source snapshot containing only its digest and aggregate
+  counts. The potentially sensitive payload is not persisted in the plan.
+- Reads work items once per ADO project and indexes links by immutable
+  repository ID. If unlinked items are enabled, each is assigned once to the
+  lexicographically first planned source repository in its project; it is not
+  copied into every repository.
+- Resolves every ADO project/repository to one GitHub organization/repository.
+- Carries only explicit team access mappings: each ADO team names one GitHub
+  team and one exact role (`pull`, `triage`, `push`, `maintain`, or `admin`).
+  There is no implicit default-to-write conversion. The separate per-repository
+  `access_policy_approved` flag defaults to false because discovery cannot
+  infer ADO ACL equivalence.
+- Rejects case-insensitive source duplicates, target collisions, unsafe names,
+  existing targets under the default `fail` policy, and malformed scope DAGs.
+- Produces a content-addressed `plan_id`; timestamps and credentials do not
+  affect or enter the plan identity.
 
-**Azure DevOps PAT** scopes:
-- `Code (Read)` — clone repos
-- `Build (Read)` — pipeline definitions
-- `Release (Read)` — release pipelines
-- `Work Items (Read)` — work item migration
-- `Variable Groups (Read)` — secrets mapping
-- `Service Connections (Read)` — service connection manifest
-- `Wiki (Read)` — wiki migration
-- `Code (Write)` — only for `ado-cleanup --add-redirect`
-- `Build (Read & Execute)` — only for `ado-cleanup --disable-pipelines`
+### Executor
 
-**GitHub Token** scopes:
-- `repo` — create repos, push code, manage settings
-- `admin:org` — team management
-- `workflow` — GitHub Actions workflow files
-- `delete_repo` — only for rollback
+- Requires the exact `--approve-plan` value for live writes.
+- Rechecks both API origins and immutable organization identities, source
+  identity and every approved source ref, the complete approved
+  state of a reused target, pipeline inventory, non-Git source snapshots,
+  configuration digest, and task dependencies before execution.
+- Fetches each non-Git payload once just in time, verifies that in-memory
+  payload against the approved digest/counts, and transforms that same object.
+  A second mutable source read cannot replace the verified payload.
+- Records durable run/task receipts in SQLite and resumes by `run_id`.
+- Registers an immutable plan capability for every exact
+  source/target/scope/input-digest tuple. Scope completion and resume use
+  plan/run-bound expectations and receipts; legacy wave rows are reporting
+  data, not PEV authority.
+- Uses a renewable cross-process plan lease plus atomic per-task leases. A
+  second executor cannot run the same plan concurrently; expired task leases
+  can be reclaimed safely after a crashed process.
+- Acquires per-target fencing tokens before writes and records a durable remote
+  operation barrier before dispatching Git, LFS, GEI, or another enabled
+  non-idempotent remote write.
+  An uncertain operation blocks all later target leases until externally
+  reconciled; a timer alone cannot clear it.
+- Executes deterministic scopes directly. Pipeline conversion invokes its own
+  nested PEV loop only after strict pipeline inventory succeeds.
+- Carries each freshly validated workflow/evidence artifact forward as the
+  exact in-memory bytes whose SHA-256 matched the validator. The publisher does
+  not reopen a mutable path. On resume, a local artifact is admitted only when
+  both its persisted SHA-256 and Git blob SHA-1 match the completed conversion
+  receipt; a changed or conflicting byte sequence stops delivery.
+- Treats exported wikis, secret manifests, external approvals, and open
+  workflow PRs as `needs_review`, never as completed migration work.
 
----
+### Validator
 
-## Installation
+- Verifies the approved source/target mapping, immutable target identity,
+  default branch, branch SHAs, tags, workflows, and requested policy scope.
+- Re-enumerates a full-organization source inventory before and after
+  validation, and re-reads exact source refs, pipeline identities/revisions,
+  and non-Git source digests. A repository or pipeline added after approval is
+  drift, not silently out of scope.
+- Reads back every explicit GitHub team role, Actions enablement and selected
+  actions policy, active workflow state, required repository-secret name,
+  approved environment protection digest, required online runner label, and
+  exact external checkout repository ID/ref/SHA. Approval evidence alone is not
+  proof that an external resource exists.
+- Resolves every non-local workflow `uses` dependency: repository actions and
+  reusable workflows must use a full 40-character commit SHA that resolves to
+  that same commit, expose exactly one runnable entrypoint at the pinned commit,
+  and have an immutable repository ID. Private actions must be in the target
+  organization and shared at organization/enterprise scope; selected-actions
+  patterns are checked against every reference. Container actions must use an
+  immutable `sha256` image digest.
+- Treats `access_policy_approved: false` as `needs_review`; source cleanup is
+  prohibited until an authorized access owner attests the explicit policy in a
+  newly approved plan.
+- Uses two explicit Git baselines: code refs must match the approved source
+  exactly, while a pipeline-delivery commit may be a strict descendant only
+  when its complete recursive tree diff contains exactly the approved workflow
+  and evidence blobs. Tags and unaffected branches remain exact.
+- Accepts pipeline evidence only from the exact plan/run/wave receipts bound to
+  the approved pipeline identity and source fingerprint; it does not reinterpret
+  the latest mutable inventory.
+- Persists machine-readable evidence for repository and pipeline checks.
+- Replays only bounded, deterministic repairs (configured by
+  `validation.max_repair_attempts`). It does not auto-approve ambiguity,
+  credentials, policy exceptions, or review gates.
+- Returns a nonzero exit status for `failed` and `needs_review` outcomes.
 
-```bash
-git clone <this-repo>
-cd ADO2GH
+## Pipeline conversion: nested PEV
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate    # Linux/macOS
-# venv\Scripts\activate     # Windows
+Each YAML, classic-build, or classic-release definition follows a second PEV
+cycle:
 
-# Install
-pip install -e .
+1. **Plan** — normalize source metadata, fingerprint it, apply the exact
+   `pipeline-pev-3` grammar, and classify every construct outside that grammar.
+2. **Propose** — apply deterministic mappings first. For an eligible ambiguity,
+   provider egress contains only its control metadata (ID, kind, source
+   location) and bounded container/type shape for source/context. Source keys,
+   strings, numeric values, identifiers, hashes, scripts, and credentials are
+   not transmitted. The response is proposal evidence only and is not passed
+   to the workflow executor.
+3. **Approve** — an authorized reviewer may bind the exact fragment to the
+   pipeline fingerprint and ambiguity in a schema-v2 manual approval manifest.
+   That manifest requires a newly reviewed organization plan.
+4. **Validate** — parse YAML with duplicate-key rejection and check workflow
+   structure, source coverage, dependencies, ADO residue, literal secrets,
+   dangerous commands, permissions, action references, exact approved
+   ambiguous fragments, and proposal-only LLM evidence.
 
-# Verify
-ado2gh --version
-```
+The provider uses strict structured output, bounded retries/timeouts, local
+allow-lists, confidence thresholds, prompt/response digests, and `store: false`.
+No model output is executable in the producing run, even when it is valid,
+pinned, and high-confidence; only a subsequent exact schema-v2 human approval
+and newly approved organization plan can promote that fragment.
+If an ambiguity cannot be resolved safely, conversion stops at `needs_review`
+or `failed`; placeholder workflows are not counted as production ready.
 
-### Multi-Token Setup (Recommended for Scale)
+`pipeline-pev-3` treats only the following task/input shapes as deterministic:
+the five setup tasks (`NodeTool@0`, `UsePythonVersion@0`, `UseDotNet@2`,
+`JavaToolInstaller@0`, `GoTool@0`) with their small allow-listed version/
+architecture keys, and `CmdLine@2`, `Bash@3`, or `PowerShell@2` with a script or
+file path plus only arguments/working-directory keys. Native script, checkout,
+publish, and download step shapes are also preserved and validated. A task name
+appearing in a renderer is not sufficient: Docker publish/authentication,
+Azure/service-connection work, package authentication, and every unsupported
+input combination require an exact content-approved workflow step. Conditions
+are deterministic only when their entire recursively parsed expression uses
+the allow-listed function/arity grammar and literal or `variables`/`parameters`
+atoms; a partial or unknown expression is classified, never copied through.
 
-At 5000 repos, you'll hit GitHub rate limits with a single token. Set multiple:
+Validated artifacts are staged on `ado2gh/migrated-workflows` (configurable)
+with evidence under `.ado2gh/pipeline-evidence/`. The agent opens or updates one
+review pull request and never merges it. A pipeline scope completes only after
+the reviewed workflow and its sanitized evidence are observable with their
+recorded Git blob SHAs on the target default branch. The repository validator
+then proves the delivery commit is a strict descendant of the approved source
+commit and that the complete tree diff contains no path other than those exact
+approved artifacts.
 
-```bash
-export GH_TOKEN_1="ghp_token_one"
-export GH_TOKEN_2="ghp_token_two"
-export GH_TOKEN_3="ghp_token_three"
-```
+### LLM configuration and credential environment
 
-The tool auto-detects `GH_TOKEN_1` through `GH_TOKEN_19` and rotates them with rate-limit awareness.
+Provider, model, base URL, organization, project, and API-key environment name
+are non-secret `global.pipeline_conversion` policy and are bound into
+`plan_id`. Only the key value is read from the environment. Legacy routing
+environment variables may repeat plan-bound values but cannot select or change
+them at execution time.
 
-### GitHub App Authentication (Optional)
+| Variable | Purpose |
+|---|---|
+| `ADO2GH_LLM_PROVIDER` | Legacy deployment assertion; if present, must equal plan-bound provider |
+| `OPENAI_API_KEY` | Provider credential; environment only |
+| `ADO2GH_LLM_MODEL` | Legacy assertion; if present, must equal plan-bound model |
+| `OPENAI_BASE_URL` | Legacy assertion; if present, must equal plan-bound HTTPS base |
 
-For organizations that mandate App-based auth:
+If the plan sets `llm_provider: disabled`, fully deterministic pipelines still convert.
+Pipelines containing LLM-eligible ambiguity fail closed for operator action.
+Manual-only ambiguity can instead use a schema-v2 validated approval manifest.
+Each record is content-addressed and bound to the exact pipeline identity,
+source fingerprint, and `ambiguity_id`; it records the approver, change ticket,
+typed target mapping, and SHA-256 evidence. Stale, tampered, duplicate,
+mismatched, or boolean approvals fail closed. The normalized manifest is part
+of the immutable organization plan policy and digest.
 
-```bash
-export GH_APP_ID="123456"
-export GH_APP_INSTALLATION_ID="78901234"
-export GH_APP_PRIVATE_KEY_PATH="/path/to/private-key.pem"
-pip install cryptography PyJWT
-```
+A `repository_checkout` approval must name the exact repository, explicit ref,
+token-secret *name*, and `checkout-access-canary` evidence. Execution resolves
+the immutable repository ID and ref SHA; validation and cleanup re-resolve both.
+Secret values are never stored or read.
 
----
-
-## Migration Workflow
-
-```
-Phase 1: Discovery & Assessment
-├── discover              → Enumerate all ADO repos + pipeline counts
-├── pipelines inventory   → Deep-scan pipeline definitions
-├── pipeline-readiness    → Auto/assisted/manual classification + effort estimate
-└── service-connections   → Ops manifest for manual secret setup
-
-Phase 2: Planning
-├── phase assign          → Risk-score repos, assign to POC/Pilot/Wave1-3
-├── phase plan            → Review assignments + gate thresholds
-└── pipelines plan        → Pipeline breakdown per wave
-
-Phase 3: Execution (per phase, gated)
-├── phase run --phase poc [--dry-run]
-├── validate              → Commit SHA verification
-├── phase gate-check      → Must pass before next phase
-└── (repeat for pilot, wave1, wave2, wave3)
-
-Phase 4: Post-Migration
-├── validate              → Full source vs target comparison
-├── ado-cleanup           → Disable pipelines, add redirect, archive repos
-└── report                → HTML/CSV/JSON final report
-```
-
----
-
-## Migration Strategies
-
-### Mirror (Default)
-
-```yaml
-global:
-  migration_strategy: mirror   # or omit — this is the default
-```
-
-Executes `git clone --mirror` from ADO + `git push --mirror` to GitHub. Handles all branches, tags, and LFS objects. Fastest for pure code migration.
-
-### GEI (GitHub Enterprise Importer)
-
-```yaml
-global:
-  migration_strategy: gei
-```
-
-Uses `gh gei migrate-repo`. Migrates code, PRs, issues, and releases natively through GitHub's migration API. Requires `gh` CLI with `gh-gei` extension and blob storage on ADO side.
-
-**When to use GEI:**
-- You need PR history on GitHub (mirror doesn't transfer PRs)
-- GitHub provides GEI access for your org
-- ADO has blob storage configured (AWS S3 or Azure Blob)
-
----
+A direct-secret or service-connection approval maps only statically enumerable
+GitHub secret names and proves that those names exist; it never supplies a
+value or authorizes arbitrary use. A `run:` step may not reference a GitHub
+secret directly or inherit one through workflow/job/step `env`. Secret-bearing
+operations must use a catalog-approved action input and still pass the normal
+pin, Actions-policy, and runtime readback checks. Bare/dynamic/serialized
+`secrets` contexts fail closed.
 
 ## Configuration
 
-### `migration.yaml` — Main Config
+Use [`migration.yaml`](migration.yaml) as the annotated baseline. A minimal
+production-safe configuration is:
 
 ```yaml
 global:
   ado_org_url: "https://dev.azure.com/YOUR_ORG"
   gh_org: "your-github-org"
-  parallel: 4                # repo-level parallelism
-  pipeline_parallel: 12      # pipeline transform threads
-  migration_strategy: mirror # or "gei"
+  # GitHub.com defaults are implicit. For GHES, both values are required and
+  # their HTTPS authorities must agree.
+  # gh_api_url: "https://github.example.com/api/v3"
+  # gh_web_url: "https://github.example.com"
+  migration_strategy: mirror
+  parallel: 4
+  pipeline_parallel: 12
   default_scopes:
     - repo
-    - work_items
     - pipelines
-    - wiki
-    - secrets
     - branch_policies
 
-phases:
-  poc:
-    repo_cap: 10
-    risk_max: 25
-    batch_size: 10
-    gate_repo_success_pct: 0.90
-    gate_pipeline_success_pct: 0.80
-  pilot:
-    repo_cap: 100
-    risk_max: 45
-    # ...
-  wave1:
-    repo_cap: 500
-    risk_max: 65
-  wave2:
-    repo_cap: 1000
-    risk_max: 80
-  wave3:
-    repo_cap: 999999
-    risk_max: 100
+  mapping:
+    target_org: "your-github-org"
+    strategy: project-prefix
+    separator: "-"
+    lowercase: true
+    existing_target_policy: fail
+    allow_nonempty_target: false
+    preflight_targets: true
+    allowed_target_visibilities: [private, internal]
+    projects:
+      "Payments Platform":
+        prefix: "payments"
+    repositories:
+      "Legacy Project/Orders API":
+        gh_repo: "orders-api"
 
-waves: []   # populated by `phase assign`
+  pipeline_conversion:
+    # Non-secret execution identity. Use openai-responses only after provider
+    # governance approval; model output remains proposal-only.
+    llm_provider: disabled
+    llm_model: gpt-5.6
+    llm_base_url: https://api.openai.com/v1
+    llm_organization: ""
+    llm_project: ""
+    llm_api_key_env: OPENAI_API_KEY
+    min_llm_confidence: 0.80
+    max_llm_resolutions: 32
+    # Relative to migration.yaml; normalized content becomes part of plan_id.
+    # manual_approval_manifest: "pipeline-manual-approvals.yaml"
+    require_permissions: true
+    require_pinned_action_sha: true
+    forbid_remote_script_execution: true
+    # Optional reviewed additions/overrides; keys are owner/repo or
+    # owner/repo@major and values are full 40-character commit SHAs.
+    # action_pins: {}
+
+  pipeline_delivery:
+    mode: pull_request
+    branch: "ado2gh/migrated-workflows"
+    title: "Review migrated GitHub Actions workflows"
+
+  validation:
+    max_repair_attempts: 1
+
+  # Renewable plan/task lease duration; minimum 30 seconds.
+  execution_lease_seconds: 300
+
+  # These source mutations must be present before the plan is approved.
+  cleanup:
+    allow_disable_pipelines: true
+    allow_redirect: false
+    allow_archive: false
 ```
 
-### Scopes
+The default `project-prefix` mapping prevents same-named repositories in
+different ADO projects from colliding. Use `strategy: preserve` only when
+repository names are already unique across the planned target. Explicit
+repository mappings have highest precedence. Mapping comparison is
+case-insensitive because GitHub repository identity is case-insensitive.
 
-| Scope | What It Does |
+`existing_target_policy: fail` and `allow_nonempty_target: false` are the safe
+defaults. Set `reuse` or allow a nonempty target only after independently
+proving ownership and approving that exception; the decision becomes part of
+the plan identity.
+
+### Optional repository manifest
+
+Text format:
+
+```text
+# ADO_PROJECT/ADO_REPOSITORY
+Payments/checkout
+Identity/login::target-org/identity-login
+```
+
+CSV supports `ado_project`, `ado_repo`, optional `gh_org`, `gh_repo`, `scopes`
+(`|` separated), and `pipeline_filter`. Explicit destinations remain subject to
+collision and name validation.
+
+When an explicit repository definition carries `team_mapping`, every source
+team entry must declare both `github_team` and an exact least-privilege
+`permission`. Plan schema v7 preserves that mapping, the executor applies only
+those declared grants, and validation reads each role back from GitHub. Set the
+adjacent `access_policy_approved: true` only after reviewing the complete
+source-to-target access design; it defaults to false, leaves the run
+`needs_review`, and blocks ADO cleanup.
+
+### Scopes and honest completion
+
+| Scope | Automated result |
 |---|---|
-| `repo` | Git clone --mirror + push --mirror (or GEI) |
-| `work_items` | ADO work items → GitHub Issues with labels |
-| `pipelines` | ADO pipelines → GitHub Actions YAML (auto-transform) |
-| `wiki` | ADO wiki pages → output directory |
-| `secrets` | Variable groups → secrets mapping manifest (names only) |
-| `branch_policies` | ADO branch policies → GitHub branch protection rules |
+| `repo` | Mirror all refs/LFS, or use GEI when configured |
+| `pipelines` | Nested PEV conversion plus review-PR delivery |
+| `work_items` | Repository-linked work items become idempotent GitHub issues |
+| `branch_policies` | Supported policies become GitHub branch protection |
+| `wiki` | Local export; requires review/publishing |
+| `secrets` | Names/instructions manifest only; values are never read or copied |
 
-### Text Input Format
+`include_unlinked_work_items` defaults to false. If enabled, each unlinked
+project-scoped work item is assigned exactly once to the case-insensitive
+lexicographically first planned `project/repository` key in that ADO project.
+This stable anchor avoids multiplying one project backlog across all targets.
 
-For ad-hoc operations, use a simple text file instead of YAML:
+## Authentication and prerequisites
+
+- Python 3.9 or later and Git 2.30 or later.
+- Git LFS for repositories that use LFS.
+- `gh` plus the `gh-gei` extension only for `migration_strategy: gei`.
+- ADO PAT permissions for only the scopes being planned. Add ADO write
+  permissions only for an approved cleanup operation.
+- GitHub token or App permissions for repository creation/content, issues,
+  Actions workflows, environments, and branch policies that are in scope.
+
+Credentials are loaded from the environment:
+
+```bash
+export ADO_PAT="..."
+export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
+export GH_TOKEN="..."                 # single-token mode
+
+# Or a rate-limit-aware pool at large scale:
+export GH_TOKEN_1="..."
+export GH_TOKEN_2="..."
+
+# Or GitHub App authentication:
+export GH_APP_ID="..."
+export GH_APP_INSTALLATION_ID="..."
+export GH_APP_PRIVATE_KEY_PATH="/secure/path/app.pem"
+```
+
+GitHub API capacity is reserved atomically under the token-manager lock before
+each request and tracked by a monotonically increasing in-flight reservation
+ID. Concurrent responses merge conservatively: capacity can only decrease
+inside one reset window, an older reset window cannot replace a newer one, and
+pending reservations remain charged across a reset. Primary limits and
+secondary/abuse limits honor `X-RateLimit-Reset` or `Retry-After`; the client
+rotates only to another immediately available credential, and malformed or
+duplicate credentials never create fictitious quota. Transport failures always
+release in-flight tracking while retaining the conservative one-call charge.
+
+For GitHub Enterprise Server, set both `gh_api_url` and `gh_web_url` in the
+config. The web URL is used for clone, redirect, and operator-facing links and
+cannot be inferred from an arbitrary enterprise API path.
+`ado_org_url`, `gh_api_url`, `gh_web_url`, and `OPENAI_BASE_URL` must be
+absolute HTTPS URLs. The ADO and GitHub URL fields additionally reject embedded
+credentials, query strings, and fragments.
+Do not put PATs, App private keys, LLM keys, or secret values in YAML, input
+manifests, command arguments, or checked-in files. Inline config secrets are
+disabled by default.
+
+## Migration strategies
+
+`mirror` (default) runs a real `git clone --mirror`, then pushes only the
+approved `refs/heads/*` and `refs/tags/*` namespaces in atomic batches guarded
+by exact per-ref `--force-with-lease` baselines. It deletes only extra refs that
+were present in the approved reusable-target snapshot. Source and target clone
+authorities are checked before credentials are exposed. LFS is fetched from ADO
+before the remote is changed, pushed under a crash barrier, then fetched into a
+fresh target clone and verified by object ID and SHA-256. It does not push
+provider-internal refs and does not migrate ADO pull-request history.
+
+`gei` delegates repository migration to GitHub Enterprise Importer through the
+`gh gei` extension. Use it when the destination organization and GitHub plan
+support the history types you require. The same immutable mapping, approval,
+and validation controls still apply.
+
+## Cleanup is a separate cutover
+
+ADO cleanup is intentionally outside migration execution. Run it only against a
+completed PEV run and an externally approved change ticket. Each requested
+action must also be authorized by `global.cleanup` in the immutable approved
+plan; archival additionally requires `archive_source: true` for every selected
+repository. Cleanup rechecks the plan's API origins and organization identities
+before evaluating any source action.
+
+```bash
+# Preview only; does not mutate ADO.
+ado2gh ado-cleanup \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --run-id run_REPLACE_WITH_COMPLETED_ID \
+  --approval-ticket CHG-12345 \
+  --dry-run
+
+# Live default: disable matched ADO YAML/classic-build/release definitions
+# after interactive confirmation.
+ado2gh ado-cleanup \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --run-id run_REPLACE_WITH_COMPLETED_ID \
+  --approval-ticket CHG-12345
+
+# Archival is an additional explicit action and works only when the reviewed
+# plan contains cleanup.allow_archive=true plus per-repository archive_source.
+ado2gh ado-cleanup \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --run-id run_REPLACE_WITH_COMPLETED_ID \
+  --approval-ticket CHG-12345 \
+  --archive
+```
+
+Immediately before every source mutation, cleanup rechecks the immutable ADO
+repository ID/name, default branch, every branch/tag SHA, and full-ref digest.
+Pipeline disabling additionally re-discovers definitions and requires the exact
+approved identity, name, type, and `source_revision` for every selected YAML,
+classic-build, and release definition. Each update is followed by a readback
+whose disabled state and new revision must match; missing, unexpected,
+unreadable, or stale receipts fail closed.
+Adding a redirect commit uses the approved source HEAD as an optimistic
+concurrency fence and therefore also requires both `--add-redirect` and
+`--allow-source-mutation`; the run returns to `needs_review` afterward. Cleanup
+never happens implicitly.
+
+Live cleanup additionally builds a canonical request containing the exact
+plan/run, selected repositories, approved pipeline receipt digest, target
+identity/visibility, actions, and redirect content digest. Confirmation and the
+external ticket authorize a one-shot content-addressed capability. Each remote
+mutation records a before receipt before dispatch and an after receipt only on
+a known result. Cleanup holds target fences and first captures a full target
+baseline: immutable repository identity, visibility/default branch, complete
+refs/workflows, Actions and selected-action policy, required secrets,
+environment digests, online runners, external checkout IDs/refs/SHAs, and the
+organization base permission plus collaborator/team/member access inventory.
+Immediately before **each** ADO mutation it recaptures that entire target,
+runtime, and access guard and requires byte-for-byte equality with the baseline.
+It also repeats the relevant source/revision CAS check.
+
+Cutover ordering is redirect, repository freeze, then pipeline disable. A
+failed freeze CAS-reverts the redirect. If a pipeline disable fails with a
+provable state, already changed definitions are restored in reverse order; the
+repository is unfrozen and the redirect is reverted only after that
+compensation succeeds. Ambiguous outcomes leave receipts open and the source in
+the safest known state for ticketed reconciliation—never an assumed retry or
+blind rollback. An in-flight receipt after a crash is likewise not retried by
+assumption.
+
+## Rollback is plan-bound
+
+Live rollback derives its targets and stable wave key from the immutable plan;
+`--wave` is not needed. It requires the plan, a terminal run belonging to that
+plan, matching runtime API/organization authority, an external ticket, and
+interactive confirmation:
+
+```bash
+# Preview a legacy wave only; this is read-only and is not authorization.
+ado2gh rollback -c migration_phase.yaml --wave 1 --dry-run
+
+# Request a scoped branch-policy rollback. The current state model does not
+# persist safe per-policy before/after fingerprints, so this fails closed and
+# directs the operator to reviewed manual remediation.
+ado2gh rollback \
+  -c migration.yaml \
+  --plan output/pev_plan.json \
+  --run-id run_REPLACE_WITH_TERMINAL_ID \
+  --approval-ticket INC-12345 \
+  --scopes branch_policies
 
 ```
-# project/repo (one per line)
-MyProject/my-repo
-MyProject/another-repo
-OtherProject/service-api::my-gh-org/service-api-renamed
-```
 
----
+Automatic whole-repository deletion is **disabled unconditionally**. Omitting
+`--scopes` (or explicitly requesting `repo`) is rejected before a destructive
+capability can authorize deletion. GitHub cannot provide one complete,
+race-free inventory of packages, projects, discussions, deployments,
+integrations, credentials, external clones, or other downstream users, so even
+an exact created-by-run ownership receipt is not sufficient deletion proof.
+Quarantine/archive the target and use a separately reviewed manual deletion
+procedure when it is truly required.
 
-## Commands Reference
+Scope rollback also requires artifact-level creation provenance and the exact
+current-state fingerprint. Branch-policy fingerprints are not yet persisted,
+so automated branch-policy rollback fails closed instead of deleting
+branch-wide protection that may include operator changes. Pipeline rollback
+intentionally fails because deleting or resetting local state would not remove
+merged workflows; use a reviewed reverse pull request. Prefer a forward repair
+whenever no complete, ownership-safe inverse exists.
 
-| Command | Description |
+## Evidence trust boundary
+
+SQLite provides transactional resume, exact content digests, fencing, and
+crash-stop receipts for one controlled deployment. It is not an external WORM
+store and is not cryptographically trustworthy against an administrator who can
+rewrite the database, WAL, plan, and local evidence together. Keep the database
+on durable local storage, back up the database and WAL consistently, and export
+the approved plan, validation reports, capability/action receipts, workflow
+evidence, and database digest to an independently controlled WORM audit system.
+For regulated evidence, sign that export with an enterprise key and retain an
+independent timestamp/attestation. Local SHA-256 content addresses detect
+ordinary mismatch; they do not replace external signing or separation of
+duties.
+
+## Commands
+
+The production control plane is:
+
+| Command | Purpose |
 |---|---|
-| `discover` | Scan ADO org, enumerate repos + pipelines |
-| `plan` | Preview migration plan |
-| `run --wave N` | Execute wave(s) |
-| `status` | Show migration status |
-| `report --format html\|json\|csv` | Generate report |
-| `validate` | Commit-SHA-level source vs target verification |
-| `rollback --wave N [--scopes ...]` | Scope-targeted rollback |
-| `export-failed` | Export failed repos for retries |
-| `token-status` | GitHub token rate limits |
-| `pipeline-readiness` | Auto/assisted/manual assessment |
-| `service-connections` | Service connection → GitHub secrets manifest |
-| `ado-cleanup` | Disable ADO pipelines, add redirect, archive |
-| `pipelines inventory` | Scan ADO pipelines into StateDB |
-| `pipelines plan` | Pipeline breakdown per wave |
-| `pipelines status` | Pipeline migration status |
-| `pipelines retry-failed` | Re-attempt failed pipelines |
-| `phase assign` | Risk-score repos, assign to phases |
-| `phase plan` | Phase breakdown with gates |
-| `phase run --phase poc` | Execute phase with batching |
-| `phase gate-check` | Validate thresholds |
-| `phase dashboard` | Live progress dashboard |
+| `agent plan` | Discover/map sources and create an immutable plan |
+| `agent run` | Execute, validate, and apply bounded deterministic repairs |
+| `agent validate` | Re-run evidence-backed validation for one run |
+| `agent status` | Show durable run and task status |
+| `agent release-quarantine` | Release an uncertain-write target fence after ticketed external reconciliation |
 
----
+Discovery, readiness, service-connection manifests, reports, risk-based phase
+assignment, and dashboards remain available. The older `run`, `phase run`,
+`pipelines retry-failed`, and `push-workflows` commands are read-only
+compatibility assessments: v6 rejects them unless `--dry-run` is present. They
+cannot perform production writes. See
+[the command reference](docs/COMMAND_REFERENCE.md).
 
-## Phase Model
+## Operational states
 
-Repos are automatically assigned to phases based on a 9-signal risk score (0–100):
-
-| Phase | Risk Band | Repo Cap | Gate: Repo % | Gate: Pipeline % |
-|---|---|---|---|---|
-| POC | 0–25 | 10 | 90% | 80% |
-| Pilot | 25–45 | 100 | 95% | 90% |
-| Wave 1 | 45–65 | 500 | 97% | 95% |
-| Wave 2 | 65–80 | 1000 | 98% | 97% |
-| Wave 3 | 80–100 | unlimited | 98% | 97% |
-
-### Risk Signals
-
-| Signal | Max Points | Description |
-|---|---|---|
-| repo_size_kb | 15 | Log scale, 5 GB = max |
-| pipeline_count | 15 | >= 50 pipelines = max |
-| complex_pipeline_ratio | 15 | % classified as COMPLEX |
-| classic_pipeline_ratio | 10 | % classic (GUI) build pipelines |
-| release_pipeline_count | 10 | Classic release pipelines |
-| variable_group_count | 10 | >= 10 variable groups = max |
-| service_connection_count | 10 | >= 8 service connections = max |
-| days_since_last_commit | 10 | Active = high risk, stale = low |
-| branch_count | 5 | >= 50 branches = max |
-
-### Gate Enforcement
-
-Each phase must pass its gate before the next phase can start:
-
-```bash
-# Check gate
-ado2gh phase gate-check --phase poc --config migration_phase.yaml
-
-# Override with documented reason (stored in DB for audit)
-ado2gh phase gate-check --phase poc --override --reason "Approved by CTO"
-```
-
----
-
-## Pipeline Transformation
-
-The tool transforms ADO pipelines to GitHub Actions workflows:
-
-| ADO Pipeline Type | Conversion Level | Notes |
-|---|---|---|
-| YAML pipelines | Auto/Assisted | Syntax transform, task mapping (200+ tasks) |
-| Classic build | Assisted/Manual | No source YAML — best-effort conversion |
-| Classic release | Manual | Map stages to GitHub Environments |
-
-### Readiness Assessment
-
-Run **before** migration to understand effort:
-
-```bash
-ado2gh pipeline-readiness --config migration.yaml --output readiness.csv
-```
-
-Produces per-pipeline classification:
-- **Auto** — can be converted without manual intervention
-- **Assisted** — converted with warnings, needs review
-- **Manual** — has blockers (unsupported tasks, self-hosted pools), needs rewrite
-
----
-
-## Post-Migration
-
-### Validation
-
-```bash
-ado2gh validate --config migration_phase.yaml --output validation.csv
-```
-
-Checks per repo:
-- GitHub repo exists
-- Default branch name matches
-- **HEAD commit SHA matches** (proves code actually transferred)
-- Branch count comparison
-- Workflow files present (if pipelines migrated)
-- Branch protection applied (if policies migrated)
-
-### ADO Cleanup
-
-Run only after successful validation:
-
-```bash
-# Disable pipelines + add redirect (safe)
-ado2gh ado-cleanup --config migration_phase.yaml
-
-# Full cleanup: disable + redirect + archive ADO repo
-ado2gh ado-cleanup --config migration_phase.yaml --archive
-
-# Dry run first
-ado2gh ado-cleanup --config migration_phase.yaml --dry-run
-```
-
-What it does:
-1. **Disables ADO build pipelines** — prevents stale CI from running
-2. **Pushes MIGRATION_NOTICE.md** — tells developers where the repo moved, with `git remote set-url` command
-3. **Archives ADO repo** (optional) — makes the repo read-only
-
-### Service Connection Manifest
-
-Service connection **values** cannot be read via ADO API. This generates an ops-team-actionable manifest:
-
-```bash
-ado2gh service-connections --config migration.yaml
-```
-
-Output includes per-connection:
-- Suggested GitHub secret names
-- OIDC setup instructions (for Azure/AWS — keyless is preferred)
-- Link to relevant GitHub Actions documentation
-
----
-
-## Troubleshooting
-
-| Issue | Solution |
+| State | Meaning |
 |---|---|
-| `ADO_ORG_URL + ADO_PAT required` | Set environment variables |
-| `GH_TOKEN required` | Set `GH_TOKEN` or `GH_TOKEN_1..N` |
-| Rate limiting (HTTP 429) | Add more tokens: `GH_TOKEN_1`, `GH_TOKEN_2`, etc. |
-| `git clone --mirror failed` | Check ADO PAT has Code (Read) scope |
-| `git push --mirror failed` | Check GH token has `repo` scope; repo may already have content |
-| `gh gei` not found | Install: `gh extension install github/gh-gei` |
-| LFS push failed | Install `git-lfs`: `git lfs install` |
-| Gate blocked | Run `phase gate-check` to see failures; fix or `--override` |
-| Interrupted run | Just re-run the same command — resumes from last checkpoint |
-| Rollback only branch policies | `ado2gh rollback --wave 1 --scopes branch_policies` |
+| `completed` | Execution and deterministic validation passed |
+| `needs_review` | Safe progress was made, but a human/external gate remains |
+| `failed` | A required execution or validation check failed |
+| `dry_run_passed` | Isolated preview completed without a blocker |
+| `dry_run_needs_review` | Isolated preview found a human/external gate |
+| `dry_run_failed` | Isolated preview found a required failure |
 
----
+Dry runs use an isolated in-memory state database and never create resumable
+live receipts or remote writes. They do execute deterministic scopes and the
+nested pipeline planner/converter/local validator, so conversion failures and
+review gates determine the dry-run status. Only `completed` returns success
+for live execution; `dry_run_passed` is the only successful preview status.
 
-## Architecture
+An interrupted live run is resumed with the same plan, approval, database, and
+`--resume RUN_ID`. Do not generate a replacement plan merely to bypass drift or
+a failed review gate.
 
-```
-                    ┌─────────────────────────────────┐
-                    │           CLI (cli.py)           │
-                    │  Click commands + _load_clients  │
-                    └──────────────┬──────────────────┘
-                                   │
-           ┌───────────────────────┼───────────────────────┐
-           │                       │                       │
-    ┌──────▼──────┐    ┌──────────▼──────────┐    ┌───────▼───────┐
-    │   Phase     │    │   Core Migration    │    │   Reporting   │
-    │ Orchestration│    │                     │    │               │
-    │             │    │  MigrationEngine    │    │  Reporter     │
-    │ RiskScorer  │    │  ├── git mirror/GEI │    │  CSVExporter  │
-    │ WaveAssigner│    │  ├── work items     │    │  Validator    │
-    │ GateChecker │    │  ├── pipelines      │    │  Readiness    │
-    │ BatchExec.  │    │  ├── wiki           │    │  SvcConnManif.│
-    │ ProgressTrk.│    │  ├── secrets        │    └───────────────┘
-    └─────────────┘    │  └── branch policies│
-                       │                     │
-                       │  WaveRunner         │
-                       │  ConfigLoader       │
-                       │  DiscoveryScanner   │
-                       │  RollbackHandler    │
-                       │  ADOCleanup         │
-                       └──────────┬──────────┘
-                                  │
-              ┌───────────────────┼───────────────────┐
-              │                   │                   │
-       ┌──────▼──────┐   ┌───────▼───────┐   ┌──────▼──────┐
-       │  ADOClient  │   │   GHClient    │   │  StateDB    │
-       │  (REST 7.1) │   │  (multi-token)│   │  (SQLite)   │
-       └─────────────┘   │  TokenManager │   │  7 tables   │
-                         └───────────────┘   │  WAL mode   │
-                                             └─────────────┘
+## Development
+
+```bash
+python -m pip install -e ".[dev]"
+pytest -q
 ```
 
----
+Architecture details and trust boundaries are in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Operational procedures are in
+[`docs/MIGRATION_RUNBOOK.md`](docs/MIGRATION_RUNBOOK.md).
 
 ## License
 
-MIT
+No distribution license is currently declared in this repository. Add the
+organization-approved license before external distribution, and follow the
+applicable migration governance and data-retention policy.

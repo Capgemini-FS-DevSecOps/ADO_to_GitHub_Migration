@@ -51,15 +51,15 @@ Create a PAT at `https://dev.azure.com/YOUR_ORG/_usersSettings/tokens`
 
 | Scope | Access | Used By |
 |---|---|---|
-| Code | Read | `discover`, `run` (git clone), `validate` |
+| Code | Read | `discover`, `agent plan`, `agent run` (git clone), `agent validate` |
 | Code | Read & Write | `ado-cleanup --add-redirect` only |
 | Build | Read | `pipelines inventory`, `pipeline-readiness` |
 | Build | Read & Execute | `ado-cleanup --disable-pipelines` only |
 | Release | Read | `pipelines inventory` (release pipelines) |
-| Work Items | Read | `run` (work_items scope) |
-| Variable Groups | Read | `run` (secrets scope), `service-connections` |
+| Work Items | Read | `agent run` (`work_items` scope) |
+| Variable Groups | Read | `agent run` (`secrets` scope), `service-connections` |
 | Service Connections | Read | `service-connections` |
-| Wiki | Read | `run` (wiki scope) |
+| Wiki | Read | `agent run` (`wiki` scope) |
 | Project and Team | Read | `discover` |
 
 ### Setting the PAT
@@ -81,7 +81,10 @@ export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
 export GH_TOKEN="ghp_your_token_here"
 ```
 
-Required scopes: `repo`, `admin:org`, `workflow`, `delete_repo` (for rollback).
+Grant only the repository and organization permissions required by the approved
+scopes. Repository administration/content, Issues, Actions workflows,
+environments, and branch protection may be required. Do not grant repository
+deletion unless an independently approved rollback procedure explicitly needs it.
 
 ### Multi-Token (Recommended for 100+ Repos)
 
@@ -121,6 +124,41 @@ The App must have these permissions:
 - Organization: Members (Read)
 - Organization: Team discussions (Read & Write)
 
+### Optional LLM Provider
+
+Deterministic pipeline conversions do not require a provider. For optional
+planner-classified ambiguity proposals, bind the non-secret provider identity
+in `migration.yaml`:
+
+```yaml
+global:
+  pipeline_conversion:
+    llm_provider: openai-responses
+    llm_model: gpt-5.6
+    llm_base_url: https://api.openai.com/v1
+    llm_organization: ""
+    llm_project: ""
+    llm_api_key_env: OPENAI_API_KEY
+```
+
+Only the key value comes from the environment:
+
+```bash
+export OPENAI_API_KEY="..."
+```
+
+Never place the provider key in `migration.yaml`. Legacy routing environment
+variables may repeat approved values but cannot select or alter them. LLM
+output is proposal evidence only; an exact schema-v2 content approval and a new
+organization plan are required before a proposed fragment can execute.
+
+`ADO_ORG_URL`, configured `ado_org_url`, `gh_api_url`, `gh_web_url`, and
+`OPENAI_BASE_URL` must be absolute HTTPS URLs. ADO and GitHub URL fields also
+reject credentials, queries, and fragments. Plain HTTP endpoints are rejected,
+including for internal servers.
+For GHES, configure both `gh_api_url: https://HOST/api/v3` and
+`gh_web_url: https://HOST`; their authorities must agree.
+
 ---
 
 ## 4. Migration Configuration
@@ -131,19 +169,63 @@ The App must have these permissions:
 global:
   ado_org_url: "https://dev.azure.com/YOUR_ORG"   # or set ADO_ORG_URL env var
   gh_org: "your-github-org"
-  parallel: 4               # concurrent repos (keep 4-8 for network I/O)
-  pipeline_parallel: 12     # pipeline transform threads (CPU-bound, 12-16 safe)
+  parallel: 4
+  pipeline_parallel: 12
+  execution_lease_seconds: 300
   migration_strategy: mirror # "mirror" or "gei"
   default_scopes:
     - repo
     - pipelines
-    - work_items
-    - wiki
-    - secrets
     - branch_policies
 
-waves: []   # populated by `phase assign`
+  mapping:
+    target_org: "your-github-org"
+    strategy: project-prefix
+    existing_target_policy: fail
+    allow_nonempty_target: false
+    preflight_targets: true
+    allowed_target_visibilities: [private, internal]
+
+  pipeline_delivery:
+    mode: pull_request
+    branch: "ado2gh/migrated-workflows"
+
+  validation:
+    max_repair_attempts: 1
+
+  pipeline_conversion:
+    llm_provider: disabled
+    llm_model: gpt-5.6
+    llm_base_url: https://api.openai.com/v1
+    llm_api_key_env: OPENAI_API_KEY
+    require_permissions: true
+    require_pinned_action_sha: true
+    forbid_remote_script_execution: true
+    # manual_approval_manifest: pipeline-manual-approvals.yaml
+    # action_pins: {}
+
+  cleanup:
+    allow_disable_pipelines: true
+    allow_redirect: false
+    allow_archive: false
 ```
+
+See the annotated repository-level [`migration.yaml`](../migration.yaml). Wiki
+and secret scopes produce review-required exports/manifests; add them only when
+that external workflow is planned.
+
+The executor uses renewable cross-process plan and task leases. Keep the state
+database on reliable local durable storage, share the same file when resuming,
+and do not run one plan against copied databases. Action pin overrides and
+manual approval manifests are content-addressed plan policy; adding either
+requires a new plan and approval. See the
+[pipeline guide](PIPELINE_TRANSFORMATION_GUIDE.md#approved-action-catalog).
+
+Access policy is explicit per repository. `team_mapping` maps a source team to
+`{github_team, permission}`, where permission is `pull`, `triage`, `push`,
+`maintain`, or `admin`. The separate `access_policy_approved` flag defaults to
+false because full-organization discovery cannot infer ADO ACL equivalence;
+false keeps validation in review and blocks ADO cleanup.
 
 ### Strategy Selection
 
@@ -170,8 +252,26 @@ ado2gh token-status --config migration.yaml
 # Test ADO connectivity
 ado2gh discover --config migration.yaml --output test_discovery.yaml
 
-# If discovery works, you're ready to start the migration workflow
+# Create the immutable plan and exercise GitHub preflight access
+ado2gh agent plan --config migration.yaml --output output/pev_plan.json
+
+# Isolated preview; expect dry_run_passed, dry_run_needs_review, or
+# dry_run_failed. It does not create resumable live state.
+ado2gh agent run \
+  --config migration.yaml \
+  --plan output/pev_plan.json \
+  --dry-run
 ```
+
+Plan schema v7 binds the canonical ADO/GitHub API origins and immutable
+organization identities in addition to source/target snapshots. Durable state
+uses schema v13. Manual pipeline approvals use schema v2. The isolated preview
+performs nested pipeline conversion and
+local validation but suppresses remote writes and live receipts.
+
+Do not use `run`, `phase run`, `pipelines retry-failed`, or `push-workflows` for
+live migration. v6 accepts those compatibility commands only with `--dry-run`;
+all production writes go through the approved `agent run` plan.
 
 ---
 
@@ -180,9 +280,12 @@ ado2gh discover --config migration.yaml --output test_discovery.yaml
 ```
 ADO2GH/
 ├── migration.yaml              # Your config
+├── pipeline-manual-approvals.yaml # Optional content-addressed review records
 ├── migration_phase.yaml        # Generated by phase assign
 ├── migration_state.db          # SQLite state (auto-created)
 ├── output/
+│   ├── pev_plan.json            # Immutable reviewed organization plan
+│   ├── pev_validation.csv       # Plan-bound validation report
 │   ├── workflows/              # Generated GitHub Actions YAML
 │   │   └── {gh_org}/{gh_repo}/.github/workflows/
 │   ├── wikis/                  # Exported wiki pages

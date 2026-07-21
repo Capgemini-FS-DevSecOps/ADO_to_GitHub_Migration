@@ -1,9 +1,10 @@
-"""CLI entry point — Click commands for ado2gh v5."""
+"""CLI entry point — Click commands for ado2gh v6."""
 from __future__ import annotations
 
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import click
@@ -16,6 +17,46 @@ from ado2gh.models import (
 from ado2gh.output_dirs import output_base, output_str
 
 
+def _block_legacy_live_mutation(command: str, dry_run: bool) -> None:
+    """Keep compatibility previews without bypassing the v6 PEV authority."""
+    if not dry_run:
+        raise click.ClickException(
+            f"Live '{command}' execution is disabled in v6 because it bypasses "
+            "immutable plan approval and integrated validation. Use "
+            "'ado2gh agent plan' followed by 'ado2gh agent run --approve-plan'. "
+            "The legacy command remains available with --dry-run for assessment."
+        )
+
+
+def _verify_approved_plan_context(plan, global_cfg: dict, ado, gh) -> None:
+    """Bind privileged follow-up commands to the plan's exact runtime context."""
+    from ado2gh.pev.contracts import content_digest
+    from ado2gh.pev.planner import (
+        _non_secret_config,
+        _safe_org_url,
+        verify_plan_runtime_context,
+    )
+
+    try:
+        verify_plan_runtime_context(plan, global_cfg, ado, gh)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    current_source = _safe_org_url(
+        str(getattr(ado, "org_url", "") or global_cfg.get("ado_org_url", ""))
+    )
+    if current_source.casefold() != plan.source_org_url.casefold():
+        raise click.ClickException(
+            f"Approved plan source {plan.source_org_url} does not match the "
+            f"active ADO client {current_source}"
+        )
+    if content_digest(_non_secret_config(global_cfg)) != plan.config_digest:
+        raise click.ClickException(
+            "Configuration changed after plan approval; use the exact approved "
+            "configuration or generate a new plan"
+        )
+
+
 def _load_clients(cfg_global: dict):
     """Initialize ADO + GH clients from env vars or config."""
     from ado2gh.clients.ado_client import ADOClient
@@ -23,9 +64,17 @@ def _load_clients(cfg_global: dict):
     from ado2gh.clients.token_manager import TokenManager
 
     ado_url = os.environ.get("ADO_ORG_URL") or cfg_global.get("ado_org_url", "")
-    ado_pat = os.environ.get("ADO_PAT") or cfg_global.get("ado_pat", "")
+    allow_inline = bool(cfg_global.get("allow_inline_secrets", False))
+    ado_pat = os.environ.get("ADO_PAT", "")
+    if not ado_pat and allow_inline:
+        ado_pat = cfg_global.get("ado_pat", "")
+        if ado_pat:
+            log.warning("Using inline ADO credential; environment/secret injection is recommended")
     if not ado_url or not ado_pat:
-        console.print("[red]ADO_ORG_URL + ADO_PAT required[/red]")
+        console.print(
+            "[red]ADO_ORG_URL + ADO_PAT required. Inline credentials are "
+            "disabled unless global.allow_inline_secrets=true.[/red]"
+        )
         sys.exit(1)
 
     # Multi-token support: check for GH_TOKEN_1, GH_TOKEN_2, etc.
@@ -36,6 +85,10 @@ def _load_clients(cfg_global: dict):
         if os.environ.get(var):
             gh_token_vars.append(var)
 
+    app_id = os.environ.get("GH_APP_ID", "")
+    install_id = os.environ.get("GH_APP_INSTALLATION_ID", "")
+    key_path = os.environ.get("GH_APP_PRIVATE_KEY_PATH", "")
+
     if token_config and Path(token_config).exists():
         tm = TokenManager.from_json_config(token_config)
         log.info(f"Loaded {tm.token_count} tokens from {token_config}")
@@ -43,21 +96,36 @@ def _load_clients(cfg_global: dict):
         tm = TokenManager.from_env(gh_token_vars)
         log.info(f"Loaded {len(gh_token_vars)} GitHub tokens for load balancing")
     else:
-        gh_token = os.environ.get("GH_TOKEN") or cfg_global.get("gh_token", "")
-        if not gh_token:
-            console.print("[red]GH_TOKEN required[/red]")
+        gh_token = os.environ.get("GH_TOKEN", "")
+        if not gh_token and allow_inline:
+            gh_token = cfg_global.get("gh_token", "")
+            if gh_token:
+                log.warning("Using inline GitHub credential; secret injection is recommended")
+        if gh_token:
+            tm = TokenManager.from_single_token(gh_token)
+        elif app_id and install_id and key_path:
+            tm = TokenManager()
+        else:
+            console.print(
+                "[red]GH_TOKEN or complete GitHub App credentials required. "
+                "Inline credentials are disabled by default.[/red]"
+            )
             sys.exit(1)
-        tm = TokenManager.from_single_token(gh_token)
 
     # Optional: GitHub App auth
-    app_id = os.environ.get("GH_APP_ID", "")
-    install_id = os.environ.get("GH_APP_INSTALLATION_ID", "")
-    key_path = os.environ.get("GH_APP_PRIVATE_KEY_PATH", "")
     if app_id and install_id and key_path:
-        tm.configure_app_auth(app_id, install_id, key_path)
+        tm.configure_app_auth(
+            app_id, install_id, key_path,
+            api_base=cfg_global.get("gh_api_url", "https://api.github.com"),
+        )
         log.info("GitHub App authentication configured")
 
-    return ADOClient(ado_url, ado_pat), GHClient(tm)
+    return ADOClient(ado_url, ado_pat), GHClient(
+        tm,
+        base_url=cfg_global.get("gh_api_url", "https://api.github.com"),
+        enterprise_slug=cfg_global.get("gh_enterprise_slug", ""),
+        api_version=cfg_global.get("gh_api_version", "2022-11-28"),
+    )
 
 
 def _load_repos(input_path: str, global_cfg: dict,
@@ -73,7 +141,13 @@ def _load_repos(input_path: str, global_cfg: dict,
     if input_path:
         gh_org = global_cfg.get("gh_org", "")
         default_scopes = global_cfg.get("default_scopes", ["repo"])
-        repos = ConfigLoader.load_input(input_path, gh_org, default_scopes)
+        repos = ConfigLoader.load_input(
+            input_path,
+            gh_org,
+            default_scopes,
+            mapping=global_cfg.get("mapping", {}),
+            strict=True,
+        )
         if not repos:
             console.print(f"[red]No repos found in {input_path}[/red]")
         return repos
@@ -88,9 +162,9 @@ def _load_repos(input_path: str, global_cfg: dict,
 
 
 @click.group()
-@click.version_option("5.0.0")
+@click.version_option("6.0.0")
 def cli():
-    """ado2gh v5 — Production-ready ADO to GitHub migration with multi-token,
+    """ado2gh v6 — Planner–Executor–Validator ADO to GitHub migration with multi-token,
     risk-based phasing, and post-migration validation."""
     pass
 
@@ -109,7 +183,7 @@ def discover(config, output):
     from ado2gh.core.config_loader import ConfigLoader
     from ado2gh.core.discovery import DiscoveryScanner
     global_cfg, _ = ConfigLoader.load(config)
-    ado, _ = _load_clients(global_cfg)
+    ado, gh = _load_clients(global_cfg)
     DiscoveryScanner(ado).scan(output)
 
 
@@ -151,24 +225,24 @@ def plan(config):
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--db", default="migration_state.db", show_default=True)
 def run(config, wave, dry_run, db):
-    """Execute migration wave(s). Idempotent — skips completed scopes."""
+    """Preview legacy migration wave(s); live writes require ``agent run``."""
     from ado2gh.core.config_loader import ConfigLoader
-    from ado2gh.core.migration_engine import MigrationEngine
     from ado2gh.core.wave_runner import WaveRunner
     from ado2gh.reporting.reporter import Reporter
     from ado2gh.state.db import StateDB
 
+    _block_legacy_live_mutation("run", dry_run)
     global_cfg, waves = ConfigLoader.load(config)
     ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
-    engine = MigrationEngine(global_cfg, ado, gh, state, dry_run=dry_run)
-    runner = WaveRunner(engine, state)
+    runner = WaveRunner(global_cfg, ado, gh, state)
 
     targets = [w for w in waves if wave is None or w.wave_id == wave]
     if not targets:
         console.print(f"[red]Wave {wave} not found.[/red]")
         sys.exit(1)
 
+    failed_waves = []
     for w in targets:
         summary = runner.run_wave(w, dry_run=dry_run)
         Reporter(state).print_wave_status(w.wave_id)
@@ -176,6 +250,12 @@ def run(config, wave, dry_run, db):
         console.print(
             f"\n[bold]Wave {w.wave_id}:[/bold] "
             f"{summary['completed']} repos completed, {summary['failed']} failed")
+        if not dry_run and summary["status"] != "completed":
+            failed_waves.append(w.wave_id)
+    if failed_waves:
+        raise click.ClickException(
+            f"Migration did not complete for wave(s): {failed_waves}"
+        )
 
 
 @cli.command()
@@ -228,13 +308,23 @@ def report(config, output, fmt, db):
 
 @cli.command()
 @click.option("--config", "-c", required=True)
-@click.option("--wave", "-w", type=int, required=True)
+@click.option(
+    "--wave", "-w", type=int, default=None,
+    help="Legacy dry-run wave; live PEV rollback derives the plan wave id",
+)
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--db", default="migration_state.db", show_default=True)
 @click.option("--scopes", "-s", default=None,
               help="Comma-separated scopes to rollback (e.g., 'branch_policies,pipelines'). "
                    "Omit to rollback everything including repo deletion.")
-def rollback(config, wave, dry_run, db, scopes):
+@click.option("--plan", "plan_path", default="", type=click.Path(exists=True),
+              help="Approved PEV plan; required for live rollback")
+@click.option("--run-id", default="",
+              help="Terminal PEV run bound to the approved plan")
+@click.option("--approval-ticket", default="",
+              help="External change/incident ticket; required for live rollback")
+def rollback(config, wave, dry_run, db, scopes, plan_path, run_id,
+             approval_ticket):
     """Rollback migration artifacts — scope-targeted or full wave.
 
     Without --scopes: deletes GitHub repos and resets all records.
@@ -244,16 +334,74 @@ def rollback(config, wave, dry_run, db, scopes):
     from ado2gh.state.db import StateDB
 
     global_cfg, waves = ConfigLoader.load(config)
-    _, gh = _load_clients(global_cfg)
+    ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
-    target = next((w for w in waves if w.wave_id == wave), None)
-    if not target:
-        console.print(f"[red]Wave {wave} not found.[/red]")
-        sys.exit(1)
+    target = None
+    rollback_handler = None
+    destructive_capability_id = ""
 
     scope_list = [s.strip() for s in scopes.split(",")] if scopes else None
+    if scope_list:
+        from ado2gh.models import MigrationScope
+        allowed_scopes = {item.value for item in MigrationScope}
+        unknown_scopes = set(scope_list) - allowed_scopes
+        if unknown_scopes:
+            raise click.ClickException(
+                f"Unknown rollback scope(s): {', '.join(sorted(unknown_scopes))}"
+            )
 
     if not dry_run:
+        if not plan_path or not run_id or not approval_ticket.strip():
+            raise click.ClickException(
+                "Live rollback requires --plan, --run-id, and --approval-ticket"
+            )
+        from ado2gh.pev.contracts import MigrationPlan
+        from ado2gh.pev.executor import plan_wave_id
+        from ado2gh.models import WaveConfig
+        plan = MigrationPlan.from_dict(
+            json.loads(Path(plan_path).read_text(encoding="utf-8"))
+        )
+        _verify_approved_plan_context(plan, global_cfg, ado, gh)
+        approved_wave_id = plan_wave_id(plan)
+        if wave is not None and wave != approved_wave_id:
+            raise click.ClickException(
+                f"Live rollback wave must be the approved plan wave id "
+                f"{approved_wave_id}, not {wave}"
+            )
+        wave = approved_wave_id
+        pev_run = state.get_pev_run(run_id)
+        if not pev_run or pev_run.get("plan_id") != plan.plan_id:
+            raise click.ClickException("Rollback run and approved plan do not match")
+        if pev_run.get("config_digest") != plan.config_digest:
+            raise click.ClickException(
+                "Rollback run configuration does not match the approved plan"
+            )
+        if pev_run.get("status") not in {
+            "completed", "failed", "needs_review", "executed"
+        }:
+            raise click.ClickException(
+                f"Rollback requires a terminal PEV run; observed {pev_run.get('status')}"
+            )
+        if scope_list:
+            approved_scopes = {
+                scope for repo in plan.repositories for scope in repo.scopes
+            }
+            outside = set(scope_list) - approved_scopes
+            if outside:
+                rendered = ", ".join(sorted(outside))
+                raise click.ClickException(
+                    f"Rollback scopes are outside the approved plan: {rendered}"
+                )
+        target = WaveConfig(
+            wave_id=approved_wave_id,
+            name=f"PEV rollback {plan.plan_id}",
+            description="Targets derived exclusively from the approved plan",
+            repos=[repo.to_repo_config() for repo in plan.repositories],
+        )
+        if not target.repos:
+            raise click.ClickException(
+                "Approved plan contains no rollback targets"
+            )
         if scope_list:
             click.confirm(
                 f"Rollback scopes {scope_list} for wave {wave} "
@@ -261,9 +409,79 @@ def rollback(config, wave, dry_run, db, scopes):
         else:
             click.confirm(
                 f"DELETE {len(target.repos)} GitHub repos in wave {wave}?", abort=True)
+        rollback_handler = RollbackHandler(
+            gh,
+            state,
+            authorized_plan_id=plan.plan_id,
+            authorized_run_id=run_id,
+        )
+        destructive_request = rollback_handler.build_capability_request(
+            target, scope_list
+        )
+        destructive_capability_id = state.authorize_pev_destructive_capability(
+            plan.plan_id,
+            run_id,
+            RollbackHandler.DESTRUCTIVE_OPERATION_KIND,
+            destructive_request,
+            approval={
+                "approval_ticket": approval_ticket.strip(),
+                "actor": os.environ.get("USERNAME")
+                or os.environ.get("USER", "unknown"),
+                "confirmed": True,
+            },
+        )
+        rollback_handler.destructive_capability_id = destructive_capability_id
+        state.record_validation_evidence(
+            run_id,
+            "rollback_approval",
+            "pass",
+            evidence={
+                "approval_ticket": approval_ticket.strip(),
+                "plan_id": plan.plan_id,
+                "wave_id": wave,
+                "scopes": scope_list or ["all"],
+                "targets": sorted(f"{r.gh_org}/{r.gh_repo}" for r in target.repos),
+                "destructive_capability_id": destructive_capability_id,
+            },
+        )
+    else:
+        if wave is None:
+            raise click.ClickException("Legacy rollback dry-run requires --wave")
+        target = next((w for w in waves if w.wave_id == wave), None)
+        if not target:
+            console.print(f"[red]Wave {wave} not found.[/red]")
+            sys.exit(1)
 
-    RollbackHandler(gh, state).rollback_wave(
+    rollback_handler = rollback_handler or RollbackHandler(
+        gh,
+        state,
+        authorized_plan_id=plan.plan_id if not dry_run else "",
+        authorized_run_id=run_id if not dry_run else "",
+        destructive_capability_id=destructive_capability_id,
+    )
+    rollback_result = rollback_handler.rollback_wave(
         target, dry_run=dry_run, scopes=scope_list)
+    if rollback_result.get("errors"):
+        raise click.ClickException(
+            f"Rollback finished with {rollback_result['errors']} error(s)"
+        )
+    if not dry_run:
+        state.record_validation_evidence(
+            run_id,
+            "rollback_result",
+            "pass",
+            evidence={**rollback_result, "approval_ticket": approval_ticket.strip()},
+        )
+        state.upsert_pev_run(
+            run_id,
+            plan.plan_id,
+            status="needs_review",
+            config_digest=plan.config_digest,
+            summary={
+                "rollback": rollback_result,
+                "approval_ticket": approval_ticket.strip(),
+            },
+        )
 
 
 @cli.command("export-failed")
@@ -307,6 +525,8 @@ def validate(config, input_file, db, output):
     validator = PostMigrationValidator(ado, gh, state)
     results = validator.validate(all_repos, output_path=output)
     validator.print_summary(results)
+    if any(result.get("overall") == "FAIL" for result in results):
+        raise click.ClickException("Post-migration validation failed")
 
 
 @cli.command("token-status")
@@ -335,6 +555,268 @@ def token_status(config):
     if info["app_configured"]:
         t.add_row("App Auth", "configured", "[green]OK[/green]")
     console.print(t)
+
+
+# ── Planner–Executor–Validator agent ───────────────────────────────────────
+
+@cli.group("agent")
+def agent_group():
+    """Immutable-plan organisation migration with integrated validation."""
+    pass
+
+
+@agent_group.command("plan")
+@click.option("--config", "-c", required=True)
+@click.option("--input", "-i", "input_file", default=None,
+              help="Optional repo selection; omit to plan the full ADO organisation")
+@click.option("--scopes", default="",
+              help="Optional comma-separated scope override")
+@click.option("--output", "-o", default=lambda: output_str("pev_plan.json"),
+              show_default="$ADO2GH_OUTPUT_DIR/pev_plan.json")
+@click.option("--db", default="migration_state.db", show_default=True)
+@click.option("--planner-approval-envelope", default="", type=click.Path(exists=True),
+              help="Externally signed Ed25519 planner approval (strict governance)")
+def agent_plan(config, input_file, scopes, output, db,
+               planner_approval_envelope):
+    """Discover sources and create a content-addressed plan for approval."""
+    from ado2gh.core.config_loader import ConfigLoader
+    from ado2gh.pev.planner import MigrationPlanner
+    from ado2gh.state.db import StateDB
+    from ado2gh.governance import load_approval_envelope
+
+    global_cfg, waves = ConfigLoader.load(config)
+    ado, gh = _load_clients(global_cfg)
+    repos = (
+        ConfigLoader.load_input(
+            input_file,
+            global_cfg.get("gh_org", ""),
+            global_cfg.get("default_scopes", ["repo"]),
+            mapping=global_cfg.get("mapping", {}),
+            strict=True,
+        )
+        if input_file else (
+            [repo for wave in waves for repo in wave.repos]
+            if waves else None
+        )
+    )
+    scope_list = [item.strip() for item in scopes.split(",") if item.strip()] or None
+    state = StateDB(db)
+    plan = MigrationPlanner(ado, global_cfg, gh=gh, db=state).create_plan(
+        repos=repos,
+        scopes=scope_list,
+        planner_approval_envelope=(
+            load_approval_envelope(planner_approval_envelope)
+            if planner_approval_envelope else None
+        ),
+    )
+    out = Path(output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    temp = out.with_suffix(out.suffix + ".tmp")
+    temp.write_text(json.dumps(plan.to_dict(), indent=2), encoding="utf-8")
+    temp.replace(out)
+    console.print(
+        f"[green]Plan written:[/green] {out}\n"
+        f"[bold]plan_id:[/bold] {plan.plan_id}\n"
+        f"Repositories: {len(plan.repositories)} | Tasks: {len(plan.tasks)}"
+    )
+    console.print(
+        "Review the plan, then execute with "
+        f"[bold]ado2gh agent run --plan {out} --approve-plan {plan.plan_id}[/bold]"
+    )
+
+
+@agent_group.command("run")
+@click.option("--config", "-c", required=True)
+@click.option("--plan", "plan_path", required=True, type=click.Path(exists=True))
+@click.option("--approve-plan", default="",
+              help="Exact plan_id reviewed by the operator; required for live writes")
+@click.option("--approval-envelope", default="", type=click.Path(exists=True),
+              help="Externally signed Ed25519 plan-execution approval (strict governance)")
+@click.option("--resume", "run_id", default="",
+              help="Resume an existing PEV run id")
+@click.option("--dry-run", is_flag=True, default=False)
+@click.option("--db", default="migration_state.db", show_default=True)
+@click.option("--output", "-o", default=lambda: output_str("pev_validation.csv"),
+              show_default="$ADO2GH_OUTPUT_DIR/pev_validation.csv")
+def agent_run(config, plan_path, approve_plan, approval_envelope, run_id,
+              dry_run, db, output):
+    """Execute exactly an approved plan, validate, and apply bounded repairs."""
+    from ado2gh.core.config_loader import ConfigLoader
+    from ado2gh.pev.contracts import MigrationPlan
+    from ado2gh.pev.orchestrator import MigrationOrchestrator
+    from ado2gh.state.db import StateDB
+    from ado2gh.governance import load_approval_envelope
+
+    global_cfg, _ = ConfigLoader.load(config)
+    ado, gh = _load_clients(global_cfg)
+    plan = MigrationPlan.from_dict(
+        json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    )
+    _verify_approved_plan_context(plan, global_cfg, ado, gh)
+    outcome = MigrationOrchestrator(
+        global_cfg, ado, gh, StateDB(db)
+    ).run(
+        plan,
+        approved_plan_id=approve_plan,
+        dry_run=dry_run,
+        run_id=run_id or None,
+        output_path=None if dry_run else output,
+        approval_envelope=(
+            load_approval_envelope(approval_envelope)
+            if approval_envelope else None
+        ),
+    )
+    console.print(
+        f"[bold]PEV run:[/bold] {outcome.run_id}\n"
+        f"[bold]Plan:[/bold] {outcome.plan_id}\n"
+        f"[bold]Status:[/bold] {outcome.status}\n"
+        f"Repair attempts: {outcome.repair_attempts}"
+    )
+    if outcome.status not in {"completed", "dry_run_passed"}:
+        raise click.ClickException(
+            f"PEV run requires attention (status={outcome.status})"
+        )
+
+
+@agent_group.command("validate")
+@click.option("--config", "-c", required=True)
+@click.option("--plan", "plan_path", required=True, type=click.Path(exists=True))
+@click.option("--run-id", required=True)
+@click.option("--db", default="migration_state.db", show_default=True)
+@click.option("--output", "-o", default=lambda: output_str("pev_validation.csv"),
+              show_default="$ADO2GH_OUTPUT_DIR/pev_validation.csv")
+def agent_validate(config, plan_path, run_id, db, output):
+    """Re-run validators for a previously executed immutable plan."""
+    from ado2gh.core.config_loader import ConfigLoader
+    from ado2gh.pev.contracts import MigrationPlan
+    from ado2gh.pev.validator import PEVValidator
+    from ado2gh.state.db import StateDB
+
+    global_cfg, _ = ConfigLoader.load(config)
+    ado, gh = _load_clients(global_cfg)
+    plan = MigrationPlan.from_dict(
+        json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    )
+    _verify_approved_plan_context(plan, global_cfg, ado, gh)
+    report = PEVValidator(ado, gh, StateDB(db), global_cfg).validate(
+        plan, run_id, output_path=output
+    )
+    console.print(
+        f"Validation: [bold]{report.status}[/bold] | "
+        f"failures={len(report.failures)} warnings={len(report.warnings)}"
+    )
+    if not report.passed:
+        raise click.ClickException(
+            f"PEV validation requires attention (status={report.status})"
+        )
+
+
+@agent_group.command("status")
+@click.option("--run-id", default="")
+@click.option("--db", default="migration_state.db", show_default=True)
+def agent_status(run_id, db):
+    """Show durable PEV runs and task state."""
+    from ado2gh.state.db import StateDB
+    from rich.table import Table
+
+    state = StateDB(db)
+    runs = [state.get_pev_run(run_id)] if run_id else state.list_pev_runs(limit=50)
+    runs = [item for item in runs if item]
+    table = Table(title="PEV Migration Runs")
+    table.add_column("Run")
+    table.add_column("Plan")
+    table.add_column("Status")
+    table.add_column("Updated")
+    for item in runs:
+        table.add_row(
+            item.get("run_id", ""), item.get("plan_id", ""),
+            item.get("status", ""),
+            item.get("updated_at", item.get("completed_at", "")),
+        )
+    console.print(table)
+    if run_id and runs:
+        tasks = state.list_pev_tasks(run_id)
+        counts = {}
+        for task in tasks:
+            counts[task["status"]] = counts.get(task["status"], 0) + 1
+        console.print("Tasks: " + ", ".join(
+            f"{status}={count}" for status, count in sorted(counts.items())
+        ))
+
+
+@agent_group.command("release-quarantine")
+@click.option("--config", "-c", required=True)
+@click.option("--plan", "plan_path", required=True, type=click.Path(exists=True))
+@click.option("--run-id", required=True)
+@click.option("--target-org", required=True)
+@click.option("--target-repo", required=True)
+@click.option("--approval-ticket", required=True)
+@click.option("--db", default="migration_state.db", show_default=True)
+def agent_release_quarantine(
+    config,
+    plan_path,
+    run_id,
+    target_org,
+    target_repo,
+    approval_ticket,
+    db,
+):
+    """Release a target fence after an operator reconciles an uncertain write."""
+    from ado2gh.core.config_loader import ConfigLoader
+    from ado2gh.pev.contracts import MigrationPlan
+    from ado2gh.state.db import StateDB
+
+    global_cfg, _ = ConfigLoader.load(config)
+    ado, gh = _load_clients(global_cfg)
+    plan = MigrationPlan.from_dict(
+        json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    )
+    _verify_approved_plan_context(plan, global_cfg, ado, gh)
+    target_key = f"{target_org}/{target_repo}".casefold()
+    if target_key not in {
+        repo.target_key.casefold() for repo in plan.repositories
+    }:
+        raise click.ClickException(
+            "Requested quarantine target is not present in the approved plan"
+        )
+    state = StateDB(db)
+    run = state.get_pev_run(run_id)
+    if not run or run.get("plan_id") != plan.plan_id:
+        raise click.ClickException("Run and approved plan do not match")
+    if run.get("config_digest") != plan.config_digest:
+        raise click.ClickException(
+            "Run configuration does not match the approved plan"
+        )
+    observed_repo_id = ""
+    if gh.repo_exists(target_org, target_repo):
+        metadata = gh.get_repo(target_org, target_repo)
+        observed_repo_id = str(
+            metadata.get("node_id") or metadata.get("id") or ""
+        ).strip()
+        if not observed_repo_id:
+            raise click.ClickException(
+                "Live target has no immutable repository identity"
+            )
+    click.confirm(
+        f"Release quarantine for {target_org}/{target_repo} after external "
+        f"reconciliation under {approval_ticket.strip()}?",
+        abort=True,
+    )
+    try:
+        evidence = state.release_pev_target_quarantine(
+            target_org,
+            target_repo,
+            plan_id=plan.plan_id,
+            run_id=run_id,
+            approval_ticket=approval_ticket.strip(),
+            observed_target_repo_id=observed_repo_id,
+        )
+    except (PermissionError, RuntimeError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(
+        f"[green]Released target quarantine:[/green] "
+        f"{evidence['target']} (fencing token {evidence['fencing_token']})"
+    )
 
 
 # ── `pipelines` subcommand group ───────────────────────────────────────────
@@ -369,7 +851,7 @@ def pipelines_inventory(config, input_file, projects, no_releases, parallel, cle
     from rich import box
 
     global_cfg, waves = ConfigLoader.load(config)
-    ado, _ = _load_clients(global_cfg)
+    ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
 
     if input_file:
@@ -469,6 +951,7 @@ def pipelines_retry_failed(config, wave, dry_run, db):
     from ado2gh.reporting.reporter import Reporter
     from ado2gh.state.db import StateDB
 
+    _block_legacy_live_mutation("pipelines retry-failed", dry_run)
     global_cfg, waves = ConfigLoader.load(config)
     ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
@@ -482,8 +965,7 @@ def pipelines_retry_failed(config, wave, dry_run, db):
         return
     if not dry_run:
         state.reset_failed_pipeline_migrations(wave)
-    engine = MigrationEngine(global_cfg, ado, gh, state, dry_run=dry_run)
-    runner = WaveRunner(engine, state)
+    runner = WaveRunner(global_cfg, ado, gh, state)
     runner.run_wave(target, dry_run=dry_run)
     Reporter(state).print_pipeline_status(wave)
 
@@ -695,7 +1177,7 @@ def phase_plan(config, phase, db):
 @click.option("--force", is_flag=True, default=False)
 @click.option("--db", default="migration_state.db", show_default=True)
 def phase_run(config, phase, dry_run, force, db):
-    """Execute a phase with sub-batch checkpointing and gate enforcement."""
+    """Preview a legacy phase; live writes require the PEV agent commands."""
     from ado2gh.core.config_loader import ConfigLoader
     from ado2gh.core.migration_engine import MigrationEngine
     from ado2gh.phase.batch_executor import BatchExecutor
@@ -704,6 +1186,7 @@ def phase_run(config, phase, dry_run, force, db):
     from ado2gh.state.db import StateDB
     from rich.panel import Panel
 
+    _block_legacy_live_mutation("phase run", dry_run)
     global_cfg, waves = ConfigLoader.load(config)
     ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
@@ -756,6 +1239,10 @@ def phase_run(config, phase, dry_run, force, db):
         if np:
             console.print(
                 f"\n[green]Gate PASS[/green] Ready for [bold]{np.value.upper()}[/bold]")
+    if summary["failed"] or gate.status == GateStatus.FAIL:
+        raise click.ClickException(
+            f"Phase {phase} did not satisfy its production gate"
+        )
 
 
 @phase_group.command("gate-check")
@@ -781,6 +1268,8 @@ def phase_gate_check(config, phase, override, reason, db):
     else:
         result = checker.check(phase_t)
     _print_gate_result(result, phase)
+    if result.status == GateStatus.FAIL:
+        raise click.ClickException(f"Phase {phase} gate failed")
 
 
 @phase_group.command("dashboard")
@@ -946,6 +1435,7 @@ def push_workflows(config, input_file, branch, base, pr_title,
     filesystem only; this command takes that output and lands it on the
     destination repo via a feature branch + PR so the team can review.
     """
+    _block_legacy_live_mutation("push-workflows", dry_run)
     import base64
     import requests
     from ado2gh.core.config_loader import ConfigLoader
@@ -1054,27 +1544,97 @@ def push_workflows(config, input_file, branch, base, pr_title,
 @click.option("--db", default="migration_state.db", show_default=True)
 @click.option("--disable-pipelines/--no-disable-pipelines", default=True,
               help="Disable ADO build pipelines for migrated repos")
-@click.option("--add-redirect/--no-redirect", default=True,
+@click.option("--add-redirect/--no-redirect", default=False,
               help="Push MIGRATION_NOTICE.md to ADO repo")
 @click.option("--archive/--no-archive", default=False,
               help="Disable (archive) the ADO repo to prevent further pushes")
 @click.option("--dry-run", is_flag=True, default=False)
 @click.option("--phase", "-p", default=None,
               type=click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]))
-def ado_cleanup(config, input_file, db, disable_pipelines, add_redirect, archive, dry_run, phase):
+@click.option("--plan", "plan_path", default="", type=click.Path(exists=True),
+              help="Approved PEV plan; required for live cleanup")
+@click.option("--run-id", default="",
+              help="Completed PEV run; required for live cleanup")
+@click.option("--approval-ticket", default="",
+              help="External change/approval ticket; required for live cleanup")
+@click.option("--approval-envelope", default="", type=click.Path(exists=True),
+              help="Externally signed Ed25519 cleanup approval (strict governance)")
+@click.option("--allow-source-mutation", is_flag=True, default=False,
+              help="Explicitly allow redirect commit after parity validation")
+def ado_cleanup(config, input_file, db, disable_pipelines, add_redirect, archive,
+                dry_run, phase, plan_path, run_id, approval_ticket,
+                approval_envelope,
+                allow_source_mutation):
     """Post-migration ADO cleanup: disable pipelines, add redirect, archive repos.
 
     Reads repos from --input file, --phase filter, or config waves.
     Only run AFTER successful migration and validation."""
-    from ado2gh.core.ado_cleanup import ADOCleanup
+    from ado2gh.core.ado_cleanup import ADOCleanup, authorize_cleanup_capability
     from ado2gh.core.config_loader import ConfigLoader
+    from ado2gh.governance import load_approval_envelope
     from ado2gh.state.db import StateDB
 
     global_cfg, waves = ConfigLoader.load(config)
-    ado, _ = _load_clients(global_cfg)
+    ado, gh = _load_clients(global_cfg)
     state = StateDB(db)
 
-    if input_file:
+    approved_plan = None
+    if plan_path:
+        from ado2gh.pev.contracts import MigrationPlan
+        approved_plan = MigrationPlan.from_dict(
+            json.loads(Path(plan_path).read_text(encoding="utf-8"))
+        )
+        _verify_approved_plan_context(approved_plan, global_cfg, ado, gh)
+    if not dry_run:
+        if not plan_path or not run_id or not approval_ticket.strip():
+            raise click.ClickException(
+                "Live cleanup requires --plan, --run-id, and --approval-ticket"
+            )
+        pev_run = state.get_pev_run(run_id)
+        if not pev_run or pev_run.get("plan_id") != approved_plan.plan_id:
+            raise click.ClickException("Cleanup run and approved plan do not match")
+        if pev_run.get("config_digest") != approved_plan.config_digest:
+            raise click.ClickException(
+                "Cleanup run configuration does not match the approved plan"
+            )
+        if pev_run.get("status") != "completed":
+            raise click.ClickException(
+                f"Cleanup requires a completed PEV run; observed {pev_run.get('status')}"
+            )
+        if add_redirect and not allow_source_mutation:
+            raise click.ClickException(
+                "--add-redirect changes the validated source HEAD; add "
+                "--allow-source-mutation only when the approved cutover permits it"
+            )
+        if add_redirect and not archive:
+            raise click.ClickException(
+                "Live --add-redirect requires --archive in the same cutover so "
+                "the sanctioned redirect commit is immediately frozen"
+            )
+
+    if approved_plan is not None:
+        all_repos = [repo.to_repo_config() for repo in approved_plan.repositories]
+        if input_file:
+            selected = _load_repos(input_file, global_cfg)
+            selected_keys = {
+                (repo.ado_project.casefold(), repo.ado_repo.casefold())
+                for repo in selected
+            }
+            approved_keys = {
+                (repo.ado_project.casefold(), repo.ado_repo.casefold())
+                for repo in all_repos
+            }
+            unapproved = selected_keys - approved_keys
+            if unapproved:
+                names = ", ".join(sorted(f"{p}/{r}" for p, r in unapproved))
+                raise click.ClickException(
+                    f"Cleanup selection contains repos outside the approved plan: {names}"
+                )
+            all_repos = [
+                repo for repo in all_repos
+                if (repo.ado_project.casefold(), repo.ado_repo.casefold()) in selected_keys
+            ]
+    elif input_file:
         all_repos = _load_repos(input_file, global_cfg)
     elif phase:
         scores = state.get_risk_scores_for_phase(PhaseType(phase))
@@ -1089,20 +1649,232 @@ def ado_cleanup(config, input_file, db, disable_pipelines, add_redirect, archive
         sys.exit(1)
 
     if not dry_run:
-        click.confirm(
-            f"Run ADO cleanup on {len(all_repos)} repos "
-            f"(disable_pipelines={disable_pipelines}, "
-            f"redirect={add_redirect}, archive={archive})?",
-            abort=True,
+        cleanup_policy = dict(approved_plan.policy.get("cleanup", {}))
+        if disable_pipelines and not cleanup_policy.get(
+            "allow_disable_pipelines", False
+        ):
+            raise click.ClickException(
+                "Pipeline disabling was not approved in the immutable plan"
+            )
+        if add_redirect and not cleanup_policy.get("allow_redirect", False):
+            raise click.ClickException(
+                "Source redirect commits were not approved in the immutable plan"
+            )
+        if archive and not cleanup_policy.get("allow_archive", False):
+            raise click.ClickException(
+                "Source archival was not approved in the immutable plan"
+            )
+        planned_by_source = {
+            repo.source_key: repo for repo in approved_plan.repositories
+        }
+        if disable_pipelines:
+            without_pipeline_scope = [
+                f"{repo.ado_project}/{repo.ado_repo}"
+                for repo in all_repos
+                if "pipelines" not in planned_by_source[
+                    f"{repo.ado_project}/{repo.ado_repo}"
+                ].scopes
+            ]
+            if without_pipeline_scope:
+                raise click.ClickException(
+                    "Pipeline cleanup is outside approved scopes for: "
+                    + ", ".join(sorted(without_pipeline_scope))
+                )
+        if archive:
+            not_approved = [
+                f"{repo.ado_project}/{repo.ado_repo}"
+                for repo in all_repos
+                if not planned_by_source[
+                    f"{repo.ado_project}/{repo.ado_repo}"
+                ].archive_source
+            ]
+            if not_approved:
+                raise click.ClickException(
+                    "Source archival is not approved per repository for: "
+                    + ", ".join(sorted(not_approved))
+                )
+        # Reconcile the source snapshot immediately before cutover actions.
+        from ado2gh.pev.contracts import (
+            canonical_ref_snapshot,
+            compute_source_refs_digest,
         )
+        for repo in all_repos:
+            planned = planned_by_source[f"{repo.ado_project}/{repo.ado_repo}"]
+            source = ado.get_repo(repo.ado_project, planned.source_repo_id)
+            observed_id = str(source.get("id", "")).strip()
+            raw_default = source.get("defaultBranch")
+            if raw_default in (None, ""):
+                observed_default = ""
+            elif (
+                isinstance(raw_default, str)
+                and raw_default.startswith("refs/heads/")
+                and raw_default[len("refs/heads/"):]
+            ):
+                observed_default = raw_default[len("refs/heads/"):]
+            else:
+                raise click.ClickException(
+                    f"Source drift blocks cleanup for {repo.ado_project}/"
+                    f"{repo.ado_repo}: ADO returned an invalid default branch"
+                )
+            observed_branches = canonical_ref_snapshot(
+                ado.list_refs(repo.ado_project, planned.source_repo_id, "heads/"),
+                "heads",
+            )
+            observed_tags = canonical_ref_snapshot(
+                ado.list_refs(repo.ado_project, planned.source_repo_id, "tags/"),
+                "tags",
+            )
+            observed_digest = compute_source_refs_digest(
+                observed_branches, observed_tags
+            )
+            if (
+                observed_id != planned.source_repo_id
+                or observed_default != planned.default_branch
+                or observed_branches != planned.source_branch_refs
+                or observed_tags != planned.source_tag_refs
+                or observed_digest != planned.source_refs_digest
+            ):
+                raise click.ClickException(
+                    f"Source drift blocks cleanup for {repo.ado_project}/{repo.ado_repo}: "
+                    f"planned refs {planned.source_refs_digest[:12]}, observed "
+                    f"{observed_digest[:12]}"
+                )
+    destructive_request = None
+    destructive_capability_id = ""
+    if approved_plan is not None:
+        selected_source_keys = {
+            f"{repo.ado_project}/{repo.ado_repo}" for repo in all_repos
+        }
+        inventory_tasks = {
+            task.source_key: task
+            for task in approved_plan.tasks
+            if task.kind == "inventory" and task.scope == "pipelines"
+            and task.source_key in selected_source_keys
+        }
 
-    cleanup = ADOCleanup(ado, state, dry_run=dry_run)
-    cleanup.cleanup_repos(
+        # Pipeline disabling is destructive source-side work. Re-inventory and
+        # require the exact approved digest immediately before the cleanup
+        # worker starts so additions, deletions, type changes, and YAML drift
+        # cannot be silently ignored.
+        if disable_pipelines:
+            from ado2gh.pipelines.inventory import PipelineInventoryBuilder
+            try:
+                PipelineInventoryBuilder(
+                    ado,
+                    state,
+                    parallel=int(global_cfg.get("pipeline_parallel", 8)),
+                    dry_run=False,
+                    strict=True,
+                ).build_for_projects(
+                    sorted({repo.ado_project for repo in all_repos}),
+                    include_releases=True,
+                )
+                for source_key, task in inventory_tasks.items():
+                    project, repo_name = source_key.split("/", 1)
+                    state.get_verified_pipeline_inventory_snapshot(
+                        project,
+                        repo_name,
+                        str(task.metadata.get("inventory_digest", "")),
+                    )
+            except Exception as exc:
+                raise click.ClickException(
+                    f"Pipeline source drift blocks cleanup: {exc}"
+                ) from exc
+
+        if not dry_run:
+            from ado2gh.core.ado_cleanup import build_cleanup_destructive_request
+            from ado2gh.pev.contracts import content_digest
+
+            target_web_url = str(global_cfg.get("gh_web_url", "")).rstrip("/")
+            active_api_url = str(
+                getattr(gh, "BASE", "")
+                or global_cfg.get("gh_api_url", "https://api.github.com")
+            ).rstrip("/")
+            if not target_web_url:
+                if active_api_url.casefold() == "https://api.github.com":
+                    target_web_url = "https://github.com"
+                else:
+                    raise click.ClickException(
+                        "GitHub Enterprise cleanup redirects require an explicit, "
+                        "plan-bound global.gh_web_url"
+                    )
+            try:
+                destructive_request = build_cleanup_destructive_request(
+                    approved_plan,
+                    run_id,
+                    all_repos,
+                    disable_pipelines=disable_pipelines,
+                    add_redirect=add_redirect,
+                    archive_repo=archive,
+                    migration_date=(
+                        datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                        if add_redirect else ""
+                    ),
+                    target_web_url=target_web_url,
+                )
+            except (TypeError, ValueError) as exc:
+                raise click.ClickException(str(exc)) from exc
+            request_digest = content_digest(destructive_request)
+            click.confirm(
+                f"Authorize exact ADO cleanup {request_digest[:16]} on "
+                f"{len(all_repos)} repos "
+                f"(disable_pipelines={disable_pipelines}, "
+                f"redirect={add_redirect}, archive={archive})?",
+                abort=True,
+            )
+            approval = {
+                "approval_ticket": approval_ticket.strip(),
+                "actor": os.environ.get("USERNAME")
+                or os.environ.get("USER", "unknown"),
+                "request_digest": request_digest,
+                "confirmed_at": datetime.now(timezone.utc).isoformat(),
+            }
+            # Authorization and approval evidence are persisted only after the
+            # interactive confirmation succeeds.
+            destructive_capability_id, approval = authorize_cleanup_capability(
+                state,
+                approved_plan,
+                run_id,
+                destructive_request,
+                approval_envelope=(
+                    load_approval_envelope(approval_envelope)
+                    if approval_envelope else None
+                ),
+                legacy_approval=approval,
+                expected_ticket=approval_ticket.strip(),
+            )
+            state.record_validation_evidence(
+                run_id,
+                "cleanup_approval",
+                "pass",
+                evidence={
+                    **approval,
+                    "capability_id": destructive_capability_id,
+                    "repositories": sorted(selected_source_keys),
+                    "disable_pipelines": disable_pipelines,
+                    "add_redirect": add_redirect,
+                    "archive": archive,
+                },
+            )
+
+    cleanup = ADOCleanup(
+        ado,
+        state,
+        dry_run=dry_run,
+        gh=gh,
+        approved_plan=approved_plan,
+        approved_run_id=run_id,
+        destructive_capability_id=destructive_capability_id,
+        destructive_request=destructive_request,
+    )
+    cleanup_results = cleanup.cleanup_repos(
         all_repos,
         disable_pipelines=disable_pipelines,
         add_redirect=add_redirect,
         archive_repo=archive,
     )
+    if any(result.get("status") != "completed" for result in cleanup_results):
+        raise click.ClickException("One or more ADO cleanup actions failed")
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────
