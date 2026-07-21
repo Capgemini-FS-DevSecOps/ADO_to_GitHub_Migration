@@ -1,15 +1,34 @@
-"""Service connection migration manifest — maps ADO service connections to GitHub equivalents."""
+"""Service connection migration manifest — maps ADO service connections to GitHub equivalents.
+
+**DEPRECATED**: This module is deprecated as of v1.0.0 and will be removed in v2.0.0.
+The functionality has been merged into the `analyze_deps` pipeline step, which now
+provides structured dependency analysis including service connections, variable groups,
+environments, and other dependencies. Use the `analyze_deps` step result data instead.
+
+Migration guide:
+- Replace `ServiceConnectionManifest.generate()` calls with pipeline step execution
+- Use `analyze_deps` step result `dependencies` field for structured dependency data
+- Use `OIDCProvisioner` for automated OIDC credential provisioning (spec 009)
+
+See: specs/009-pipeline-step-decoupling/spec.md
+"""
 from __future__ import annotations
 
 import csv
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import RepoConfig
+
+warnings.warn(
+    "ServiceConnectionManifest is deprecated and will be removed in v2.0.0. "
+    "Use the analyze_deps pipeline step instead. See specs/009-pipeline-step-decoupling/spec.md",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class ServiceConnectionManifest:

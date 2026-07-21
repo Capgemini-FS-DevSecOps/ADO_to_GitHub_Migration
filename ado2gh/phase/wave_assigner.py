@@ -14,7 +14,7 @@ class WaveAssigner:
     def assign(self, scores: list[RiskScore],
                gh_org: str = "your-github-org") -> dict[PhaseType, list[RiskScore]]:
         sorted_scores = sorted(scores, key=lambda s: s.total_score)
-        result = {p: [] for p in PHASE_ORDER}
+        result = {p.value: [] for p in PHASE_ORDER}
         for score in sorted_scores:
             # Preserve any per-repo override already set on the score
             # (e.g. from the project/repo::gh_org/gh_repo input syntax).
@@ -27,15 +27,15 @@ class WaveAssigner:
                 cfg = self.phases[phase_type]
                 if score.total_score > cfg.risk_max:
                     continue
-                if phase_type != PhaseType.WAVE3 and len(result[phase_type]) >= cfg.repo_cap:
+                if phase_type != PhaseType.WAVE3 and len(result[phase_type.value]) >= cfg.repo_cap:
                     continue
-                score.assigned_phase = phase_type
-                result[phase_type].append(score)
+                score.assigned_phase = phase_type.value
+                result[phase_type.value].append(score)
                 assigned = True
                 break
             if not assigned:
-                score.assigned_phase = PhaseType.WAVE3
-                result[PhaseType.WAVE3].append(score)
+                score.assigned_phase = PhaseType.WAVE3.value
+                result[PhaseType.WAVE3.value].append(score)
         return result
 
     def to_wave_configs(self, assigned: dict, global_scopes: list,
@@ -43,7 +43,7 @@ class WaveAssigner:
         waves = []
         wave_id = 0
         for phase_type in PHASE_ORDER:
-            scores = assigned.get(phase_type, [])
+            scores = assigned.get(phase_type.value, [])
             if not scores:
                 continue
             cfg = self.phases[phase_type]

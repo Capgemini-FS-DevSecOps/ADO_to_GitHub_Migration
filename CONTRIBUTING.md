@@ -1,58 +1,98 @@
 # Contributing
 
-## Development Setup
+## Development setup
 
 ```bash
 git clone <this-repo>
-cd ADO2GH
-python -m venv venv
-source venv/bin/activate
-pip install -e .
+cd ADO_to_GitHub_Migration
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e ".[api,postgres,dev]"
 ```
 
-## Project Structure
+**UI:**
 
-The tool is a Python package under `ado2gh/`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system design.
-
-Key conventions:
-- All CLI commands live in `ado2gh/cli.py`
-- All dataclasses and enums live in `ado2gh/models.py`
-- Each module imports from `ado2gh.logging_config` for logging
-- State is persisted in SQLite via `ado2gh/state/db.py`
-- API clients are in `ado2gh/clients/` with retry and rate-limit handling
-
-## Adding a New ADO Task Mapping
-
-Edit `ado2gh/pipelines/transformer.py` — add to the `ADO_TASK_MAP` dict:
-
-```python
-"YourTask@1": "owner/action@vN",
+```bash
+cd apps/migration-ui && npm install && npm run dev
 ```
 
-For tasks that map to `run:` steps (shell commands), use the run-based format already used by `CmdLine@2`, `Bash@3`, etc.
+**Full stack (local SQLite):** `docker compose up --build`
 
-## Adding a New Migration Scope
+**Production (Postgres + auth):** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build`
 
-1. Add the scope to `MigrationScope` enum in `ado2gh/models.py`
-2. Add a handler method `_migrate_<scope>` in `ado2gh/core/migration_engine.py`
-3. Register the handler in the `scope_handlers` dict in `migrate_repo()`
+See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) and [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md).
 
-## Adding a New CLI Command
+## Project structure
 
-Add the Click command in `ado2gh/cli.py`. Use lazy imports inside the function body to keep startup fast:
+| Path | Role |
+|------|------|
+| `ado2gh/cli/` | Click CLI commands (`ado2gh/cli/main.py` entry) |
+| `ado2gh/core/` | Migration engine, config, discovery, rollback |
+| `ado2gh/api/` | Accelerator SDK, pipeline runner, settings, auth |
+| `ado2gh/agents/` | LLM provider, session orchestrator, skills |
+| `ado2gh/state/` | SQLite / Postgres / DynamoDB state stores |
+| `services/accelerator_api/` | FastAPI service for the UI |
+| `services/agent/` | PEV agent + MCP |
+| `apps/migration-ui/` | Next.js console |
+
+Conventions:
+
+- Dataclasses and enums in `ado2gh/models.py`
+- Logging via `ado2gh/logging_config.py`
+- State access through `create_state_db()` — not raw SQLite paths in new code
+- API clients in `ado2gh/clients/` with retry and rate-limit handling
+
+## Adding a CLI command
+
+Add a Click command under `ado2gh/cli/` (e.g. `misc.py`, `phase.py`) and register it in `ado2gh/cli/main.py`. Use lazy imports inside the handler:
 
 ```python
 @cli.command()
 @click.option("--config", "-c", required=True)
 def my_command(config):
-    """Description."""
     from ado2gh.core.config_loader import ConfigLoader
-    # ...
+    ...
 ```
 
-## Code Style
+## Adding an ADO task mapping
 
-- No unnecessary abstractions — three similar lines are better than a premature helper
-- Imports at module top except for CLI commands (lazy imports for fast startup)
-- Rich for console output, standard logging for debug/info/warning/error
-- SQLite for state — no external database dependencies
+Edit `ado2gh/pipelines/transformer.py` — `ADO_TASK_MAP`:
+
+```python
+"YourTask@1": "owner/action@vN",
+```
+
+## Adding a migration scope
+
+1. Add to `MigrationScope` in `ado2gh/models.py`
+2. Implement `_migrate_<scope>` in `ado2gh/core/migration_engine.py`
+3. Register in `scope_handlers` inside `migrate_repo()`
+
+## Tests
+
+```bash
+pytest tests/
+```
+
+Coverage gates apply to selected `ado2gh.api.*` and `ado2gh.auth.*` modules (see `pyproject.toml`). Use `pytest --no-cov` for a quick local run without the coverage threshold.
+
+## Scripts (`scripts/`)
+
+| Script | Purpose |
+|--------|---------|
+| `discover.sh` | ADO org scan → discovery output |
+| `migrate.sh` | Minimal phased migration from repo map |
+| `migrate-full.sh` | Full workflow including pipeline inventory |
+| `run-local-agent.ps1` / `.sh` | Lightweight accelerator + agent for IDE dev |
+| `run-local.ps1` | Native full stack (accelerator + agent + UI) on Windows |
+| `run-ui.ps1` / `stop-ui.ps1` | Start/stop Next.js UI only |
+| `auth-smoke.ps1` | Auth bootstrap smoke checks |
+| `ide-check.ps1` | Agent health, MCP tools, dry-run session smoke |
+
+Ad-hoc E2E harnesses belong in `tests/`, not `scripts/`.
+
+## Code style
+
+- Minimal scope — avoid drive-by refactors
+- Rich for CLI output; structured logging elsewhere
+- No secrets in code or commits — use `.env` (gitignored)

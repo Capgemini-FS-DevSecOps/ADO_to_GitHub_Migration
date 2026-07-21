@@ -25,9 +25,9 @@ class ProgressTracker:
         since = now - 300
         repo_vel = sum(1 for t, k in self._events if t >= since and k == "repo") / 5.0
         pipe_vel = sum(1 for t, k in self._events if t >= since and k == "pipeline") / 5.0
-        all_mig = db.get_all_migrations()
-        done_r = len({r["ado_repo"] for r in all_mig if r["status"] == "completed"})
-        fail_r = len({r["ado_repo"] for r in all_mig if r["status"] == "failed"})
+        counts = db.migration_status_counts()
+        done_r = counts.get("completed", 0)
+        fail_r = counts.get("failed", 0)
         remaining = max(0, self.total_repos - done_r - fail_r)
         eta_min = (remaining / repo_vel) if repo_vel > 0.01 else None
         eta_str = ((datetime.now() + timedelta(minutes=eta_min)).strftime("%Y-%m-%d %H:%M")

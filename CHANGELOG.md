@@ -92,6 +92,14 @@
 - **`service-connections` command** — generates ops-team manifest mapping ADO service connections to GitHub secrets/OIDC
 - **`ado-cleanup` command** — post-migration ADO cleanup: disable pipelines, push MIGRATION_NOTICE.md redirect, archive repos
 - **Commit SHA verification** in `validate` — proves code actually transferred, not just "something exists"
+- **Web console** (`apps/migration-ui`) — profile-scoped discovery, migrate/monitor, PEV agent chat
+- **Accelerator + Agent APIs** — FastAPI services; PostgreSQL/DynamoDB state backends
+- **Tool-driven PEV orchestrator** — guarded planner/executor/validator via `session_orchestrator.py`
+
+### Documentation & hygiene (2026-06)
+- Rewrote `docs/ARCHITECTURE.md`; README is now a documentation index
+- Removed duplicate `.windsurf/` Speckit copies; fixed 59+ unused Python imports
+- Version aligned to 5.1.0 across package, APIs, and docs
 
 ## v5.0.0 — Modular Package
 

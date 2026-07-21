@@ -362,3 +362,70 @@ class PhaseGateChecker:
         gate = self.db.get_phase_gate(phase)
         return gate is not None and gate["status"] in (
             GateStatus.PASS.value, GateStatus.OVERRIDE.value)
+
+    def check_for_assignment(
+        self,
+        phase: PhaseType,
+        cohort_repo_names: list[str],
+    ) -> PhaseGateResult:
+        """Evaluate gate metrics scoped to assignment cohort repos (FR-034)."""
+        if not cohort_repo_names:
+            return PhaseGateResult(
+                phase=phase, status=GateStatus.FAIL,
+                repo_success_pct=0.0, pipeline_success_pct=0.0,
+                repos_completed=0, repos_total=0,
+                pipelines_completed=0, pipelines_total=0,
+                failures=["Assignment cohort has no repositories"],
+            )
+        cfg = self.phases[phase]
+        failures: list[str] = []
+        total_repos = len(cohort_repo_names)
+
+        with self.db._conn() as conn:
+            rows = conn.execute(
+                "SELECT ado_repo, COUNT(*) total_scopes, "
+                "SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) ok_scopes "
+                "FROM migrations WHERE ado_repo IN ({}) GROUP BY ado_repo".format(
+                    ",".join("?" * len(cohort_repo_names))
+                ),
+                cohort_repo_names,
+            ).fetchall()
+
+        repos_done = sum(
+            1 for r in rows
+            if r["ok_scopes"] == r["total_scopes"] and r["total_scopes"] > 0
+        )
+        repo_pct = repos_done / total_repos if total_repos else 0.0
+
+        with self.db._conn() as conn:
+            pr = conn.execute(
+                "SELECT COUNT(*) total, "
+                "SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) done "
+                "FROM pipeline_migrations WHERE repo_name IN ({})".format(
+                    ",".join("?" * len(cohort_repo_names))
+                ),
+                cohort_repo_names,
+            ).fetchone()
+        total_pipes = pr["total"] if pr else 0
+        pipes_done = pr["done"] if pr else 0
+        pipe_pct = pipes_done / total_pipes if total_pipes else 1.0
+
+        min_required = min(cfg.gate_min_completed, total_repos)
+        if total_repos > 0 and repos_done < min_required:
+            failures.append(f"repos_completed={repos_done} < min={min_required}")
+        if repo_pct < cfg.gate_repo_success_pct:
+            failures.append(
+                f"repo_success={repo_pct:.1%} < threshold={cfg.gate_repo_success_pct:.0%}")
+        if total_pipes > 0 and pipe_pct < cfg.gate_pipeline_success_pct:
+            failures.append(
+                f"pipeline_success={pipe_pct:.1%} < threshold={cfg.gate_pipeline_success_pct:.0%}")
+
+        status = GateStatus.PASS if not failures else GateStatus.FAIL
+        return PhaseGateResult(
+            phase=phase, status=status,
+            repo_success_pct=repo_pct, pipeline_success_pct=pipe_pct,
+            repos_completed=repos_done, repos_total=total_repos,
+            pipelines_completed=pipes_done, pipelines_total=total_pipes,
+            failures=failures,
+            checked_at=datetime.now(timezone.utc).isoformat(),
+        )

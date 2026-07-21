@@ -43,6 +43,14 @@ class PhaseType(str, Enum):
     WAVE3 = "wave3"
 
 
+class MigrationStrategy(str, Enum):
+    MIRROR = "mirror"
+    GEI = "gei"
+
+
+DEFAULT_MIGRATION_STRATEGY = MigrationStrategy.GEI.value
+
+
 class GateStatus(str, Enum):
     PASS     = "pass"
     FAIL     = "fail"
@@ -117,7 +125,7 @@ DEFAULT_PHASES: dict[PhaseType, PhaseConfig] = {
         gate_repo_success_pct=0.98, gate_pipeline_success_pct=0.97,
         gate_min_completed=980),
     PhaseType.WAVE3: PhaseConfig(
-        phase=PhaseType.WAVE3, repo_cap=999_999, risk_max=100.0, batch_size=500,
+        phase=PhaseType.WAVE3, repo_cap=9999, risk_max=100.0, batch_size=500,
         repo_parallel=8, pipeline_parallel=16,
         gate_repo_success_pct=0.98, gate_pipeline_success_pct=0.97,
         gate_min_completed=1),
@@ -278,6 +286,8 @@ class PipelineMetadata:
             repo_branch    = d.get("repo_branch", "main"),
             source_revision = d.get("source_revision", 0),
             yaml_path      = d.get("yaml_path", ""),
+            # Pipeline source can contain secrets and is intentionally never
+            # reconstructed from persisted inventory metadata.
             yaml_content   = "",
             trigger_branches     = d.get("trigger_branches", []),
             trigger_branch_excludes = d.get("trigger_branch_excludes", []),
@@ -342,7 +352,7 @@ class RiskScore:
     repo_name: str
     total_score: float = 0.0
     signals: list = field(default_factory=list)
-    assigned_phase: Optional[PhaseType] = None
+    assigned_phase: Optional[str] = None
     gh_org: str = ""
     gh_repo: str = ""
     size_kb: int = 0
@@ -359,7 +369,7 @@ class RiskScore:
         return {
             "project": self.project, "repo_name": self.repo_name,
             "total_score": round(self.total_score, 2),
-            "assigned_phase": self.assigned_phase.value if self.assigned_phase else None,
+            "assigned_phase": self.assigned_phase,
             "gh_org": self.gh_org, "gh_repo": self.gh_repo,
             "size_kb": self.size_kb, "pipeline_count": self.pipeline_count,
             "branch_count": self.branch_count, "last_commit_days": self.last_commit_days,

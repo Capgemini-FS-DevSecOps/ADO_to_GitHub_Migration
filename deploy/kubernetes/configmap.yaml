@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ado2gh-config
+  namespace: ado2gh
+data:
+  ADO2GH_AUTH_ENABLED: "true"
+  ADO2GH_SESSION_TTL_HOURS: "8"
+  ADO2GH_COOKIE_SECURE: "true"
+  ADO2GH_MIN_PASSWORD_LENGTH: "12"
+  ADO2GH_STORAGE_BACKEND: postgres
+  ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+  DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+  NEXT_PUBLIC_REQUIRE_AUTH: "true"
+  NEXT_PUBLIC_ACCELERATOR_URL: "http://accelerator:8080"

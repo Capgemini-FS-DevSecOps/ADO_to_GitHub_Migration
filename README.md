@@ -1,5 +1,9 @@
 # ado2gh — Azure DevOps to GitHub Migration Accelerator
 
+The integrated platform includes the Next.js operator console in
+`apps/migration-ui` and FastAPI services in `services/`. See
+`docs/LOCAL_DEVELOPMENT.md` for the local UI/API workflow.
+
 `ado2gh` is an enterprise migration agent for moving an Azure DevOps (ADO)
 organization to GitHub. Its primary control plane is a
 Planner–Executor–Validator (PEV) loop: it discovers the source, emits an

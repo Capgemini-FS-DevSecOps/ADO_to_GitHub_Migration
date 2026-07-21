@@ -1,0 +1,29 @@
+{
+  "name": "migration-ui",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node --require ./punycode-preload.js node_modules/next/dist/bin/next dev",
+    "build": "node --require ./punycode-preload.js node_modules/next/dist/bin/next build",
+    "start": "node --require ./punycode-preload.js node_modules/next/dist/bin/next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.51.1",
+    "next": "14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "punycode": "^2.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  }
+}

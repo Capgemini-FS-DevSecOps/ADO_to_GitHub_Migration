@@ -7,7 +7,6 @@ from typing import Optional
 
 import yaml
 
-from ado2gh.logging_config import log
 from ado2gh.models import (
     PipelineComplexity,
     PipelineEnvironment,
@@ -474,12 +473,12 @@ class PipelineMetadataExtractor:
 
                 stage = PipelineStage(
                     name         = re.sub(r"[^a-zA-Z0-9_]", "_",
-                                          s.get("stage", s.get("name", "stage"))),
-                    display_name = s.get("displayName", ""),
+                                          str(s.get("stage") or s.get("name") or "stage")),
+                    display_name = str(s.get("displayName") or ""),
                     depends_on   = (s.get("dependsOn", [])
                                     if isinstance(s.get("dependsOn"), list)
                                     else ([s["dependsOn"]] if s.get("dependsOn") else [])),
-                    condition    = s.get("condition", ""),
+                    condition    = str(s.get("condition") or ""),
                     environment  = gh_env,
                     is_deployment = is_deploy,
                     agent_pool   = runner,

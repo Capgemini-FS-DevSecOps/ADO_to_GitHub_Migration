@@ -4,20 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Enterprise-grade Python CLI for Azure DevOps to GitHub migrations at scale (5000+ repos). Features risk-based phasing, real git mirroring (+ gh gei support), multi-token load balancing, ADO pipeline → GitHub Actions transformation, commit-level post-migration validation, and ADO-side post-migration cleanup.
+Enterprise ADO → GitHub migration platform: Python CLI, FastAPI accelerator, Next.js console, and PEV agent. Risk-based phasing, real git mirroring (+ GEI), pipeline transformation, commit-level validation, profile-based UI workflows.
+
+**Full architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Running
 
+### CLI
+
 ```bash
-pip install -e .
+pip install -e ".[api,dev]"
 ado2gh <command> [options]
-
-# Or directly
 python -m ado2gh <command> [options]
-
-# Legacy single-file mode (v4)
-python ado2gh_migrator.py <command> [options]
 ```
+
+### Docker (UI + API + agent)
+
+```bash
+docker compose up --build
+# UI :3000 · Accelerator :8080 · Agent :8090
+```
+
+Local setup: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)
 
 ## Environment Variables
 
@@ -49,39 +57,22 @@ Also requires `git` on PATH. For GEI migration strategy: `gh` CLI with `gh-gei` 
 
 ```
 ado2gh/
-├── cli.py                 # All Click commands
-├── models.py              # Enums, dataclasses, shared types
-├── logging_config.py      # Rich console + logging setup
-├── http_utils.py          # Session factory with retry/backoff
-├── clients/
-│   ├── ado_client.py      # Azure DevOps REST API (7.1)
-│   ├── gh_client.py       # GitHub API with multi-token rotation
-│   └── token_manager.py   # Round-robin PAT + GitHub App JWT
-├── state/
-│   └── db.py              # SQLite (WAL mode, 7 tables)
-├── pipelines/
-│   ├── extractor.py       # Normalize ADO pipelines → PipelineMetadata
-│   ├── transformer.py     # PipelineMetadata → GitHub Actions YAML
-│   └── inventory.py       # Parallel pipeline scanning
-├── phase/
-│   ├── risk_scorer.py     # 9-signal risk scoring (0–100)
-│   ├── wave_assigner.py   # Auto-assign repos to phases
-│   ├── gate_checker.py    # Phase gate validation + override
-│   ├── batch_executor.py  # Sub-batch execution + checkpointing
-│   └── progress_tracker.py
-├── core/
-│   ├── migration_engine.py # Git mirror/GEI + 6 scope handlers
-│   ├── wave_runner.py     # Parallel wave execution
-│   ├── config_loader.py   # YAML + text input format
-│   ├── discovery.py       # ADO org scanner
-│   ├── rollback.py        # Scope-targeted rollback
-│   └── ado_cleanup.py     # Post-migration ADO cleanup
-└── reporting/
-    ├── reporter.py        # Rich tables + HTML report
-    ├── csv_exporter.py    # CSV export + failed repo lists
-    ├── post_migration_validator.py  # Commit SHA + content verification
-    ├── pipeline_readiness.py        # Conversion difficulty assessment
-    └── service_connection_manifest.py  # SC → GitHub secrets mapping
+├── cli/                   # Click commands (main.py entry)
+├── api/                   # Accelerator SDK, pipeline runner, settings, auth, agentic routes
+├── agents/                # LLM provider, session orchestrator, skills
+├── models.py
+├── clients/               # ADO + GitHub + TokenManager
+├── state/                 # SQLite, Postgres, DynamoDB (factory)
+├── pipelines/             # Extract, transform, inventory
+├── phase/                 # Risk, waves, gates, batch executor
+├── core/                  # Migration engine, discovery, rollback, cleanup
+└── reporting/             # Validator, readiness, manifests
+
+services/
+├── accelerator_api/       # FastAPI for UI (:8080)
+└── agent/                 # PEV agent + MCP (:8090)
+
+apps/migration-ui/         # Next.js console (:3000)
 ```
 
 ## CLI Commands
@@ -115,9 +106,9 @@ ado2gh
 
 ## Migration Strategies
 
-**`migration_strategy: mirror`** (default) — `git clone --mirror` + `git push --mirror`. Handles all branches, tags, LFS objects. Requires `git` on PATH.
+**`migration_strategy: gei`** (default) — Uses `gh ado2gh migrate-repo` (GitHub Enterprise Importer for Azure DevOps). Handles PRs and branch policies natively. Requires `gh` CLI with `gh-ado2gh` extension (`gh extension install github/gh-ado2gh`).
 
-**`migration_strategy: gei`** — Uses `gh gei migrate-repo`. Handles PRs, issues, releases natively. Requires `gh` CLI + `gh-gei` extension. Set in `migration.yaml` under `global.migration_strategy`.
+**`migration_strategy: mirror`** — `git clone --mirror` + `git push --mirror`. Handles all branches, tags, LFS objects. Requires `git` on PATH.
 
 ## ADO-Specific Design Decisions
 
@@ -131,6 +122,7 @@ ado2gh
 ## Execution Workflow
 
 ```
+0. bootstrap admin → profile onboarding (`/onboarding/profile`) → operator Create account on login (optional)
 1. discover           → discovered_repos.yaml
 2. pipelines inventory → populate StateDB pipeline_inventory
 3. pipeline-readiness  → assess conversion effort
@@ -145,10 +137,43 @@ ado2gh
 
 ## State Persistence
 
-SQLite `migration_state.db` (WAL mode). 7 tables:
-- `migrations`, `wave_runs` — per-repo/wave tracking
-- `pipeline_inventory`, `pipeline_migrations` — pipeline metadata + status
-- `repo_risk_scores`, `phase_gates`, `batch_checkpoints` — risk + phase gates
+`create_state_db()` via `ado2gh/state/factory.py`. Backends: **SQLite** (local), **PostgreSQL** (prod compose), **DynamoDB** (serverless). Set `ADO2GH_STORAGE_BACKEND`.
+
+Core tables: `migrations`, `wave_runs`, `pipeline_inventory`, `pipeline_migrations`, `repo_risk_scores`, `phase_gates`, `batch_checkpoints`
+
+## Agent PEV
+
+Continuous PEV loop: Orchestrator → Planner → Executor → Validator cycle with retry logic, session persistence, and batch migration support.
+
+**Architecture:**
+- `ado2gh/agents/session_orchestrator.py` — re-exports from `orchestration/` modules
+- `ado2gh/agents/planner.py` — LLM-driven migration plan generation with dependency ordering
+- `ado2gh/agents/executor.py` — deterministic execution with guardrail integration, hybrid API routing
+- `ado2gh/agents/validator.py` — evidence-based validation with structured feedback to planner
+- `ado2gh/agents/pev_cycle.py` — continuous loop orchestrator with inter-agent messaging, batch queue, repo locking
+- `ado2gh/agents/session_store.py` — persistent session state (plans, messages, executor results, validation results)
+- `ado2gh/agents/session_state_machine.py` — state transitions (idle→thinking→planning→executing→validating→completed|failed)
+- `ado2gh/agents/rollback_tracker.py` — tracks GitHub resources created during session for rollback on cancellation
+- `ado2gh/agents/repo_lock_store.py` — repo-level locks preventing concurrent migration
+- `ado2gh/agents/metrics.py` — Prometheus-compatible metrics collector
+- `ado2gh/agents/context_window.py` — context window management for LLM sessions
+- `ado2gh/agents/resource_mapping.py` — ADO→GitHub resource type mapping
+- `ado2gh/agents/local/tool_catalog.py` — tool registry with role-based access and guardrails
+
+**Resource types supported:** repos, pipelines→workflows, Bicep→Actions, secrets, service connections, Boards→Issues, Test Plans, Artifacts→Packages, Wiki
+
+**Key behaviors:**
+- Max 20 total iterations, 3 PEV retries per cycle
+- Dry-run is default; live execution requires explicit user confirmation (CA-001)
+- Secret values masked in all messages, logs, and audit records (CA-003)
+- Destructive operations highlighted in plan summary with individual confirmation (CA-002)
+- Session state persists across server restarts; resume from last persisted state
+- Batch migration queue for 50+ repos with sequential processing and per-repo validation
+- Inter-agent communication via structured JSON messages (instruction, clarification_request, feedback, result)
+
+**Endpoints:** `/health`, `/metrics`, `/v1/sessions/{id}/plan-summary`, `/v1/sessions/{id}/confirm-live`, `/v1/sessions/{id}/cancel`
+
+UI chat in `apps/migration-ui` — no manual plan/execute buttons.
 
 ## Key Patterns
 

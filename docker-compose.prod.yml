@@ -1,0 +1,69 @@
+# Production — PostgreSQL backend.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ado2gh
+      POSTGRES_PASSWORD: ado2gh
+      POSTGRES_DB: ado2gh
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ado2gh"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  accelerator:
+    environment:
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      ADO2GH_AUTH_ENABLED: "true"
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    environment:
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    depends_on:
+      - postgres
+
+  agent:
+    environment:
+      ADO2GH_AUTH_ENABLED: "true"
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/migration-ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
+        NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+        NEXT_PUBLIC_REQUIRE_AUTH: "true"
+    environment:
+      NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
+      NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+      NEXT_PUBLIC_REQUIRE_AUTH: "true"
+      ACCELERATOR_INTERNAL_URL: http://accelerator:8080
+
+volumes:
+  pgdata:
