@@ -195,6 +195,7 @@ async def _build_graph() -> Any:
         _route_after_orchestrator,
         {
             "planner": NODE_PLANNER,
+            "executor": NODE_EXECUTOR,
             "human_input": NODE_HUMAN_INPUT,
             "finalize": NODE_FINALIZE,
         },
@@ -218,6 +219,7 @@ async def _build_graph() -> Any:
         _route_after_executor,
         {
             "validator": NODE_VALIDATOR,
+            "orchestrator": NODE_ORCHESTRATOR,
             "finalize": NODE_FINALIZE,
         },
     )
@@ -227,6 +229,7 @@ async def _build_graph() -> Any:
         _route_after_validator,
         {
             "planner": NODE_PLANNER,
+            "orchestrator": NODE_ORCHESTRATOR,
             "finalize": NODE_FINALIZE,
         },
     )
@@ -253,13 +256,15 @@ def _needs_human_input(state: AgentState) -> bool:
 
 
 def _route_after_orchestrator(state: AgentState) -> str:
-    """Orchestrator hands off to planner, human input, or finalize."""
+    """Orchestrator hands off to planner, executor (approved plan), human input, or finalize."""
     if state.get("should_return"):
         if state.get("start_execution") or state.get("start_pev"):
             return "finalize"
         if _needs_human_input(state):
             return "human_input"
         return "finalize"
+    if state.get("start_execution") and state.get("migration_plan"):
+        return "executor"
     if state.get("start_execution") or state.get("start_pev"):
         return "planner"
     return "finalize"
@@ -291,25 +296,29 @@ def _route_after_planner(state: AgentState) -> str:
 
 
 def _route_after_executor(state: AgentState) -> str:
-    """Executor only hands results to validator."""
+    """Executor hands results to validator, clarification back to orchestrator, or finalize."""
     if state.get("should_return"):
         return "finalize"
+    if state.get("pending_clarification"):
+        return "orchestrator"
     if state.get("executor_result"):
         return "validator"
     return "finalize"
 
 
 def _route_after_validator(state: AgentState) -> str:
-    """Route to planner for PEV retry/handoff, or finalize when limits hit."""
+    """Route to orchestrator on pass/escalate/exhaustion, planner to retry."""
     if state.get("should_return"):
         return "finalize"
+    validation_result = state.get("validation_result") or {}
+    if validation_result.get("passed"):
+        return "orchestrator"
     iteration = int(state.get("iteration") or 0)
     max_iterations = int(state.get("max_iterations") or MAX_ITERATIONS)
-    if iteration >= max_iterations:
-        return "finalize"
+    retry_count = int(state.get("pev_retry_count") or 0)
     feedback = state.get("validation_feedback") or {}
-    if feedback.get("escalate") and int(state.get("pev_retry_count") or 0) >= MAX_PEV_RETRIES:
-        return "finalize"
+    if feedback.get("escalate") or retry_count >= MAX_PEV_RETRIES or iteration >= max_iterations:
+        return "orchestrator"
     return "planner"
 
 

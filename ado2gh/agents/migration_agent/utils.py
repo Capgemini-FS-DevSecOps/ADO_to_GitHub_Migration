@@ -358,9 +358,9 @@ class IdeAuditBridge:
     def _ensure_writer(self) -> Any:
         if self._writer is None:
             from ado2gh.assignments.audit import AuditWriter
-            from ado2gh.state.db import StateDB
+            from ado2gh.state.factory import create_state_db
 
-            self._writer = AuditWriter(StateDB())
+            self._writer = AuditWriter(create_state_db())
         return self._writer
 
     def record(

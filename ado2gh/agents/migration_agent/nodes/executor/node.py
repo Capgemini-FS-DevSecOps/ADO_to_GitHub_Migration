@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from ado2gh.agents.migration_agent.nodes._common import (
     _executor_result_for_repo_lock,
@@ -243,6 +246,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
             ready_items = executable_work_items(item_work_items)
             session_id = session.get("session_id", "")
             if ready_items:
+                lock_acquired = False
                 if session_id:
                     try:
                         from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
@@ -258,35 +262,37 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                                 migration_queue=migration_queue,
                                 failed=failed,
                             )
+                        lock_acquired = True
                     except Exception:
-                        pass
+                        logger.warning("repo lock acquire failed for %s; proceeding without lock", repo_id, exc_info=True)
 
-                if use_llm_execution:
-                    _append_and_stream(
-                        session,
-                        role="system",
-                        content=(
-                            f"Executor: LLM execution not fully integrated — "
-                            f"using deterministic path for {repo_id}."
-                        ),
-                        subagent="executor",
+                try:
+                    if use_llm_execution:
+                        _append_and_stream(
+                            session,
+                            role="system",
+                            content=(
+                                f"Executor: LLM execution not fully integrated — "
+                                f"using deterministic path for {repo_id}."
+                            ),
+                            subagent="executor",
+                        )
+
+                    repo_result, wi_failures, wi_rollbacks = await _run_repo(
+                        repo_id,
+                        ready_items,
                     )
-
-                repo_result, wi_failures, wi_rollbacks = await _run_repo(
-                    repo_id,
-                    ready_items,
-                )
-                per_repo_results.append(repo_result)
-                failures.extend(wi_failures)
-                rollback_records.extend(wi_rollbacks)
-
-                if session_id:
-                    try:
-                        from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
-                        store = MigrationSessionStore()
-                        store.release_repo_lock(session_id, repo_id)
-                    except Exception:
-                        pass
+                    per_repo_results.append(repo_result)
+                    failures.extend(wi_failures)
+                    rollback_records.extend(wi_rollbacks)
+                finally:
+                    if lock_acquired:
+                        try:
+                            from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
+                            store = MigrationSessionStore()
+                            store.release_repo_lock(session_id, repo_id)
+                        except Exception:
+                            logger.warning("repo lock release failed for %s", repo_id, exc_info=True)
             else:
                 for wi in item_work_items:
                     status = wi.get("status", "ready")
@@ -368,6 +374,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
         executable_work_items(work_items)
     ).items():
         session_id = session.get("session_id", "")
+        lock_acquired = False
         if session_id:
             try:
                 from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
@@ -384,24 +391,26 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                     failures.extend(lock_result["executor_result"]["failures"])
                     skipped.extend(lock_result["executor_result"]["skipped"])
                     continue
+                lock_acquired = True
             except Exception:
-                pass
+                logger.warning("repo lock acquire failed for %s; proceeding without lock", repo_id, exc_info=True)
 
-        repo_result, repo_failures, repo_rollbacks = await _run_repo(
-            repo_id,
-            repo_ready_items,
-        )
-        per_repo_results.append(repo_result)
-        failures.extend(repo_failures)
-        rollback_records.extend(repo_rollbacks)
-
-        if session_id:
-            try:
-                from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
-                store = MigrationSessionStore()
-                store.release_repo_lock(session_id, repo_id)
-            except Exception:
-                pass
+        try:
+            repo_result, repo_failures, repo_rollbacks = await _run_repo(
+                repo_id,
+                repo_ready_items,
+            )
+            per_repo_results.append(repo_result)
+            failures.extend(repo_failures)
+            rollback_records.extend(repo_rollbacks)
+        finally:
+            if lock_acquired:
+                try:
+                    from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
+                    store = MigrationSessionStore()
+                    store.release_repo_lock(session_id, repo_id)
+                except Exception:
+                    logger.warning("repo lock release failed for %s", repo_id, exc_info=True)
 
     executor_result = {
         "per_repo_results": per_repo_results,

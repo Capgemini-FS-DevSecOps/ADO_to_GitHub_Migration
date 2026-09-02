@@ -18,8 +18,8 @@ from ado2gh.agents.migration_agent.session.state import (
 
 
 def test_graph_has_all_nodes():
-    """Graph has five core PEV nodes."""
-    assert len(ALL_NODES) == 5
+    """Graph has six core PEV nodes."""
+    assert len(ALL_NODES) == 6
 
 
 def test_graph_flow_general_chat():
@@ -29,7 +29,7 @@ def test_graph_flow_general_chat():
 
 
 def test_graph_flow_migration_action():
-    """Migration action: orchestrator→planner→confirm→planner→executor→validator→orchestrator."""
+    """Migration action: orchestrator→planner→confirm→orchestrator→executor→validator→orchestrator."""
     state = {"should_return": False, "start_pev": True}
     assert _route_after_orchestrator(state) == "planner"
 
@@ -38,17 +38,13 @@ def test_graph_flow_migration_action():
 
     state["session"] = {"plan_approved": True}
     state["start_execution"] = True
-    assert _route_after_orchestrator(state) == "planner"
-    assert _route_after_planner(state) == "executor"
+    assert _route_after_orchestrator(state) == "executor"
 
     state["executor_result"] = {"per_repo_results": [{"repo": "A"}]}
     assert _route_after_executor(state) == "validator"
 
     state["validation_result"] = {"passed": True}
-    assert _route_after_validator(state) == "planner"
-
-    state["planner_next"] = "orchestrator"
-    assert _route_after_planner(state) == "orchestrator"
+    assert _route_after_validator(state) == "orchestrator"
 
 
 def test_graph_flow_form_pending():

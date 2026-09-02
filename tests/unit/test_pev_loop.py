@@ -70,7 +70,7 @@ def test_route_validator_to_planner_on_retry():
     assert _route_after_validator(state) == "planner"
 
 
-def test_route_validator_to_planner_on_pass():
+def test_route_validator_to_orchestrator_on_pass():
     state = {
         "validation_result": {"passed": True},
         "validation_feedback": None,
@@ -78,27 +78,27 @@ def test_route_validator_to_planner_on_pass():
         "iteration": 5,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
-def test_route_validator_to_planner_on_max_retries():
+def test_route_validator_to_orchestrator_on_max_retries():
     state = {
         "validation_feedback": {"failures": ["git_parity"]},
         "pev_retry_count": 3,
         "iteration": 5,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
-def test_route_validator_to_planner_on_max_iterations():
+def test_route_validator_to_orchestrator_on_max_iterations():
     state = {
         "validation_feedback": {"failures": ["git_parity"]},
         "pev_retry_count": 1,
         "iteration": 20,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
 # ─── Inter-agent messaging ────────────────────────────────────────────
@@ -165,7 +165,7 @@ def test_cycle_summary_failures_capped():
 # ─── Context window management ────────────────────────────────────────
 
 def test_trim_context_basic():
-    from ado2gh.agents.migration_agent.context_window import build_context_with_cycle_summaries
+    from ado2gh.agents.migration_agent.runtime.context_window import build_context_with_cycle_summaries
     from langchain_core.messages import SystemMessage, HumanMessage
     messages = [SystemMessage(content="system")] + [HumanMessage(content=f"msg {i}") for i in range(20)]
     trimmed = build_context_with_cycle_summaries(messages, [], max_tokens=100)
@@ -174,12 +174,12 @@ def test_trim_context_basic():
 
 
 def test_trim_context_empty():
-    from ado2gh.agents.migration_agent.context_window import build_context_with_cycle_summaries
+    from ado2gh.agents.migration_agent.runtime.context_window import build_context_with_cycle_summaries
     assert build_context_with_cycle_summaries([], [], 1000) == []
 
 
 def test_build_context_with_cycle_summaries():
-    from ado2gh.agents.migration_agent.context_window import build_context_with_cycle_summaries
+    from ado2gh.agents.migration_agent.runtime.context_window import build_context_with_cycle_summaries
     from langchain_core.messages import SystemMessage, HumanMessage
     messages = [SystemMessage(content="system"), HumanMessage(content="hello")]
     summaries = [{"cycle_number": i, "next_action": "retry"} for i in range(5)]

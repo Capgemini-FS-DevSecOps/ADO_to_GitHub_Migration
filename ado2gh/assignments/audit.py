@@ -10,6 +10,9 @@ from uuid import uuid4
 _SECRET_PATTERNS = [
     re.compile(r"(ghp_[A-Za-z0-9_]+)", re.I),
     re.compile(r"(gho_[A-Za-z0-9_]+)", re.I),
+    re.compile(r"(ghu_[A-Za-z0-9_]+)", re.I),
+    re.compile(r"(ghs_[A-Za-z0-9_]+)", re.I),
+    re.compile(r"(github_pat_[A-Za-z0-9_]+)", re.I),
     re.compile(r"(pat-[A-Za-z0-9]+)", re.I),
     re.compile(r'("(?:token|password|secret|pat)"\s*:\s*)"[^"]*"', re.I),
 ]

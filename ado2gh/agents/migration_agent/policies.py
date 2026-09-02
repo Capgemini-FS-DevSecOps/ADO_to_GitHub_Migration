@@ -217,12 +217,12 @@ def can_access_agent_session(
         return False
     if not auth_enabled():
         return True
+    if is_admin_request(request):
+        return True
     owner = session_owner_username(session)
     viewer = request_username(request)
     if not owner or not viewer:
-        return True
-    if is_admin_request(request):
-        return True
+        return False
     if owner == viewer:
         return True
     if write:

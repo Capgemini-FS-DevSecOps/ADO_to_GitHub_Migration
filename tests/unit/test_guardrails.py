@@ -210,6 +210,7 @@ async def test_wrap_tool_logs_decision():
         "session_id": "ses1",
         "migration_plan": {"plan_id": "p1", "repos": [{"id": "Proj/RepoA"}]},
         "plan_approved": True,
+        "dry_run": False,
     }
     wrapped = wrap_tool_with_guardrail(
         call_accelerator, agent_role="executor",

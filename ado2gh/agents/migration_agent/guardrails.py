@@ -101,7 +101,10 @@ def evaluate_guardrail(
     3. Deletion confirmation requirement
     4. Parameter validation
     """
-    operation_type = arguments.get("operation_type", tool_name)
+    # operation_type is derived from tool_name, never from LLM-supplied arguments —
+    # otherwise a tool call could set operation_type to a read-only value to bypass
+    # the write/deletion checks below.
+    operation_type = tool_name
     target_resource = (
         arguments.get("target_resource")
         or arguments.get("repository_id")
@@ -135,6 +138,15 @@ def evaluate_guardrail(
                 operation_type=operation_type,
                 target_resource=str(target_resource),
                 reason="Read-only accelerator GET",
+            )
+        if session and session.get("dry_run", True):
+            return GuardrailDecision(
+                action=GuardrailAction.BLOCK,
+                agent_role=agent_role,
+                tool_name=tool_name,
+                operation_type=operation_type,
+                target_resource=str(target_resource),
+                reason="Accelerator writes are blocked in dry-run mode — use GET only or run live after operator approval",
             )
 
     # github_api: GET is read-only; writes require approved plan (and live mode)
@@ -192,9 +204,19 @@ def evaluate_guardrail(
             )
 
         # Validate target resource exists in plan
-        if target_resource:
-            plan_repos = {r.get("id", r.get("name", "")) for r in migration_plan.get("repos", [])}
-            if plan_repos and str(target_resource) not in plan_repos:
+        plan_repos = {r.get("id", r.get("name", "")) for r in migration_plan.get("repos", [])}
+        if plan_repos:
+            if not target_resource:
+                return GuardrailDecision(
+                    action=GuardrailAction.BLOCK,
+                    agent_role=agent_role,
+                    tool_name=tool_name,
+                    operation_type=operation_type,
+                    target_resource=str(target_resource),
+                    reason="Write operation missing target_resource — cannot verify against approved plan scope",
+                    plan_reference=str(migration_plan.get("plan_id", "")),
+                )
+            if str(target_resource) not in plan_repos:
                 return GuardrailDecision(
                     action=GuardrailAction.BLOCK,
                     agent_role=agent_role,

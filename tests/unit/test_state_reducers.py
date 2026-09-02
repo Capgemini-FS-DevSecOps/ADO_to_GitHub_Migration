@@ -38,9 +38,9 @@ def test_state_has_pev_fields():
 
 
 def test_state_has_llm_fields():
-    """Verify LLM config fields exist."""
+    """Verify LLM config fields exist. llm/capabilities travel via contextvars, not checkpointed state."""
     hints = AgentState.__annotations__
-    for field in ("llm", "llm_degraded", "llm_unconfigured", "capabilities"):
+    for field in ("llm_degraded", "llm_unconfigured"):
         assert field in hints, f"Missing field: {field}"
 
 

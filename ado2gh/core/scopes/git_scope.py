@@ -15,6 +15,16 @@ from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, RepoConfig
 
 
+def _redact(text: str, *secrets: str) -> str:
+    """Strip known secret values (PATs, tokens) out of subprocess output before
+    it reaches error messages, logs, or audit records."""
+    redacted = text
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "***")
+    return redacted
+
+
 @dataclass
 class FeasibilityReport:
     """Repository migration feasibility analysis."""
@@ -282,7 +292,7 @@ class GitScopeHandler:
                 capture_output=True, text=True, cwd=mirror_path, timeout=30,
             )
             if result.returncode != 0:
-                raise RuntimeError(f"git remote set-url failed: {result.stderr[:500]}")
+                raise RuntimeError(f"git remote set-url failed: {_redact(result.stderr[:500], gh_token)}")
 
             subprocess.run(
                 [git_exe, "config", "--unset", "remote.origin.mirror"],
@@ -295,11 +305,11 @@ class GitScopeHandler:
                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
             )
             if result.returncode != 0:
-                raise RuntimeError(f"git push (heads+tags) failed: {result.stderr[:500]}")
+                raise RuntimeError(f"git push (heads+tags) failed: {_redact(result.stderr[:500], gh_token)}")
 
             lfs_stats = {}
             if not repo.skip_lfs:
-                lfs_stats = self._push_lfs(mirror_path, target_url)
+                lfs_stats = self._push_lfs(mirror_path, target_url, gh_token)
 
             try:
                 source_default = self._source_default_branch(mirror_path)
@@ -326,7 +336,7 @@ class GitScopeHandler:
         return result.stdout.strip() if result.returncode == 0 else ""
 
     @staticmethod
-    def _push_lfs(mirror_path: str, target_url: str) -> dict:
+    def _push_lfs(mirror_path: str, target_url: str, token: str) -> dict:
         try:
             result = subprocess.run(
                 ["git", "lfs", "ls-files"],
@@ -346,7 +356,7 @@ class GitScopeHandler:
         except FileNotFoundError:
             return {"lfs_objects": -1, "lfs_push": "skipped_no_lfs_binary"}
         except Exception as exc:
-            return {"lfs_objects": -1, "lfs_push": f"error: {exc}"}
+            return {"lfs_objects": -1, "lfs_push": f"error: {_redact(str(exc), token)}"}
 
     def _run_gei(self, repo: RepoConfig, source: dict, ctx: ScopeContext) -> dict:
         ado_org = ctx.global_cfg.get("ado_org_url", "").rstrip("/").split("/")[-1]
@@ -361,7 +371,7 @@ class GitScopeHandler:
         ]
         env = gei_subprocess_env(ADO_PAT=ctx.ado.pat, GH_PAT=gh_token)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200, env=env)
-        combined = f"{result.stdout}\n{result.stderr}"
+        combined = _redact(f"{result.stdout}\n{result.stderr}", ctx.ado.pat, gh_token)
         if result.returncode != 0:
             raise RuntimeError(
                 f"gh ado2gh migrate-repo failed (exit {result.returncode}): "
@@ -379,4 +389,4 @@ class GitScopeHandler:
                 "gh ado2gh skipped migration: target repo already exists on GitHub. "
                 "Delete the empty target repo or choose a different github_repo name."
             )
-        return {"gei": "success", "gei_output": result.stdout[:1000]}
+        return {"gei": "success", "gei_output": _redact(result.stdout, ctx.ado.pat, gh_token)[:1000]}

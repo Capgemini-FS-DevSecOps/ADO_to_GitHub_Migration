@@ -135,7 +135,7 @@ def test_route_validator_to_planner_on_retry():
     assert _route_after_validator(state) == "planner"
 
 
-def test_route_validator_to_planner_on_pass():
+def test_route_validator_to_orchestrator_on_pass():
     state = {
         "validation_result": {"passed": True},
         "validation_feedback": None,
@@ -143,27 +143,27 @@ def test_route_validator_to_planner_on_pass():
         "iteration": 5,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
-def test_route_validator_to_planner_on_max_retries():
+def test_route_validator_to_orchestrator_on_max_retries():
     state = {
         "validation_feedback": {"failures": ["git_parity"]},
         "pev_retry_count": 3,
         "iteration": 5,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
-def test_route_validator_to_planner_on_max_iterations():
+def test_route_validator_to_orchestrator_on_max_iterations():
     state = {
         "validation_feedback": {"failures": ["git_parity"]},
         "pev_retry_count": 1,
         "iteration": 20,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
 def test_route_validator_no_feedback_no_result_goes_planner():

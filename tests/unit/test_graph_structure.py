@@ -8,6 +8,7 @@ from ado2gh.agents.migration_agent.graph import (
     NODE_EXECUTOR,
     NODE_VALIDATOR,
     NODE_FINALIZE,
+    NODE_HUMAN_INPUT,
     NODE_CLASSIFY_INTENT,
     NODE_EXECUTE_TOOLS,
     _route_after_orchestrator,
@@ -20,12 +21,13 @@ from ado2gh.agents.migration_agent.constants import GRAPH_RECURSION_LIMIT as CON
 
 
 def test_all_nodes_present():
-    """Core graph has five nodes: orchestrator, planner, executor, validator, finalize."""
+    """Core graph has six nodes: orchestrator, planner, executor, validator, human_input, finalize."""
     expected = {
         NODE_ORCHESTRATOR,
         NODE_PLANNER,
         NODE_EXECUTOR,
         NODE_VALIDATOR,
+        NODE_HUMAN_INPUT,
         NODE_FINALIZE,
     }
     assert set(ALL_NODES) == expected
@@ -111,7 +113,7 @@ def test_route_after_validator_retry():
     assert _route_after_validator(state) == "planner"
 
 
-def test_route_after_validator_always_planner():
+def test_route_after_validator_orchestrator_on_pass():
     state = {
         "validation_result": {"passed": True},
         "validation_feedback": None,
@@ -119,7 +121,7 @@ def test_route_after_validator_always_planner():
         "iteration": 5,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
 def test_route_after_validator_max_retries():
@@ -129,7 +131,7 @@ def test_route_after_validator_max_retries():
         "iteration": 5,
         "max_iterations": 20,
     }
-    assert _route_after_validator(state) == "planner"
+    assert _route_after_validator(state) == "orchestrator"
 
 
 def test_route_after_planner_orchestrator_after_validation_complete():
