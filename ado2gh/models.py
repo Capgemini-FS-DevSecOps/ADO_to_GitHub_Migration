@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+
 class MigrationStatus(str, Enum):
     PENDING     = "pending"
     IN_PROGRESS = "in_progress"
@@ -128,11 +129,6 @@ DEFAULT_PHASES: dict[PhaseType, PhaseConfig] = {
 }
 
 PHASE_ORDER = [PhaseType.POC, PhaseType.PILOT, PhaseType.WAVE1, PhaseType.WAVE2, PhaseType.WAVE3]
-
-
-def next_phase(p: PhaseType) -> Optional[PhaseType]:
-    idx = PHASE_ORDER.index(p)
-    return PHASE_ORDER[idx + 1] if idx + 1 < len(PHASE_ORDER) else None
 
 
 @dataclass

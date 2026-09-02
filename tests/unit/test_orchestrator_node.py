@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ado2gh.agents.migration_agent.intake_schema import OperatorIntent, OperatorMessageAnalysis
+from ado2gh.agents.migration_agent.hitl.schemas import OperatorIntent, OperatorMessageAnalysis
 from ado2gh.agents.migration_agent.nodes import _classify_user_intent
 
 
@@ -26,7 +26,7 @@ async def test_classify_user_intent_uses_llm_analysis():
     )
 
     with patch(
-        "ado2gh.agents.migration_agent.intake_llm.analyze_operator_message",
+        "ado2gh.agents.migration_agent.hitl.intake_llm.analyze_operator_message",
         new_callable=AsyncMock,
         return_value=analysis,
     ):

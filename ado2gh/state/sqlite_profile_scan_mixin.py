@@ -2,7 +2,7 @@
 
 Extracted from SQLiteStateDB to keep file under 800 lines.
 Provides: save_profile_scan, get_profile_scan_meta, get_profile_scan_repos,
-update_profile_repo_phases, build_profile_scan_payload, create_wave, get_wave.
+update_profile_repo_phases, build_profile_scan_payload.
 """
 from __future__ import annotations
 
@@ -81,56 +81,6 @@ class ProfileScanMixin:
                 "SELECT * FROM profile_scans WHERE profile_id=?", (profile_id,)
             ).fetchone()
         return dict(row) if row else None
-
-    def create_wave(
-        self,
-        wave_id: str,
-        name: str,
-        repository_ids: list[str],
-        *,
-        organization_id: str = "",
-        description: str = "",
-        created_by: str = "",
-    ) -> dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
-        with self._conn() as conn:
-            conn.execute(
-                """
-                INSERT INTO migration_waves
-                    (id, name, description, status, created_at, created_by)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (wave_id, name, description or name, "draft", now, created_by),
-            )
-            for order, repo_id in enumerate(repository_ids):
-                conn.execute(
-                    """
-                    INSERT INTO wave_repositories
-                        (id, wave_id, repository_id, organization_id, migration_order, status)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(wave_id, repository_id) DO UPDATE SET
-                        migration_order=excluded.migration_order
-                    """,
-                    (f"{wave_id}__{repo_id}", wave_id, repo_id, organization_id, order, "pending"),
-                )
-        return self.get_wave(wave_id)
-
-    def get_wave(self, wave_id: str) -> dict[str, Any] | None:
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT * FROM migration_waves WHERE id=?", (wave_id,)
-            ).fetchone()
-            if not row:
-                return None
-            repos = conn.execute(
-                "SELECT repository_id, organization_id, migration_order, status "
-                "FROM wave_repositories WHERE wave_id=? ORDER BY migration_order",
-                (wave_id,),
-            ).fetchall()
-        result = dict(row)
-        result["repository_ids"] = [r["repository_id"] for r in repos]
-        result["repositories"] = [dict(r) for r in repos]
-        return result
 
     def get_profile_scan_repos(
         self, profile_id: str, phase: str | None = None,

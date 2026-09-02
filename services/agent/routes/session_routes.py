@@ -12,41 +12,29 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
+from ado2gh.agents.migration_agent.constants import SSE_HEARTBEAT_INTERVAL_SECONDS
+from ado2gh.agents.migration_agent.hitl.forms import (
+    migration_ready_reply,
+)
 from ado2gh.agents.migration_agent.policies import (
     attach_actor_to_session,
     can_execute_live_without_approval,
     is_admin_request,
-    is_out_of_scope_message,
     live_execution_block_message,
     request_username,
-    scope_refusal_reply,
     session_requires_live_approval,
 )
-from ado2gh.agents.migration_agent.llm_bridge import resolve_langchain_llm
-from ado2gh.agents.migration_agent.forms import (
-    migration_ready_reply,
-)
-from ado2gh.agents.migration_agent.session_state import OrchestratorResult
-from ado2gh.agents.migration_agent.session_state import (
-    is_session_busy,
-    normalize_session_status,
-    set_session_idle,
-)
-from ado2gh.agents.migration_agent.orchestrator import process_user_message, stream_user_message
-from ado2gh.agents.migration_agent.constants import SSE_HEARTBEAT_INTERVAL_SECONDS
-from ado2gh.auth.service import auth_enabled
-
 from ado2gh.agents.migration_agent.route_helpers import (
-    AgentRunRequest,
+    _PLANNER_SYSTEM,
     ApprovalRequest,
     ExecutionModeRequest,
     FormSubmitRequest,
     PlanPhaseBody,
     ProvisionRequest,
     RemediateRequest,
+    RunStatus,
     SessionMessageRequest,
     SessionRequest,
-    RunStatus,
     _accel_get,
     _accel_post,
     _add_message,
@@ -54,11 +42,8 @@ from ado2gh.agents.migration_agent.route_helpers import (
     _audit,
     _audit_actor,
     _build_migration_plan,
-    _ensure_migration_plan,
     _enqueue_session_live_approval,
     _get_accessible_session,
-    _PLANNER_SYSTEM,
-    _platform_user,
     _profile,
     _prune_stale_thinking_events,
     _require_approve_live,
@@ -71,7 +56,20 @@ from ado2gh.agents.migration_agent.route_helpers import (
     _sessions,
     _try_start_pev_run,
 )
+from ado2gh.agents.migration_agent.runtime.llm_bridge import resolve_langchain_llm
+from ado2gh.agents.migration_agent.runtime.orchestrator import (
+    continue_session_graph,
+    continue_session_graph_stream,
+    process_user_message,
+    stream_user_message,
+)
+from ado2gh.agents.migration_agent.session.state import (
+    OrchestratorResult,
+    is_session_busy,
+    set_session_idle,
+)
 from ado2gh.api.migration_work_plan import work_items_summary
+from ado2gh.auth.service import auth_enabled
 
 router = APIRouter()
 
@@ -89,7 +87,7 @@ def _resolve_pending_form(session: dict[str, Any]) -> dict[str, Any] | None:
     form = session.get("pending_form")
     if form:
         return form
-    from ado2gh.agents.migration_agent.operator_input import (
+    from ado2gh.agents.migration_agent.hitl.operator_input import (
         operator_input_to_form,
         pending_operator_input,
     )
@@ -102,11 +100,25 @@ def _resolve_pending_form(session: dict[str, Any]) -> dict[str, Any] | None:
     return form
 
 
-def _validate_repo_against_discovery(repo_id: str, session: dict[str, Any]) -> str | None:
-    """Validate repo_id against discovery data. Returns error message if invalid, None if valid."""
-    from ado2gh.agents.migration_agent.utils import validate_repo_against_discovery
-
-    return validate_repo_against_discovery(repo_id, session.get("discovery_snapshot"))
+async def _continue_graph_after_form(
+    session: dict[str, Any],
+    *,
+    message: str,
+    form_id: str,
+    values: dict[str, Any],
+    session_token: str | None,
+) -> OrchestratorResult:
+    """Resume an interrupted graph or continue with a synthetic user message."""
+    return await continue_session_graph(
+        session,
+        message,
+        resume_value={"form_id": form_id, "values": values},
+        model_id=session.get("selected_model_id"),
+        accel_get=_accel_get,
+        accel_post=_accel_post,
+        build_plan=_build_migration_plan,
+        session_token=session_token,
+    )
 
 
 async def _ensure_repo_valid_for_migration(
@@ -129,7 +141,7 @@ async def create_session(req: SessionRequest, request: Request):
     await _assert_deployment_profile_active(req.profile_id, session_token=session_token)
     profile = _profile(req.profile_id)
     dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default
-    from ado2gh.agents.migration_agent.session_lifecycle import new_isolated_agent_session, persist_session_snapshot
+    from ado2gh.agents.migration_agent.session.lifecycle import new_isolated_agent_session, persist_session_snapshot
 
     user_prompt = req.prompt or ""
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
@@ -140,7 +152,6 @@ async def create_session(req: SessionRequest, request: Request):
     _sessions[session_id] = new_isolated_agent_session(
         session_id,
         profile_id=req.profile_id,
-        assignment_id=req.assignment_id,
         session_token=session_token,
         selected_model_id=selected_model_id,
         llm_degraded=llm_degraded,
@@ -175,7 +186,6 @@ async def create_session(req: SessionRequest, request: Request):
             profile_id=req.profile_id,
             actor=actor,
             session_id=session_id,
-            assignment_id=req.assignment_id,
             metadata={"dry_run": dry_run, "role": role, "selected_model_id": selected_model_id},
         )
         return _session_payload(session_id)
@@ -216,7 +226,6 @@ async def create_session(req: SessionRequest, request: Request):
         profile_id=req.profile_id,
         actor=actor,
         session_id=session_id,
-        assignment_id=req.assignment_id,
         metadata={"dry_run": dry_run, "role": role, "selected_model_id": selected_model_id},
     )
 
@@ -259,7 +268,7 @@ def list_sessions(request: Request, profile_id: str | None = None):
         _maybe_add(sid, session)
 
     try:
-        from ado2gh.agents.migration_agent.session_store import MigrationSessionStore
+        from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
         for row in MigrationSessionStore().list_sessions(profile_id):
             sid = str(row.get("session_id") or "")
@@ -270,7 +279,7 @@ def list_sessions(request: Request, profile_id: str | None = None):
                 sid,
                 {
                     "profile_id": row.get("profile_id"),
-                    "user_username": None,
+                    "user_username": row.get("user_username"),
                     "messages": messages,
                     "status": row.get("status"),
                     "updated_at": row.get("last_activity_at"),
@@ -296,7 +305,7 @@ def get_session(session_id: str, request: Request):
 def delete_session(session_id: str, request: Request):
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
-    from ado2gh.agents.migration_agent.session_lifecycle import (
+    from ado2gh.agents.migration_agent.session.lifecycle import (
         clear_session_migration_state,
         release_session_repo_locks,
     )
@@ -308,7 +317,7 @@ def delete_session(session_id: str, request: Request):
     release_session_repo_locks(session_id)
     del _sessions[session_id]
     try:
-        from ado2gh.agents.migration_agent.session_store import MigrationSessionStore
+        from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
         MigrationSessionStore().delete_session(session_id)
     except Exception:
@@ -353,6 +362,11 @@ async def create_migration_plan(
     _add_message(session_id, "planner", plan["narrative"], kind="progress")
 
     if not plan.get("blocked"):
+        from ado2gh.agents.migration_agent.hitl.forms import (
+            _plan_confirmation_reply,
+            plan_confirmation_form,
+        )
+
         session["pending_form"] = plan_confirmation_form(session)
         _add_message(session_id, "assistant", _plan_confirmation_reply(session), kind="message")
     session["subagent"] = None
@@ -455,13 +469,6 @@ async def approve_session(session_id: str, req: ApprovalRequest, request: Reques
         session_id=session_id,
         metadata={"reason": req.reason},
     )
-    run_id = session.get("run_id")
-    if run_id and run_id in _runs:
-        agent_req = AgentRunRequest(
-            dry_run=False,
-            assignment_id=session.get("assignment_id"),
-            profile_id=session.get("profile_id"),
-        )
     return {"session_id": session_id, "status": "executing"}
 
 
@@ -484,11 +491,6 @@ async def resume_live_internal(session_id: str):
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
         session["run_id"] = run_id
-    agent_req = AgentRunRequest(
-        dry_run=False,
-        assignment_id=session.get("assignment_id"),
-        profile_id=session.get("profile_id"),
-    )
     return {"session_id": session_id, "status": "executing"}
 
 
@@ -516,7 +518,7 @@ async def session_message(session_id: str, req: SessionMessageRequest, request: 
             detail="pending_form — submit the form or cancel before sending a new message",
         )
 
-    from ado2gh.agents.migration_agent.orchestrator import process_user_message
+    from ado2gh.agents.migration_agent.runtime.orchestrator import process_user_message
 
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
     session_token = _session_token_from_request(request) or _session_accel_token(session_id)
@@ -563,7 +565,6 @@ async def session_message_stream(session_id: str, req: SessionMessageRequest, re
             detail="pending_form — submit the form or cancel before sending a new message",
         )
 
-    from ado2gh.agents.migration_agent.orchestrator import stream_user_message
     from ado2gh.agents.migration_agent.constants import SSE_HEARTBEAT_INTERVAL_SECONDS
 
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
@@ -634,8 +635,7 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
     if not form:
         raise HTTPException(status_code=409, detail="no_pending_form")
 
-    from ado2gh.agents.migration_agent.orchestrator import process_user_message
-    from ado2gh.agents.migration_agent.intake import prepare_form_submission, format_form_submission_summary
+    from ado2gh.agents.migration_agent.hitl.intake import format_form_submission_summary, prepare_form_submission
 
     values = req.values or {}
     form_id = str(form.get("form_id") or "")
@@ -680,13 +680,11 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
         session.pop("plan_review_presented", None)
         session["status"] = "idle"
         session["start_pev"] = False
-        orch = await process_user_message(
+        orch = await _continue_graph_after_form(
             session,
-            outcome["message"],
-            model_id=session.get("selected_model_id"),
-            accel_get=_accel_get,
-            accel_post=_accel_post,
-            build_plan=_build_migration_plan,
+            message=outcome["message"],
+            form_id=form_id,
+            values=values,
             session_token=session_token,
         )
         session["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -701,14 +699,13 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
         session["plan_approved"] = False
         session.pop("plan_review_presented", None)
         session["status"] = "idle"
+        session["pending_clarification"] = None
         session["start_pev"] = False
-        orch = await process_user_message(
+        orch = await _continue_graph_after_form(
             session,
-            outcome["message"],
-            model_id=session.get("selected_model_id"),
-            accel_get=_accel_get,
-            accel_post=_accel_post,
-            build_plan=_build_migration_plan,
+            message=outcome["message"],
+            form_id=form_id,
+            values=values,
             session_token=session_token,
         )
         session["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -718,10 +715,33 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
             payload["pending_form"] = orch.pending_form
         return payload
 
+    if outcome["status"] == "invoke_planner":
+        repo_id = str(outcome.get("repository_id") or "").strip()
+        if repo_id:
+            session["plan_repository_id"] = repo_id
+        session["dry_run"] = outcome.get("dry_run", session.get("dry_run", True))
+        session["execution_mode_confirmed"] = True
+        session["status"] = "idle"
+        session["pending_clarification"] = None
+        reply = outcome.get("message") or f"Proceeding to build the migration plan for '{repo_id}'."
+        orch = await _continue_graph_after_form(
+            session,
+            message=reply,
+            form_id=form_id,
+            values=values,
+            session_token=session_token,
+        )
+        session["updated_at"] = datetime.now(timezone.utc).isoformat()
+        payload = _session_payload(session_id)
+        payload["reply"] = orch.reply or reply
+        if orch.pending_form:
+            payload["pending_form"] = orch.pending_form
+        return payload
+
     if outcome["status"] == "operator_input_continue":
-        from ado2gh.agents.migration_agent.forms import sanitize_form, _plan_confirmation_reply
-        from ado2gh.agents.migration_agent.intake import build_plan_review_form
-        from ado2gh.agents.migration_agent.pipeline_plan import finalize_agent_migration_plan
+        from ado2gh.agents.migration_agent.hitl.forms import _plan_confirmation_reply, sanitize_form
+        from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
+        from ado2gh.agents.migration_agent.nodes.executor.plan import finalize_agent_migration_plan
 
         plan = session.get("migration_plan") or {}
         plan = finalize_agent_migration_plan(plan, session)
@@ -753,7 +773,7 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
         work_items = plan.get("work_items") or []
         plan["work_items"] = apply_operator_secret_mappings(work_items, mappings)
         plan["work_summary"] = work_items_summary(plan["work_items"])
-        from ado2gh.agents.migration_agent.pipeline_plan import resolve_migration_phase
+        from ado2gh.agents.migration_agent.nodes.executor.plan import resolve_migration_phase
 
         plan_phase = resolve_migration_phase(session, plan)
         plan["narrative"] = plan_narrative_from_work_items(
@@ -763,8 +783,8 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
             repository_id=plan.get("repository_id"),
         )
         session["migration_plan"] = plan
-        from ado2gh.agents.migration_agent.intake import build_plan_review_form
-        from ado2gh.agents.migration_agent.forms import sanitize_form
+        from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
+        from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
 
         form = sanitize_form(build_plan_review_form(session))
         session["pending_form"] = form
@@ -797,13 +817,11 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
         session["status"] = "idle"
         session["pending_clarification"] = None
         session["start_pev"] = False
-        orch = await process_user_message(
+        orch = await _continue_graph_after_form(
             session,
-            outcome["message"],
-            model_id=session.get("selected_model_id"),
-            accel_get=_accel_get,
-            accel_post=_accel_post,
-            build_plan=_build_migration_plan,
+            message=outcome["message"],
+            form_id=form_id,
+            values=values,
             session_token=session_token,
         )
         session["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -852,13 +870,11 @@ async def submit_session_form(session_id: str, req: FormSubmitRequest, request: 
     session["status"] = "idle"
     session["pending_clarification"] = None
     session["start_pev"] = False
-    orch = await process_user_message(
+    orch = await _continue_graph_after_form(
         session,
-        outcome["message"],
-        model_id=session.get("selected_model_id"),
-        accel_get=_accel_get,
-        accel_post=_accel_post,
-        build_plan=_build_migration_plan,
+        message=outcome.get("message", ""),
+        form_id=form_id,
+        values=values,
         session_token=session_token,
     )
     session["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -878,9 +894,7 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
     if not form:
         raise HTTPException(status_code=409, detail="no_pending_form")
 
-    from ado2gh.agents.migration_agent.intake import prepare_form_submission, format_form_submission_summary
-    from ado2gh.agents.migration_agent.orchestrator import stream_user_message
-    from ado2gh.agents.migration_agent.constants import SSE_HEARTBEAT_INTERVAL_SECONDS
+    from ado2gh.agents.migration_agent.hitl.intake import format_form_submission_summary, prepare_form_submission
 
     values = req.values or {}
     form_id = str(form.get("form_id") or "")
@@ -947,9 +961,9 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
             session.pop("plan_review_presented", None)
         synthetic_msg = outcome.get("message") or outcome.get("reply", "Continue operator remediation.")
     elif outcome["status"] == "operator_input_continue":
-        from ado2gh.agents.migration_agent.forms import sanitize_form, _plan_confirmation_reply
-        from ado2gh.agents.migration_agent.intake import build_plan_review_form
-        from ado2gh.agents.migration_agent.pipeline_plan import finalize_agent_migration_plan
+        from ado2gh.agents.migration_agent.hitl.forms import _plan_confirmation_reply, sanitize_form
+        from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
+        from ado2gh.agents.migration_agent.nodes.executor.plan import finalize_agent_migration_plan
 
         plan = session.get("migration_plan") or {}
         plan = finalize_agent_migration_plan(plan, session)
@@ -975,6 +989,16 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
         session["plan_approved"] = False
         session.pop("plan_review_presented", None)
         synthetic_msg = outcome.get("message") or outcome.get("reply", "Revise the migration plan.")
+    elif outcome["status"] == "invoke_planner":
+        repo_id = str(outcome.get("repository_id") or "").strip()
+        if repo_id:
+            session["plan_repository_id"] = repo_id
+        session["dry_run"] = outcome.get("dry_run", session.get("dry_run", True))
+        session["execution_mode_confirmed"] = True
+        synthetic_msg = outcome.get("message") or (
+            f"Proceeding to build the migration plan for '{repo_id}'."
+        )
+        _add_message(session_id, "assistant", synthetic_msg, kind="message")
     elif outcome["status"] == "operator_input_unresolved":
         pending = outcome.get("form") or form
         session["pending_form"] = pending
@@ -1046,9 +1070,9 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
     elif outcome["status"] == "plan_revise":
         synthetic_msg = outcome.get("message") or outcome.get("reply", "Revise the migration plan.")
     elif outcome["status"] == "inventory_gaps":
+        from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
+        from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
         from ado2gh.api.migration_work_plan import apply_operator_secret_mappings, plan_narrative_from_work_items
-        from ado2gh.agents.migration_agent.intake import build_plan_review_form
-        from ado2gh.agents.migration_agent.forms import sanitize_form
 
         mappings = {
             str(k): str(v).strip()
@@ -1060,7 +1084,7 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
         work_items = plan.get("work_items") or []
         plan["work_items"] = apply_operator_secret_mappings(work_items, mappings)
         plan["work_summary"] = work_items_summary(plan["work_items"])
-        from ado2gh.agents.migration_agent.pipeline_plan import resolve_migration_phase
+        from ado2gh.agents.migration_agent.nodes.executor.plan import resolve_migration_phase
 
         plan_phase = resolve_migration_phase(session, plan)
         plan["narrative"] = plan_narrative_from_work_items(
@@ -1104,9 +1128,10 @@ async def submit_session_form_stream(session_id: str, req: FormSubmitRequest, re
     async def event_stream():
         last_heartbeat = asyncio.get_event_loop().time()
         try:
-            async for event in stream_user_message(
+            async for event in continue_session_graph_stream(
                 session,
                 synthetic_msg,
+                resume_value={"form_id": form_id, "values": values},
                 model_id=session.get("selected_model_id"),
                 accel_get=_accel_get,
                 accel_post=_accel_post,
@@ -1181,8 +1206,8 @@ async def update_execution_mode(
 def cancel_session_form(session_id: str, request: Request):
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
-    from ado2gh.agents.migration_agent.session_lifecycle import persist_session_snapshot
-    from ado2gh.agents.migration_agent.session_state import reset_session_for_new_migration
+    from ado2gh.agents.migration_agent.session.lifecycle import persist_session_snapshot
+    from ado2gh.agents.migration_agent.session.state import reset_session_for_new_migration
 
     session["pending_form"] = None
     reset_session_for_new_migration(session)
@@ -1217,12 +1242,6 @@ async def remediate_session(session_id: str, req: RemediateRequest):
     if req.retry_count >= max_retries:
         session["status"] = "escalated"
         return {"session_id": session_id, "status": "escalated", "retry_count": req.retry_count}
-    run_id = session.get("run_id")
-    if run_id and run_id in _runs:
-        agent_req = AgentRunRequest(
-            dry_run=session.get("dry_run", True),
-            profile_id=session.get("profile_id"),
-        )
     session["status"] = "remediating"
     return {"session_id": session_id, "status": "remediating", "retry_count": req.retry_count + 1}
 
@@ -1235,12 +1254,10 @@ def agent_models(request: Request):
 
 
 @router.get("/v1/llm/status")
-@router.get("/v1/llm-status")
 def llm_status():
     from ado2gh.api.llm.llm_model_store import LLMModelStore
 
     store = LLMModelStore()
-    models = store.load()
     default = store.get_default_model()
     selected_model_id, llm_degraded, llm_unconfigured = _resolve_model_id(None)
     enabled = store.list_agent_ready_models()
@@ -1334,7 +1351,7 @@ async def cancel_session(session_id: str, request: Request):
     except Exception:
         pass
 
-    from ado2gh.agents.migration_agent.session_lifecycle import cancel_agent_session
+    from ado2gh.agents.migration_agent.session.lifecycle import cancel_agent_session
 
     session_token = _session_token_from_request(request) or _session_accel_token(session_id)
     result = await cancel_agent_session(

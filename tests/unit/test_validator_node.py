@@ -8,7 +8,7 @@ from ado2gh.agents.migration_agent.nodes import (
     _advance_migration_queue,
     _build_migration_queue_from_plan,
 )
-from ado2gh.agents.migration_agent.operator_input import (
+from ado2gh.agents.migration_agent.hitl.operator_input import (
     blockers_from_validator_baseline_probes,
     validation_failures_from_baseline_probes,
 )

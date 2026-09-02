@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: ado2gh
+spec:
+  # Must stay 1 — run/session/approval state lives in module-level dicts in
+  # ado2gh/agents/migration_agent/route_helpers.py, so a second replica would
+  # serve requests that cannot see sessions created by the first.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+    spec:
+      containers:
+        - name: agent
+          image: ado2gh-agent:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: ado2gh-config
+            - secretRef:
+                name: ado2gh-secrets
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent
+  namespace: ado2gh
+spec:
+  selector:
+    app: agent
+  ports:
+    - port: 8090

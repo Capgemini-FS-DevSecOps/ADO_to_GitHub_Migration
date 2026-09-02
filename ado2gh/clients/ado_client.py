@@ -245,14 +245,6 @@ class ADOClient:
         except Exception:
             return []
 
-    def get_pipeline_approvals(self, project: str, pipeline_id: int) -> list[dict]:
-        url = (f"{self.org_url}/{self._p(project)}/_apis/pipelines/checks/configurations"
-               f"?{self.API}&resourceType=pipeline&resourceId={pipeline_id}")
-        try:
-            return self._get(url).get("value", [])
-        except Exception:
-            return []
-
     # ── Variable Groups & Service Connections ───────────────────────────────
 
     def list_variable_groups(self, project: str) -> list[dict]:
@@ -272,13 +264,6 @@ class ADOClient:
             return []
 
     # ── Agent Pools ─────────────────────────────────────────────────────────
-
-    def list_agent_pools(self) -> list[dict]:
-        url = f"{self.org_url}/_apis/distributedtask/pools?{self.API}"
-        try:
-            return self._get(url).get("value", [])
-        except Exception:
-            return []
 
     # ── Work Items ──────────────────────────────────────────────────────────
 
@@ -330,15 +315,6 @@ class ADOClient:
         except Exception:
             return []
 
-    def list_build_artifacts(self, project: str, top: int = 50) -> list[dict]:
-        """List recent build artifacts (outputs published by pipelines)."""
-        url = (f"{self.org_url}/{self._p(project)}/_apis/build/artifacts"
-               f"?{self.API}&$top={top}")
-        try:
-            return self._get(url).get("value", [])
-        except Exception:
-            return []
-
     # ── Azure Boards ─────────────────────────────────────────────────────────
 
     def list_teams(self, project: str) -> list[dict]:
@@ -362,14 +338,6 @@ class ADOClient:
         """List work item types defined in a project."""
         url = (f"{self.org_url}/{self._p(project)}"
                f"/_apis/wit/workitemtypes?{self.API}")
-        try:
-            return self._get(url).get("value", [])
-        except Exception:
-            return []
-
-    def list_queries(self, project: str) -> list[dict]:
-        """List stored queries in a project."""
-        url = (f"{self.org_url}/{self._p(project)}/_apis/wit/queries?{self.API}")
         try:
             return self._get(url).get("value", [])
         except Exception:

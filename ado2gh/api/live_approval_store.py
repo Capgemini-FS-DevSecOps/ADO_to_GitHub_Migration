@@ -10,7 +10,6 @@ from typing import Any, Callable
 import httpx
 from fastapi import HTTPException
 
-from ado2gh.api.agentic_routes import enforce_live_gate
 from ado2gh.api.profile_governance import write_profile_audit
 from ado2gh.auth.models import PlatformUser
 from ado2gh.state.factory import create_state_db
@@ -20,6 +19,16 @@ ExecuteCallback = Callable[[dict], Any]
 
 _migrate_executor: ExecuteCallback | None = None
 _pipeline_executor: ExecuteCallback | None = None
+
+
+def _internal_headers() -> dict[str, str]:
+    """Shared secret for the agent's /v1/internal/ routes (see services/agent/main.py).
+
+    Read per call rather than at import so tests and redeploys can change it without
+    reimporting the module. Empty when unset, which the agent treats as open access.
+    """
+    token = os.environ.get("ADO2GH_INTERNAL_TOKEN", "")
+    return {"x-ado2gh-internal-token": token} if token else {}
 
 
 def register_migrate_executor(fn: ExecuteCallback) -> None:
@@ -43,7 +52,6 @@ def _public_row(row: dict) -> dict:
         "scope_type": row["scope_type"],
         "scope_id": row["scope_id"],
         "profile_id": row.get("profile_id"),
-        "assignment_id": row.get("assignment_id"),
         "status": row["status"],
         "reason_request": row.get("reason_request"),
         "reason_decision": row.get("reason_decision"),
@@ -65,7 +73,6 @@ class LiveApprovalStore:
         scope_id: str,
         *,
         profile_id: str | None = None,
-        assignment_id: str | None = None,
         reason_request: str | None = None,
         context: dict | None = None,
     ) -> dict:
@@ -81,7 +88,6 @@ class LiveApprovalStore:
             scope_type=scope_type,
             scope_id=scope_id,
             requested_at=now,
-            assignment_id=assignment_id,
             profile_id=profile_id,
             reason_request=reason_request,
             context_json=json.dumps(context or {}),
@@ -144,23 +150,6 @@ class LiveApprovalStore:
         assert updated is not None
         if updated["scope_type"] == "pipeline_run":
             self._stamp_pipeline_approval(updated, "approved", approver)
-        assignment_id = updated.get("assignment_id")
-        if assignment_id:
-            try:
-                enforce_live_gate(assignment_id, False, self.db_path)
-            except HTTPException as exc:
-                write_profile_audit(
-                    "platform.live_execution.gate_blocked",
-                    profile_id=updated.get("profile_id") or "_platform",
-                    actor=approver.username,
-                    payload={
-                        "approval_id": approval_id,
-                        "assignment_id": assignment_id,
-                        "gate": exc.detail,
-                    },
-                    db_path=self.db_path,
-                )
-                raise
         self._resume_scope(updated)
         write_profile_audit(
             "platform.live_execution.approved",
@@ -252,6 +241,7 @@ class LiveApprovalStore:
         try:
             httpx.post(
                 f"{agent_url}/v1/internal/sessions/{session_id}/resume-live",
+                headers=_internal_headers(),
                 timeout=30.0,
             )
         except httpx.HTTPError:
@@ -263,6 +253,7 @@ class LiveApprovalStore:
             httpx.post(
                 f"{agent_url}/v1/internal/sessions/{session_id}/deny-live",
                 json={"reason": reason},
+                headers=_internal_headers(),
                 timeout=30.0,
             )
         except httpx.HTTPError:

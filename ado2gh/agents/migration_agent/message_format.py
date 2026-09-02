@@ -248,13 +248,13 @@ async def compose_orchestrator_chat_message(
     llm_unconfigured = state.get("llm_unconfigured", False)
     payload = dict(context or {})
     if "migration_plan" in payload:
-        from ado2gh.agents.migration_agent.blockers import sanitize_plan_for_operator_view
+        from ado2gh.agents.migration_agent.hitl.blockers import sanitize_plan_for_operator_view
 
         plan = payload.get("migration_plan")
         if isinstance(plan, dict):
             payload["migration_plan"] = sanitize_plan_for_operator_view(plan, session)
     if session.get("migration_plan") and "migration_plan" not in payload:
-        from ado2gh.agents.migration_agent.blockers import sanitize_plan_for_operator_view
+        from ado2gh.agents.migration_agent.hitl.blockers import sanitize_plan_for_operator_view
 
         plan = session.get("migration_plan")
         if isinstance(plan, dict):
@@ -518,7 +518,7 @@ def build_executed_scopes_from_pipeline_run(
     repo_id: str,
 ) -> list[dict[str, Any]]:
     """Map accelerator pipeline step results to executed scope rows (Monitor source)."""
-    from ado2gh.agents.migration_agent.scope_executor import scope_accelerator_endpoint
+    from ado2gh.agents.migration_agent.nodes.executor.scope import scope_accelerator_endpoint
 
     if not isinstance(pipeline_run, dict) or not repo_id:
         return []
@@ -589,7 +589,7 @@ def _executed_scopes_from_executor_result(
     executor_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Fallback: scope rows from in-session executor_result."""
-    from ado2gh.agents.migration_agent.scope_executor import scope_accelerator_endpoint
+    from ado2gh.agents.migration_agent.nodes.executor.scope import scope_accelerator_endpoint
 
     executed: list[dict[str, Any]] = []
     for repo_result in executor_result.get("per_repo_results") or []:
@@ -627,7 +627,7 @@ def build_migration_completion_facts(
     database_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Structured scope summary for completion messages (no LLM invention)."""
-    from ado2gh.agents.migration_agent.blockers import sanitize_plan_for_operator_view
+    from ado2gh.agents.migration_agent.hitl.blockers import sanitize_plan_for_operator_view
 
     plan = sanitize_plan_for_operator_view(migration_plan, session)
     work_items = plan.get("work_items") or []
@@ -705,7 +705,7 @@ async def compose_migration_completion_message(
     migration_plan: dict[str, Any],
 ) -> str:
     """LLM-composed completion summary with guardrails (English, no emojis, no hidden blockers)."""
-    from ado2gh.agents.migration_agent.blockers import sanitize_plan_for_operator_view
+    from ado2gh.agents.migration_agent.hitl.blockers import sanitize_plan_for_operator_view
 
     pipeline_run = await fetch_pipeline_run_for_completion(
         state.get("accel_get"),

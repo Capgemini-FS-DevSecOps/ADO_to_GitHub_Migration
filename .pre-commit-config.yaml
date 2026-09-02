@@ -1,10 +1,12 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.5.0
+    # Pinned to the ruff version the repo is actually linted with (see CI lint job).
+    rev: v0.15.17
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: ["--fix"]
-      - id: ruff-format
+      # ruff-format is deliberately left out: it has never been applied here, so its
+      # first run would reformat nearly every file. Add it in its own dedicated commit.
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0

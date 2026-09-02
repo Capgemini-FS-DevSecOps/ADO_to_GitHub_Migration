@@ -5,16 +5,16 @@ Run the full migration platform on your laptop **without PostgreSQL**. SQLite is
 | Mode | Compose / command | UI | Agent | Postgres |
 |------|-------------------|----|-------|----------|
 | **Full stack (recommended)** | `docker compose up --build` | ✓ | ✓ | No |
-| **Native processes** | `scripts/run-local.ps1` | ✓ | ✓ | No |
+| **Native processes** | `scripts/dev/run-local-agent.ps1` + `scripts/dev/run-ui.ps1` | ✓ | ✓ | No |
 | **CLI only** | `pip install -e .` + `ado2gh` | — | — | No |
-| **Agent IDE (minimal)** | `docker compose -f docker-compose.lightweight.yml up` | — | ✓ | No |
+| **Agent IDE (minimal)** | `scripts/dev/run-local-agent.ps1` | — | ✓ | No |
 | **Production-like** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up` | ✓ | ✓ | Yes |
 
 ---
 
 ## Prerequisites
 
-- **Docker Desktop** (for compose workflows) or **Python 3.9+** and **Node.js 20+** (for native)
+- **Docker Desktop** (for compose workflows) or **Python 3.11+** and **Node.js 20+** (for native)
 - **Git** on `PATH` (required for repo mirroring)
 - Optional: **GitHub CLI** + `gh-gei` if using the GEI migration strategy
 
@@ -103,17 +103,18 @@ Data persists in the `ado2gh-data` volume until you remove it with `docker volum
 **Windows (PowerShell):**
 
 ```powershell
-.\scripts\run-local.ps1
+.\scripts\dev\run-local-agent.ps1   # accelerator (:8080) + agent (:8090)
+.\scripts\dev\run-ui.ps1            # Next.js UI (:3000)
 ```
 
-**What it does:** installs Python deps (`requirements.txt` + `pip install -e ".[api]"`), npm deps on first run, then starts accelerator (:8080), agent (:8090), and Next.js UI (:3000) in separate terminal windows. SQLite at `./migration_state.db` and `./data`.
+**What it does:** installs Python deps (`requirements.txt` + `pip install -e ".[api]"`), npm deps on first run, then starts the services in separate terminal windows. SQLite at `./migration_state.db` and `./data`.
 
 **Recommended:** use a venv so Windows does not pick the Store `python` stub:
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-.\scripts\run-local.ps1
+.\scripts\dev\run-local-agent.ps1
 ```
 
 ### `[WinError 2] The system cannot find the file specified`
@@ -148,7 +149,7 @@ For headless migration workflows without the web console:
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[api,dev]"
+pip install -e ".[api,agent,dev]"
 
 export ADO2GH_STORAGE_BACKEND=sqlite
 export ADO2GH_SQLITE_PATH=./migration_state.db
@@ -163,18 +164,12 @@ See [EXECUTION_MANUAL.md](EXECUTION_MANUAL.md) and [COMMAND_REFERENCE.md](COMMAN
 
 ---
 
-## 5. Lightweight agent stack
+## 5. Agent-only stack (native)
 
-For IDE/MCP agent development without UI, Redis, or worker:
-
-```bash
-docker compose -f docker-compose.lightweight.yml up --build
-```
-
-Or natively:
+For agent development without UI, Redis, or worker:
 
 ```powershell
-.\scripts\run-local-agent.ps1
+.\scripts\dev\run-local-agent.ps1
 ```
 
 ---
@@ -185,7 +180,7 @@ Or natively:
 |----------|---------------|
 | Docker Compose | Volume `ado2gh-data` → `/app/data/migration_state.db` |
 | Native / CLI | `./migration_state.db` (or `ADO2GH_SQLITE_PATH`) |
-| `run-local.ps1` | `./migration_state.db` + `./data/` |
+| `scripts/dev/run-local-agent.ps1` | `./migration_state.db` + `./data/` |
 
 The SQLite file uses WAL mode. Safe to back up while stopped; for live backup copy `.db`, `.db-wal`, and `.db-shm` together.
 

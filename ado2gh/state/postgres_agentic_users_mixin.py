@@ -16,9 +16,9 @@ class PostgresAgenticUsersMixin:
         event_type: str,
         profile_id: str,
         actor: str,
-        assignment_id: str | None,
         payload_json: str,
         created_at: str,
+        assignment_id: str | None = None,
     ):
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -342,65 +342,6 @@ class PostgresAgenticUsersMixin:
                 rows = cur.fetchall()
         return [dict(r) for r in rows]
 
-    def get_assignment(self, assignment_id: str) -> Optional[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM migration_assignments WHERE id=%s",
-                    (assignment_id,),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-
-    def list_assignments(self, profile_id: str) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM migration_assignments WHERE profile_id=%s ORDER BY created_at",
-                    (profile_id,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def upsert_cohort_membership(
-        self,
-        assignment_id: str,
-        profile_id: str,
-        ado_project: str,
-        ado_repo: str,
-        gh_org: str,
-        gh_repo: str,
-        active: bool,
-    ):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                if active:
-                    cur.execute(
-                        "UPDATE cohort_membership SET active=0 "
-                        "WHERE profile_id=%s AND ado_project=%s AND ado_repo=%s AND active=1",
-                        (profile_id, ado_project, ado_repo),
-                    )
-                cur.execute(
-                    """
-                    INSERT INTO cohort_membership
-                    (assignment_id, profile_id, ado_project, ado_repo, gh_org, gh_repo, active)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        assignment_id, profile_id, ado_project, ado_repo,
-                        gh_org, gh_repo, 1 if active else 0,
-                    ),
-                )
-
-    def get_cohort_repos(self, assignment_id: str) -> list[dict]:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT ado_project, ado_repo, gh_org, gh_repo FROM cohort_membership "
-                    "WHERE assignment_id=%s AND active=1",
-                    (assignment_id,),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
     def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -408,19 +349,6 @@ class PostgresAgenticUsersMixin:
                     "SELECT 1 FROM migrations WHERE ado_project=%s AND ado_repo=%s "
                     "AND status='in_progress' LIMIT 1",
                     (ado_project, ado_repo),
-                )
-                row = cur.fetchone()
-        return row is not None
-
-    def is_repo_in_assignment_cohort(
-        self, assignment_id: str, ado_project: str, ado_repo: str,
-    ) -> bool:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM cohort_membership WHERE assignment_id=%s "
-                    "AND ado_project=%s AND ado_repo=%s AND active=1 LIMIT 1",
-                    (assignment_id, ado_project, ado_repo),
                 )
                 row = cur.fetchone()
         return row is not None

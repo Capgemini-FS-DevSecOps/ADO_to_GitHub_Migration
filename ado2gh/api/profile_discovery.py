@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from ado2gh.api.profile_governance import assert_profile_active_for_run, ProfileGovernanceError
-
 from ado2gh.api.migration_scan import load_scan_results, persist_scan_results, scan_with_credentials
+from ado2gh.api.profile_governance import ProfileGovernanceError, assert_profile_active_for_run
 from ado2gh.api.settings_store import MigrationProfile, SettingsStore
 from ado2gh.api.state_db import get_state_db
 from ado2gh.models import RepoConfig, RiskScore, WaveConfig
@@ -130,9 +129,7 @@ def ensure_profile_scan(profile: MigrationProfile, settings: SettingsStore | Non
         return existing
     if not profile.ado_org_url or not profile.ado_pat:
         raise ValueError("Profile is missing ADO credentials — complete profile setup first")
-    from ado2gh.api.settings_store import SettingsStore
-    store_ref = settings or SettingsStore()
-    adv = store_ref.load().advanced
+    adv = store.load().advanced
     gh_org = resolve_gh_org(profile, config_path=adv.config_path)
     raw = scan_with_credentials(
         profile.ado_org_url,

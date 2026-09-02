@@ -186,21 +186,6 @@ class StateDBBase(ABC):
     def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]: ...
 
     @abstractmethod
-    def create_wave(
-        self,
-        wave_id: str,
-        name: str,
-        repository_ids: list[str],
-        *,
-        organization_id: str = "",
-        description: str = "",
-        created_by: str = "",
-    ) -> dict[str, Any]: ...
-
-    @abstractmethod
-    def get_wave(self, wave_id: str) -> dict[str, Any] | None: ...
-
-    @abstractmethod
     def get_profile_scan_repos(
         self, profile_id: str, phase: str | None = None,
     ) -> list[dict]: ...
@@ -218,49 +203,15 @@ class StateDBBase(ABC):
     # ── Agentic platform ─────────────────────────────────────────────────────
 
     @abstractmethod
-    def insert_assignment(
-        self,
-        id: str,
-        profile_id: str,
-        name: str,
-        assignment_type: str,
-        execution_phase: str,
-        wave_number: int | None,
-        status: str,
-        created_by: str,
-    ) -> None: ...
-
-    @abstractmethod
-    def get_assignment(self, assignment_id: str) -> Optional[dict]: ...
-
-    @abstractmethod
-    def list_assignments(self, profile_id: str) -> list[dict]: ...
-
-    @abstractmethod
-    def upsert_cohort_membership(
-        self,
-        assignment_id: str,
-        profile_id: str,
-        ado_project: str,
-        ado_repo: str,
-        gh_org: str,
-        gh_repo: str,
-        active: bool,
-    ) -> None: ...
-
-    @abstractmethod
-    def get_cohort_repos(self, assignment_id: str) -> list[dict]: ...
-
-    @abstractmethod
     def insert_audit_event(
         self,
         event_id: str,
         event_type: str,
         profile_id: str,
         actor: str,
-        assignment_id: str | None,
         payload_json: str,
         created_at: str,
+        assignment_id: str | None = None,
     ) -> None: ...
 
     @abstractmethod
@@ -283,39 +234,7 @@ class StateDBBase(ABC):
     ) -> list[str]: ...
 
     @abstractmethod
-    def upsert_remediation_loop(
-        self,
-        session_id: str,
-        repo_key: str,
-        retry_count: int,
-        max_retries: int,
-        status: str,
-    ) -> None: ...
-
-    @abstractmethod
-    def get_dependency_edges(self, profile_id: str) -> list[dict]: ...
-
-    @abstractmethod
-    def upsert_dependency_edge(
-        self,
-        profile_id: str,
-        from_repo: str,
-        to_repo: str,
-        edge_type: str = "pipeline_resource",
-    ) -> None: ...
-
-    @abstractmethod
     def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool: ...
-
-    @abstractmethod
-    def is_repo_in_assignment_cohort(
-        self, assignment_id: str, ado_project: str, ado_repo: str,
-    ) -> bool: ...
-
-    @abstractmethod
-    def get_remediation_loop(
-        self, session_id: str, repo_key: str,
-    ) -> Optional[dict]: ...
 
     # ── Platform users / auth ────────────────────────────────────────────────
 

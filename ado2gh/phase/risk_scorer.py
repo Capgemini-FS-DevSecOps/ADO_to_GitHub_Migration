@@ -6,7 +6,10 @@ import re
 from datetime import datetime, timezone
 
 from ado2gh.models import (
-    PipelineComplexity, PipelineType, RiskScore, RiskSignal,
+    PipelineComplexity,
+    PipelineType,
+    RiskScore,
+    RiskSignal,
 )
 
 

@@ -71,8 +71,8 @@ def register(cli):
     @click.option("--db", default="migration_state.db", show_default=True)
     def report(config, output, fmt, db):
         """Generate HTML, JSON, or CSV migration report."""
-        from ado2gh.reporting.reporter import Reporter
         from ado2gh.reporting.csv_exporter import CSVExporter
+        from ado2gh.reporting.reporter import Reporter
         from ado2gh.state.factory import create_state_db
 
         Path(output).parent.mkdir(parents=True, exist_ok=True)
@@ -159,9 +159,10 @@ def register(cli):
     @click.option("--config", "-c", required=True)
     def token_status(config):
         """Show GitHub token rate limit status."""
-        from ado2gh.core.config_loader import ConfigLoader
-        from rich.table import Table
         from rich import box
+        from rich.table import Table
+
+        from ado2gh.core.config_loader import ConfigLoader
 
         global_cfg, _ = ConfigLoader.load(config)
         _, gh = load_clients(global_cfg)

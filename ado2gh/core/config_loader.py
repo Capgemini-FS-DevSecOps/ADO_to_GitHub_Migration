@@ -133,7 +133,7 @@ class ConfigLoader:
         repos: list[RepoConfig] = []
         with open(csv_path, "r", encoding="utf-8") as fh:
             # Skip comment lines at the top
-            lines = [l for l in fh if not l.strip().startswith("#")]
+            lines = [line for line in fh if not line.strip().startswith("#")]
 
         if not lines:
             return repos

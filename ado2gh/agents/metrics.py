@@ -6,8 +6,6 @@ LLM calls, guardrails, and tool calls.
 from __future__ import annotations
 
 import threading
-import time
-from typing import Any
 
 
 class MetricsCollector:
@@ -51,8 +49,6 @@ class MetricsCollector:
     def record_tool_call(self) -> None:
         self.inc_counter("tool_calls_total")
 
-    def set_active_sessions(self, count: int) -> None:
-        self.set_gauge("active_sessions", count)
 
     def to_prometheus_text(self) -> str:
         """Export metrics in Prometheus text exposition format."""

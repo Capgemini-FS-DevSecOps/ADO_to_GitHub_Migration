@@ -1,4 +1,5 @@
 """FastAPI REST service wrapping the Accelerator SDK."""
+# ruff: noqa: E402  -- imports below intentionally follow ensure_gei_dotnet_env()
 from __future__ import annotations
 
 import os
@@ -10,82 +11,80 @@ ensure_gei_dotnet_env()
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from ado2gh.api.accelerator import Accelerator
-from ado2gh.api.contracts import *
-from ado2gh.api.credentials.credential_validation import validate_ado_pat, validate_github_token
+from ado2gh.api.agentic_routes import router as agentic_router
+from ado2gh.api.contracts import (
+    ActiveMigrationItem,
+    DashboardSnapshot,
+    DiscoverRequest,
+    DiscoverResponse,
+    FreshnessRequest,
+    FreshnessResponse,
+    HealthResponse,
+    JobEnqueueRequest,
+    JobStatusResponse,
+    OnboardingStatusResponse,
+    PlanRequest,
+    PlanResponse,
+    ReadinessRequest,
+    ReadinessResponse,
+    RunWaveRequest,
+    RunWaveResponse,
+    ValidateRequest,
+    ValidateResponse,
+)
+from ado2gh.api.credentials.credential_validation import (  # noqa: F401
+    validate_ado_pat,  # re-exported: tests patch services.accelerator_api.main.validate_ado_pat
+    validate_github_token,  # re-exported: same, .main.validate_github_token
+)
+from ado2gh.api.live_approval_store import (
+    migrate_scope_id,
+)
 from ado2gh.api.migration_scan import (
-    load_scan_results,
-    persist_scan_results,
-    scan_with_credentials,
+    scan_with_credentials,  # noqa: F401 -- re-exported: tests patch .main.scan_with_credentials
 )
 from ado2gh.api.pipeline_runner import (
-    ACCELERATOR_PIPELINE_STEPS,
-    MIGRATE_UI_PIPELINE_STEPS,
     PipelineRunStore,
-    PipelineRunner,
-    enrich_pipeline_run_dict,
-    resolve_pipeline_step_defs,
-)
-from ado2gh.api.settings_store import SettingsStore
-from ado2gh.core.config_loader import ConfigLoader
-from ado2gh.core.redis_queue import RedisJobQueue
-from ado2gh.state.job_store import JobStoreFactory
-from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
-from ado2gh.state.factory import create_state_db
-from ado2gh.api.profile_governance import (
-    assert_operator_can_submit,
-    assert_profile_active_for_run,
-    onboarding_status_payload,
-    ProfileGovernanceError,
-    write_profile_audit,
-)
-from ado2gh.auth.models import PlatformRole
-from ado2gh.api.agentic_routes import enforce_live_gate, router as agentic_router
-from ado2gh.api.routers.discovery_router import router as discovery_router
-from ado2gh.api.routers.migration_router import router as migration_router
-from ado2gh.api.live_approval_store import (
-    LiveApprovalStore,
-    migrate_scope_id,
-    register_migrate_executor,
-    register_pipeline_executor,
 )
 from ado2gh.api.platform_rbac import (
     operator_requires_live_approval,
-    require_approve_live_execution,
-    require_manage_models,
-    require_manage_settings,
-    require_operate,
 )
+from ado2gh.api.profile_governance import (
+    ProfileGovernanceError,
+    assert_profile_active_for_run,
+    onboarding_status_payload,
+)
+from ado2gh.api.settings_store import SettingsStore
+from ado2gh.auth.models import PlatformRole
+from ado2gh.core.config_loader import ConfigLoader
+from ado2gh.core.redis_queue import RedisJobQueue
+from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
+from ado2gh.state.factory import create_state_db
+from ado2gh.state.job_store import JobStoreFactory
 
 try:
-    from services.accelerator_api.auth_routes import router as auth_router, SESSION_COOKIE
+    from services.accelerator_api.auth_routes import SESSION_COOKIE
+    from services.accelerator_api.auth_routes import router as auth_router
 except ImportError:
-    from auth_routes import router as auth_router, SESSION_COOKIE
+    from auth_routes import SESSION_COOKIE
+    from auth_routes import router as auth_router
 from ado2gh.auth.service import AuthService, auth_enabled
-
 from services.accelerator_api.routes._shared import (
     _accel,
     _config_path,
-    _platform_user,
-    _require_admin,
-    _live_store,
-    _settings,
-    _runner,
     _governance_http_error,
-    _execute_approved_migrate,
-    _execute_approved_pipeline,
+    _live_store,
+    _platform_user,
+    _settings,
 )
-from services.accelerator_api.routes.settings_routes import router as settings_router
-from services.accelerator_api.routes.profile_routes import router as profile_router
-from services.accelerator_api.routes.pipeline_routes import router as pipeline_router
 from services.accelerator_api.routes.migrate_routes import router as migrate_features_router
+from services.accelerator_api.routes.pipeline_routes import router as pipeline_router
+from services.accelerator_api.routes.profile_routes import router as profile_router
 from services.accelerator_api.routes.proxy_routes import router as proxy_router
+from services.accelerator_api.routes.settings_routes import router as settings_router
 
 app = FastAPI(title="ADO2GH Accelerator API", version="5.1.0")
 app.include_router(agentic_router)
 app.include_router(auth_router)
-app.include_router(discovery_router)
-app.include_router(migration_router)
 app.include_router(settings_router)
 app.include_router(profile_router)
 app.include_router(pipeline_router)
@@ -163,8 +162,8 @@ def ready():
     import shutil
     import subprocess
 
-    from ado2gh.state.storage_config import StorageConfig
     from ado2gh.models import DEFAULT_MIGRATION_STRATEGY
+    from ado2gh.state.storage_config import StorageConfig
 
     cfg = StorageConfig.from_env()
     checks = {"api": True, "storage_backend": cfg.backend.value}
@@ -244,7 +243,7 @@ def discover(req: DiscoverRequest):
 def plan(req: PlanRequest):
     """Deprecated: Use POST /v1/migration/wave for wave creation and management."""
     _, waves = ConfigLoader.load(req.config_path)
-    db = create_state_db(req.db_path)
+    create_state_db(req.db_path)
     items = []
     for w in waves:
         if req.wave_id is not None and w.wave_id != req.wave_id:
@@ -286,7 +285,6 @@ def migrate(req: RunWaveRequest, request: Request):
                     "migrate_job",
                     scope_id,
                     profile_id=profile_id,
-                    assignment_id=req.assignment_id,
                     reason_request="Dashboard live migrate",
                     context=req.model_dump(exclude={"live_approval_id"}),
                 )
@@ -294,8 +292,6 @@ def migrate(req: RunWaveRequest, request: Request):
                     status_code=403,
                     detail={"code": "awaiting_approval", "approval_id": approval["id"]},
                 )
-        if req.assignment_id:
-            enforce_live_gate(req.assignment_id, req.dry_run, req.db_path)
         _, waves = ConfigLoader.load(req.config_path)
         targets = [w for w in waves if req.wave_id is None or w.wave_id == req.wave_id]
         if not targets:
@@ -323,6 +319,7 @@ def migrate(req: RunWaveRequest, request: Request):
         raise
     except Exception as exc:
         import logging
+
         from ado2gh.api.errors import ConfigurationError
         error_msg = str(exc)
         if "ADO_PAT" in error_msg or "ADO_ORG_URL" in error_msg:
@@ -362,11 +359,6 @@ def validate(req: ValidateRequest):
         failed=result.failed,
         results=normalized,
     )
-
-
-@app.post("/v1/migration/wave", response_model=RunWaveResponse)
-def create_wave(req: RunWaveRequest, request: Request):
-    return migrate(req, request)
 
 
 def _pipeline_readiness_impl(req: ReadinessRequest) -> ReadinessResponse:
@@ -498,10 +490,7 @@ def freshness(req: FreshnessRequest):
 @app.post("/v1/jobs", response_model=JobStatusResponse)
 def enqueue_job(req: JobEnqueueRequest):
     payload = req.payload or {}
-    assignment_id = payload.get("assignment_id")
     dry_run = payload.get("dry_run", True)
-    if assignment_id:
-        enforce_live_gate(assignment_id, dry_run, payload.get("db_path", "migration_state.db"))
     store = JobStoreFactory.from_env()
     job = store.enqueue(req.job_type, req.payload, req.idempotency_key)
     if os.environ.get("ADO2GH_LIGHTWEIGHT_MODE", "").lower() in ("1", "true", "yes"):

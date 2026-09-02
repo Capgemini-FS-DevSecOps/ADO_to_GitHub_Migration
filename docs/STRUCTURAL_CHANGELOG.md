@@ -187,3 +187,25 @@ This file records every file move, rename, split, merge, deletion, and gitignore
 | File | New Path | Change Type | Reason | Verified | Test Status | Date |
 |------|----------|-------------|--------|----------|-------------|------|
 | `apps/migration-ui/src/app/assignments/` | — | deleted | Empty directory | yes | pass | 2026-06-24T17:05:00Z |
+
+## 2026-08-25 — Post-012 Dead Code Sweep
+
+| File | New Path | Change Type | Reason | Verified | Test Status | Date |
+|------|----------|-------------|--------|----------|-------------|------|
+| `ado2gh/agents/rollback_tracker.py` | — | deleted | Superseded by `migration_agent/session/store.py` rollback records (spec 012) | yes | pass | 2026-08-25 |
+| `ado2gh/agents/repo_lock_store.py` | — | deleted | Superseded by graph-state locks (spec 012); `api/repo_lock.py` covers pipeline runs | yes | pass | 2026-08-25 |
+| `ado2gh/agents/resource_mapping.py` | — | deleted | Unused after spec 012 executor rewrite | yes | pass | 2026-08-25 |
+| `ado2gh/agents/migration_agent/metrics.py` | — | deleted | Duplicate of `ado2gh/agents/metrics.py` MetricsCollector; call sites consolidated | yes | pass | 2026-08-25 |
+| `ado2gh/api/form_validator.py` | — | deleted | Prod-unused; validation is inline in `routers/migration_router.py` | yes | pass | 2026-08-25 |
+| `ado2gh/api/migrations/` | — | deleted | Empty package | yes | pass | 2026-08-25 |
+| `ado2gh/reporting/boards_gaps.py` | — | deleted | Zero callers (allowlist-only reference) | yes | pass | 2026-08-25 |
+| `scripts/dev/test_agent_e2e.py` | — | deleted | FR-034: scripts/dev is startup helpers only; harness unreferenced | yes | pass | 2026-08-25 |
+| `tests/unit/test_guardrails_spec011.py` | — | deleted | Module-level skipped; superseded by `test_guardrails.py` (spec 012) | yes | pass | 2026-08-25 |
+| `tests/agent/test_agent_skills_traceability.py` | — | deleted | Module-level skipped; skills/ removed in spec 012 | yes | pass | 2026-08-25 |
+| `tests/integration/test_011_rollback_legacy.py` + unit tests for deleted agent modules | — | deleted | Tested removed legacy modules | yes | pass | 2026-08-25 |
+| `apps/migration-ui/src/components/NavTabs.tsx` | — | deleted | Deprecated, unreferenced (UnifiedNavigation replaced it) | yes | pass | 2026-08-25 |
+| `apps/migration-ui/src/lib/api/` | — | deleted | Type-only modules from spec 008 never imported | yes | pass | 2026-08-25 |
+| `in/sample_repos.txt`, `in/sample_repos_with_scopes.csv` | — | deleted | Unreferenced sample inputs | yes | pass | 2026-08-25 |
+| `services/agent/main.py` `/health` `/metrics` handlers | — | deleted | Shadowed by `routes/run_routes.py` handlers (routers registered first); session gauges folded into surviving `/metrics` | yes | pass | 2026-08-25 |
+| ~55 dead functions/methods across `ado2gh/` and `services/` | — | deleted | Zero references repo-wide (vulture + cross-reference scan) | yes | pass | 2026-08-25 |
+| `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, `docs/LOCAL_DEVELOPMENT.md` | — | updated | FR-035: aligned with spec-012 agent layout, current scripts/, spec list | yes | pass | 2026-08-25 |

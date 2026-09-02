@@ -30,13 +30,7 @@ class RepoLock:
 
 
 class RepoLockManager:
-    """Thread-safe, process-local manager for per-repo migration locks.
-
-    .. deprecated::
-        Use ``ado2gh.agents.repo_lock_store.RepoLockStore`` for DB-backed
-        persistent locks that survive server restarts. This in-memory
-        manager will be removed in a future version.
-    """
+    """Thread-safe, process-local manager for per-repo migration locks."""
 
     def __init__(self) -> None:
         self._locks: dict[str, RepoLock] = {}

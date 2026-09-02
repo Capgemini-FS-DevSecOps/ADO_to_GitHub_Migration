@@ -25,7 +25,7 @@ from ado2gh.agents.migration_agent.constants import (
     MAX_ITERATIONS,
     LLM_TIMEOUT_SECONDS,
 )
-from ado2gh.agents.migration_agent.state import AgentState
+from ado2gh.agents.migration_agent.graph.state import AgentState
 
 
 # ─── Graph structure contracts ────────────────────────────────────────
@@ -121,7 +121,7 @@ def test_llm_timeout():
 
 def test_orchestrator_result_has_required_fields():
     """OrchestratorResult must have reply, start_pev, tasks, pending_form."""
-    from ado2gh.agents.migration_agent.session_state import OrchestratorResult
+    from ado2gh.agents.migration_agent.session.state import OrchestratorResult
     result = OrchestratorResult()
     assert hasattr(result, "reply")
     assert hasattr(result, "start_pev")
@@ -133,7 +133,7 @@ def test_orchestrator_result_has_required_fields():
 
 def test_session_store_has_required_tables():
     """Session store schema must include all required tables."""
-    from ado2gh.agents.migration_agent.session_store import SCHEMA
+    from ado2gh.agents.migration_agent.session.store import SCHEMA
     required_tables = [
         "agent_sessions", "agent_messages", "migration_plans",
         "executor_results", "validation_results", "pev_cycle_summaries",
@@ -182,7 +182,7 @@ def test_guardrail_decision_has_required_fields():
 
 def test_model_capabilities_has_required_fields():
     """ModelCapabilities must have supports_tool_calling, supports_streaming, supports_thinking, max_context_tokens."""
-    from ado2gh.agents.migration_agent.llm_bridge import ModelCapabilities
+    from ado2gh.agents.migration_agent.runtime.llm_bridge import ModelCapabilities
     caps = ModelCapabilities()
     assert caps.supports_tool_calling is True
     assert caps.supports_streaming is True
@@ -194,5 +194,5 @@ def test_model_capabilities_has_required_fields():
 
 def test_model_capability_error_is_exception():
     """ModelCapabilityError must be an Exception subclass."""
-    from ado2gh.agents.migration_agent.llm_bridge import ModelCapabilityError
+    from ado2gh.agents.migration_agent.runtime.llm_bridge import ModelCapabilityError
     assert issubclass(ModelCapabilityError, Exception)

@@ -326,8 +326,8 @@ class PostMigrationValidator:
         log.info("Validation report: %s + %s", csv_path, json_path)
 
     def print_summary(self, results: list[dict]):
-        from rich.table import Table
         from rich import box
+        from rich.table import Table
 
         t = Table(title="Post-Migration Validation", box=box.ROUNDED)
         t.add_column("Repo", style="cyan", max_width=35)
@@ -364,4 +364,4 @@ class PostMigrationValidator:
             parts.append(f"[bold yellow]{warned} warn[/bold yellow]")
         if failed:
             parts.append(f"[bold red]{failed} fail[/bold red]")
-        console.print(f"\n[bold]Validation result:[/bold] " + ", ".join(parts) + f" out of {total}")
+        console.print("\n[bold]Validation result:[/bold] " + ", ".join(parts) + f" out of {total}")

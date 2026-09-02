@@ -64,11 +64,12 @@ def register(cli):
     @click.option("--config", "-c", required=True)
     @click.option("--db", default="migration_state.db", show_default=True)
     def phase_plan(config, db):
+        from rich.panel import Panel
+
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.state.factory import create_state_db
-        from rich.panel import Panel
         global_cfg, waves = ConfigLoader.load(config)
-        state = create_state_db(db)
+        create_state_db(db)
         for phase in PHASE_ORDER:
             phase_waves = [w for w in waves if w.phase == phase.value]
             repos = sum(len(w.repos) for w in phase_waves)

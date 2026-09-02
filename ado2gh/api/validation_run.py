@@ -5,10 +5,10 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 from ado2gh.api.contracts import ValidateRequest, ValidateResult
 from ado2gh.api.profile_discovery import repo_configs_for_phase, resolve_gh_org
 from ado2gh.api.settings_store import AdvancedSettings, MigrationProfile, SettingsStore
-from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.models import RepoConfig, WaveConfig
 from ado2gh.reporting.post_migration_validator import PostMigrationValidator

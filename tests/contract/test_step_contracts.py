@@ -8,7 +8,6 @@ downstream steps rely on.
 """
 from __future__ import annotations
 
-from ado2gh.api.oidc_provisioner import ProvisioningResult
 from ado2gh.pipelines.validation.workflow_validator import (
     INVALID,
     MODE_YAML_FALLBACK,
@@ -74,18 +73,6 @@ class TestWorkflowValidatorContract:
         _assert_keys(
             result.to_dict(),
             {"validation_status", "validation_errors", "validation_mode", "secret_refs"},
-        )
-
-
-class TestProvisioningResultContract:
-    def test_provisioning_result_dict_contract(self):
-        result = ProvisioningResult(sc_name="Azure-Prod", sc_type="azurerm", success=True)
-        _assert_keys(
-            result.to_dict(),
-            {
-                "sc_name", "sc_type", "success", "provisioned_secrets",
-                "failure_reason", "operator_required", "skipped_override",
-            },
         )
 
 

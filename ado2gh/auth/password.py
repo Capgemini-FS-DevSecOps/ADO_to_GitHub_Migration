@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 
 
@@ -23,7 +24,7 @@ def verify_password(password: str, stored: str) -> bool:
         digest = hashlib.pbkdf2_hmac(
             "sha256", password.encode("utf-8"), salt.encode("utf-8"), 120000,
         )
-        return digest.hex() == digest_hex
+        return hmac.compare_digest(digest.hex(), digest_hex)
     except (ValueError, AttributeError):
         return False
 

@@ -17,9 +17,6 @@ class ProgressTracker:
     def record_repo(self):
         self._events.append((time.time(), "repo"))
 
-    def record_pipeline(self):
-        self._events.append((time.time(), "pipeline"))
-
     def snapshot(self, db: StateDB) -> dict:
         now = time.time()
         since = now - 300

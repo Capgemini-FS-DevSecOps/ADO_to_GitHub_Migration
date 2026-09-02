@@ -189,7 +189,6 @@ class TokenManager:
             r.raise_for_status()
             data = r.json()
             token = data["token"]
-            expires_at = data.get("expires_at", "")
 
             # Cache the token
             info = TokenInfo(

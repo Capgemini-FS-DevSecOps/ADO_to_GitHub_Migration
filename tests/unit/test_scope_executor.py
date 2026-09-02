@@ -1,7 +1,7 @@
 """Unit tests for agent scope execution via accelerator API."""
 import pytest
 
-from ado2gh.agents.migration_agent.scope_executor import (
+from ado2gh.agents.migration_agent.nodes.executor.scope import (
     default_agent_enabled_scopes,
     execute_migration_scope,
     has_secret_dependencies,
@@ -84,7 +84,7 @@ def test_resolve_repo_context_from_work_item():
 
 def test_resolve_repo_context_ignores_leading_slash_gh_target(monkeypatch):
     monkeypatch.setattr(
-        "ado2gh.agents.migration_agent.pipeline_plan.resolve_github_org",
+        "ado2gh.agents.migration_agent.nodes.executor.plan.resolve_github_org",
         lambda **kwargs: "profile-org",
     )
     ctx = resolve_repo_context(

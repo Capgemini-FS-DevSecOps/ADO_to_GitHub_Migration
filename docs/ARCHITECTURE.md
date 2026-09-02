@@ -2,7 +2,7 @@
 
 Technical architecture for the **ado2gh** migration accelerator: CLI, REST API, web console, and PEV agent.
 
-**Version:** 5.1 · **Last updated:** 2026-06
+**Version:** 5.2 · **Last updated:** 2026-08
 
 ---
 
@@ -18,8 +18,8 @@ Technical architecture for the **ado2gh** migration accelerator: CLI, REST API, 
               ┌─────────────────▼──────────────┐   ┌─────────▼──────────────┐
               │  Accelerator API (:8080)      │   │  Agent service (:8090)  │
               │  services/accelerator_api       │   │  services/agent         │
-              │  FastAPI · auth · profiles     │   │  PEV sessions · MCP     │
-              │  pipeline runs · settings     │   │  tool orchestrator      │
+              │  FastAPI · auth · profiles     │   │  PEV sessions ·         │
+              │  pipeline runs · settings     │   │  LangGraph orchestrator │
               └─────────────────┬──────────────┘   └─────────┬──────────────┘
                                 │                            │
                                 └────────────┬───────────────┘
@@ -28,7 +28,7 @@ Technical architecture for the **ado2gh** migration accelerator: CLI, REST API, 
 │                         ado2gh Python package                               │
 │  CLI (ado2gh/cli/) · core migration · phases · pipelines · reporting        │
 │  api/ (accelerator SDK, pipeline runner, settings, auth, agentic routes)    │
-│  agents/ (LLM provider, session orchestrator, planner/executor skills)       │
+│  agents/ (LangGraph migration agent: graph, nodes, guardrails, HITL)        │
 │  state/ (SQLite · PostgreSQL · DynamoDB via factory)                        │
 └───────────────────────────────┬─────────────────────────────────────────────┘
                                 │
@@ -45,10 +45,8 @@ Technical architecture for the **ado2gh** migration accelerator: CLI, REST API, 
 |------|--------------|---------------|-------------|
 | Local dev | `docker-compose.yml` | SQLite (`data/`) | Laptop, IDE agent |
 | Production | `docker-compose.prod.yml` | PostgreSQL | Team console |
-| Serverless | `docker-compose.serverless.yml` | DynamoDB | AWS-style deploy |
-| Lightweight | `docker-compose.lightweight.yml` | SQLite | Agent IDE POC |
 
-Environment: `ADO2GH_STORAGE_BACKEND=sqlite|postgres|dynamodb`
+Environment: `ADO2GH_STORAGE_BACKEND=sqlite|postgres|dynamodb` (DynamoDB for serverless deploys; no dedicated compose file)
 
 ---
 
@@ -73,30 +71,30 @@ HTTP façade used by the web UI and agent service:
 | Migration runs | `pipeline_runner.py`, `accelerator.py`, `migration_work_plan.py` |
 | Profiles & discovery | `settings_store.py`, `profile_discovery.py`, `migration_scan.py` |
 | Auth & RBAC | `auth/`, `platform_rbac.py`, `auth_routes.py` |
-| Agentic platform | `agentic_routes.py` (assignments, gates, live approval) |
-| LLM settings | `llm_model_store.py`, `model_catalog.py`, `model_validation.py`, `connectivity_store.py` |
+| Audit history | `agentic_routes.py` (`/v1/history/*` search, event types, CSV export) |
+| LLM settings | `llm/llm_model_store.py`, `llm/model_catalog.py`, `llm/model_validation.py`, `connectivity_store.py` |
 | Validation | `validation_run.py` (profile-first, upload-based) |
 
-**Pipeline steps (UI migrate flow):** connect → inventory → readiness → migrate_repos → convert_pipelines → map_secrets → validate
+**Pipeline steps (UI migrate flow):** connect → inventory → readiness → analyze_deps → migrate_repos → convert_pipelines → validate
 
-**Pipeline steps (full accelerator flow):** connect → discover → inventory → readiness → assign → migrate_repos → convert_pipelines → map_secrets → convert_metadata → validate
+**Pipeline steps (full accelerator flow):** connect → discover → inventory → readiness → assign → analyze_deps → migrate_repos → convert_pipelines → convert_metadata → validate
 
-Each scoped migration step (`migrate_repos`, `convert_pipelines`, `map_secrets`, `convert_metadata`) runs only its scope handlers. `migration_work_plan.py` builds per-repo work items with categories (`migrate_repo`, `convert_metadata`, `manual_setup`) and blocker hints (missing inventory, service connections, variable groups).
+Each scoped migration step (`migrate_repos`, `convert_pipelines`, `convert_metadata`) runs only its scope handlers; secret mapping is part of `analyze_deps` (spec 009). `migration_work_plan.py` builds per-repo work items with categories (`migrate_repo`, `convert_metadata`, `manual_setup`) and blocker hints (missing inventory, service connections, variable groups).
 
 Dry-run pipelines finish as `dry_run_complete` and do not write migration completion records.
 
 ### Agent service (`services/agent/`)
 
-Separate FastAPI process for Planner–Executor–Validator (PEV) sessions:
+Separate FastAPI process hosting the LangGraph PEV agent (spec 012):
 
-- **Session orchestrator** (`ado2gh/agents/session_orchestrator.py`) — LLM routes tools; stub fallback when degraded
-- **Scope guardrails** (`ado2gh/agents/agent_scope.py`) — migration-only replies; refuses off-topic and prohibited requests
-- **PEV coordinator** (`ado2gh/agents/pev_coordinator.py`) — LLM reviews planner/executor/validator output; max 3 retries
-- **Internal tools:** `fetch_profile_discovery`, `build_migration_plan`, `run_migration_pev`, `request_user_input`
-- **Work items:** planner builds per-repo×scope tasks (repo migration, workflow conversion, secrets manifest) with ready/blocked status
-- **Guardrails:** discovery before plan, plan before execute, live approval gate
-- **MCP server** (`services/agent/mcp_server.py`) — exposes accelerator HTTP tools to IDEs
-- **Skills** (`ado2gh/agents/skills/*.md`) — planner, executor, validator prompts
+- **Graph** (`ado2gh/agents/migration_agent/graph/`) — four-agent LangGraph (Orchestrator → Planner → Executor → Validator) with conditional-edge PEV loop; max 3 retries per cycle
+- **Runtime** (`ado2gh/agents/migration_agent/runtime/`) — provider-agnostic LangChain LLM bridge, SSE streaming of agent thinking, context window management
+- **Scope guardrails** (`ado2gh/agents/migration_agent/policies.py`) — migration-only replies; refuses off-topic and prohibited requests
+- **Tool guardrails** (`ado2gh/agents/migration_agent/guardrails.py`) — plan authorization, deletion confirmation, ADO read-only enforcement
+- **Internal tools:** `fetch_profile_discovery`, `build_migration_plan`, `run_migration_pev`, plus per-role tools in `migration_agent/tools/`
+- **HITL** (`ado2gh/agents/migration_agent/hitl/`) — intake, dynamic forms, blockers, operator input via graph interrupts
+- **Sessions** (`ado2gh/agents/migration_agent/session/`) — lifecycle, state machine, persistent store with checkpoint resume
+- **Prompts** (`ado2gh/agents/migration_agent/prompts/*.md`) — orchestrator, planner, executor, validator system prompts
 
 ### Migration UI (`apps/migration-ui/`)
 
@@ -184,13 +182,16 @@ Factory: `ado2gh/state/factory.py` → `create_state_db()`
 
 | Backend | Module | When |
 |---------|--------|------|
-| SQLite | `state/db.py` | Local / lightweight |
+| SQLite | `state/sqlite_db.py` | Local / lightweight |
 | PostgreSQL | `state/postgres_db.py` | Production compose |
-| DynamoDB | `state/dynamodb_db.py` | Serverless compose |
+
+`create_state_db()` supports SQLite and PostgreSQL only. DynamoDB exists for the
+**job store** (`DynamoDBJobStore` in `state/job_store.py`, selected by
+`ADO2GH_STORAGE_BACKEND=dynamodb`), not for the migration state DB.
 
 **Core tables:** `migrations`, `wave_runs`, `pipeline_inventory`, `pipeline_migrations`, `repo_risk_scores`, `phase_gates`, `batch_checkpoints`
 
-**Platform tables (Postgres):** `audit_events`, `migration_assignments`, `profile_scans`, `profile_scan_repos`, auth users/sessions
+**Platform tables (Postgres):** `audit_events`, `profile_scans`, `profile_scan_repos`, auth users/sessions
 
 Phase lookups accept `PhaseType` enum **or** plain string phase ids (e.g. `"poc"`).
 
@@ -236,7 +237,7 @@ Multi-token env: `GH_TOKEN_1`, `GH_TOKEN_2`, …
 | [MIGRATION_RUNBOOK.md](MIGRATION_RUNBOOK.md) | Phased rollout runbook |
 | [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) | CLI reference |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common failures |
-| [../specs/](../specs/) | Feature specs (001–006) |
+| [../specs/](../specs/) | Feature specs (001–012) |
 | [../CLAUDE.md](../CLAUDE.md) | AI assistant quick reference |
 
 ---
@@ -250,7 +251,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Native (Windows): `.\scripts\run-local.ps1` · CLI: `pip install -e ".[api,dev]"`
+Native (Windows): `.\scripts\dev\run-local-agent.ps1` + `.\scripts\dev\run-ui.ps1` · CLI: `pip install -e ".[api,agent,dev]"`
 
 Full guide: [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)
 

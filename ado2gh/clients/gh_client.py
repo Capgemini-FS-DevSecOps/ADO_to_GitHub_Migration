@@ -33,9 +33,6 @@ class GHClient:
                            base_url: str = "https://api.github.com") -> "GHClient":
         return cls(TokenManager.from_single_token(token), base_url)
 
-    def _auth_header(self) -> dict:
-        return {"Authorization": f"Bearer {self._tm.get_token()}"}
-
     def _update_limits(self, r: requests.Response, token: str):
         remaining = int(r.headers.get("x-ratelimit-remaining", 5000))
         reset = float(r.headers.get("x-ratelimit-reset", 0))
@@ -218,14 +215,6 @@ class GHClient:
                 break
         return branches
 
-    def list_issues(self, org: str, repo: str, state: str = "all") -> list[dict]:
-        try:
-            return self._get(
-                f"/repos/{org}/{repo}/issues",
-                params={"state": state, "per_page": 100},
-            )
-        except Exception:
-            return []
 
     def list_workflows(self, org: str, repo: str) -> list[dict]:
         try:

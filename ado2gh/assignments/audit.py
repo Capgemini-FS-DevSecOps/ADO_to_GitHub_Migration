@@ -51,7 +51,6 @@ class AuditWriter:
         event_type: str,
         profile_id: str,
         actor: str = "",
-        assignment_id: Optional[str] = None,
         payload: Optional[dict] = None,
     ) -> str:
         """Record an audit event; returns event id."""
@@ -62,7 +61,6 @@ class AuditWriter:
             event_type=event_type,
             profile_id=profile_id,
             actor=actor,
-            assignment_id=assignment_id,
             payload_json=json.dumps(safe),
             created_at=datetime.now(timezone.utc).isoformat(),
         )

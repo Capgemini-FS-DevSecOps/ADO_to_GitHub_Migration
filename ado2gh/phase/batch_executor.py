@@ -7,13 +7,20 @@ from datetime import datetime, timezone
 
 from rich.panel import Panel
 from rich.progress import (
-    BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TimeElapsedColumn,
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TimeElapsedColumn,
 )
 
-from ado2gh.pipelines.dependency_graph import RepoDependencyEdge, sort_repo_order
 from ado2gh.logging_config import console, log
 from ado2gh.models import (
-    DEFAULT_PHASES, BatchCheckpoint, PhaseType, RepoConfig, WaveConfig,
+    DEFAULT_PHASES,
+    BatchCheckpoint,
+    PhaseType,
+    RepoConfig,
+    WaveConfig,
 )
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.db import StateDB
@@ -24,27 +31,6 @@ class BatchExecutor:
         self.engine = engine
         self.db = db
         self.tracker = tracker
-
-    @staticmethod
-    def plan_repo_order(db: StateDB, profile_id: str, repo_keys: list[str]) -> list[str]:
-        """Topo-sorted repo keys for plan output (read-only)."""
-        edges_raw = db.get_dependency_edges(profile_id)
-        edges = [
-            RepoDependencyEdge(r["from_repo"], r["to_repo"], r.get("edge_type", "pipeline_resource"))
-            for r in edges_raw
-        ]
-        ordered, _ = sort_repo_order(repo_keys, edges)
-        return ordered
-
-    def _sort_repos_topo(
-        self, repos: list[RepoConfig], profile_id: str | None,
-    ) -> list[RepoConfig]:
-        if not profile_id:
-            return repos
-        keys = [f"{r.ado_project}/{r.ado_repo}" for r in repos]
-        ordered = self.plan_repo_order(self.db, profile_id, keys)
-        by_key = {f"{r.ado_project}/{r.ado_repo}": r for r in repos}
-        return [by_key[k] for k in ordered if k in by_key]
 
     def execute_phase(self, phase: PhaseType, waves: list[WaveConfig],
                       dry_run: bool = False) -> dict:
@@ -137,17 +123,6 @@ class BatchExecutor:
             wave.wave_id, wave.name, len(wave.repos),
             " [DRY RUN]" if dry_run else "",
         )
-        profile_id = getattr(wave, "profile_id", None)
-        sorted_repos = self._sort_repos_topo(wave.repos, profile_id)
-        wave = WaveConfig(
-            wave_id=wave.wave_id,
-            name=wave.name,
-            description=wave.description,
-            repos=sorted_repos,
-            parallel=wave.parallel,
-            pipeline_parallel=wave.pipeline_parallel,
-            phase=wave.phase,
-        )
         batch = self._run_batch(
             wave, dry_run, cancel_event=cancel_event, on_repo_done=on_repo_done,
         )
@@ -168,43 +143,6 @@ class BatchExecutor:
             "failed": failed,
             "partial": len(wave.repos) - completed - failed,
             "total": len(wave.repos),
-        }
-
-    def retry_failed_pipelines(self, wave: WaveConfig, dry_run: bool = False) -> dict:
-        """Reset and re-run pipeline migrations for a wave."""
-        failed = self.db.get_failed_pipeline_migrations(wave.wave_id)
-        if not failed:
-            return {"retried": 0, "completed": 0, "failed": 0}
-        if not dry_run:
-            self.db.reset_failed_pipeline_migrations(wave.wave_id)
-
-        repos_by_key: dict[tuple, Any] = {}
-        for row in failed:
-            key = (row["project"], row["repo_name"])
-            if key not in repos_by_key:
-                for r in wave.repos:
-                    if r.ado_project == row["project"] and r.ado_repo == row["repo_name"]:
-                        repos_by_key[key] = r
-                        break
-
-        retry_repos = list(repos_by_key.values())
-        if not retry_repos:
-            return {"retried": 0, "completed": 0, "failed": len(failed)}
-
-        narrow_wave = WaveConfig(
-            wave_id=wave.wave_id,
-            name=f"{wave.name}-pipeline-retry",
-            description="Pipeline retry",
-            repos=retry_repos,
-            parallel=wave.parallel,
-            pipeline_parallel=wave.pipeline_parallel,
-            phase=wave.phase,
-        )
-        result = self._run_batch(narrow_wave, dry_run, scopes_filter=["pipelines"])
-        return {
-            "retried": len(failed),
-            "completed": result["completed"],
-            "failed": result["failed"],
         }
 
     def _run_batch(

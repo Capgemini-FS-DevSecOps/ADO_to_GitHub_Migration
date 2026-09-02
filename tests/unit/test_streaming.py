@@ -1,7 +1,7 @@
 """Unit tests for SSE streaming — event generation, kinds, subagent labels."""
 import pytest
 
-from ado2gh.agents.migration_agent.orchestrator import (
+from ado2gh.agents.migration_agent.runtime.orchestrator import (
     _build_initial_state,
     _node_to_subagent,
     stream_user_message,
@@ -26,8 +26,8 @@ def test_build_initial_state_defaults():
 def test_build_initial_state_with_model_id():
     session = {"session_id": "ses_test", "messages": []}
     state = _build_initial_state(session, "hi", model_id="nonexistent")
-    # Should not crash; llm will be None
-    assert state["llm"] is not None or state["llm_unconfigured"] is True
+    # Should not crash; llm now flows via runtime deps, not state — degrade flag must be set
+    assert state["llm_unconfigured"] is True
 
 
 def test_node_to_subagent_mapping():
@@ -46,11 +46,16 @@ def test_sse_event_kinds():
     expected_kinds = {"token", "thinking", "tool_call", "tool_result", "status", "message", "heartbeat", "form_request", "done"}
     # These are the kinds emitted by the streaming orchestrator
     # Verify they appear in the codebase
-    from ado2gh.agents.migration_agent.orchestrator import stream_user_message
+    from ado2gh.agents.migration_agent.runtime.orchestrator import (
+        _stream_graph_events,
+        stream_user_message,
+    )
     import inspect
-    source = inspect.getsource(stream_user_message)
+    # stream_user_message is now a thin wrapper; actual event kinds are emitted
+    # from _stream_graph_events, which it delegates to.
+    source = inspect.getsource(stream_user_message) + inspect.getsource(_stream_graph_events)
     for kind in ("token", "thinking", "message", "tool_call", "form_request", "done"):
-        assert kind in source, f"Missing SSE event kind '{kind}' in stream_user_message"
+        assert kind in source, f"Missing SSE event kind '{kind}' in streaming orchestrator"
 
 
 @pytest.mark.asyncio

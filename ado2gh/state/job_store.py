@@ -8,7 +8,8 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 
-from ado2gh.api.contracts import JobRecord, JobStatus, JobTypeEnum as JobType
+from ado2gh.api.contracts import JobRecord, JobStatus
+from ado2gh.api.contracts import JobTypeEnum as JobType
 
 
 class JobStore(ABC):

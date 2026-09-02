@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from ado2gh.agents.migration_agent.operator_input import (
+from ado2gh.agents.migration_agent.hitl.operator_input import (
     build_repo_lock_failure,
     failures_require_operator_escalation,
     fr036_operator_message,

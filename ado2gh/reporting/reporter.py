@@ -12,7 +12,6 @@ from rich.table import Table
 from ado2gh.logging_config import console, log
 from ado2gh.state.db import StateDB
 
-
 _STATUS_COLOURS = {
     "completed":   "green",
     "in_progress": "yellow",

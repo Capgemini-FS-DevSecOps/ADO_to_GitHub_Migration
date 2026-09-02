@@ -4,7 +4,7 @@ import json
 import sqlite3
 from unittest.mock import MagicMock
 
-from ado2gh.agents.migration_agent.session_store import MigrationSessionStore, SCHEMA
+from ado2gh.agents.migration_agent.session.store import MigrationSessionStore, SCHEMA
 
 
 def _make_in_memory_store() -> MigrationSessionStore:

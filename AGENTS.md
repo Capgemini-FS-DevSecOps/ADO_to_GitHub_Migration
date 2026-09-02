@@ -17,16 +17,16 @@ For feature planning artifacts, see `specs/` and the current plan at `specs/012-
 
 | Layer | Technology |
 |-------|------------|
-| CLI / engine | Python 3.9+, Click, Rich |
+| CLI / engine | Python 3.11+, Click, Rich |
 | API | FastAPI (`services/accelerator_api`, `services/agent`) |
 | UI | Next.js 14 (`apps/migration-ui`) |
-| State | SQLite / PostgreSQL / DynamoDB (`ADO2GH_STORAGE_BACKEND`) |
-| Agent | Tool orchestrator + LLM provider (`ado2gh/agents/`) |
+| State | SQLite / PostgreSQL (`ADO2GH_STORAGE_BACKEND`); DynamoDB job store only |
+| Agent | LangGraph PEV graph (`ado2gh/agents/migration_agent/`) |
 
 ## Common commands
 
 ```bash
-pip install -e ".[api,dev]"
+pip install -e ".[api,agent,dev]"   # agent extra = LangGraph/LangChain
 ado2gh discover --config migration.yaml
 ado2gh phase run --phase poc --config migration_phase.yaml --dry-run
 docker compose up --build          # local SQLite stack
@@ -37,19 +37,19 @@ Local dev guide: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)
 
 ## Agent PEV guardrails
 
-Migration agent work must use orchestrator tools (`fetch_profile_discovery` → `build_migration_plan` → `run_migration_pev`). Do not invent repo lists from conversation alone. All PEV phases are reviewed by the LLM (`ado2gh/agents/pev_coordinator.py`); failed migrations may retry up to 3 times when the validator recommends it. Plans include per-repo work items with ready/blocked status. See `ado2gh/agents/session_orchestrator.py`.
+Migration agent work must use orchestrator tools (`fetch_profile_discovery` → `build_migration_plan` → `run_migration_pev`). Do not invent repo lists from conversation alone. Failed migrations may retry up to 3 times when the validator recommends it. Plans include per-repo work items with ready/blocked status. See `ado2gh/agents/migration_agent/guardrails.py` and `nodes/orchestrator_tools.py`.
 
-## Agent PEV architecture (spec 011)
+## Agent PEV architecture (spec 012, LangGraph)
 
-Continuous PEV loop: Orchestrator → Planner → Executor → Validator with retry logic, session persistence, and batch migration support.
+Four-agent LangGraph graph (Orchestrator → Planner → Executor → Validator) with a continuous PEV loop, session checkpointing, SSE streaming, and batch migration support.
 
-**Key modules:**
-- `ado2gh/agents/pev_cycle.py` — continuous loop orchestrator with inter-agent messaging, batch queue, repo locking
-- `ado2gh/agents/session_state_machine.py` — state transitions (idle→thinking→planning→executing→validating→completed|failed)
-- `ado2gh/agents/session_store.py` — persistent session state across restarts
-- `ado2gh/agents/executor.py` — deterministic execution with guardrails, hybrid API routing, rollback tracking
-- `ado2gh/agents/validator.py` — evidence-based validation with structured feedback to planner
-- `ado2gh/agents/local/tool_catalog.py` — tool registry with role-based access, ADO read-only enforcement
+**Key modules (`ado2gh/agents/migration_agent/`):**
+- `graph/` — LangGraph builder, `AgentState`, conditional edge routing (PEV loop lives in edges/nodes — no separate coordinator class)
+- `nodes/` — role nodes: `orchestrator.py`, `planner.py`, `executor/`, `validator.py`
+- `runtime/` — LangChain LLM bridge, context window management, tracing
+- `session/` — lifecycle, state machine, persistent store (survives restarts)
+- `hitl/` — intake, dynamic forms, blockers, operator input, interrupt node
+- `guardrails.py` — tool-call interception: plan authorization, deletion confirmation, ADO read-only enforcement
 
 **Resource types:** repos, pipelines→workflows, Bicep→Actions, secrets, service connections, Boards→Issues, Test Plans, Artifacts→Packages, Wiki
 
@@ -60,13 +60,17 @@ Continuous PEV loop: Orchestrator → Planner → Executor → Validator with re
 | Spec | Topic |
 |------|-------|
 | `specs/001-*` | Agentic platform, assignments |
-| `specs/002-*` | Login bootstrap |
 | `specs/003-*` | Local agent IDE / MCP |
 | `specs/004-*` | Agent PEV RBAC |
-| `specs/005-*` | Profile onboarding |
 | `specs/006-*` | LLM model catalog |
+| `specs/007-*` | Cloud LLM credentials |
+| `specs/008-*` | Migration UI refactor |
 | `specs/009-*` | Pipeline step decoupling & dependency resolution |
+| `specs/010-*` | Enterprise audit & simplification |
 | `specs/011-*` | Agent PEV architecture rebuild |
+| `specs/012-*` | LangGraph agent refactor (current) |
+
+Archived (implemented): `specs/archive/002-*` login bootstrap, `specs/archive/005-*` profile onboarding.
 
 ## Pipeline Steps (Accelerator)
 

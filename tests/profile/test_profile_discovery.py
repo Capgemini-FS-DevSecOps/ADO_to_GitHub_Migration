@@ -6,25 +6,6 @@ from ado2gh.api.profile_discovery import (
 from ado2gh.state.db import StateDB
 
 
-def test_create_and_get_wave(tmp_path):
-    db = StateDB(tmp_path / "state.db")
-    created = db.create_wave(
-        wave_id="wave-1",
-        name="Backend services",
-        repository_ids=["proj/repo-a", "proj/repo-b"],
-        organization_id="org-1",
-    )
-    assert created["id"] == "wave-1"
-    assert created["name"] == "Backend services"
-    assert created["repository_ids"] == ["proj/repo-a", "proj/repo-b"]
-
-    fetched = db.get_wave("wave-1")
-    assert fetched is not None
-    assert fetched["status"] == "draft"
-    assert len(fetched["repositories"]) == 2
-
-
-
 def test_sync_profile_scan_to_risk_scores(tmp_path):
     db = StateDB(tmp_path / "state.db")
     profile_id = "prof-sync"

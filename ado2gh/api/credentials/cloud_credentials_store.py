@@ -378,19 +378,6 @@ class CloudCredentialsStore:
         source = self.get_source(provider)
         return bool(source and source.status == "approved")
 
-    def to_list_response(self) -> dict[str, Any]:
-        from ado2gh.api.llm.platform_managed_model import platform_model_payload
-
-        data = self.load()
-        sources = self.list_sources()
-        payload = platform_model_payload()
-        return {
-            "last_full_scan_at": data.get("last_full_scan_at"),
-            "sources": [s.to_public() for s in sources],
-            "platform_model": payload,
-        }
-
-
 class ScanInFlightError(Exception):
     """Raised when a concurrent scan is attempted."""
 

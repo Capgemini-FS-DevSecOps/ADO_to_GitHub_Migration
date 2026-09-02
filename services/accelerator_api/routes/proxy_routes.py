@@ -7,7 +7,6 @@ import requests
 from fastapi import APIRouter, HTTPException, Request
 
 from ado2gh.api.platform_rbac import require_operate
-
 from services.accelerator_api.routes.migrate_routes import _get_clients
 
 router = APIRouter(tags=["api-proxy"])

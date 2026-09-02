@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import Request
 
 # ─── Agent scope guardrails ───────────────────────────────────────────
 
@@ -95,15 +95,12 @@ def scope_refusal_reply(user_message: str) -> str:
     return OUT_OF_SCOPE_REPLY
 
 
-# ─── Execution mode parsing ───────────────────────────────────────────
-
 # ─── Live execution policy ────────────────────────────────────────────
 
 def _attach_actor_to_session(session: dict[str, Any], user: Any | None) -> None:
     """Persist platform user identity on an agent session."""
     if not user:
         return
-    from ado2gh.auth.models import PlatformRole
     from ado2gh.auth.service import permissions_for
     session["user_id"] = getattr(user, "id", None)
     session["user_username"] = getattr(user, "username", None)
@@ -234,12 +231,3 @@ def can_access_agent_session(
     return bool(perms.get("can_approve_live_execution"))
 
 
-def assert_agent_session_access(
-    request: Request | None,
-    session: dict[str, Any],
-    *,
-    profile_id: str | None = None,
-    write: bool = False,
-) -> None:
-    if not can_access_agent_session(request, session, profile_id=profile_id, write=write):
-        raise HTTPException(status_code=404, detail="session_not_found")

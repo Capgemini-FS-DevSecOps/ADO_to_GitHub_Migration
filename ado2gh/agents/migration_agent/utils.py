@@ -86,6 +86,7 @@ def _append_and_stream(
     _append_event(session, role=role, content=content, kind=kind, subagent=subagent, meta=meta)
     try:
         from langgraph.config import get_stream_writer
+
         writer = get_stream_writer()
         if writer:
             evt: dict[str, Any] = {"kind": kind, "content": content}
@@ -96,46 +97,6 @@ def _append_and_stream(
             writer(evt)
     except Exception:
         pass
-
-
-def _set_task(tasks: list[dict], task_id: str, status: str, detail: str = "") -> None:
-    """Update a task's status in the task list."""
-    for t in tasks:
-        if t["id"] == task_id:
-            t["status"] = status
-            if detail:
-                t["detail"] = detail
-            t["updated_at"] = _now()
-            break
-
-
-_DEFAULT_TASKS = [
-    {"id": "discovery", "label": "Discovery", "status": "pending", "detail": ""},
-    {"id": "plan", "label": "Plan", "status": "pending", "detail": ""},
-    {"id": "execute", "label": "Execute", "status": "pending", "detail": ""},
-    {"id": "validate", "label": "Validate", "status": "pending", "detail": ""},
-]
-
-
-def _init_tasks(session: dict[str, Any]) -> list[dict]:
-    """Initialize the default task list for a session."""
-    return [dict(t) for t in _DEFAULT_TASKS]
-
-
-def sync_work_items_to_tasks(session: dict[str, Any], work_items: list[dict[str, Any]]) -> None:
-    """Sync work item statuses into the session task list."""
-    tasks = session.setdefault("tasks", [])
-    if not tasks:
-        tasks.extend(_init_tasks(session))
-    for wi in work_items:
-        wi_id = wi.get("id", "")
-        wi_status = wi.get("status", "pending")
-        for t in tasks:
-            if t["id"] == wi_id:
-                t["status"] = wi_status
-                t["detail"] = wi.get("detail", "")
-                t["updated_at"] = _now()
-                break
 
 
 MAX_STATUS_MESSAGES_PER_TURN = 40
@@ -191,12 +152,15 @@ def _append_status_message(
         kind="status",
         subagent=subagent,
     )
-    # Emit via LangGraph stream writer for real-time SSE
+    # Emit via stream bus for real-time SSE
     try:
         from langgraph.config import get_stream_writer
+
         writer = get_stream_writer()
         if writer:
-            writer({"kind": "status", "content": content, "subagent": subagent or "orchestrator"})
+            writer(
+                {"kind": "status", "content": content, "subagent": subagent or "orchestrator"}
+            )
     except Exception:
         pass
 
@@ -210,6 +174,11 @@ def _tool_status_done(tool_name: str, result: dict[str, Any]) -> str:
     if tool_name == "fetch_migration_status":
         return "Migration status updated."
     if tool_name in ("invoke_planner", "invoke_bulk_planner"):
+        status = str((result.get("result") or {}).get("status") or result.get("status") or "")
+        if status == "awaiting_intake":
+            return "Planner handoff paused — more operator input is required."
+        if status in ("invoking_planner", "invoking_bulk_planner"):
+            return "Planner started — building migration plan…"
         return "Planner handoff complete."
     if tool_name == "request_user_input":
         return "Form presented to operator."
@@ -255,6 +224,7 @@ def _emit_tool_result(
     )
     try:
         from langgraph.config import get_stream_writer
+
         writer = get_stream_writer()
         if writer:
             writer({
@@ -302,7 +272,6 @@ def _has_queued_messages(session: dict[str, Any]) -> bool:
 
 def _parse_llm_json(text: str) -> dict[str, Any]:
     """Parse JSON from LLM output, tolerating markdown code fences and alternate formats."""
-    import json
     import re
 
     if not text:
@@ -403,7 +372,6 @@ class IdeAuditBridge:
         detail: str = "",
         actor: str = "local-developer",
         session_id: str = "",
-        assignment_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> str | None:
         """Record an audit event. Returns audit ID or None on failure."""
@@ -416,15 +384,12 @@ class IdeAuditBridge:
                 payload["detail"] = mask_secrets(detail)
             if session_id:
                 payload["session_id"] = session_id
-            if assignment_id:
-                payload["assignment_id"] = assignment_id
             if metadata:
                 payload["metadata"] = {k: mask_secrets(str(v)) for k, v in metadata.items()}
             return writer.write(
                 event_type=action,
                 profile_id=profile_id,
                 actor=actor,
-                assignment_id=assignment_id or None,
                 payload=payload,
             )
         except Exception:
@@ -530,6 +495,28 @@ def normalize_discovery_repo(repo: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def hydrate_session_target_org(
+    session: dict[str, Any],
+    discovery: dict[str, Any] | None = None,
+) -> None:
+    """Copy resolved GitHub org onto the session from discovery or profile settings."""
+    if str(session.get("gh_org") or session.get("github_org") or "").strip():
+        return
+    disc = discovery if isinstance(discovery, dict) else session.get("discovery_snapshot")
+    if isinstance(disc, dict):
+        org = str(disc.get("gh_org") or "").strip()
+        if org:
+            session["gh_org"] = org
+            session["github_org"] = org
+            return
+    from ado2gh.agents.migration_agent.nodes.executor.plan import resolve_github_org
+
+    org = resolve_github_org(session=session)
+    if org:
+        session["gh_org"] = org
+        session["github_org"] = org
+
+
 async def load_discovery_snapshot(
     session: dict[str, Any],
     accel_get: Any,
@@ -547,10 +534,13 @@ async def load_discovery_snapshot(
             f"/v1/settings/profiles/{profile_id}/discovery",
             session_token=session_token,
         )
+        if not isinstance(discovery, dict):
+            return {}
         session["discovery_snapshot"] = discovery
         from datetime import datetime, timezone
         session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
-        return discovery if isinstance(discovery, dict) else {}
+        hydrate_session_target_org(session, discovery)
+        return discovery
     except Exception:
         return discovery if isinstance(discovery, dict) else {}
 

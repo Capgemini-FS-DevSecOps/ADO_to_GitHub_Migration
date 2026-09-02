@@ -186,20 +186,6 @@ def slugify_phase_id(name: str, existing: set[str]) -> str:
     return candidate
 
 
-def new_phase(name: str, existing: list[PhaseDefinition]) -> PhaseDefinition:
-    ids = {p.id for p in existing}
-    order = max((p.order for p in existing), default=-1) + 1
-    prev_max = sorted(existing, key=lambda p: p.order)[-1].risk_max if existing else 0
-    risk_max = min(100.0, round(prev_max + (100.0 - prev_max) / 2, 1)) if existing else 100.0
-    return PhaseDefinition(
-        id=slugify_phase_id(name, ids),
-        name=name.strip() or "New phase",
-        risk_max=max(risk_max, prev_max + 1),
-        repo_cap=9999,
-        order=order,
-    )
-
-
 class ConfigurableWaveAssigner:
     """Assign repos to phases using user-defined risk bands."""
 
@@ -219,13 +205,6 @@ class ConfigurableWaveAssigner:
             if not score.gh_repo:
                 score.gh_repo = re.sub(r"[^a-zA-Z0-9\-_.]", "-", score.repo_name)
         return {"unassigned": scores}
-
-    def phase_label(self, phase_id: str) -> str:
-        for p in self.phases:
-            if p.id == phase_id:
-                return p.name
-        return phase_id
-
 
 def phase_rationale(phase: PhaseDefinition, scores: list[RiskScore]) -> str:
     if not scores:

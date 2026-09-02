@@ -118,7 +118,7 @@ export type CachedChatMessage = {
   kind?: string;
 };
 
-function normalizeUserMessageKey(content: string): string {
+export function normalizeUserMessageKey(content: string): string {
   return (content ?? '')
     .trim()
     .replace(/\bTrue\b/g, 'true')

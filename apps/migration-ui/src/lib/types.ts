@@ -294,7 +294,6 @@ export interface AuditEvent {
   event_type: string;
   profile_id: string;
   actor: string;
-  assignment_id?: string | null;
   payload_json?: string;
   created_at: string;
 }

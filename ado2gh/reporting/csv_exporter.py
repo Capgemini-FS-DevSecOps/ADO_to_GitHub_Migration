@@ -52,78 +52,7 @@ class CSVExporter:
 
     # ── Pipeline migrations ──────────────────────────────────────────────
 
-    @staticmethod
-    def export_pipeline_migrations(db: StateDB, output_path: str,
-                                   wave_id: int = None) -> str:
-        """Export pipeline migration status to CSV.
-
-        Args:
-            db: StateDB instance to query.
-            output_path: Destination CSV file path.
-            wave_id: If provided, filter to a single wave; otherwise export all.
-
-        Returns:
-            Absolute path of the written file.
-        """
-        if wave_id is not None:
-            rows = db.get_wave_pipeline_migrations(wave_id)
-        else:
-            # Gather from all waves by querying all migrations for wave IDs
-            all_migrations = db.get_all_migrations()
-            wave_ids = sorted({m["wave_id"] for m in all_migrations})
-            rows = []
-            for wid in wave_ids:
-                rows.extend(db.get_wave_pipeline_migrations(wid))
-
-        headers = [
-            "id", "wave_id", "project", "pipeline_id", "pipeline_name",
-            "repo_name", "gh_org", "gh_repo", "workflow_file",
-            "status", "complexity", "started_at", "completed_at",
-            "error_message", "warnings_count", "unsupported_count",
-        ]
-
-        out = _ensure_path(output_path)
-        with open(out, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
-            writer.writeheader()
-            for row in rows:
-                enriched = dict(row)
-                enriched["warnings_count"] = _count_json(row.get("warnings"))
-                enriched["unsupported_count"] = _count_json(row.get("unsupported_tasks"))
-                writer.writerow(enriched)
-
-        log.info("Exported %d pipeline migrations to %s", len(rows), out)
-        return str(out)
-
     # ── Risk scores ──────────────────────────────────────────────────────
-
-    @staticmethod
-    def export_risk_scores(db: StateDB, output_path: str) -> str:
-        """Export risk scores to CSV.
-
-        Args:
-            db: StateDB instance to query.
-            output_path: Destination CSV file path.
-
-        Returns:
-            Absolute path of the written file.
-        """
-        rows = db.get_all_risk_scores()
-
-        headers = [
-            "id", "project", "repo_name", "total_score",
-            "assigned_phase", "gh_org", "gh_repo", "scored_at",
-        ]
-
-        out = _ensure_path(output_path)
-        with open(out, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=headers, extrasaction="ignore")
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(row)
-
-        log.info("Exported %d risk scores to %s", len(rows), out)
-        return str(out)
 
     # ── Failed repos (retry list) ────────────────────────────────────────
 

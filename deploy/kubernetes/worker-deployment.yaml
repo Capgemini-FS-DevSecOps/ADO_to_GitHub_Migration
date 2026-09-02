@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: ado2gh
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          # Same image as the accelerator — only the entrypoint differs.
+          image: ado2gh-accelerator:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "ado2gh.core.orchestration.worker"]
+          envFrom:
+            - configMapRef:
+                name: ado2gh-config
+            - secretRef:
+                name: ado2gh-secrets

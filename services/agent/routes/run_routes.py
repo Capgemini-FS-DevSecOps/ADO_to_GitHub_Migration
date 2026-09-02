@@ -1,30 +1,18 @@
-"""Health, run, and approval route handlers for the agent service."""
+"""Health and metrics route handlers for the agent service."""
 from __future__ import annotations
 
-import uuid
-import warnings
-from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-
-from services.agent.profiles import capability_matrix
-from ado2gh.agents.migration_agent.constants import TOOL_CATALOG_VERSION
-from ado2gh.auth.service import auth_enabled
+from fastapi import APIRouter
 
 from ado2gh.agents.migration_agent.route_helpers import (
     ACCEL_URL,
-    AgentRunRequest,
-    AgentRunResponse,
-    ApprovalRequest,
-    RunStatus,
-    _approvals,
-    _audit,
     _check_accelerator,
     _profile,
     _resolve_model_id,
-    _runs,
 )
+from ado2gh.auth.service import auth_enabled
+from services.agent.profiles import capability_matrix
 
 router = APIRouter()
 
@@ -43,7 +31,7 @@ async def health():
     active_session_count = 0
     storage_ok = True
     try:
-        from ado2gh.agents.migration_agent.session_store import SessionStore
+        from ado2gh.agents.migration_agent.session.store import SessionStore
         ss = SessionStore()
         sessions = ss.list_sessions()
         active_session_count = sum(1 for s in sessions if s.get("status") not in ("completed", "failed", "cancelled", "idle"))
@@ -55,7 +43,7 @@ async def health():
     checkpointer_ok = False
     try:
         from ado2gh.agents.migration_agent.graph import get_compiled_graph
-        graph = get_compiled_graph()
+        graph = await get_compiled_graph()
         graph_compiled = graph is not None
         checkpointer_ok = True  # If graph compiled, checkpointer is attached
     except Exception:
@@ -72,7 +60,6 @@ async def health():
         "llm_degraded": llm_degraded,
         "llm_unconfigured": llm_unconfigured,
         "auth_enabled": auth_enabled(),
-        "tool_catalog_version": TOOL_CATALOG_VERSION,
         "active_session_count": active_session_count,
         "storage_backend_ok": storage_ok,
         "graph_compiled": graph_compiled,
@@ -107,61 +94,17 @@ async def health():
 
 @router.get("/metrics")
 async def metrics():
-    """T077: Prometheus-compatible metrics endpoint (FR-069)."""
-    from ado2gh.agents.metrics import get_metrics_collector
+    """T077: Prometheus-compatible metrics endpoint (FR-069, FR-102)."""
     from fastapi.responses import PlainTextResponse
 
+    from ado2gh.agents.metrics import get_metrics_collector
+    from ado2gh.agents.migration_agent.route_helpers import _sessions
+
     collector = get_metrics_collector()
+    # FR-102: session gauges reflect current in-memory sessions
+    statuses = [s.get("status", "idle") for s in _sessions.values()]
+    active = ("planning", "executing", "validating", "thinking")
+    collector.set_gauge("active_sessions", sum(1 for s in statuses if s in active))
+    for status in set(statuses):
+        collector.set_session_status(status, statuses.count(status))
     return PlainTextResponse(content=collector.to_prometheus_text(), media_type="text/plain")
-
-
-@router.post("/v1/runs", response_model=AgentRunResponse)
-async def start_run(req: AgentRunRequest):
-    run_id = str(uuid.uuid4())
-    _runs[run_id] = {
-        "run_id": run_id,
-        "status": RunStatus.PLANNING,
-        "request": req.model_dump(),
-        "steps": [],
-        "started_at": datetime.now(timezone.utc).isoformat(),
-    }
-    return AgentRunResponse(run_id=run_id, status=RunStatus.PLANNING, steps=[])
-
-
-@router.get("/v1/runs/{run_id}", response_model=AgentRunResponse)
-def get_run(run_id: str):
-    run = _runs.get(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-    return AgentRunResponse(
-        run_id=run_id,
-        status=run["status"],
-        steps=run["steps"],
-    )
-
-
-@router.post("/v1/runs/{run_id}/approve")
-async def approve_run(run_id: str, req: ApprovalRequest):
-    run = _runs.get(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-    if not req.approved:
-        run["status"] = RunStatus.FAILED
-        run["steps"].append({"phase": "approval", "approved": False, "reason": req.reason})
-        return {"run_id": run_id, "status": run["status"]}
-
-    run["steps"].append({"phase": "approval", "approved": True, "reason": req.reason})
-    run["status"] = RunStatus.COMPLETED
-    _approvals.pop(run_id, None)
-    return {"run_id": run_id, "status": run["status"]}
-
-
-@router.get("/v1/approvals")
-def list_approvals():
-    """Deprecated — unified queue lives on accelerator /v1/platform/approvals."""
-    warnings.warn(
-        "In-memory agent approvals are deprecated; use GET /v1/platform/approvals",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return []

@@ -98,12 +98,22 @@ export type AgentTask = {
   updated_at?: string;
 };
 
+export type AgentFormFieldOption = {
+  value: string;
+  label: string;
+  description?: string;
+  recommended?: boolean;
+};
+
 export type AgentFormField = {
   name: string;
   label: string;
   type: 'select' | 'checkbox' | 'text' | 'textarea';
-  options?: Array<string | { value: string; label: string }>;
+  options?: Array<string | AgentFormFieldOption>;
   required?: boolean;
+  description?: string;
+  placeholder?: string;
+  recommended_value?: string | boolean;
 };
 
 export type AgentPendingForm = {
@@ -185,7 +195,6 @@ export async function createAgentSession(body: {
   profile_id: string;
   prompt: string;
   dry_run?: boolean;
-  assignment_id?: string;
   model_id?: string;
 }) {
   return agentApi<AgentSession>('/v1/sessions', {

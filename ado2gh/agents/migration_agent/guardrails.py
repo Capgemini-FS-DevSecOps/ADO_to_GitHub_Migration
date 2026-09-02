@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
 from enum import Enum
+from typing import Any, Callable
 
 
 class GuardrailAction(str, Enum):
@@ -277,10 +277,10 @@ def wrap_tool_with_guardrail(
         from ado2gh.agents.metrics import get_metrics_collector
 
         metrics = get_metrics_collector()
-        
+
         # T102: Record tool call
         metrics.record_tool_call()
-        
+
         if decision is None:
             return None
         if decision.blocked:

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ado2gh"
 version = "5.1.0"
 description = "Azure DevOps to GitHub Enterprise Migration Accelerator"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -14,8 +14,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -43,13 +41,26 @@ api = [
 ]
 postgres = [
     "psycopg2-binary>=2.9.9",
+    "langgraph-checkpoint-postgres>=2.0",
+    "psycopg[binary]>=3.1.0",
 ]
 redis = [
     "redis>=5.0.0",
 ]
+agent = [
+    "langchain>=0.2",
+    "langchain-core>=0.2",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "langchain-openai>=0.1",
+    "langchain-anthropic>=0.1",
+    "google-adk>=2.0; python_version>='3.10'",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
+    "pytest-asyncio>=0.24.0",
+    "langsmith[pytest]>=0.3.1",
 ]
 
 [project.scripts]
@@ -59,48 +70,20 @@ ado2gh = "ado2gh.cli.main:cli"
 include = ["ado2gh*"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = """
---cov=ado2gh.api.platform_rbac
---cov=ado2gh.api.live_approval_store
---cov=ado2gh.api.llm.llm_model_store
---cov=ado2gh.api.connectivity_store
---cov=ado2gh.api.llm.model_catalog
---cov=ado2gh.api.llm.model_validation
---cov=ado2gh.api.credentials.cloud_credentials_store
---cov=ado2gh.api.credentials.cloud_credential_detector
---cov=ado2gh.api.credentials.cloud_credential_probe
---cov=ado2gh.api.llm.platform_managed_model
---cov=ado2gh.api.agent_models
---cov=ado2gh.api.llm.http_llm
---cov=ado2gh.auth.service
---cov=ado2gh.agents.llm_provider
---cov=ado2gh.agents.session_state_machine
---cov=ado2gh.agents.session_store
---cov=ado2gh.agents.repo_lock_store
---cov=ado2gh.agents.rollback_tracker
---cov=ado2gh.agents.resource_mapping
---cov=ado2gh.agents.context_window
---cov=ado2gh.agents.pev_cycle
---cov=ado2gh.agents.metrics
---cov=ado2gh.agents.migration_agent
---cov=ado2gh.agents.migration_agent.graph
---cov=ado2gh.agents.migration_agent.nodes
---cov=ado2gh.agents.migration_agent.orchestrator
---cov=ado2gh.agents.migration_agent.llm_bridge
---cov=ado2gh.agents.migration_agent.session_state
---cov=ado2gh.agents.migration_agent.session_store
---cov=ado2gh.agents.migration_agent.context_window
---cov=ado2gh.agents.migration_agent.guardrails
---cov=ado2gh.agents.migration_agent.tool_catalog
---cov=ado2gh.agents.migration_agent.forms
---cov=ado2gh.agents.migration_agent.policies
---cov=ado2gh.agents.migration_agent.utils
---cov=ado2gh.agents.migration_agent.constants
---cov-report=term-missing
---cov-fail-under=85
-"""
+markers = [
+    "unit: fast isolated tests with mocked LLM/API",
+    "integration: multi-module workflow tests",
+    "contract: API and schema contract tests",
+    "langsmith: LangSmith eval tests (require LANGCHAIN_API_KEY)",
+]
+# Coverage flags live in CI (`pytest --cov=ado2gh --cov-fail-under=85`), not here —
+# hardcoding them in addopts breaks bare `pytest` when pytest-cov isn't installed
+# and conflicts with CI's own --cov invocation.
+addopts = ""
 
 [tool.coverage.run]
 omit = [
@@ -111,7 +94,7 @@ omit = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -121,7 +104,7 @@ ignore = ["E501"]
 "__init__.py" = ["F401"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = true
 warn_redundant_casts = true

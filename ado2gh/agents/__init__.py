@@ -1,5 +1,5 @@
-"""Agent package — migration agent via LangGraph (spec 012).
+"""Agent package — ADO → GitHub migration agent (LangGraph PEV + Google ADK layout).
 
-Legacy PEV modules (planner, executor, validator) have been replaced by
-the migration_agent package with LangGraph nodes.
+See ``ado2gh.agents.migration_agent`` for graph topology, role-based ``nodes/``,
+tools, prompts, and runner entry points.
 """

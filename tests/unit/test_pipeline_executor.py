@@ -1,5 +1,5 @@
 """Unit tests for agent pipeline-only execution."""
-from ado2gh.agents.migration_agent.pipeline_executor import (
+from ado2gh.agents.migration_agent.nodes.executor.pipeline import (
     agent_live_approved,
     build_executor_result_from_pipeline,
     resolve_agent_repository_id,

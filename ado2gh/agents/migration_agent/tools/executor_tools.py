@@ -8,7 +8,8 @@ Write tools are wrapped with guardrails (plan approval, dry-run, deletion checks
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
@@ -103,7 +104,8 @@ def get_executor_tools(
         body = body or {}
         request_fn = accel_request
         if request_fn is None and accel_get and method_upper == "GET":
-            request_fn = lambda m, p, b=None: accel_get(f"/{p.lstrip('/')}", session_token=session_token)
+            async def request_fn(m, p, b=None):
+                return await accel_get(f"/{p.lstrip('/')}", session_token=session_token)
         if request_fn is None:
             return {"error": "accelerator_unavailable"}
         try:

@@ -2,7 +2,7 @@
 
 Enterprise-grade migration platform for **Azure DevOps → GitHub** at scale: risk-based phasing, real git mirroring, pipeline transformation, web console, and Planner–Executor–Validator (PEV) agent orchestration.
 
-**Version 5.1** · Python 3.9+ · CLI + REST API + Next.js UI
+**Version 5.1** · Python 3.11+ · CLI + REST API + Next.js UI
 
 ---
 
@@ -19,7 +19,7 @@ docker compose up --build
 **CLI only:**
 
 ```bash
-pip install -e ".[api,dev]"
+pip install -e ".[api,agent,dev]"
 export ADO_PAT=... ADO_ORG_URL=https://dev.azure.com/YOUR_ORG GH_TOKEN=...
 ado2gh discover --config migration.yaml
 ado2gh phase assign --config migration.yaml --input in/repo_map.txt
@@ -63,7 +63,7 @@ ado2gh/                 Python package (CLI, engine, API SDK, agents, state)
 apps/migration-ui/      Next.js migration console (OrchestrateAI theme)
 services/
   accelerator_api/      FastAPI wrapper for UI
-  agent/                PEV agent + MCP server
+  agent/                PEV agent
 deploy/kubernetes/      K8s manifests
 docs/                   Operational documentation
 scripts/                Shell helpers for CLI migration and local dev
@@ -77,7 +77,7 @@ tests/                  pytest + contract tests
 - **Phased migration** — poc → pilot → wave1–3 with gate checks and overrides
 - **Git strategies** — `mirror` (default) or `gei` (GitHub Enterprise Importer)
 - **Pipeline conversion** — 200+ ADO task mappings to GitHub Actions
-- **Profile-based ops** — deployment profiles, discovery scan, phase assignment in UI
+- **Profile-based ops** — deployment profiles, discovery scan, risk-based phase assignment in UI
 - **PEV agent** — tool-driven planner/executor/validator; migration-only scope guardrails
 - **Validation** — commit SHA verification between ADO and GitHub
 - **RBAC** — admin / operator / approver; live-run approval queue

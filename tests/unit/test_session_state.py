@@ -1,7 +1,7 @@
 """Unit tests for the five-state session activity model."""
 import pytest
 
-from ado2gh.agents.migration_agent.session_state import (
+from ado2gh.agents.migration_agent.session.state import (
     SessionState,
     SessionStateMachine,
     is_session_busy,

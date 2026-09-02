@@ -94,7 +94,6 @@ class PipelineInventoryBuilder:
         """
         summary: dict[str, dict] = {}
         all_var_groups: dict[str, list] = {}
-        project_svc_conns: dict[str, list] = {}
 
         console.print(Panel(
             f"[bold]Pipeline Inventory Scan[/bold]\n"

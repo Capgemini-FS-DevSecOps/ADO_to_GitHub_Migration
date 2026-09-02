@@ -17,7 +17,6 @@ import {
   fetchSettings,
   startProfileScan,
 } from '@/lib/api';
-import { ACCEL } from '@/lib/api';
 import type { PipelineReadinessItem } from '@/lib/types';
 
 const PAGE_SIZE = 25;
@@ -129,30 +128,6 @@ function OverviewView() {
     prevRunning.current = running;
   }, [scanStatus, profileId, qc]);
 
-  const createWaveMut = useMutation({
-    mutationFn: async ({ name, repositoryIds }: { name: string; repositoryIds: string[] }) => {
-      const resp = await fetch(`${ACCEL}/v1/migration/wave`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          name,
-          repository_ids: repositoryIds,
-          organization_id: profileId ?? '',
-        }),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(err.detail ?? `Wave creation failed (${resp.status})`);
-      }
-      return resp.json();
-    },
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ['waves'] });
-      setBannerMessage(`Wave created: ${data.name} (ID: ${data.wave_id})`);
-    },
-  });
-
   const active = settings?.migration_profiles?.find((p) => p.id === profileId);
   const scanning = scanMut.isPending || (scanStatus?.running ?? false);
   const projectsScanned = discovery?.projects_scanned ?? active?.scan_summary?.projects_scanned ?? 0;
@@ -259,17 +234,7 @@ function OverviewView() {
       {discovery && discovery.repos.length > 0 && (
         <div className="oai-card">
           <h2 className="oai-subsection-title">Repository inventory</h2>
-          <DiscoveryTable
-            repos={discovery.repos}
-            creatingWave={createWaveMut.isPending}
-            onCreateWave={(name, repositoryIds) => createWaveMut.mutate({ name, repositoryIds })}
-          />
-          {createWaveMut.isSuccess && (
-            <p className="discovery-save-ok">Wave created.</p>
-          )}
-          {createWaveMut.isError && (
-            <p className="badge-manual">{String(createWaveMut.error)}</p>
-          )}
+          <DiscoveryTable repos={discovery.repos} />
         </div>
       )}
 

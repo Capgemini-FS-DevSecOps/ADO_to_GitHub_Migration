@@ -1,5 +1,5 @@
 # Run lightweight local agent stack (accelerator + agent only).
-# For full stack with UI, use scripts/run-local.ps1
+# For the UI, run scripts/dev/run-ui.ps1 alongside.
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path))

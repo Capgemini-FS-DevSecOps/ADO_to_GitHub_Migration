@@ -1,7 +1,7 @@
 """Unit tests for AgentState reducers — verify accumulation behavior."""
 import operator
 
-from ado2gh.agents.migration_agent.state import AgentState
+from ado2gh.agents.migration_agent.graph.state import AgentState
 
 
 def test_state_has_messages_field():

@@ -8,7 +8,6 @@ from typing import Any
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import RepoConfig
-from ado2gh.state.db import StateDB
 
 
 class ADOCleanup:
@@ -20,9 +19,8 @@ class ADOCleanup:
     3. Archive (disable) the ADO repo to prevent further commits
     """
 
-    def __init__(self, ado: ADOClient, db: StateDB, dry_run: bool = False):
+    def __init__(self, ado: ADOClient, dry_run: bool = False):
         self.ado = ado
-        self.db = db
         self.dry_run = dry_run
 
     def cleanup_repos(self, repos: list[RepoConfig],

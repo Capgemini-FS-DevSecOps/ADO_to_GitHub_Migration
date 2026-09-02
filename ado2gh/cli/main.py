@@ -4,10 +4,10 @@ from __future__ import annotations
 import click
 
 from ado2gh.cli.discover import register as register_discover
-from ado2gh.cli.run_cmd import register as register_run
+from ado2gh.cli.misc import register as register_misc
 from ado2gh.cli.phase import register as register_phase
 from ado2gh.cli.pipelines import register as register_pipelines
-from ado2gh.cli.misc import register as register_misc
+from ado2gh.cli.run_cmd import register as register_run
 
 
 @click.group()

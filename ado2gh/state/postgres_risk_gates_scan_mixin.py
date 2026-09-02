@@ -167,7 +167,14 @@ class PostgresRiskGatesScanMixin:
                     json.dumps(summary),
                 ))
                 for bucket in raw.get("recommendations", {}).values():
+                    bucket_phase = bucket.get("phase", "")
                     for repo in bucket.get("repos", []):
+                        project = repo.get("project", "")
+                        repo_name = repo.get("repo_name", "")
+                        suggested = repo.get("suggested_phase") or bucket_phase
+                        assigned = repo.get("assigned_phase") or bucket_phase
+                        if preserve_manual_assignments and (project, repo_name) in overrides:
+                            assigned = overrides[(project, repo_name)]
                         cur.execute("""
                             INSERT INTO profile_scan_repos
                                 (profile_id, project, repo_name, total_score, suggested_phase,
@@ -175,11 +182,11 @@ class PostgresRiskGatesScanMixin:
                             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         """, (
                             profile_id,
-                            repo.get("project", ""),
-                            repo.get("repo_name", ""),
+                            project,
+                            repo_name,
                             repo.get("total_score", 0),
-                            None,
-                            None,
+                            suggested,
+                            assigned,
                             repo.get("gh_org", gh_org),
                             repo.get("gh_repo", repo.get("repo_name", "")),
                             repo.get("pipeline_count", 0),
@@ -195,61 +202,6 @@ class PostgresRiskGatesScanMixin:
                 )
                 row = cur.fetchone()
         return dict(row) if row else None
-
-    def create_wave(
-        self,
-        wave_id: str,
-        name: str,
-        repository_ids: list[str],
-        *,
-        organization_id: str = "",
-        description: str = "",
-        created_by: str = "",
-    ) -> dict[str, Any]:
-        now = datetime.now(timezone.utc).isoformat()
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO migration_waves
-                        (id, name, description, status, created_at, created_by)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (wave_id, name, description or name, "draft", now, created_by),
-                )
-                for order, repo_id in enumerate(repository_ids):
-                    cur.execute(
-                        """
-                        INSERT INTO wave_repositories
-                            (id, wave_id, repository_id, organization_id, migration_order, status)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        ON CONFLICT(wave_id, repository_id) DO UPDATE SET
-                            migration_order=EXCLUDED.migration_order
-                        """,
-                        (f"{wave_id}__{repo_id}", wave_id, repo_id, organization_id, order, "pending"),
-                    )
-        return self.get_wave(wave_id)
-
-    def get_wave(self, wave_id: str) -> dict[str, Any] | None:
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM migration_waves WHERE id=%s",
-                    (wave_id,),
-                )
-                row = cur.fetchone()
-                if not row:
-                    return None
-                cur.execute(
-                    "SELECT repository_id, organization_id, migration_order, status "
-                    "FROM wave_repositories WHERE wave_id=%s ORDER BY migration_order",
-                    (wave_id,),
-                )
-                repos = cur.fetchall()
-        result = dict(row)
-        result["repository_ids"] = [r["repository_id"] for r in repos]
-        result["repositories"] = [dict(r) for r in repos]
-        return result
 
     def get_profile_scan_repos(
         self, profile_id: str, phase: str | None = None,

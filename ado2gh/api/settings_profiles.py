@@ -132,7 +132,7 @@ class ProfileMixin:
         return prof
 
     def delete_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> None:
-        from ado2gh.api.profile_governance import assert_can_delete, ProfileGovernanceError
+        from ado2gh.api.profile_governance import ProfileGovernanceError, assert_can_delete
 
         settings = self.load()
         try:
@@ -158,7 +158,7 @@ class ProfileMixin:
         self.save(settings)
 
     def deactivate_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> MigrationProfile:
-        from ado2gh.api.profile_governance import assert_can_delete, ProfileGovernanceError
+        from ado2gh.api.profile_governance import ProfileGovernanceError, assert_can_delete
 
         settings = self.load()
         prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)

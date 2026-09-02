@@ -13,7 +13,7 @@ from __future__ import annotations
 import threading
 import traceback
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Callable
 
 from ado2gh.api.pipeline_models import (
     ACCELERATOR_PIPELINE_STEPS,
@@ -25,7 +25,7 @@ from ado2gh.api.pipeline_models import (
     enrich_pipeline_run_dict,
     resolve_pipeline_step_defs,
 )
-from ado2gh.api.pipeline_steps import PipelineStepsMixin, _phase_config_exists
+from ado2gh.api.pipeline_steps import PipelineStepsMixin
 from ado2gh.api.pipeline_store import PipelineRunStore
 from ado2gh.api.repo_lock import REPO_LOCK_MANAGER
 from ado2gh.api.settings_store import SettingsStore
@@ -94,7 +94,6 @@ class PipelineRunner(PipelineStepsMixin):
         if not run:
             return
         run.status = "running"
-        adv = self.settings.load().advanced
         self.settings.apply_to_process_env()
 
         targets = step_ids or [s.id for s in run.steps]
@@ -166,7 +165,7 @@ class PipelineRunner(PipelineStepsMixin):
             PipelineRunStore.clear_cancel(run.id)
             if run.status in ("cancelled", "failed", "completed", "dry_run_complete"):
                 try:
-                    from ado2gh.agents.migration_agent.session_lifecycle import (
+                    from ado2gh.agents.migration_agent.session.lifecycle import (
                         clear_pipeline_run_migration_state,
                     )
 

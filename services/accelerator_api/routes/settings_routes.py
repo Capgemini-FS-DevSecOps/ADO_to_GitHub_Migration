@@ -11,15 +11,14 @@ from ado2gh.api.contracts import (
 from ado2gh.api.platform_rbac import require_manage_models
 from ado2gh.api.profile_governance import write_profile_audit
 from ado2gh.auth.models import PlatformRole
-
 from services.accelerator_api.routes._shared import (
     _cloud_credentials,
     _connectivity,
     _llm_models,
     _maybe_audit_model_enabled,
     _platform_user,
-    asdict_adv,
     _settings,
+    asdict_adv,
 )
 
 router = APIRouter()

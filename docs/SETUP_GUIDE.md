@@ -13,7 +13,7 @@ Technical setup for the CLI, Docker stack, and web console.
 ### Python
 
 ```bash
-# Requires Python 3.9+
+# Requires Python 3.11+
 python --version
 
 # Create virtual environment
@@ -183,10 +183,10 @@ ado2gh discover --config migration.yaml --output test_discovery.yaml
 
 | Goal | Command |
 |------|---------|
-| **Local full stack (SQLite)** | `docker compose up --build` |
-| **Production (PostgreSQL + auth)** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build` |
-| **Native Windows stack** | `.\scripts\run-local.ps1` |
-| **Agent only** | `docker compose -f docker-compose.lightweight.yml up --build` |
+| **Agent + accelerator only (SQLite)** | `docker compose up --build` |
+| **Full stack (+ redis, worker, UI)** | `docker compose --profile default up --build` |
+| **Production (PostgreSQL + auth)** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile default up --build` |
+| **Native agent-only stack** | `.\scripts\dev\run-local-agent.ps1` |
 
 See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for ports, first-login steps, SQLite paths, and cleanup.
 

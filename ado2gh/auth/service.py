@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -13,6 +14,8 @@ from ado2gh.state.factory import create_state_db
 
 SESSION_COOKIE = "ado2gh_session"
 SESSION_HOURS = int(os.environ.get("ADO2GH_SESSION_HOURS", "8"))
+LOGIN_MAX_ATTEMPTS = int(os.environ.get("ADO2GH_LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.environ.get("ADO2GH_LOGIN_LOCKOUT_SECONDS", "300"))
 
 
 def auth_enabled() -> bool:
@@ -24,7 +27,6 @@ def _db() -> Any:
 
 
 def _user_from_row(row: dict) -> PlatformUser:
-    status_raw = row.get("status") or PlatformUserStatus.ACTIVE.value
     return PlatformUser(
         id=row["id"],
         username=row["username"],
@@ -91,6 +93,8 @@ class AuthService:
 
     def __init__(self, db: Optional[Any] = None):
         self.db = db or _db()
+        # ponytail: in-process counter, move to Redis if the API runs multi-replica
+        self._login_failures: dict[str, tuple[int, float]] = {}
 
     def needs_bootstrap(self) -> bool:
         return self.db.count_platform_users() == 0
@@ -154,14 +158,35 @@ class AuthService:
         return _user_public(row or {"id": user_id, "username": normalized, "role": "operator", "display_name": display_name or username})
 
     def login(self, username: str, password: str) -> AuthSession:
-        row = self.db.get_platform_user_by_username(username.strip().lower())
+        normalized = username.strip().lower()
+        self._check_not_locked_out(normalized)
+        row = self.db.get_platform_user_by_username(normalized)
         if not row or not verify_password(password, row["password_hash"]):
+            self._record_login_failure(normalized)
             raise ValueError("Invalid credentials")
         _ensure_user_can_authenticate(row)
+        self._login_failures.pop(normalized, None)
         user = _user_from_row(row)
         session = self._create_session(user)
         _audit_auth("user.login", user.username, {"role": user.role.value})
         return session
+
+    def _check_not_locked_out(self, username: str) -> None:
+        """Reject logins for a username that has failed too many times recently."""
+        failures, locked_until = self._login_failures.get(username, (0, 0.0))
+        if failures >= LOGIN_MAX_ATTEMPTS and time.monotonic() < locked_until:
+            # Same message as a bad password so the response does not reveal
+            # whether the username exists or is merely throttled.
+            raise ValueError("Invalid credentials")
+
+    def _record_login_failure(self, username: str) -> None:
+        failures, locked_until = self._login_failures.get(username, (0, 0.0))
+        if failures >= LOGIN_MAX_ATTEMPTS and time.monotonic() >= locked_until:
+            failures = 0
+        failures += 1
+        if failures >= LOGIN_MAX_ATTEMPTS:
+            locked_until = time.monotonic() + LOGIN_LOCKOUT_SECONDS
+        self._login_failures[username] = (failures, locked_until)
 
     def logout(self, token: str) -> None:
         session = self.get_session(token)

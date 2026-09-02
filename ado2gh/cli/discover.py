@@ -25,11 +25,12 @@ def register(cli):
     @click.option("--config", "-c", required=True)
     def plan(config):
         """Print migration plan without running."""
-        from ado2gh.core.config_loader import ConfigLoader
-        from ado2gh.state.factory import create_state_db
+        from rich import box
         from rich.panel import Panel
         from rich.table import Table
-        from rich import box
+
+        from ado2gh.core.config_loader import ConfigLoader
+        from ado2gh.state.factory import create_state_db
 
         global_cfg, waves = ConfigLoader.load(config)
         db = create_state_db()

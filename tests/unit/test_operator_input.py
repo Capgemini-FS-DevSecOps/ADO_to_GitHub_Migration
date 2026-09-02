@@ -1,8 +1,8 @@
 """Tests for generic operator-input requests."""
 import pytest
 
-from ado2gh.agents.migration_agent.blockers import outstanding_blockers
-from ado2gh.agents.migration_agent.operator_input import (
+from ado2gh.agents.migration_agent.hitl.blockers import outstanding_blockers
+from ado2gh.agents.migration_agent.hitl.operator_input import (
     assess_operator_input_needed,
     operator_input_from_blockers,
     operator_input_from_validator_failures,
@@ -30,7 +30,7 @@ def test_operator_input_from_plan_blockers():
     request = operator_input_from_blockers(blockers, session)
     assert request.source == "planner"
     assert request.fields[0].name == "resolution"
-    assert "run_pipeline_inventory" in request.fields[0].options
+    assert "run_pipeline_inventory" in [o["value"] for o in request.fields[0].options]
     form = operator_input_to_form(request)
     assert form["form_id"].startswith("operator_input_")
 
@@ -56,7 +56,7 @@ def test_assess_operator_input_prefers_validator_failures():
 
 
 def test_blockers_from_baseline_probes():
-    from ado2gh.agents.migration_agent.operator_input import (
+    from ado2gh.agents.migration_agent.hitl.operator_input import (
         blockers_from_baseline_probes,
         parse_github_target_probe,
     )
@@ -82,7 +82,7 @@ def test_validator_failures_without_operator_hints_return_none():
 @pytest.mark.asyncio
 async def test_validation_escalation_presents_operator_form():
     from ado2gh.agents.migration_agent.nodes import _present_validation_failure_to_operator
-    from ado2gh.agents.migration_agent.operator_input import (
+    from ado2gh.agents.migration_agent.hitl.operator_input import (
         operator_input_from_probe_failures,
         store_operator_input,
     )

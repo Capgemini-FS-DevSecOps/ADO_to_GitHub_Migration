@@ -9,7 +9,10 @@ from pathlib import Path
 
 from ado2gh.logging_config import console, log
 from ado2gh.models import (
-    PipelineComplexity, PipelineMetadata, PipelineType, RepoConfig,
+    PipelineComplexity,
+    PipelineMetadata,
+    PipelineType,
+    RepoConfig,
 )
 from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
 from ado2gh.state.db import StateDB
@@ -273,8 +276,8 @@ class PipelineReadinessReport:
 
     def print_summary(self, summary: dict):
         """Print readiness summary to console."""
-        from rich.table import Table
         from rich import box
+        from rich.table import Table
 
         t = Table(title="Pipeline Readiness Assessment", box=box.ROUNDED)
         t.add_column("Metric", style="bold")

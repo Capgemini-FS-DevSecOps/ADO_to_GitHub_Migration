@@ -187,7 +187,7 @@ class RollbackHandler:
                 gh_org=record["gh_org"],
                 gh_repo=record["gh_repo"],
             )
-            cleanup = ADOCleanup(self.ado, self.db, dry_run=dry_run)
+            cleanup = ADOCleanup(self.ado, dry_run=dry_run)
             enable_stats = cleanup.enable_pipelines(repo)
             stats["ado_pipelines_reenabled"] = enable_stats.get("enabled", 0)
         log.info("Pipeline rollback for wave %d / %s",

@@ -1,4 +1,5 @@
 """Distributed job worker — pulls from Redis queue and executes via Accelerator."""
+# ruff: noqa: E402  -- imports below intentionally follow ensure_gei_dotnet_env()
 from __future__ import annotations
 
 import logging
@@ -9,14 +10,15 @@ from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 ensure_gei_dotnet_env()
 
 from ado2gh.api.accelerator import Accelerator
-from ado2gh.api.contracts import JobTypeEnum as JobType, RunWaveRequest
+from ado2gh.api.contracts import JobTypeEnum as JobType
+from ado2gh.api.contracts import RunWaveRequest
 from ado2gh.core.redis_queue import RedisJobQueue
 from ado2gh.state.job_store import JobStoreFactory
 
 log = logging.getLogger("ado2gh.worker")
 
 
-def execute_job(job_store, job) -> dict:
+def execute_job(job) -> dict:
     """Run a single job based on its type."""
     accel = Accelerator(
         config_path=job.payload.get("config_path", ""),
@@ -70,7 +72,7 @@ def run_worker(poll_interval: float = 1.0) -> None:
             job = store.claim_next() or job
 
         try:
-            result = execute_job(store, job)
+            result = execute_job(job)
             store.complete(job.id, result)
             log.info("Job %s completed", job.id)
         except Exception as exc:

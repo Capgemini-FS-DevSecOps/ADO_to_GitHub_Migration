@@ -14,25 +14,30 @@ Provides:
 from __future__ import annotations
 
 import asyncio
-import csv
-import io
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
 
 from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, RepoConfig
 from ado2gh.state.factory import create_state_db
-
 from services.accelerator_api.routes._shared import (
     _settings,
-    _platform_user,
-    _require_admin,
+)
+from services.accelerator_api.routes.migrate_routes_models import (
+    ArtifactsPublishRequest,
+    BoardsMigrateRequest,
+    BranchPoliciesMigrateRequest,
+    GitMirrorRequest,
+    PipelineConvertRequest,
+    SecretProvisionRequest,
+    ServiceConnectionMigrateRequest,
+    TestPlansMigrateRequest,
+    WikiMigrateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,85 +180,6 @@ def _raise_ado_http_error(
 
 # ─── Request Models ───
 
-class GitMirrorRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    repo_name: str = Field(description="ADO repository name")
-    github_org: Optional[str] = Field(
-        default=None,
-        description="Target GitHub organization (defaults to active profile gh_org)",
-    )
-    github_repo: Optional[str] = Field(
-        default=None,
-        description="Target GitHub repository (defaults to ADO repo name)",
-    )
-    dry_run: bool = Field(default=True, description="Dry-run mode — analyze without mutating GitHub")
-
-
-class PipelineConvertRequest(BaseModel):
-    repo: str = Field(description="ADO repo key as project/repo_name")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
-    github_org: Optional[str] = Field(
-        default=None,
-        description="Target GitHub organization (defaults to active profile gh_org)",
-    )
-    github_repo: Optional[str] = Field(
-        default=None,
-        description="Target GitHub repository (defaults to ADO repo name)",
-    )
-
-class SecretProvisionRequest(BaseModel):
-    github_org: str = Field(description="GitHub organization")
-    github_repo: str = Field(description="GitHub repository name")
-    secret_name: str = Field(description="Name of the secret to provision (e.g. AZURE_DEVOPS_PAT)")
-    secret_value: str = Field(default="", description="Secret value (only used in live mode; omitted from logs)")
-    dry_run: bool = Field(default=True, description="Dry-run mode — validates without creating")
-
-
-class ServiceConnectionMigrateRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    connection_name: str = Field(description="ADO service connection name to migrate")
-    github_org: str = Field(description="GitHub organization")
-    github_repo: str = Field(description="GitHub repository name")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
-
-
-class BoardsMigrateRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    github_org: str = Field(description="GitHub organization")
-    github_repo: str = Field(description="GitHub repository name")
-    work_item_types: list[str] = Field(default=[], description="Filter to specific work item types (empty = all)")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
-
-
-class TestPlansMigrateRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    github_org: str = Field(description="GitHub organization")
-    github_repo: str = Field(description="GitHub repository name")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
-
-
-class ArtifactsPublishRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    feed_name: str = Field(description="ADO artifact feed name")
-    github_org: str = Field(description="GitHub organization")
-    package_type: str = Field(description="Package type: npm, NuGet, Docker, Maven, PyPI")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
-
-
-class WikiMigrateRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    wiki_name: str = Field(description="ADO wiki name or ID")
-    github_org: str = Field(description="GitHub organization")
-    github_repo: str = Field(description="GitHub repository name")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
-
-
-class BranchPoliciesMigrateRequest(BaseModel):
-    project: str = Field(description="ADO project name")
-    repo_name: str = Field(description="ADO repository name")
-    github_org: str = Field(description="GitHub organization")
-    github_repo: str = Field(description="GitHub repository name")
-    dry_run: bool = Field(default=True, description="Dry-run mode")
 
 
 # ─── Git Mirror / GEI ───
@@ -377,7 +303,7 @@ async def secret_provision(req: SecretProvisionRequest, request: Request):
 
     # Validate GitHub repo exists
     try:
-        repo_info = gh.get_repo(req.github_org, req.github_repo)
+        gh.get_repo(req.github_org, req.github_repo)
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"GitHub repo {req.github_org}/{req.github_repo} not found: {e}")
 
@@ -411,9 +337,9 @@ async def secret_provision(req: SecretProvisionRequest, request: Request):
 
 def _encrypt_secret(public_key_b64: str, secret_value: str) -> str:
     """Encrypt a secret value using GitHub's public key (libsodium sealed box)."""
-    from base64 import b64encode, b64decode
+    from base64 import b64decode, b64encode
     try:
-        from nacl import public, encoding
+        from nacl import encoding, public
     except ImportError:
         raise HTTPException(
             status_code=500,

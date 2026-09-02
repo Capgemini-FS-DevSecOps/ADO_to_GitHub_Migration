@@ -207,8 +207,8 @@ class ServiceConnectionManifest:
                 writer.writerow({k: row.get(k, "") for k in writer.fieldnames})
 
     def print_summary(self, summary: dict):
-        from rich.table import Table
         from rich import box
+        from rich.table import Table
 
         t = Table(title="Service Connection Migration Manifest", box=box.ROUNDED)
         t.add_column("Metric", style="bold")

@@ -157,16 +157,16 @@ class DiscoveryScanner:
             "elapsed_sec": elapsed,
         }
 
-        console.print(f"\n[bold green]Discovery complete[/bold green]")
+        console.print("\n[bold green]Discovery complete[/bold green]")
         console.print(f"  Projects:  {stats['projects']}")
         console.print(f"  Repos:     {stats['repos']}")
         console.print(f"  Pipelines: {stats['pipelines']}")
         console.print(f"  Duration:  {elapsed}s")
         console.print(f"\n  Output: [bold]{out}[/bold]")
-        console.print(f"    repos.csv           — review and select repos")
-        console.print(f"    pipelines.csv       — pipeline inventory")
-        console.print(f"    repos_template.txt  — copy to in/repos.txt, uncomment repos to migrate")
-        console.print(f"    discovery.json      — full JSON detail")
+        console.print("    repos.csv           — review and select repos")
+        console.print("    pipelines.csv       — pipeline inventory")
+        console.print("    repos_template.txt  — copy to in/repos.txt, uncomment repos to migrate")
+        console.print("    discovery.json      — full JSON detail")
 
         return stats
 

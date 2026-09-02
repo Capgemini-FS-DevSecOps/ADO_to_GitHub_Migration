@@ -46,7 +46,7 @@ def register(cli):
         global_cfg, waves = ConfigLoader.load(config)
         ado, _ = load_clients(global_cfg)
         repos = load_repos(input_file, global_cfg, waves)
-        ADOCleanup(ado).run(repos, archive=archive, dry_run=dry_run)
+        ADOCleanup(ado, dry_run=dry_run).cleanup_repos(repos, archive_repo=archive)
 
     @cli.command("push-workflows")
     @click.option("--config", "-c", required=True)

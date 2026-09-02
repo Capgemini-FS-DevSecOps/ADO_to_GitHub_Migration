@@ -6,15 +6,14 @@ from fastapi import APIRouter, HTTPException, Request
 from ado2gh.api.contracts import (
     DeleteProfileRequest,
     DenyProfileRequest,
-    DiscoveryResponse,
     DiscoveryRepoItem,
+    DiscoveryResponse,
     GitHubTokenRequest,
     GitHubTokenResponse,
     MigrationProfileRequest,
     MigrationProfileResponse,
     MigrationScanRequest,
     MigrationScanResponse,
-    MigrationProfileResponse,
     PhaseAssignmentRequest,
     PhaseRecommendation,
     ProfileSetupRequest,
@@ -26,12 +25,11 @@ from ado2gh.api.contracts import (
 )
 from ado2gh.api.platform_rbac import require_manage_settings
 from ado2gh.api.profile_governance import (
-    assert_operator_can_submit,
     ProfileGovernanceError,
+    assert_operator_can_submit,
     write_profile_audit,
 )
 from ado2gh.auth.models import PlatformRole
-
 from services.accelerator_api.routes import _shared
 from services.accelerator_api.routes._shared import (
     _platform_user,

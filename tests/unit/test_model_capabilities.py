@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from ado2gh.agents.migration_agent.llm_bridge import (
+from ado2gh.agents.migration_agent.runtime.llm_bridge import (
     ModelCapabilities,
     ModelCapabilityError,
     _detect_capabilities,
@@ -74,7 +74,7 @@ def test_explicit_capabilities_partial_override():
 
 def test_no_tool_calling_raises_error():
     """Models without tool calling should be rejected."""
-    from ado2gh.agents.migration_agent.llm_bridge import resolve_langchain_llm
+    from ado2gh.agents.migration_agent.runtime.llm_bridge import resolve_langchain_llm
 
     cfg = MagicMock(
         enabled=True,
@@ -85,7 +85,7 @@ def test_no_tool_calling_raises_error():
         validation_status="passed",
         capabilities={"supports_tool_calling": False},
     )
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=cfg):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=cfg):
         with pytest.raises(ModelCapabilityError, match="tool calling"):
             resolve_langchain_llm()
 

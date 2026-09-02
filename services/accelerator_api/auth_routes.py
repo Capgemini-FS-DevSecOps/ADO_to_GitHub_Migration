@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 from ado2gh.auth.models import PlatformRole
 from ado2gh.auth.service import (
-    AuthService,
     SESSION_COOKIE,
+    AuthService,
     auth_enabled,
     permissions_for,
 )
@@ -47,8 +47,8 @@ class UpdateUserBody(BaseModel):
 
 
 def _onboarding_redirect() -> str | None:
-    from ado2gh.api.settings_store import SettingsStore
     from ado2gh.api.profile_governance import needs_profile_setup
+    from ado2gh.api.settings_store import SettingsStore
 
     profiles = SettingsStore().load().migration_profiles
     if needs_profile_setup(profiles):

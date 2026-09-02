@@ -127,7 +127,6 @@ def _build_single_job(
     unsupported: list[str],
     map_step: Callable[[dict, list, list], Optional[dict]],
 ) -> dict[str, Any]:
-    job_id = _slug(stage.name or "build")
     job: dict[str, Any] = {
         "name": stage.display_name or stage.name,
         "runs-on": resolve_runner(stage.agent_pool),

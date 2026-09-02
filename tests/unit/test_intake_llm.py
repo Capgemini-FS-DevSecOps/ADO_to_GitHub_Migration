@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ado2gh.agents.migration_agent.intake_llm import analyze_operator_message
-from ado2gh.agents.migration_agent.intake_schema import OperatorIntent
+from ado2gh.agents.migration_agent.hitl.intake_llm import analyze_operator_message
+from ado2gh.agents.migration_agent.hitl.schemas import OperatorIntent
 
 
 @pytest.mark.asyncio

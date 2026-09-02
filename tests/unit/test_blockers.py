@@ -1,5 +1,5 @@
 """Tests for resolvable migration plan blockers."""
-from ado2gh.agents.migration_agent.blockers import (
+from ado2gh.agents.migration_agent.hitl.blockers import (
     blocker_key,
     needs_blocker_resolution,
     outstanding_blockers,

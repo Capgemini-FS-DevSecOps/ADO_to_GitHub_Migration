@@ -7,7 +7,7 @@ git clone <this-repo>
 cd ADO_to_GitHub_Migration
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[api,postgres,dev]"
+pip install -e ".[api,agent,postgres,dev]"
 ```
 
 **UI:**
@@ -29,10 +29,10 @@ See [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md) and [docs/SETUP_GUIDE
 | `ado2gh/cli/` | Click CLI commands (`ado2gh/cli/main.py` entry) |
 | `ado2gh/core/` | Migration engine, config, discovery, rollback |
 | `ado2gh/api/` | Accelerator SDK, pipeline runner, settings, auth |
-| `ado2gh/agents/` | LLM provider, session orchestrator, skills |
+| `ado2gh/agents/` | LangGraph migration agent (graph, nodes, guardrails, HITL) |
 | `ado2gh/state/` | SQLite / Postgres / DynamoDB state stores |
 | `services/accelerator_api/` | FastAPI service for the UI |
-| `services/agent/` | PEV agent + MCP |
+| `services/agent/` | PEV agent |
 | `apps/migration-ui/` | Next.js console |
 
 Conventions:
@@ -56,7 +56,7 @@ def my_command(config):
 
 ## Adding an ADO task mapping
 
-Edit `ado2gh/pipelines/transformer.py` — `ADO_TASK_MAP`:
+Edit `ado2gh/pipelines/transform/task_registry.py` — `ADO_TASK_MAP`:
 
 ```python
 "YourTask@1": "owner/action@vN",
@@ -65,8 +65,8 @@ Edit `ado2gh/pipelines/transformer.py` — `ADO_TASK_MAP`:
 ## Adding a migration scope
 
 1. Add to `MigrationScope` in `ado2gh/models.py`
-2. Implement `_migrate_<scope>` in `ado2gh/core/migration_engine.py`
-3. Register in `scope_handlers` inside `migrate_repo()`
+2. Implement a scope handler under `ado2gh/core/scopes/`
+3. Register it in `ado2gh/core/scopes/registry.py` (`get_scope_handler`)
 
 ## Tests
 
@@ -76,20 +76,15 @@ pytest tests/
 
 Coverage gates apply to selected `ado2gh.api.*` and `ado2gh.auth.*` modules (see `pyproject.toml`). Use `pytest --no-cov` for a quick local run without the coverage threshold.
 
-## Scripts (`scripts/`)
+## Scripts (`scripts/dev/`)
 
 | Script | Purpose |
 |--------|---------|
-| `discover.sh` | ADO org scan → discovery output |
-| `migrate.sh` | Minimal phased migration from repo map |
-| `migrate-full.sh` | Full workflow including pipeline inventory |
-| `run-local-agent.ps1` / `.sh` | Lightweight accelerator + agent for IDE dev |
-| `run-local.ps1` | Native full stack (accelerator + agent + UI) on Windows |
-| `run-ui.ps1` / `stop-ui.ps1` | Start/stop Next.js UI only |
-| `auth-smoke.ps1` | Auth bootstrap smoke checks |
-| `ide-check.ps1` | Agent health, MCP tools, dry-run session smoke |
+| `run-local-agent.ps1` | Lightweight accelerator + agent for IDE dev |
+| `run-ui.ps1` | Start Next.js UI only |
+| `_local-common.ps1` | Shared helpers for the two scripts above |
 
-Ad-hoc E2E harnesses belong in `tests/`, not `scripts/`.
+Anything that wraps an existing `ado2gh` CLI command belongs in the CLI, not `scripts/` (see `docs/COMMAND_REFERENCE.md` for removed-script equivalents). Ad-hoc E2E harnesses belong in `tests/`, not `scripts/`.
 
 ## Code style
 

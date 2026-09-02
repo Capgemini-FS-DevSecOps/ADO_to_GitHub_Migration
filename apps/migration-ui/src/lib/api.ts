@@ -439,7 +439,6 @@ export type LiveApprovalItem = {
   scope_type: string;
   scope_id: string;
   profile_id?: string | null;
-  assignment_id?: string | null;
   status: string;
   reason_request?: string | null;
   reason_decision?: string | null;

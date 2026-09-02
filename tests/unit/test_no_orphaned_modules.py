@@ -71,12 +71,7 @@ _DYNAMIC_IMPORTS = {
     "ado2gh.api.llm.llm_model_store",
     "ado2gh.api.credentials.cloud_credentials_store",
     "ado2gh.api.connectivity_store",
-    # Agent modules used by PEV coordinator and session orchestrator
-    "ado2gh.agents.context_window",
     "ado2gh.agents.metrics",
-    "ado2gh.agents.repo_lock_store",
-    "ado2gh.agents.resource_mapping",
-    "ado2gh.agents.rollback_tracker",
     # Reporting module used only by tests
     "ado2gh.reporting.boards_gaps",
 }

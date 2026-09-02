@@ -9,8 +9,8 @@ from ado2gh.agents.migration_agent.graph import (
     _route_after_validator,
     ALL_NODES,
 )
-from ado2gh.agents.migration_agent.session_store import MigrationSessionStore
-from ado2gh.agents.migration_agent.session_state import (
+from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
+from ado2gh.agents.migration_agent.session.state import (
     SessionStateMachine,
     SessionState,
     InvalidTransitionError,
@@ -60,7 +60,7 @@ def test_graph_flow_form_pending():
 def test_concurrent_sessions_isolated():
     """Verify 10 concurrent sessions have isolated state."""
     import sqlite3
-    from ado2gh.agents.migration_agent.session_store import SCHEMA
+    from ado2gh.agents.migration_agent.session.store import SCHEMA
 
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
@@ -89,7 +89,7 @@ def test_concurrent_sessions_isolated():
 def test_cross_session_repo_lock_detection():
     """Verify repo locks prevent concurrent migration of same repo across sessions."""
     import sqlite3
-    from ado2gh.agents.migration_agent.session_store import SCHEMA
+    from ado2gh.agents.migration_agent.session.store import SCHEMA
 
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row

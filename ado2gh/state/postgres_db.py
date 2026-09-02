@@ -4,12 +4,12 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Iterator, Optional
+from typing import Iterator
 
 from ado2gh.models import MigrationStatus, PipelineMetadata
 from ado2gh.state.base import StateDBBase
-from ado2gh.state.postgres_risk_gates_scan_mixin import PostgresRiskGatesScanMixin
 from ado2gh.state.postgres_agentic_users_mixin import PostgresAgenticUsersMixin
+from ado2gh.state.postgres_risk_gates_scan_mixin import PostgresRiskGatesScanMixin
 
 
 def _phase_value(phase) -> str:
@@ -142,35 +142,6 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
         ON profile_scan_repos(profile_id);
     CREATE INDEX IF NOT EXISTS idx_profile_scan_repos_phase
         ON profile_scan_repos(profile_id, assigned_phase);
-    CREATE TABLE IF NOT EXISTS migration_assignments (
-        id TEXT PRIMARY KEY,
-        profile_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        assignment_type TEXT NOT NULL,
-        execution_phase TEXT NOT NULL,
-        wave_number INTEGER,
-        status TEXT NOT NULL DEFAULT 'active',
-        created_by TEXT,
-        created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS cohort_membership (
-        id SERIAL PRIMARY KEY,
-        assignment_id TEXT NOT NULL,
-        profile_id TEXT NOT NULL,
-        ado_project TEXT NOT NULL,
-        ado_repo TEXT NOT NULL,
-        gh_org TEXT,
-        gh_repo TEXT,
-        active INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS repo_dependency_edges (
-        id SERIAL PRIMARY KEY,
-        profile_id TEXT NOT NULL,
-        from_repo TEXT NOT NULL,
-        to_repo TEXT NOT NULL,
-        edge_type TEXT NOT NULL DEFAULT 'pipeline_resource',
-        discovered_at TEXT
-    );
     CREATE TABLE IF NOT EXISTS audit_events (
         id TEXT PRIMARY KEY,
         event_type TEXT NOT NULL,
@@ -179,16 +150,6 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
         assignment_id TEXT,
         payload_json TEXT,
         created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS remediation_loops (
-        id SERIAL PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        repo_key TEXT NOT NULL,
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        max_retries INTEGER NOT NULL DEFAULT 3,
-        status TEXT NOT NULL DEFAULT 'active',
-        updated_at TEXT NOT NULL,
-        UNIQUE(session_id, repo_key)
     );
     CREATE TABLE IF NOT EXISTS platform_users (
         id TEXT PRIMARY KEY,
@@ -225,101 +186,6 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
     CREATE INDEX IF NOT EXISTS idx_live_approval_scope
         ON live_execution_approvals(scope_type, scope_id, status);
 
-    -- Feature 008: Unified Migration UI tables
-    CREATE TABLE IF NOT EXISTS discovery_results (
-        id               TEXT PRIMARY KEY,
-        organization_id  TEXT NOT NULL,
-        repository_id    TEXT NOT NULL,
-        repository_name  TEXT NOT NULL,
-        pipeline_count   INTEGER NOT NULL DEFAULT 0,
-        last_scanned_at  TEXT,
-        scan_status      TEXT NOT NULL DEFAULT 'pending',
-        metadata_json    JSONB NOT NULL DEFAULT '{}',
-        UNIQUE(organization_id, repository_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_discovery_results_org_repo
-        ON discovery_results(organization_id, repository_id);
-    CREATE TABLE IF NOT EXISTS discovery_dependency_edges (
-        id                    TEXT PRIMARY KEY,
-        source_repository_id  TEXT NOT NULL,
-        target_repository_id  TEXT NOT NULL,
-        dependency_type       TEXT NOT NULL DEFAULT 'pipeline',
-        created_at            TEXT,
-        CHECK(source_repository_id <> target_repository_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_dep_edges_source
-        ON discovery_dependency_edges(source_repository_id);
-    CREATE INDEX IF NOT EXISTS idx_dep_edges_target
-        ON discovery_dependency_edges(target_repository_id);
-    CREATE TABLE IF NOT EXISTS migration_waves (
-        id           TEXT PRIMARY KEY,
-        name         TEXT NOT NULL,
-        description  TEXT,
-        status       TEXT NOT NULL DEFAULT 'draft',
-        created_at   TEXT NOT NULL,
-        started_at   TEXT,
-        completed_at TEXT,
-        created_by   TEXT NOT NULL DEFAULT '',
-        CHECK(length(name) BETWEEN 1 AND 100)
-    );
-    CREATE INDEX IF NOT EXISTS idx_migration_waves_status
-        ON migration_waves(status);
-    CREATE INDEX IF NOT EXISTS idx_migration_waves_created_by
-        ON migration_waves(created_by);
-    CREATE TABLE IF NOT EXISTS wave_repositories (
-        id              TEXT PRIMARY KEY,
-        wave_id         TEXT NOT NULL,
-        repository_id   TEXT NOT NULL,
-        organization_id TEXT NOT NULL,
-        migration_order INTEGER NOT NULL DEFAULT 0,
-        status          TEXT NOT NULL DEFAULT 'pending',
-        UNIQUE(wave_id, repository_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_wave_repos_wave_order
-        ON wave_repositories(wave_id, migration_order);
-    CREATE TABLE IF NOT EXISTS pre_migration_forms (
-        id                TEXT PRIMARY KEY,
-        repository_id     TEXT NOT NULL,
-        organization_id   TEXT NOT NULL,
-        target_github_org TEXT NOT NULL,
-        team_mapping_json JSONB NOT NULL DEFAULT '{}',
-        pipeline_config_json JSONB NOT NULL DEFAULT '{}',
-        repo_description  TEXT,
-        topics_json       JSONB NOT NULL DEFAULT '[]',
-        labels_json       JSONB NOT NULL DEFAULT '[]',
-        form_status       TEXT NOT NULL DEFAULT 'draft',
-        created_at        TEXT NOT NULL,
-        submitted_at      TEXT
-    );
-    CREATE TABLE IF NOT EXISTS migration_operations (
-        id                     TEXT PRIMARY KEY,
-        repository_id          TEXT NOT NULL,
-        organization_id        TEXT NOT NULL,
-        operation_type         TEXT NOT NULL DEFAULT 'on_demand',
-        wave_id                TEXT,
-        pre_migration_form_id  TEXT,
-        status                 TEXT NOT NULL DEFAULT 'pending',
-        dry_run                INTEGER NOT NULL DEFAULT 0,
-        confirmed_at           TEXT,
-        started_at             TEXT,
-        completed_at           TEXT,
-        error_message          TEXT,
-        audit_log_json         JSONB NOT NULL DEFAULT '[]'
-    );
-    CREATE INDEX IF NOT EXISTS idx_migration_ops_repo_status
-        ON migration_operations(repository_id, status);
-    CREATE TABLE IF NOT EXISTS migration_audit_events (
-        id              TEXT PRIMARY KEY,
-        operation_id    TEXT NOT NULL,
-        event_type      TEXT NOT NULL,
-        previous_state_json JSONB NOT NULL DEFAULT '{}',
-        new_state_json  JSONB NOT NULL DEFAULT '{}',
-        user_id         TEXT NOT NULL DEFAULT '',
-        reason          TEXT,
-        timestamp       TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_migration_audit_ops_ts
-        ON migration_audit_events(operation_id, timestamp);
     """
 
     def __init__(self, dsn: str):

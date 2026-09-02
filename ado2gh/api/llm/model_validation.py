@@ -10,9 +10,9 @@ from typing import Any, Callable, Optional
 import httpx
 
 from ado2gh.api.llm.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
+from ado2gh.api.llm.llm_model_store import LLMModelStore
 from ado2gh.api.llm.llm_provider_registry import get_provider_spec
 from ado2gh.api.local_hosts import resolve_local_service_url
-from ado2gh.api.llm.llm_model_store import LLMModelStore
 
 _validate_lock = threading.Lock()
 _validate_inflight: dict[str, threading.Event] = {}
@@ -602,12 +602,10 @@ def _single_flight_validate(key: str, runner: Callable[[], dict[str, Any]]) -> d
     with _validate_lock:
         if key in _validate_inflight:
             waiter = _validate_inflight[key]
-            cached = _validate_results.get(key)
         else:
             event = threading.Event()
             _validate_inflight[key] = event
             waiter = None
-            cached = None
 
     if waiter is not None:
         waiter.wait(timeout=DEFAULT_TIMEOUT + 5)

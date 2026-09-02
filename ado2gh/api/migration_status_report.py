@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ado2gh.api.migration_work_plan import SCOPE_META
-
 
 def _collect_repo_scope_rows(db) -> dict[str, dict[str, Any]]:
     """Latest migration row per ADO repo + scope."""
@@ -137,81 +135,3 @@ def build_migration_status_report(
     }
 
 
-def format_migration_status_narrative(report: dict[str, Any]) -> str:
-    summary = report.get("summary") or {}
-    migrated = report.get("migrated_repos") or []
-    failed = report.get("failed_repos") or []
-    partial = report.get("partial_repos") or []
-    run_outcomes = report.get("recent_run_outcomes") or []
-
-    lines = ["### Migration status (from platform state)", ""]
-
-    git_count = summary.get("git_migrated_count", 0)
-    if git_count == 0 and not failed and not partial and not run_outcomes:
-        lines.extend([
-            "**No repositories have been successfully migrated to GitHub yet** "
-            "(no completed git/repo scope in the state database).",
-            "",
-            "A migration *plan* being ready does not mean code has been pushed — "
-            "run the migration pipeline (or check **Migration Monitor** for run results).",
-        ])
-        return "\n".join(lines)
-
-    lines.append(
-        f"- **Git migrated:** {git_count} repo(s)"
-        + (f" (aggregate count: {summary.get('completed_repos', 0)})" if summary.get("completed_repos") else "")
-    )
-    if failed:
-        lines.append(f"- **Failed:** {len(failed)} repo(s)")
-    if partial:
-        lines.append(f"- **Partial:** {len(partial)} repo(s)")
-
-    if migrated:
-        lines.extend(["", "#### Successfully migrated (git)"])
-        for repo in migrated[:20]:
-            gh = repo.get("gh_repo") or "—"
-            when = repo.get("git_completed_at") or ""
-            suffix = f" · {when}" if when else ""
-            lines.append(f"- `{repo['ado_repo']}` → `{gh}`{suffix}")
-        if len(migrated) > 20:
-            lines.append(f"- … and {len(migrated) - 20} more")
-
-    if failed:
-        lines.extend(["", "#### Failed"])
-        for repo in failed[:15]:
-            err = (repo.get("errors") or ["see run logs"])[0]
-            lines.append(f"- `{repo['ado_repo']}` — {err[:200]}")
-
-    if partial:
-        lines.extend(["", "#### Partially migrated"])
-        for repo in partial[:15]:
-            scope_bits = []
-            for scope, detail in sorted((repo.get("scopes") or {}).items()):
-                label = SCOPE_META.get(scope, {}).get("label", scope)
-                scope_bits.append(f"{label}={detail.get('status', '?')}")
-            lines.append(f"- `{repo['ado_repo']}` — {', '.join(scope_bits)}")
-
-    recent_failures = [
-        o for o in run_outcomes
-        if o.get("status") not in ("completed", None) and not o.get("dry_run")
-    ]
-    if recent_failures:
-        lines.extend(["", "#### Recent live run issues"])
-        seen: set[str] = set()
-        for outcome in recent_failures:
-            repo = outcome.get("repo") or "?"
-            key = f"{repo}:{outcome.get('summary', '')}"
-            if key in seen:
-                continue
-            seen.add(key)
-            summary_text = outcome.get("summary") or "; ".join(outcome.get("errors") or [])
-            lines.append(f"- `{repo}` — {summary_text[:240]}")
-            if len(seen) >= 8:
-                break
-
-    lines.extend([
-        "",
-        "_Status reflects StateDB migration records and recent pipeline runs — "
-        "not the in-chat migration plan._",
-    ])
-    return "\n".join(lines)

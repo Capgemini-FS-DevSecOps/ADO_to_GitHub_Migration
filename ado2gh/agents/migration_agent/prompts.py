@@ -27,6 +27,3 @@ def get_prompt(role: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def all_roles() -> list[str]:
-    """Return all available agent role names."""
-    return list(_PROMPT_FILES.keys())

@@ -5,7 +5,6 @@ that are needed by route handlers but not specific to the LangGraph agent logic.
 """
 from __future__ import annotations
 
-import asyncio
 import os
 from datetime import datetime, timezone
 from enum import Enum
@@ -15,30 +14,18 @@ import httpx
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ado2gh.agents.migration_agent.session_state import normalize_session_status
 from ado2gh.agents.migration_agent.policies import (
-    attach_actor_to_session,
-    can_execute_live_without_approval,
     execution_policy_summary,
+    is_admin_request,
     live_execution_block_message,
     request_username,
     session_requires_live_approval,
-    assert_agent_session_access,
-    is_admin_request,
 )
-from ado2gh.agents.migration_agent.constants import TOOL_CATALOG_VERSION, MAX_PEV_RETRIES
-from ado2gh.agents.migration_agent.utils import IdeAuditBridge, mask_secrets
-from ado2gh.agents.migration_agent.tool_catalog import list_tools
-from services.agent.profiles import capability_matrix, get_profile
-from ado2gh.api.migration_work_plan import (
-    build_work_items_for_repos,
-    plan_narrative_from_work_items,
-    work_items_summary,
-)
+from ado2gh.agents.migration_agent.session.state import normalize_session_status
+from ado2gh.agents.migration_agent.utils import IdeAuditBridge
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
-from ado2gh.auth.service import AuthService, SESSION_COOKIE, auth_enabled, permissions_for
-from ado2gh.models import MigrationScope, RepoConfig
-from ado2gh.state.factory import create_state_db
+from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
+from services.agent.profiles import get_profile
 
 AGENT_DEFAULT_PIPELINE_STEPS = [s["id"] for s in MIGRATE_UI_PIPELINE_STEPS]
 MIGRATE_STEP_IDS = frozenset({
@@ -52,12 +39,14 @@ try:
 except KeyError:
     _ACTIVE_PROFILE = None
 
-_runs: dict[str, dict] = {}
-# DEPRECATED: This in-memory session store will be replaced by the persistent
-# SessionStore (ado2gh.agents.session_store.SessionStore) in Spec 011.
+# ponytail: process-global, so the agent is single-replica only and loses these on
+# restart — MigrationSessionStore recovery in services/agent/main.py only partially
+# compensates. Deploy the agent at replicas: 1 (see deploy/kubernetes/agent-deployment.yaml).
+# DEPRECATED: this in-memory session store is being replaced by the persistent
+# MigrationSessionStore (ado2gh.agents.migration_agent.session.store) in Spec 011.
 # Do not add new consumers; existing routes will be migrated incrementally.
+_runs: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
-_approvals: dict[str, dict] = {}
 _audit = IdeAuditBridge()
 
 
@@ -70,22 +59,12 @@ class RunStatus(str, Enum):
     FAILED = "failed"
 
 
-class AgentRunRequest(BaseModel):
-    config_path: str = "migration.yaml"
-    phase: Optional[str] = None
-    wave_id: Optional[int] = None
-    dry_run: bool = True
-    assignment_id: Optional[str] = None
-    profile_id: Optional[str] = None
-
-
 class PlanPhaseBody(BaseModel):
     phase: Optional[str] = None
 
 
 class SessionRequest(BaseModel):
     profile_id: str = "lightweight"
-    assignment_id: Optional[str] = None
     prompt: str = ""
     dry_run: bool = True
     model_id: Optional[str] = None
@@ -113,12 +92,6 @@ class ProvisionRequest(BaseModel):
 class RemediateRequest(BaseModel):
     repo_key: str = ""
     retry_count: int = 0
-
-
-class AgentRunResponse(BaseModel):
-    run_id: str
-    status: RunStatus
-    steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ApprovalRequest(BaseModel):
@@ -183,34 +156,6 @@ async def _accel_get_impl(path: str, *, session_token: str | None = None) -> dic
         return r.json()
 
 
-async def _accel_request_impl(
-    method: str,
-    path: str,
-    body: dict | None = None,
-    *,
-    session_token: str | None = None,
-) -> dict:
-    """HTTP request against the accelerator (GET/POST/PATCH/PUT/DELETE)."""
-    method_upper = method.upper()
-    async with httpx.AsyncClient(
-        base_url=ACCEL_URL, timeout=120.0, headers=_accel_headers(session_token),
-    ) as client:
-        if method_upper == "GET":
-            r = await client.get(path)
-        elif method_upper == "POST":
-            r = await client.post(path, json=body or {})
-        elif method_upper == "PATCH":
-            r = await client.patch(path, json=body or {})
-        elif method_upper == "PUT":
-            r = await client.put(path, json=body or {})
-        elif method_upper == "DELETE":
-            r = await client.delete(path)
-        else:
-            raise ValueError(f"unsupported_method: {method}")
-        r.raise_for_status()
-        if r.content:
-            return r.json()
-        return {"status_code": r.status_code, "ok": r.is_success}
 
 
 async def _accel_post(path: str, body: dict, *, session_token: str | None = None) -> dict:
@@ -271,7 +216,7 @@ def _require_approve_live(request: Request) -> None:
 
 def _resolve_model_id(requested: str | None) -> tuple[str | None, bool, bool]:
     """Resolve model ID and return (model_id, degraded, unconfigured)."""
-    from ado2gh.agents.migration_agent.llm_bridge import _get_model_config, resolve_langchain_llm
+    from ado2gh.agents.migration_agent.runtime.llm_bridge import _get_model_config, resolve_langchain_llm
 
     if not requested:
         requested = os.environ.get("ADO2GH_DEFAULT_LLM_MODEL")
@@ -308,8 +253,8 @@ def _get_accessible_session(
 def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
     """Load a persisted HTTP session into memory without cross-session state."""
     try:
-        from ado2gh.agents.migration_agent.session_lifecycle import new_isolated_agent_session
-        from ado2gh.agents.migration_agent.session_store import MigrationSessionStore
+        from ado2gh.agents.migration_agent.session.lifecycle import new_isolated_agent_session
+        from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
         record = MigrationSessionStore().get_session(session_id)
         if not record:
@@ -319,6 +264,7 @@ def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
             profile_id=str(record.get("profile_id") or "lightweight"),
             dry_run=bool(record.get("dry_run", True)),
             selected_model_id=str(record.get("model_id") or "") or None,
+            user_username=record.get("user_username"),
         )
         session["messages"] = list(record.get("messages") or [])
         session["migration_plan"] = record.get("migration_plan")
@@ -390,7 +336,6 @@ def _session_payload(session_id: str) -> dict[str, Any]:
     return {
         "session_id": session_id,
         "profile_id": session.get("profile_id"),
-        "assignment_id": session.get("assignment_id"),
         "status": normalize_session_status(raw_status),
         "live_approval_status": session.get("live_approval_status"),
         "dry_run": session.get("dry_run", True),
@@ -522,12 +467,11 @@ async def _build_migration_plan(
                 }
 
     # Build work items aligned with migrate-tab pipeline scopes
-    from ado2gh.agents.migration_agent.pipeline_plan import (
+    from ado2gh.agents.migration_agent.nodes.executor.plan import (
         finalize_agent_migration_plan,
         repo_config_from_discovery,
     )
-    from ado2gh.agents.migration_agent.scope_executor import build_agent_work_items_for_session
-    from ado2gh.api.migration_work_plan import build_work_items_for_repos
+    from ado2gh.agents.migration_agent.nodes.executor.scope import build_agent_work_items_for_session
 
     repo_configs = [
         repo_config_from_discovery(r, session) for r in repos_data if isinstance(r, dict)
@@ -559,16 +503,6 @@ async def _build_migration_plan(
     return finalize_agent_migration_plan(plan, session)
 
 
-async def _ensure_migration_plan(
-    session: dict[str, Any],
-    session_token: str | None,
-) -> dict[str, Any]:
-    """Ensure migration plan exists, build if needed."""
-    plan = session.get("migration_plan")
-    if not plan:
-        plan = await _build_migration_plan(session, session_token)
-        session["migration_plan"] = plan
-    return plan
 
 
 async def _enqueue_session_live_approval(
@@ -577,7 +511,7 @@ async def _enqueue_session_live_approval(
     request: Request,
 ) -> None:
     """Enqueue session for live execution approval."""
-    from ado2gh.agents.migration_agent.session_state import set_session_idle
+    from ado2gh.agents.migration_agent.session.state import set_session_idle
 
     session["live_approval_status"] = "pending"
     set_session_idle(session)
@@ -601,19 +535,19 @@ async def _check_accelerator() -> tuple[bool, str | None]:
 # These will be removed once all route handlers are fully migrated to orchestrator
 async def _try_start_pev_run(session_id: str, request: Request | None = None) -> bool:
     """Start PEV when allowed. Returns False if live execution is blocked pending approval."""
-    from ado2gh.agents.migration_agent.orchestrator import process_user_message
-    
+    from ado2gh.agents.migration_agent.runtime.orchestrator import process_user_message
+
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     if session_requires_live_approval(session):
         msg = live_execution_block_message(session)
         if request:
             await _enqueue_session_live_approval(session_id, session, request)
         _add_message(session_id, "assistant", msg, kind="message")
         return False
-    
+
     # Use orchestrator to start PEV
     session_token = _session_accel_token(session_id)
     selected_model_id = session.get("selected_model_id")
@@ -626,8 +560,8 @@ async def _try_start_pev_run(session_id: str, request: Request | None = None) ->
         build_plan=_build_migration_plan,
         session_token=session_token,
     )
-    
+
     if result.reply:
         _add_message(session_id, "assistant", result.reply, kind="message")
-    
+
     return True

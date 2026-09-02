@@ -62,14 +62,6 @@ class ConcurrencyManager:
             self._git.release()
 
     @contextmanager
-    def repo_slot(self) -> Iterator[None]:
-        self._repo.acquire()
-        try:
-            yield
-        finally:
-            self._repo.release()
-
-    @contextmanager
     def pipeline_slot(self) -> Iterator[None]:
         self._pipeline.acquire()
         try:
@@ -77,8 +69,3 @@ class ConcurrencyManager:
         finally:
             self._pipeline.release()
 
-    def effective_pipeline_workers(self, requested: int) -> int:
-        return max(1, min(requested, self.config.max_pipeline_workers))
-
-    def effective_repo_workers(self, requested: int) -> int:
-        return max(1, min(requested, self.config.max_repo_workers))

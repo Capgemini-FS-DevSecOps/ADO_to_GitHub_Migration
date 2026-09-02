@@ -7,16 +7,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ado2gh.clients.ado_client import ADOClient
-from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.api.phase_definitions import (
     ConfigurableWaveAssigner,
     PhaseDefinition,
     parse_phase_definitions,
-    phase_rationale,
 )
 from ado2gh.api.scan_diagnostics import build_empty_scan_warnings
-from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RiskScore
+from ado2gh.clients.ado_client import ADOClient
+from ado2gh.clients.ado_token_manager import ADOTokenManager
+from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType
 from ado2gh.phase.risk_scorer import RiskScorer
 
 
@@ -102,10 +101,6 @@ def _stub_pipeline(defn: dict, project: str) -> PipelineMetadata:
         repo_name=repo.get("name", ""),
         complexity=PipelineComplexity.SIMPLE,
     )
-
-
-def _phase_rationale(phase_def: PhaseDefinition, scores: list[RiskScore]) -> str:
-    return phase_rationale(phase_def, scores)
 
 
 def _summarize_service_connections(svc_conns: list[dict]) -> list[dict[str, Any]]:

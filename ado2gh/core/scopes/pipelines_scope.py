@@ -9,9 +9,9 @@ from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
 from ado2gh.models import MigrationScope, MigrationStatus, PipelineMetadata, RepoConfig
 from ado2gh.output_dirs import output_base
-from ado2gh.pipelines.transform import PipelineTransformer
 from ado2gh.pipelines.push_workflows import push_repo_workflows, remote_workflow_files
 from ado2gh.pipelines.resolve.template_resolver import make_ado_git_fetcher
+from ado2gh.pipelines.transform import PipelineTransformer
 from ado2gh.pipelines.validation import WorkflowValidator
 
 DEFAULT_WORKFLOW_BRANCH = "ado2gh/migrated-workflows"

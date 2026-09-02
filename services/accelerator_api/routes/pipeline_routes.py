@@ -27,11 +27,10 @@ from ado2gh.api.platform_rbac import (
     require_operate,
 )
 from ado2gh.api.profile_governance import (
-    assert_profile_active_for_run,
     ProfileGovernanceError,
+    assert_profile_active_for_run,
 )
 from ado2gh.state.factory import create_state_db
-
 from services.accelerator_api.routes._shared import (
     _execute_approved_migrate,
     _execute_approved_pipeline,
@@ -197,7 +196,6 @@ def create_live_approval(req: LiveApprovalCreateRequest, request: Request):
         req.scope_type,
         req.scope_id,
         profile_id=req.profile_id,
-        assignment_id=req.assignment_id,
         reason_request=req.reason_request,
         context=req.context,
     )

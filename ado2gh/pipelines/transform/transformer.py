@@ -10,6 +10,11 @@ from typing import Any, Optional
 import yaml
 
 from ado2gh.models import PipelineMetadata, PipelineType
+from ado2gh.pipelines.extractor import PipelineMetadataExtractor
+from ado2gh.pipelines.resolve.template_resolver import (
+    TemplateFetcher,
+    apply_template_resolution_to_meta,
+)
 from ado2gh.pipelines.transform.expressions import (
     map_condition,
     rewrite_expressions_inplace,
@@ -24,11 +29,6 @@ from ado2gh.pipelines.transform.task_registry import (
     lookup_task,
 )
 from ado2gh.pipelines.transform.triggers import build_triggers
-from ado2gh.pipelines.resolve.template_resolver import (
-    TemplateFetcher,
-    apply_template_resolution_to_meta,
-)
-from ado2gh.pipelines.extractor import PipelineMetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -379,8 +379,8 @@ class PipelineTransformer:
             "",
             "## Pipeline Information",
             "",
-            f"| Field | Value |",
-            f"|-------|-------|",
+            "| Field | Value |",
+            "|-------|-------|",
             f"| Pipeline ID | {meta.pipeline_id} |",
             f"| Pipeline Name | {meta.pipeline_name} |",
             f"| Type | {meta.pipeline_type.value} |",

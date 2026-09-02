@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from ado2gh.agents.migration_agent.session_lifecycle import (
+from ado2gh.agents.migration_agent.session.lifecycle import (
     collect_session_repo_ids,
     new_isolated_agent_session,
 )
-from ado2gh.agents.migration_agent.session_state import reset_session_for_new_migration
+from ado2gh.agents.migration_agent.session.state import reset_session_for_new_migration
 from ado2gh.models import MigrationStatus, RepoConfig
 from ado2gh.state.db import StateDB
 
@@ -70,7 +70,7 @@ def test_two_sessions_do_not_share_migration_state():
 
 @pytest.mark.asyncio
 async def test_cancel_agent_session_clears_migration_state(tmp_path, monkeypatch):
-    from ado2gh.agents.migration_agent.session_lifecycle import cancel_agent_session
+    from ado2gh.agents.migration_agent.session.lifecycle import cancel_agent_session
     from ado2gh.state.factory import create_state_db
 
     db = StateDB(str(tmp_path / "cancel.db"))

@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ado2gh.core.concurrency import ConcurrencyManager
 from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.registry import SCOPE_REGISTRY
-from ado2gh.core.concurrency import ConcurrencyManager
 from ado2gh.logging_config import log
 from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, MigrationScope, MigrationStatus, RepoConfig
 from ado2gh.state.db import StateDB

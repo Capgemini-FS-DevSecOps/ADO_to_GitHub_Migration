@@ -1,5 +1,5 @@
 """Unit tests for agent pipeline plan alignment with Migrate tab."""
-from ado2gh.agents.migration_agent.pipeline_plan import (
+from ado2gh.agents.migration_agent.nodes.executor.plan import (
     AGENT_PIPELINE_STEP_IDS,
     finalize_agent_migration_plan,
     plan_confirmation_summary,
@@ -23,7 +23,7 @@ def test_agent_pipeline_step_ids_match_migrate_tab():
 
 def test_finalize_agent_migration_plan_attaches_pipeline_metadata():
     from ado2gh.api.migration_work_plan import build_work_items_for_repos
-    from ado2gh.agents.migration_agent.pipeline_plan import repo_config_from_discovery
+    from ado2gh.agents.migration_agent.nodes.executor.plan import repo_config_from_discovery
 
     session = {"plan_repository_id": "Proj/RepoA", "dry_run": True, "plan_phase": "poc"}
     repo_cfg = repo_config_from_discovery(
@@ -66,7 +66,7 @@ def test_plan_confirmation_summary_omits_phase_when_unspecified():
 
 
 def test_finalize_agent_migration_plan_strips_phase_assumptions_when_unspecified():
-    from ado2gh.agents.migration_agent.pipeline_plan import finalize_agent_migration_plan
+    from ado2gh.agents.migration_agent.nodes.executor.plan import finalize_agent_migration_plan
 
     session = {"plan_repository_id": "Proj/RepoA", "dry_run": True}
     plan = {

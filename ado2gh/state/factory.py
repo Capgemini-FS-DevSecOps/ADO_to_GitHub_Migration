@@ -1,10 +1,13 @@
 """Factory for migration state store — backend selected via environment."""
 from __future__ import annotations
 
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
-from ado2gh.state.storage_config import StorageBackend, StorageConfig
 from ado2gh.state.sqlite_db import SQLiteStateDB
+from ado2gh.state.storage_config import StorageBackend, StorageConfig
+
+if TYPE_CHECKING:
+    from ado2gh.state.postgres_db import PostgresStateDB
 
 StateStore = Union[SQLiteStateDB, "PostgresStateDB"]
 

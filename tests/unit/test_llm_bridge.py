@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from ado2gh.agents.migration_agent.llm_bridge import (
+from ado2gh.agents.migration_agent.runtime.llm_bridge import (
     ModelCapabilities,
     ModelCapabilityError,
     _detect_capabilities,
@@ -180,7 +180,7 @@ def test_resolve_langchain_llm_ollama():
         model_id="llama3",
         validation_status="passed",
     )
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=cfg):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=cfg):
         llm, degraded, unconfigured, caps = resolve_langchain_llm()
         assert llm is not None
         assert degraded is False
@@ -196,7 +196,7 @@ def test_build_langchain_chat_model_unsupported_provider():
 
 
 def test_resolve_langchain_llm_unconfigured():
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=None):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=None):
         llm, degraded, unconfigured, caps = resolve_langchain_llm()
         assert llm is None
         assert unconfigured is True
@@ -205,7 +205,7 @@ def test_resolve_langchain_llm_unconfigured():
 
 def test_resolve_langchain_llm_disabled():
     cfg = MagicMock(enabled=False)
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=cfg):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=cfg):
         llm, degraded, unconfigured, caps = resolve_langchain_llm()
         assert llm is None
         assert unconfigured is True
@@ -221,14 +221,14 @@ def test_resolve_langchain_llm_rejects_no_tool_calling():
         validation_status="passed",
         capabilities={"supports_tool_calling": False},
     )
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=cfg):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=cfg):
         with pytest.raises(ModelCapabilityError):
             resolve_langchain_llm()
 
 
 def test_resolve_langchain_llm_stub():
     cfg = MagicMock(enabled=True, provider="stub", model_id="stub-1")
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=cfg):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=cfg):
         llm, degraded, unconfigured, caps = resolve_langchain_llm()
         assert llm is not None
         assert degraded is True
@@ -246,7 +246,7 @@ def test_resolve_langchain_llm_validation_failed():
         model_id="gpt-4",
         validation_status="failed",
     )
-    with patch("ado2gh.agents.migration_agent.llm_bridge._get_model_config", return_value=cfg):
+    with patch("ado2gh.agents.migration_agent.runtime.llm_bridge._get_model_config", return_value=cfg):
         llm, degraded, unconfigured, caps = resolve_langchain_llm()
         assert llm is None
         assert unconfigured is True

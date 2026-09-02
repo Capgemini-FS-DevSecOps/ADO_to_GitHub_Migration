@@ -1,7 +1,7 @@
 """Tests for migration intake information schema, Pydantic forms, and routing."""
 from __future__ import annotations
 
-from ado2gh.agents.migration_agent.intake import (
+from ado2gh.agents.migration_agent.hitl.intake import (
     apply_form_values_to_intake,
     apply_message_analysis,
     format_form_submission_summary,
@@ -14,7 +14,7 @@ from ado2gh.agents.migration_agent.intake import (
     normalize_repository_id,
     resolve_intake_routing,
 )
-from ado2gh.agents.migration_agent.intake_schema import (
+from ado2gh.agents.migration_agent.hitl.schemas import (
     FormIntakeSubmission,
     IntakePhase,
     MigrationIntakeSchema,
@@ -151,7 +151,7 @@ def test_determine_intake_phase_planning_when_repo_selected():
 
 
 def test_build_dynamic_form_uses_schema_fields():
-    from ado2gh.agents.migration_agent.intake_schema import INTAKE_FIELD_REGISTRY
+    from ado2gh.agents.migration_agent.hitl.schemas import INTAKE_FIELD_REGISTRY
 
     form = build_dynamic_form(
         form_id="intake_repository_id",

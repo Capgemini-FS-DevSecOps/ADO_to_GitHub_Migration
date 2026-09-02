@@ -10,12 +10,6 @@ def test_audit_and_dependency_edges(tmp_path):
     assert eid.startswith("aud_")
     events = db.list_audit_events(profile_id="p1", limit=10)
     assert len(events) == 1
-    db.upsert_dependency_edge("p1", "B/r2", "A/r1")
-    edges = db.get_dependency_edges("p1")
-    assert len(edges) == 1
-    db.upsert_remediation_loop("s1", "P/r1", 0, 3, "active")
-    loop = db.get_remediation_loop("s1", "P/r1")
-    assert loop["max_retries"] == 3
 
 
 def test_repo_in_progress(tmp_path):

@@ -41,6 +41,7 @@ out/
 /cloud_credentials.json
 /llm_models.json
 /ui_settings.json
+/connectivity_profile.json
 
 *.db
 *.db-wal
@@ -80,6 +81,7 @@ Desktop.ini
 # --- IDE ---
 .cursor/
 .idea/
+.tokensave/
 *.iml
 .vscode/*
 !.vscode/mcp.json.example

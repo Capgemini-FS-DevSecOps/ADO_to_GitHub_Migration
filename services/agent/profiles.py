@@ -39,10 +39,6 @@ class LocalAgentProfile:
             raise ValueError("profile_id prod-like requires auth_enabled=true")
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def _load_yaml(path: Path) -> dict:
     if not path.is_file():
         return {"profiles": {}}

@@ -1,6 +1,7 @@
 """Pydantic request/response contracts for the Accelerator SDK."""
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -21,7 +22,6 @@ class RunWaveRequest(BaseModel):
     wave_id: Optional[int] = None
     dry_run: bool = False
     db_path: str = "migration_state.db"
-    assignment_id: Optional[str] = None
     live_approval_id: Optional[str] = None
 
 
@@ -32,22 +32,6 @@ class RunWaveResult(BaseModel):
     failed: int
     total: int
     dry_run: bool = False
-
-
-class CreateWaveRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    repository_ids: list[str] = Field(..., min_length=1)
-    organization_id: Optional[str] = None
-    description: Optional[str] = None
-
-
-class WaveResponse(BaseModel):
-    wave_id: str
-    name: str
-    description: Optional[str] = None
-    status: str = "draft"
-    created_at: str = ""
-    repository_ids: list[str] = Field(default_factory=list)
 
 
 class PhaseRunRequest(BaseModel):
@@ -91,8 +75,6 @@ class StatusSnapshot(BaseModel):
 
 
 # ── Extended contracts for REST API / job queue ─────────────────────────────
-
-from enum import Enum
 
 
 class HealthResponse(BaseModel):
@@ -481,7 +463,6 @@ class LiveApprovalCreateRequest(BaseModel):
     scope_type: Literal["agent_session", "migrate_job", "pipeline_run"]
     scope_id: str
     profile_id: Optional[str] = None
-    assignment_id: Optional[str] = None
     reason_request: Optional[str] = None
     context: dict[str, Any] = Field(default_factory=dict)
 
@@ -496,7 +477,6 @@ class LiveApprovalItem(BaseModel):
     scope_type: str
     scope_id: str
     profile_id: Optional[str] = None
-    assignment_id: Optional[str] = None
     status: str
     reason_request: Optional[str] = None
     reason_decision: Optional[str] = None

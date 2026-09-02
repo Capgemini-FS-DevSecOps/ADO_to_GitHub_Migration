@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import asyncio
 
-from ado2gh.agents.migration_agent.intake import resolve_intake_routing
-from ado2gh.agents.migration_agent.intake_guardrails import (
+from ado2gh.agents.migration_agent.hitl.intake import resolve_intake_routing
+from ado2gh.agents.migration_agent.hitl.intake_guardrails import (
     apply_analysis_guardrails,
     repository_confirmed_for_turn,
 )
-from ado2gh.agents.migration_agent.intake_schema import (
+from ado2gh.agents.migration_agent.hitl.schemas import (
     OperatorIntent,
     OperatorMessageAnalysis,
 )

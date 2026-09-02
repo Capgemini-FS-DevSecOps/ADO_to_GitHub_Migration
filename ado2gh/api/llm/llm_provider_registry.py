@@ -4,7 +4,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 GITHUB_API_VERSION = "2022-11-28"
 OPENROUTER_APP_TITLE = "ADO2GH Migration Agent"
 

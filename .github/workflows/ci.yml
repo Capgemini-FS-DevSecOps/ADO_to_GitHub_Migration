@@ -13,7 +13,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,api]" ruff mypy
+      # Keep this version in sync with the ruff-pre-commit rev in .pre-commit-config.yaml.
+      - run: pip install -e ".[dev,api,agent]" "ruff==0.15.17" mypy
+      # Hard gate: syntax errors and undefined names must always be zero.
+      - name: Ruff syntax/undefined-name gate
+        run: ruff check ado2gh/ services/ --select E9,F821 --target-version py311
       - run: ruff check ado2gh/ services/
       - run: mypy ado2gh/ --ignore-missing-imports || true
 
@@ -24,7 +28,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,api]"
+      - run: pip install -e ".[dev,api,agent]"
       - run: pytest --cov=ado2gh --cov-fail-under=85
   ui-permissions:
     runs-on: ubuntu-latest

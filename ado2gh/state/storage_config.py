@@ -57,6 +57,3 @@ class StorageConfig:
             aws_region=aws_region,
         )
 
-    @property
-    def is_local(self) -> bool:
-        return self.backend == StorageBackend.SQLITE

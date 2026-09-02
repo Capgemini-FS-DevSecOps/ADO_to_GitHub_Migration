@@ -30,6 +30,21 @@ import {
   type StreamEvent,
 } from '@/lib/agent';
 import {
+  ACTIVE_AGENT_STATUSES,
+  appendThinkingEvent,
+  fieldInitialValue,
+  formatFormSubmissionSummary,
+  formOptionLabel,
+  formOptionValue,
+  isAgentInterruptible,
+  isStatusMessage,
+  mergeThinkingEvents,
+  pendingOptimisticUserMessages,
+  sessionIsBusy,
+  thinkingEventsFromSession,
+  type ChatMessage,
+} from '@/lib/agentChat';
+import {
   chatCacheKey,
   loadActiveSessionId,
   loadAllTurnThinking,
@@ -49,8 +64,6 @@ import {
 } from '@/lib/agentSessions';
 import { MarkdownMessage } from '@/components/MarkdownMessage';
 
-type ChatMessage = AgentMessage & { id: string };
-
 type SessionSnapshot = {
   agentSession: AgentSession | null;
   messages: ChatMessage[];
@@ -60,59 +73,6 @@ type SessionSnapshot = {
   messagePending: boolean;
   polling: boolean;
 };
-
-function mapSessionMessages(s: AgentSession): ChatMessage[] {
-  return (s.messages ?? []).map((m, i) => ({
-    ...m,
-    id: `${m.kind ?? m.role}-${i}-${s.session_id}`,
-  }));
-}
-
-function sessionIsBusy(s: AgentSession | null | undefined): boolean {
-  if (!s) return false;
-  if (ACTIVE_AGENT_STATUSES.has(s.status ?? '')) return true;
-  return Boolean(
-    s.pipeline_run_id &&
-      !['completed', 'failed', 'cancelled', 'idle'].includes(String(s.status ?? '')),
-  );
-}
-
-const ACTIVE_AGENT_STATUSES = new Set([
-  'thinking',
-  'planning',
-  'executing',
-  'validating',
-]);
-
-function mergeThinkingEvents(server: StreamEvent[], cached: StreamEvent[]): StreamEvent[] {
-  if (!cached.length) return server;
-  if (!server.length) return cached;
-  return cached.length >= server.length ? cached : server;
-}
-
-function thinkingEventsFromSession(s: AgentSession): StreamEvent[] {
-  const source = s.thinking_log ?? [];
-  return source.map((m) => ({
-    kind: m.kind as StreamEvent['kind'],
-    content: m.content,
-    subagent: (m.subagent as StreamEvent['subagent']) || 'orchestrator',
-    meta: m.meta,
-    timestamp: m.timestamp,
-  }));
-}
-
-function appendThinkingEvent(prev: StreamEvent[], evt: StreamEvent): StreamEvent[] {
-  const last = prev[prev.length - 1];
-  if (
-    last &&
-    last.kind === evt.kind &&
-    last.content === evt.content &&
-    last.subagent === evt.subagent
-  ) {
-    return prev;
-  }
-  return [...prev, evt];
-}
 
 function resetThinkingForSession(
   profileId: string,
@@ -158,7 +118,6 @@ function applyStreamEventToSnapshot(
 
   if (
     evt.kind === 'thinking' ||
-    evt.kind === 'status' ||
     evt.kind === 'progress' ||
     evt.kind === 'tool_call' ||
     evt.kind === 'tool_result' ||
@@ -219,103 +178,8 @@ function applyStreamEventToSnapshot(
   }
 }
 
-function isAgentInterruptible(
-  session: AgentSession | null,
-  flags: {
-    streaming?: boolean;
-    messagePending?: boolean;
-    polling?: boolean;
-    formPending?: boolean;
-  } = {},
-): boolean {
-  if (!session || session.pending_form) return false;
-  if (flags.streaming || flags.messagePending || flags.polling || flags.formPending) return true;
-  if (ACTIVE_AGENT_STATUSES.has(session.status)) return true;
-  return Boolean(
-    session.pipeline_run_id &&
-      !['completed', 'failed', 'cancelled', 'idle'].includes(session.status),
-  );
-}
-
-/** Normalize user message text for optimistic/server deduplication. */
-function normalizeUserMessageKey(content: string): string {
-  return (content ?? '')
-    .trim()
-    .replace(/\bTrue\b/g, 'true')
-    .replace(/\bFalse\b/g, 'false');
-}
-
-/** Drop optimistic user bubbles once the server persisted the same text. */
-function pendingOptimisticUserMessages(
-  local: ChatMessage[],
-  session: ChatMessage[],
-): ChatMessage[] {
-  const paired = new Map<string, number>();
-  for (const message of session) {
-    if (message.role !== 'user') continue;
-    const key = normalizeUserMessageKey(message.content ?? '');
-    paired.set(key, (paired.get(key) ?? 0) + 1);
-  }
-  const pending: ChatMessage[] = [];
-  for (const message of local) {
-    if (message.role !== 'user') continue;
-    const key = normalizeUserMessageKey(message.content ?? '');
-    const count = paired.get(key) ?? 0;
-    if (count > 0) {
-      paired.set(key, count - 1);
-      continue;
-    }
-    pending.push(message);
-  }
-  return pending;
-}
-
 const NO_MODELS_HINT =
   'No LLM models are configured. Add, validate, and enable a model under Settings → LLM models.';
-
-function formatFormSubmissionSummary(
-  values: Record<string, unknown>,
-  formId?: string,
-): string {
-  if (formId === 'intake_plan_review' || formId === 'plan_confirmation') {
-    const confirmed = Boolean(values.plan_confirmed);
-    const execute = Boolean(values.confirm_execute);
-    const notes = String(values.plan_notes ?? '').trim();
-    if (confirmed) {
-      const parts = ['Plan confirmed'];
-      if (execute) parts.push('start migration');
-      return parts.join(', ');
-    }
-    if (notes) {
-      return `Requested plan changes: ${notes}`;
-    }
-    return 'Plan review submitted';
-  }
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(values)) {
-    if ((value === null || value === undefined || value === '') && key !== 'dry_run') continue;
-    if (key === 'dry_run') {
-      if (typeof value === 'boolean') {
-        parts.push(`dry_run: ${String(value).toLowerCase()}`);
-        continue;
-      }
-      const raw = String(value ?? '').toLowerCase();
-      if (raw === 'live' || raw === 'false' || raw === '0') {
-        parts.push('dry_run: false');
-      } else if (raw === 'dry-run' || raw === 'dryrun' || raw === 'true' || raw === '1') {
-        parts.push('dry_run: true');
-      }
-      continue;
-    }
-    if (value === false) continue;
-    if (typeof value === 'boolean') {
-      parts.push(`${key}: ${String(value).toLowerCase()}`);
-      continue;
-    }
-    parts.push(`${key}: ${value}`);
-  }
-  return parts.join(', ');
-}
 
 const THINKING_WORDS = [
   'Thinking',
@@ -475,34 +339,6 @@ function AgentTaskTimeline({ tasks }: { tasks: AgentTask[] }) {
   );
 }
 
-function isStatusMessage(msg: ChatMessage): boolean {
-  return msg.kind === 'status';
-}
-
-function isInternalMessage(msg: ChatMessage): boolean {
-  if (msg.role === 'user') return false;
-  if (msg.kind === 'message' || msg.kind === 'form') {
-    return false;
-  }
-  return (
-    msg.kind === 'thinking' ||
-    msg.kind === 'status' ||
-    msg.kind === 'tool_call' ||
-    msg.kind === 'tool_result' ||
-    msg.kind === 'task_update' ||
-    msg.kind === 'progress' ||
-    msg.role === 'tool'
-  );
-}
-
-function formOptionValue(opt: string | { value: string; label: string }): string {
-  return typeof opt === 'string' ? opt : opt.value;
-}
-
-function formOptionLabel(opt: string | { value: string; label: string }): string {
-  return typeof opt === 'string' ? opt : opt.label;
-}
-
 function AgentFormPanel({
   form,
   busy,
@@ -522,11 +358,7 @@ function AgentFormPanel({
   useEffect(() => {
     const initial: Record<string, unknown> = {};
     for (const field of form.fields) {
-      if (field.type === 'select' && field.options?.length) {
-        initial[field.name] = formOptionValue(field.options[0]);
-      } else if (field.type === 'checkbox') {
-        initial[field.name] = field.name === 'confirm_execute';
-      }
+      initial[field.name] = fieldInitialValue(field);
     }
     setValues(initial);
     setLocalError(null);
@@ -585,6 +417,9 @@ function AgentFormPanel({
           ) : (
             <>
               <span>{field.label}</span>
+              {field.description ? (
+                <span className="form-hint agent-form-field-hint">{field.description}</span>
+              ) : null}
               {field.type === 'select' ? (
                 <select
                   className="oai-input"
@@ -602,6 +437,7 @@ function AgentFormPanel({
                 <textarea
                   className="oai-input agent-form-textarea"
                   rows={4}
+                  placeholder={field.placeholder}
                   value={String(values[field.name] ?? '')}
                   onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
                 />
@@ -609,6 +445,7 @@ function AgentFormPanel({
                 <input
                   className="oai-input"
                   type="text"
+                  placeholder={field.placeholder}
                   value={String(values[field.name] ?? '')}
                   onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.value }))}
                 />
@@ -650,6 +487,8 @@ export function AgentChat() {
   const activeProfiles = (settings?.migration_profiles ?? []).filter(
     (p) => p.status === 'active' || !p.status,
   );
+  const migrationProfileId =
+    settings?.active_profile_id || activeProfiles[0]?.id || '';
   const models = llmData?.models ?? [];
   const noModelsConfigured = !modelsError && models.length === 0;
   const canApproveLive = canApproveLiveExecution(session?.permissions);
@@ -1150,10 +989,10 @@ export function AgentChat() {
   ]);
 
   useEffect(() => {
-    if (!profileId && activeProfiles[0]?.id) {
-      setProfileId(activeProfiles[0].id);
+    if (!profileId && migrationProfileId) {
+      setProfileId(migrationProfileId);
     }
-  }, [activeProfiles, profileId]);
+  }, [migrationProfileId, profileId]);
 
   useEffect(() => {
     if (!profileId) return;
@@ -1330,7 +1169,10 @@ export function AgentChat() {
 
   const startSession = useMutation({
     mutationFn: async (prompt: string) => {
-      const pid = profileId || activeProfiles[0]?.id || 'lightweight';
+      const pid = profileId || migrationProfileId;
+      if (!pid) {
+        throw new Error('No active migration profile. Activate a profile under Settings → Profiles.');
+      }
       return createAgentSession({
         profile_id: pid,
         prompt,
@@ -1447,7 +1289,11 @@ export function AgentChat() {
     }
 
     if (!sessionId) {
-      const pid = profileId || activeProfiles[0]?.id || 'lightweight';
+      const pid = profileId || migrationProfileId;
+      if (!pid) {
+        setError('No active migration profile. Activate a profile under Settings → Profiles.');
+        return;
+      }
       try {
         const s = await createAgentSession({
           profile_id: pid,
@@ -1662,7 +1508,7 @@ export function AgentChat() {
     let userTurnIndex = -1;
     const sessionStillActive = ACTIVE_AGENT_STATUSES.has(agentSession?.status ?? '');
     const thinkingDone = !streaming && !sessionStillActive;
-    const showLiveThinking = Boolean(agentSession?.session_id) && (streaming || liveThinking.length > 0);
+    const showLiveThinking = Boolean(agentSession?.session_id) && liveThinking.length > 0;
 
     for (let j = messages.length - 1; j >= 0; j--) {
       if (messages[j].role === 'user') {

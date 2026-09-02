@@ -417,18 +417,6 @@ def group_work_items_by_repo(
     return groups
 
 
-def scope_row_enriched(scope: str, detail: dict) -> dict[str, Any]:
-    meta = SCOPE_META.get(scope, {})
-    return {
-        "scope": scope,
-        "label": meta.get("label", scope),
-        "category": meta.get("category", "convert_metadata"),
-        "status": detail.get("status", "?"),
-        "error": detail.get("error"),
-        "detail": detail.get("detail"),
-    }
-
-
 def plan_narrative_from_work_items(
     phase: str | None,
     work_items: list[dict[str, Any]],

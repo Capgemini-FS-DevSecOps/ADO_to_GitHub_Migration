@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 from ado2gh.api.pipeline_models import PipelineRun, StepStatus
@@ -58,30 +57,9 @@ class PipelineStepsMixin:
                 run.phase, profile, db_path=adv.db_path, config_path=adv.config_path,
             )
 
-            dep_msg = ""
-            if run.repository_id:
-                from ado2gh.api.dependency_graph import DependencyGraph, CircularDependencyError
-                from ado2gh.api.discovery_store import DiscoveryStore
-                from ado2gh.state.factory import create_state_db as _create_db
-
-                try:
-                    store = DiscoveryStore(db=_create_db(adv.db_path))
-                    graph = DependencyGraph.from_store(store, repository_id=run.repository_id)
-                    graph.add_node(run.repository_id)
-                    migration_order = graph.get_full_migration_order(run.repository_id)
-                    dep_count = max(0, len(migration_order) - 1)
-                    dep_msg = (
-                        f"; Dependencies: {dep_count} repo(s) found for {run.repository_id}"
-                        + (f" — order: {', '.join(migration_order)}" if migration_order else "")
-                    )
-                    for dep in migration_order:
-                        self._log(run, f"  dependency: {dep}")
-                except (CircularDependencyError, Exception):
-                    dep_msg = f"; Dependencies: unable to resolve for {run.repository_id}"
-
             discovery_msg = (
                 f"; GitHub target: {gh_org}; Profile discovery: {scan.get('repos_scanned', len(phase_repos))} repos "
-                f"({synced} synced); phase {run.phase}: {len(phase_repos)} queued{dep_msg}"
+                f"({synced} synced); phase {run.phase}: {len(phase_repos)} queued"
             )
             for repo in phase_repos:
                 self._log(
@@ -99,10 +77,10 @@ class PipelineStepsMixin:
         )
 
     def _step_analyze_deps(self, run: PipelineRun) -> None:
+        import os
+
         from ado2gh.api.accelerator import Accelerator
-        from ado2gh.api.dependency_graph import DependencyGraph, CircularDependencyError
-        from ado2gh.api.discovery_store import DiscoveryStore
-        from ado2gh.api.migration_work_plan import _secrets_blockers, _pipeline_blockers_for_repo
+        from ado2gh.api.migration_work_plan import _pipeline_blockers_for_repo, _secrets_blockers
         from ado2gh.api.profile_discovery import repo_configs_for_phase
         from ado2gh.clients.ado_client import ADOClient
         from ado2gh.clients.ado_token_manager import ADOTokenManager
@@ -110,7 +88,6 @@ class PipelineStepsMixin:
         from ado2gh.pipelines.inventory import summarize_project_inventory
         from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
         from ado2gh.state.factory import create_state_db
-        import os
 
         adv = self.settings.load().advanced
         profile = self.settings.get_active_profile()
@@ -172,8 +149,6 @@ class PipelineStepsMixin:
                 self._log(run, f"  Inventory scan FAILED: {type(exc).__name__}: {exc}")
         else:
             self._log(run, "  No projects to scan — skipping inventory")
-
-        store = DiscoveryStore(db=db)
 
         def _check_repo_warnings(repo_id: str) -> tuple[list[str], dict[str, Any]]:
             parts = repo_id.split("/", 1)
@@ -254,38 +229,18 @@ class PipelineStepsMixin:
                 return {}
 
         if run.repository_id:
-            graph = DependencyGraph.from_store(store, repository_id=run.repository_id)
-            graph.add_node(run.repository_id)
-            try:
-                migration_order = graph.get_full_migration_order(run.repository_id)
-            except CircularDependencyError as exc:
-                self._set_step(run, "analyze_deps", StepStatus.FAILED, str(exc), {})
-                return
-            dep_count = max(0, len(migration_order) - 1)
-            self._log(
-                run,
-                f"Dependency analysis for {run.repository_id}: "
-                f"{len(migration_order)} repo(s) in migration order ({dep_count} dependencies)",
-            )
-            all_warnings: list[str] = []
-            dependencies: dict[str, dict[str, Any]] = {}
-            for i, repo in enumerate(migration_order):
-                marker = "→ target" if repo == run.repository_id else "  dependency"
-                self._log(run, f"  {i+1}. {marker}: {repo}")
-                repo_warnings, repo_deps = _check_repo_warnings(repo)
-                for w in repo_warnings:
-                    all_warnings.append(f"{repo}: {w}")
-                dependencies[repo] = repo_deps
+            self._log(run, f"Dependency analysis for {run.repository_id}")
+            repo_warnings, repo_deps = _check_repo_warnings(run.repository_id)
+            all_warnings = [f"{run.repository_id}: {w}" for w in repo_warnings]
+            dependencies: dict[str, dict[str, Any]] = {run.repository_id: repo_deps}
 
             readiness = _readiness_summary()
-            summary = (
-                f"Dependencies resolved: {len(migration_order)} repo(s) ({dep_count} dependencies) for {run.repository_id}"
-            )
+            summary = f"Dependencies resolved for {run.repository_id}"
             if all_warnings:
                 summary += f" — {len(all_warnings)} warning(s):\n" + self._format_warnings(all_warnings)
             result_data: dict[str, Any] = {
-                "migration_order": migration_order,
-                "dependency_count": dep_count,
+                "migration_order": [run.repository_id],
+                "dependency_count": 0,
                 "pipelines_scanned": pipeline_total,
                 "dependencies": dependencies,
             }
@@ -300,48 +255,25 @@ class PipelineStepsMixin:
             else:
                 repo_ids = []
 
-            all_orders: dict[str, list[str]] = {}
-            total_deps = 0
             all_warnings = []
             dependencies: dict[str, dict[str, Any]] = {}
+            self._log(run, f"Dependency analysis: {len(repo_ids)} repo(s) in phase {run.phase}")
             for rid in repo_ids:
-                try:
-                    graph = DependencyGraph.from_store(store, repository_id=rid)
-                    graph.add_node(rid)
-                    order = graph.get_full_migration_order(rid)
-                    all_orders[rid] = order
-                    total_deps += max(0, len(order) - 1)
-                except (CircularDependencyError, Exception):
-                    all_orders[rid] = [rid]
-
-            self._log(
-                run,
-                f"Dependency analysis: {len(repo_ids)} repo(s) in phase {run.phase}, "
-                f"{total_deps} total dependencies found",
-            )
-            for rid, order in all_orders.items():
-                deps = [d for d in order if d != rid]
-                if deps:
-                    self._log(run, f"  {rid} depends on: {', '.join(deps)}")
-                else:
-                    self._log(run, f"  {rid}: no dependencies")
                 repo_warnings, repo_deps = _check_repo_warnings(rid)
                 for w in repo_warnings:
                     all_warnings.append(f"{rid}: {w}")
                 dependencies[rid] = repo_deps
 
             readiness = _readiness_summary()
-            summary = (
-                f"Dependencies analyzed: {len(repo_ids)} repo(s), {total_deps} dependencies"
-            )
+            summary = f"Dependencies analyzed: {len(repo_ids)} repo(s)"
             if all_warnings:
                 summary += f" — {len(all_warnings)} warning(s):\n" + self._format_warnings(all_warnings)
             result_data = {
                 "repo_count": len(repo_ids),
-                "total_dependencies": total_deps,
+                "total_dependencies": 0,
                 "pipelines_scanned": pipeline_total,
                 "dependencies": dependencies,
-                "repo_dependencies": all_orders,
+                "repo_dependencies": {rid: [rid] for rid in repo_ids},
             }
             if all_warnings:
                 result_data["warnings"] = all_warnings
@@ -361,6 +293,8 @@ class PipelineStepsMixin:
                        {"output_dir": result.output_dir})
 
     def _step_inventory(self, run: PipelineRun) -> None:
+        import os
+
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.profile_discovery import repo_configs_for_phase
         from ado2gh.clients.ado_client import ADOClient
@@ -368,7 +302,6 @@ class PipelineStepsMixin:
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.pipelines.inventory import summarize_project_inventory
         from ado2gh.state.factory import create_state_db
-        import os
 
         adv = self.settings.load().advanced
         global_cfg, _ = ConfigLoader.load(adv.config_path)
@@ -420,6 +353,7 @@ class PipelineStepsMixin:
 
     def _step_assign(self, run: PipelineRun) -> None:
         from pathlib import Path
+
         from ado2gh.core.config_loader import ConfigLoader
 
         adv = self.settings.load().advanced
@@ -457,12 +391,6 @@ class PipelineStepsMixin:
         if sc_count == 0:
             return ""
         return f" — {sc_count} service connection(s)"
-
-    def _analyze_deps_warnings(self, run: PipelineRun) -> list[str]:
-        analyze_step = next((s for s in run.steps if s.id == "analyze_deps"), None)
-        if not analyze_step or not analyze_step.result:
-            return []
-        return list(analyze_step.result.get("warnings") or [])
 
     def _repo_migration_dry_run_warnings(
         self,
@@ -636,8 +564,8 @@ class PipelineStepsMixin:
             filter_work_items_for_scopes,
         )
         from ado2gh.api.profile_discovery import build_wave_from_profile_phase, require_gh_org
-        from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.api.validation_run import _merge_profile_credentials
+        from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
         from ado2gh.models import MigrationScope
         from ado2gh.phase.batch_executor import BatchExecutor
@@ -688,34 +616,16 @@ class PipelineStepsMixin:
 
         if wave and wave.repos:
                 if run.repository_id:
-                    # Read migration order from analyze_deps step result instead of re-deriving
+                    # Read migration order from analyze_deps step result; default to the target repo alone
                     analyze_step = next((s for s in run.steps if s.id == "analyze_deps"), None)
+                    migration_order = [run.repository_id]
                     if analyze_step and analyze_step.result:
-                        migration_order = analyze_step.result.get("migration_order") or analyze_step.result.get("repo_dependencies", {}).get(run.repository_id, [run.repository_id])
-                        if not migration_order or not isinstance(migration_order, list):
-                            # Fallback to re-deriving if analyze_deps result is incomplete
-                            from ado2gh.api.dependency_graph import DependencyGraph, CircularDependencyError
-                            from ado2gh.api.discovery_store import DiscoveryStore
-                            store = DiscoveryStore(db=create_state_db(adv.db_path))
-                            graph = DependencyGraph.from_store(store, repository_id=run.repository_id)
-                            graph.add_node(run.repository_id)
-                            try:
-                                migration_order = graph.get_full_migration_order(run.repository_id)
-                            except CircularDependencyError as exc:
-                                self._set_step(run, step_id, StepStatus.FAILED, str(exc), {})
-                                return
-                    else:
-                        # analyze_deps not run yet, re-derive
-                        from ado2gh.api.dependency_graph import DependencyGraph, CircularDependencyError
-                        from ado2gh.api.discovery_store import DiscoveryStore
-                        store = DiscoveryStore(db=create_state_db(adv.db_path))
-                        graph = DependencyGraph.from_store(store, repository_id=run.repository_id)
-                        graph.add_node(run.repository_id)
-                        try:
-                            migration_order = graph.get_full_migration_order(run.repository_id)
-                        except CircularDependencyError as exc:
-                            self._set_step(run, step_id, StepStatus.FAILED, str(exc), {})
-                            return
+                        stored = (
+                            analyze_step.result.get("migration_order")
+                            or analyze_step.result.get("repo_dependencies", {}).get(run.repository_id)
+                        )
+                        if isinstance(stored, list) and stored:
+                            migration_order = stored
                     if run.migrate_deps_only:
                         target_repos = set(migration_order)
                     else:
@@ -951,14 +861,14 @@ class PipelineStepsMixin:
                 self._log(run, f"{step_label}: DRY RUN — active profile but no repos to migrate")
                 self._set_step(
                     run, step_id, StepStatus.SKIPPED,
-                    f"Dry run: skipped (no repos in profile to validate)",
+                    "Dry run: skipped (no repos in profile to validate)",
                     {"dry_run": True, "skipped_reason": "no_repos"},
                 )
             else:
                 self._log(run, f"{step_label}: DRY RUN — no active profile, validating config only")
                 self._set_step(
                     run, step_id, StepStatus.SKIPPED,
-                    f"Dry run: skipped (no active profile to validate against)",
+                    "Dry run: skipped (no active profile to validate against)",
                     {"dry_run": True, "skipped_reason": "no_profile"},
                 )
             return
@@ -995,9 +905,6 @@ class PipelineStepsMixin:
                 else StepStatus.COMPLETED
             )
             self._set_step(run, step_id, migrate_status, msg, result.__dict__)
-
-    def _step_migrate(self, run: PipelineRun) -> None:
-        self._migrate_scoped(run, "migrate", None)
 
     def _step_validate(self, run: PipelineRun) -> None:
         from ado2gh.api.accelerator import _build_ado_client, _build_gh_client

@@ -2,7 +2,6 @@
 from fastapi.testclient import TestClient
 
 from services.agent.main import app
-from ado2gh.agents.migration_agent.constants import TOOL_CATALOG_VERSION
 
 
 client = TestClient(app)
@@ -13,8 +12,6 @@ def test_health_contract_fields():
     assert r.status_code == 200
     data = r.json()
     assert "accelerator_reachable" in data
-    assert "tool_catalog_version" in data
-    assert data["tool_catalog_version"] == TOOL_CATALOG_VERSION
     assert "capabilities" in data or data.get("status") == "degraded"
 
 

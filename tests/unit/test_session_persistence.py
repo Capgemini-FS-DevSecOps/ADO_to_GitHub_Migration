@@ -3,7 +3,7 @@ import pytest
 import json
 from unittest.mock import MagicMock, patch
 
-from ado2gh.agents.migration_agent.session_store import MigrationSessionStore
+from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
 
 def _make_mock_db():
@@ -12,7 +12,7 @@ def _make_mock_db():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     conn.executescript(MigrationSessionStore.__module__ and __import__(
-        "ado2gh.agents.migration_agent.session_store", fromlist=["SCHEMA"]
+        "ado2gh.agents.migration_agent.session.store", fromlist=["SCHEMA"]
     ).SCHEMA)
 
     class MockDb:
