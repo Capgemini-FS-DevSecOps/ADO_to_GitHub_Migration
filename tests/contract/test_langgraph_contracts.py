@@ -14,6 +14,7 @@ from ado2gh.agents.migration_agent.graph import (
     NODE_EXECUTOR,
     NODE_VALIDATOR,
     NODE_EXECUTE_TOOLS,
+    NODE_HUMAN_INPUT,
     NODE_FINALIZE,
     get_compiled_graph,
     reset_compiled_graph,
@@ -31,12 +32,13 @@ from ado2gh.agents.migration_agent.graph.state import AgentState
 # ─── Graph structure contracts ────────────────────────────────────────
 
 def test_all_required_nodes_present():
-    """Graph has five core nodes; legacy aliases point at orchestrator."""
+    """Graph has six core nodes; legacy aliases point at orchestrator."""
     required = {
         NODE_ORCHESTRATOR,
         NODE_PLANNER,
         NODE_EXECUTOR,
         NODE_VALIDATOR,
+        NODE_HUMAN_INPUT,
         NODE_FINALIZE,
     }
     assert set(ALL_NODES) == required
@@ -59,7 +61,7 @@ def test_recursion_limit_meets_contract():
 def test_agent_state_has_pev_fields():
     """AgentState must have PEV-related fields per data-model.md."""
     required_fields = [
-        "messages", "user_message", "session", "llm", "intent",
+        "messages", "user_message", "session", "intent",
         "iteration", "max_iterations", "start_pev", "pending_form",
         "should_return", "pev_retry_count", "inter_agent_messages",
         "migration_plan", "executor_result", "validation_result",
@@ -68,6 +70,17 @@ def test_agent_state_has_pev_fields():
     annotations = AgentState.__annotations__
     for field in required_fields:
         assert field in annotations, f"AgentState missing required field: {field}"
+
+
+def test_agent_state_excludes_unserializable_deps():
+    """The LLM client and its callables travel via contextvars, not the checkpoint.
+
+    They are deliberately absent from AgentState (see graph/state.py): a checkpoint
+    must stay serializable, so runtime/deps.py carries them per-invocation instead.
+    """
+    annotations = AgentState.__annotations__
+    for field in ("llm", "accelerator", "build_plan", "session_token", "capabilities"):
+        assert field not in annotations
 
 
 def test_agent_state_list_fields_use_operator_add():
