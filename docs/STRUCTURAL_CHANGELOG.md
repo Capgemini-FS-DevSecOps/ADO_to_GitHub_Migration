@@ -240,3 +240,19 @@ No production code changed.
 
 - **Tests removed**: 44 (SC-004 input) — 37 deleted files, 7 in-place.
 - **Production functions deleted**: 0. Deletions in `0ec95d2` are recorded against that commit.
+
+## 2026-09-08 — 013 Phase 2 / T007: Test for the assignment-gate serializer removed in `859bb6b`
+
+`859bb6b` cut 349 lines from `ado2gh/api/agentic_routes.py`, deleting the assignment-scoped
+gate routes together with their private serializer `_gate_payload` and the
+`PhaseGateChecker.check_for_assignment` method they called. `agentic_routes` now exposes only
+`/v1/history/*`; no production code builds a gate payload. The surviving `PhaseGateChecker`
+surface (`check`, `override`, `can_advance`) is already covered by
+`tests/core/test_gate_checker.py`. No production code changed.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `tests/contract/test_rollback_gates_contract.py` | — | deleted | 1 test on `_gate_payload` and `PhaseGateChecker.check_for_assignment`, both deleted in `859bb6b`; restoring them would add a helper with zero production callers (FR-006a: no shims) | yes | pass | 2026-09-08 |
+
+- **Tests removed**: 1 (SC-004 input) — 1 deleted file.
+- **Production functions deleted**: 0. Deletions in `859bb6b` are recorded against that commit.
