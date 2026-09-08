@@ -1,3 +1,10 @@
+"""Dataclasses and enums shared by every layer of the migration platform.
+
+Nothing here talks to ADO, GitHub or the database. These are the plain records
+the CLI, the accelerator API, the state layer and the agent pass between each
+other: repository and wave configuration, phase settings, pipeline metadata,
+risk scores and gate results.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -6,6 +13,8 @@ from typing import Optional
 
 
 class MigrationStatus(str, Enum):
+    """Lifecycle state of one repository migration, as persisted in ``migrations``."""
+
     PENDING     = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED   = "completed"
@@ -15,6 +24,8 @@ class MigrationStatus(str, Enum):
 
 
 class MigrationScope(str, Enum):
+    """The parts of an ADO project a migration can carry over, chosen per repository."""
+
     REPO             = "repo"
     WORK_ITEMS       = "work_items"
     PIPELINES        = "pipelines"
@@ -24,18 +35,24 @@ class MigrationScope(str, Enum):
 
 
 class PipelineType(str, Enum):
+    """Where an ADO pipeline is defined: YAML in the repository, or a classic build or release definition."""
+
     YAML    = "yaml"
     CLASSIC = "classic"
     RELEASE = "release"
 
 
 class PipelineComplexity(str, Enum):
+    """Conversion-effort bucket the readiness assessment assigns to a pipeline."""
+
     SIMPLE  = "simple"
     MEDIUM  = "medium"
     COMPLEX = "complex"
 
 
 class PhaseType(str, Enum):
+    """The five rollout phases; ``PHASE_ORDER`` gives their execution order."""
+
     POC   = "poc"
     PILOT = "pilot"
     WAVE1 = "wave1"
@@ -44,6 +61,8 @@ class PhaseType(str, Enum):
 
 
 class MigrationStrategy(str, Enum):
+    """How repository content is copied: a git mirror push, or GitHub Enterprise Importer."""
+
     MIRROR = "mirror"
     GEI = "gei"
 
@@ -83,6 +102,8 @@ class ExecutionMode(str, Enum):
 
 
 class GateStatus(str, Enum):
+    """Outcome of a phase gate check; ``OVERRIDE`` means an operator waived a failure with a reason."""
+
     PASS     = "pass"
     FAIL     = "fail"
     OVERRIDE = "override"
@@ -90,6 +111,8 @@ class GateStatus(str, Enum):
 
 @dataclass
 class RepoConfig:
+    """One repository to migrate: its ADO source, GitHub target and per-repository options."""
+
     ado_project:       str
     ado_repo:          str
     gh_org:            str
@@ -107,6 +130,8 @@ class RepoConfig:
 
 @dataclass
 class WaveConfig:
+    """A named batch of repositories migrated together under shared concurrency and retry limits."""
+
     wave_id:            int
     name:               str
     description:        str
@@ -120,6 +145,12 @@ class WaveConfig:
 
 @dataclass
 class PhaseConfig:
+    """Caps, batching, parallelism and gate thresholds for one rollout phase.
+
+    The ``gate_*`` fields are the minimum success rates and completed count the
+    phase must reach before the next phase may start.
+    """
+
     phase:                     PhaseType
     repo_cap:                  int
     risk_max:                  float
@@ -164,6 +195,8 @@ PHASE_ORDER = [PhaseType.POC, PhaseType.PILOT, PhaseType.WAVE1, PhaseType.WAVE2,
 
 @dataclass
 class PipelineVariable:
+    """A pipeline or variable-group variable as read from ADO."""
+
     name:        str
     value:       str
     is_secret:   bool = False
@@ -173,6 +206,8 @@ class PipelineVariable:
 
 @dataclass
 class PipelineEnvironment:
+    """An ADO deployment environment with its approvers and deployment checks."""
+
     name:                str
     id:                  int       = 0
     required_approvers:  list[str] = field(default_factory=list)
@@ -183,6 +218,8 @@ class PipelineEnvironment:
 
 @dataclass
 class PipelineStage:
+    """One stage of a multi-stage YAML pipeline, with its jobs and deployment environment."""
+
     name:           str
     display_name:   str                            = ""
     depends_on:     list[str]                      = field(default_factory=list)
@@ -230,6 +267,11 @@ class PipelineMetadata:
     unsupported_tasks:   list[str]        = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Serialise to the JSON-safe dict stored in the pipeline inventory.
+
+        Enums become their string values and nested records become plain dicts;
+        :meth:`from_dict` reads the same layout back.
+        """
         return {
             "pipeline_id":         self.pipeline_id,
             "pipeline_name":       self.pipeline_name,
@@ -277,6 +319,18 @@ class PipelineMetadata:
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineMetadata":
+        """Rebuild a record from the layout :meth:`to_dict` writes.
+
+        Only ``pipeline_id`` and ``pipeline_name`` are required; every other key
+        falls back to the dataclass default, so rows written before a field was
+        added still load.
+
+        Args:
+            d: The stored dict.
+
+        Returns:
+            The reconstructed pipeline record.
+        """
         m = cls(
             pipeline_id    = d["pipeline_id"],
             pipeline_name  = d["pipeline_name"],
@@ -327,6 +381,8 @@ class PipelineMetadata:
 
 @dataclass
 class RiskSignal:
+    """One scored input to a repository's risk score, with the rationale shown in reports."""
+
     name: str
     raw_value: float
     score: float
@@ -336,6 +392,12 @@ class RiskSignal:
 
 @dataclass
 class RiskScore:
+    """Risk assessment for one repository: the total, its signals and the phase it was assigned.
+
+    The ``*_pipeline_pct`` fields describe the share of the repository's
+    pipelines that fall into each category.
+    """
+
     project: str
     repo_name: str
     total_score: float = 0.0
@@ -354,6 +416,12 @@ class RiskScore:
     service_connection_count: int = 0
 
     def to_dict(self) -> dict:
+        """Flatten to the JSON-safe dict used by risk reports.
+
+        Scores are rounded to two decimals, and several keys are shorter than
+        the field names (``complex_pct``, ``variable_groups``,
+        ``service_connections``).
+        """
         return {
             "project": self.project, "repo_name": self.repo_name,
             "total_score": round(self.total_score, 2),
@@ -374,6 +442,8 @@ class RiskScore:
 
 @dataclass
 class PhaseGateResult:
+    """Result of checking one phase against its gate thresholds, with the failures that were counted."""
+
     phase: PhaseType
     status: GateStatus
     repo_success_pct: float
@@ -389,6 +459,8 @@ class PhaseGateResult:
 
 @dataclass
 class BatchCheckpoint:
+    """Progress marker for one batch of a phase run, persisted so an interrupted run can resume."""
+
     phase: PhaseType
     batch_num: int
     total_batches: int

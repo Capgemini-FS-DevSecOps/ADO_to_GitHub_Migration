@@ -4,7 +4,7 @@ import logging
 from rich.console import Console
 from rich.logging import RichHandler
 
-from ado2gh.audit.audit import redact_payload
+from ado2gh.audit import redact_payload
 
 
 class SecretRedactingFilter(logging.Filter):
@@ -17,6 +17,7 @@ class SecretRedactingFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
+        """Mask the record's message and arguments in place and always let it through."""
         try:
             if isinstance(record.msg, str):
                 record.msg = redact_payload(record.msg)

@@ -31,7 +31,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ado2gh.audit.audit import AuditWriter
+from ado2gh.audit import AuditWriter
 from ado2gh.auth.models import PlatformRole, PlatformUser
 from ado2gh.auth.service import permissions_for
 from ado2gh.core.scopes.base import ScopeResult

@@ -1,18 +1,15 @@
-"""Immutable audit event writer with secret redaction (CA-003).
+"""The platform's single secret-masking choke point (CA-003, FR-025).
 
-``redact_payload`` is the platform's single secret-masking choke point (FR-025).
+``redact_payload`` is the one place secret shapes are recognised.
 ``ado2gh.agents.migration_agent.utils.mask_secrets``,
-``ado2gh.core.scopes.git_scope._redact`` and the root log handler installed by
+``ado2gh.core.scopes.git_scope._redact``, the audit writer in
+``ado2gh.audit.writer`` and the root log handler installed by
 ``ado2gh.logging_config`` all delegate here, so a shape recognised in one place
 is recognised everywhere.
 """
 from __future__ import annotations
 
-import json
 import re
-from datetime import datetime, timezone
-from typing import Any, Optional
-from uuid import uuid4
 
 _MASK = "***"
 _MAX_DEPTH = 20
@@ -57,11 +54,11 @@ def _mask_match(m: "re.Match[str]") -> str:
     return m.group(0)[:4] + _MASK  # pfx / opaque: keep a 4-char prefix for triage
 
 
-def _is_secret_key(key: Any) -> bool:
+def _is_secret_key(key: object) -> bool:
     return isinstance(key, str) and _SECRET_KEY_RE.search(key.lower()) is not None
 
 
-def redact_payload(payload: Any, _depth: int = 0) -> Any:
+def redact_payload(payload: object, _depth: int = 0) -> object:
     """Recursively redact likely secrets from any payload, message, or log record.
 
     Matches secret **key names** (case- and affix-insensitive: `ado_pat`,
@@ -69,6 +66,17 @@ def redact_payload(payload: Any, _depth: int = 0) -> Any:
     token prefixes, `Bearer <token>`, a bare 52-character ADO PAT, `key=value`
     pairs) — key-name matching alone cannot reach a secret that arrives inside
     free text or as a bare list element.
+
+    Args:
+        payload: A string, a dict, list or tuple of values, a log record's
+            argument tuple, or a scalar. Types the walker does not recognise
+            pass through untouched.
+        _depth: Current recursion depth; internal, used to stop on pathological
+            nesting or cycles.
+
+    Returns:
+        A value of the same shape as ``payload`` with every recognised secret
+        masked.
     """
     if payload is None or isinstance(payload, (bool, int, float)):
         return payload
@@ -91,30 +99,3 @@ def redact_payload(payload: Any, _depth: int = 0) -> Any:
         out = [redact_payload(x, _depth + 1) for x in payload]
         return tuple(out) if isinstance(payload, tuple) else out
     return payload
-
-
-class AuditWriter:
-    """Append-only audit events to StateDB."""
-
-    def __init__(self, db: Any):
-        self.db = db
-
-    def write(
-        self,
-        event_type: str,
-        profile_id: str,
-        actor: str = "",
-        payload: Optional[dict] = None,
-    ) -> str:
-        """Record an audit event; returns event id."""
-        event_id = f"aud_{uuid4().hex[:12]}"
-        safe = redact_payload(payload or {})
-        self.db.insert_audit_event(
-            event_id=event_id,
-            event_type=event_type,
-            profile_id=profile_id,
-            actor=actor,
-            payload_json=json.dumps(safe),
-            created_at=datetime.now(timezone.utc).isoformat(),
-        )
-        return event_id

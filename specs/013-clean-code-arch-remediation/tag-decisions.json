@@ -16,19 +16,27 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/assignments/",
+    "id": "ado2gh/audit/",
     "tag": "module_name_review",
-    "decision": "confirm",
-    "rationale": "Package docstring declares \"Audit event writer\" but directory is named \"assignments\"; content is audit logging and secret redaction.",
-    "state_hash": "52e9daaf1ccdb7d9d6a157954e4d39f0fb09f443",
+    "decision": "reject",
+    "rationale": "\"audit\" adequately describes a package containing both audit event writing and compliance-level secret redaction.",
+    "state_hash": "f87a91f3bf9dca04d816b7f7daea8d820c33986c",
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/assignments/audit.py",
+    "id": "ado2gh/audit/redaction.py",
     "tag": "module_name_review",
     "decision": "reject",
-    "rationale": "Module name matches its sole function: audit event writing and secret redaction.",
-    "state_hash": "8677c8ad965a5dc8e821bd1f8e7773318df85fbd",
+    "rationale": "redaction.py directly describes the module's single responsibility: masking secrets via the redact_payload choke point. Name matches function.",
+    "state_hash": "e596e057ff5e91aa2b2853346394d5cf875c87e5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/audit/writer.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "writer.py directly describes the module's single responsibility: appending audit events to the database. Name matches function.",
+    "state_hash": "4c8f02fa46102e63278eae33797cf199f194f99e",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -53,6 +61,14 @@
     "decision": "reject",
     "rationale": "Module contains only dataclass and enum schemas, correctly named as models.",
     "state_hash": "044bd05c3d4dad7fbaa5afd29a1f00392cc08f10",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/models.py::ExecutionMode.from_dry_run",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "dry_run parameter selects execution mode (DRY_RUN vs LIVE), classic boolean switch pattern.",
+    "state_hash": "6bebc25426bb4420feb502cf1b12b5920b94d5ad",
     "decided_by": "cavecrew-reviewer"
   },
   {

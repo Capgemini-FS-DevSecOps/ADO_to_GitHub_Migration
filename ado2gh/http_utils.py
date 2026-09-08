@@ -5,6 +5,16 @@ from urllib3.util.retry import Retry
 
 
 def make_session(retries: int = 5) -> requests.Session:
+    """Build a ``requests`` session that retries transient failures with backoff.
+
+    Args:
+        retries: Maximum retries per request before the error is raised.
+            Retries cover 429 and the common 5xx responses on every method and
+            honour ``Retry-After``.
+
+    Returns:
+        A session with the retry adapter mounted for HTTP and HTTPS.
+    """
     s = requests.Session()
     retry = Retry(
         total=retries, backoff_factor=2.0,

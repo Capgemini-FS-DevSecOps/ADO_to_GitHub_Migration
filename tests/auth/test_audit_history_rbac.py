@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from ado2gh.api.agentic_routes import router
 from ado2gh.api.audit_access import resolve_audit_actor_filter
-from ado2gh.audit.audit import AuditWriter
+from ado2gh.audit import AuditWriter
 from ado2gh.auth.models import PlatformRole, PlatformUser
 from ado2gh.auth.service import AuthService
 from ado2gh.state.factory import create_state_db

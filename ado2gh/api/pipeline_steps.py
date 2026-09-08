@@ -565,7 +565,7 @@ class PipelineStepsMixin:
         )
         from ado2gh.api.profile_discovery import build_wave_from_profile_phase, require_gh_org
         from ado2gh.api.validation_run import _merge_profile_credentials
-        from ado2gh.audit.audit import redact_payload
+        from ado2gh.audit import redact_payload
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
         from ado2gh.models import MigrationScope

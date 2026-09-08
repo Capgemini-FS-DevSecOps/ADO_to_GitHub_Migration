@@ -26,7 +26,7 @@ def _messages_json(messages: Any) -> str:
     queryable copy of chat content, so a secret that reaches it survives
     restarts and exports (CA-003, FR-025).
     """
-    from ado2gh.audit.audit import redact_payload
+    from ado2gh.audit import redact_payload
 
     return json.dumps(redact_payload(messages or []))
 

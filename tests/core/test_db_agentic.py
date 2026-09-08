@@ -1,5 +1,5 @@
 """Extended StateDB agentic table coverage."""
-from ado2gh.audit.audit import AuditWriter
+from ado2gh.audit import AuditWriter
 from ado2gh.state.db import StateDB
 
 
