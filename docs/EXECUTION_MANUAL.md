@@ -441,7 +441,7 @@ ado2gh phase run -p poc -c migration_phase.yaml
 | `-p, --phase` | (required) | poc, pilot, wave1, wave2, wave3 |
 | `-c, --config` | (required) | migration_phase.yaml |
 | `--dry-run` | false | Simulate without changes |
-| `--force` | false | Skip gate check from previous phase |
+| `--force` | false | Proceed past the previous phase's gate. Does **not** bypass a *blocked* gate — see 8.5 |
 | `--db` | migration_state.db | State database |
 
 What happens during execution:
@@ -498,11 +498,36 @@ ado2gh phase gate-check -p wave2 -c migration_phase.yaml
 ado2gh phase run -p wave3 -c migration_phase.yaml
 ```
 
-### 8.5 Skip Previous Gate (Force)
+### 8.5 Get Past a Blocked Previous Gate (Two Steps)
+
+Overriding a gate is a decision someone has to own, so it is its own command with its own
+audit record rather than a flag on the migration run. Record the override on the phase whose
+gate is blocking, then run the next phase normally:
 
 ```bash
-ado2gh phase run -p pilot -c migration_phase.yaml --force
+# 1. Record the override on the BLOCKING phase, with a reason. This is the audited act.
+ado2gh phase gate-check -p poc -c migration_phase.yaml --override --reason "2 repos excluded by design"
+
+# 2. Run the next phase. The gate is now satisfied.
+ado2gh phase run -p pilot -c migration_phase.yaml
 ```
+
+**`phase run --force` will not do this for you.** The gate is always evaluated now; `--force`
+escalates it rather than skipping it, and escalating past a *blocking* gate requires a
+reason. `phase run` has no `--reason` flag — deliberately, so that an override is always a
+separate, attributable act — so a bare `--force` against a blocked gate fails closed:
+
+```
+Gate blocked for prior phase poc: forcing past it requires override_reason
+```
+
+Nothing is migrated when that happens, so it is safe to hit. **If your runbook or CI job
+currently uses `phase run --force` to push past a red gate, change it to the two-step form
+above** — it will otherwise stop at this error. `--force` is still meaningful where the
+previous gate is not blocking.
+
+Note that `--override` itself now requires a non-empty `--reason`; previously it failed with
+an internal error and wrote no gate record at all.
 
 ### 8.6 Run Specific Wave (v3 Style)
 

@@ -15,35 +15,88 @@ def register(cli):
         pass
 
     @phase_group.command("run")
-    @click.option("--config", "-c", required=True)
+    @click.option("--config", "-c", required=True,
+                  help="Phase config file, normally migration_phase.yaml.")
     @click.option("--phase", "-p", "phase_name", required=True,
-                  type=click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]))
-    @click.option("--dry-run", is_flag=True, default=False)
-    @click.option("--force", is_flag=True, default=False)
-    @click.option("--db", default="migration_state.db", show_default=True)
+                  type=click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]),
+                  help="Phase to run. Phases go in order: poc, pilot, wave1, wave2, wave3.")
+    @click.option("--dry-run", is_flag=True, default=False,
+                  help="Show what would happen. Creates nothing, pushes nothing.")
+    @click.option("--force", is_flag=True, default=False,
+                  help="Go ahead even though the previous phase's gate did not pass. "
+                       "Does NOT get you past a blocked gate: record the override "
+                       "first with 'phase gate-check --override --reason \"...\"'.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file.")
     def phase_run(config, phase_name, dry_run, force, db):
+        """Migrate the repos assigned to one phase, in batches, with checkpoints.
+
+        Every phase after poc checks the previous phase's gate before it starts.
+        If that gate has not passed, or was never checked, the run stops and
+        nothing is migrated.
+
+        To go ahead anyway, record the override as its own step first:
+
+        \b
+            ado2gh phase gate-check -c <config> -p <prior> --override --reason "..."
+            ado2gh phase run       -c <config> -p <next>
+
+        --force on its own is not enough. Against a blocked gate it stops with
+        "Gate blocked for prior phase <name>: forcing past it requires
+        override_reason". There is no --reason flag here on purpose: an override
+        is a separate act, with a named person and a stated reason behind it.
+        """
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.contracts import PhaseRunRequest
         accel = Accelerator(db_path=db)
         result = accel.run_phase(PhaseRunRequest(
-            config_path=config, phase=phase_name, dry_run=dry_run, force=force, db_path=db,
+            config_path=config, phase=phase_name, dry_run=dry_run, force=force,
+            # `phase run` has no --reason flag (frozen CLI surface), so --force
+            # past a blocking gate is refused. Escalate via:
+            #   phase gate-check --phase <prior> --override --reason "..."
+            override_reason="",
+            db_path=db,
         ))
         console.print(result)
 
     @phase_group.command("gate-check")
-    @click.option("--config", "-c", required=True)
+    @click.option("--config", "-c", required=True,
+                  help="Phase config file, normally migration_phase.yaml.")
     @click.option("--phase", "-p", "phase_name", required=True,
-                  type=click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]))
-    @click.option("--override", is_flag=True, default=False)
-    @click.option("--reason", default="")
-    @click.option("--db", default="migration_state.db", show_default=True)
+                  type=click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]),
+                  help="Phase whose gate to check.")
+    @click.option("--override", is_flag=True, default=False,
+                  help="Accept a failing gate and let the next phase run. "
+                       "Needs --reason with text in it.")
+    @click.option("--reason", default="",
+                  help="Why you are overriding. Required with --override, and kept "
+                       "on the gate record for the audit trail.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file.")
     def gate_check(config, phase_name, override, reason, db):
+        """Check a phase's gate, or record an operator override of it.
+
+        The gate measures how much of the phase actually succeeded against the
+        thresholds in the config. 'phase run' will not start the next phase
+        until this phase's gate passes or is overridden here.
+
+        Add --override --reason "..." when you have decided to accept the
+        failures and move on. Both are needed: --override without a reason is
+        rejected. The reason is stored and shown in audit history, so write it
+        for the person who reads it months from now.
+        """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.phase.gate_checker import PhaseGateChecker
         from ado2gh.state.factory import create_state_db
         ConfigLoader.load(config)
         checker = PhaseGateChecker(create_state_db(db))
-        result = checker.check(PhaseType(phase_name), override=override, reason=reason)
+        phase = PhaseType(phase_name)
+        if override:
+            if not reason.strip():
+                raise click.UsageError("--override requires a non-empty --reason")
+            result = checker.override(phase, reason.strip())
+        else:
+            result = checker.check(phase)
         print_gate_result(result, phase_name)
 
     @phase_group.command("assign")

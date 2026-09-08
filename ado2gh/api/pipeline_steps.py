@@ -565,6 +565,7 @@ class PipelineStepsMixin:
         )
         from ado2gh.api.profile_discovery import build_wave_from_profile_phase, require_gh_org
         from ado2gh.api.validation_run import _merge_profile_credentials
+        from ado2gh.assignments.audit import redact_payload
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
         from ado2gh.models import MigrationScope
@@ -884,11 +885,21 @@ class PipelineStepsMixin:
         else:
             phase_cfg = adv.config_path.replace(".yaml", "_phase.yaml")
             config_for_phase = phase_cfg if _phase_config_exists(adv.config_path) else adv.config_path
+            # force=True escalates a blocking prior-phase gate, it never skips it
+            # (GAP-009). The escalation is only allowed with the operator's written
+            # justification, which the console collects on the migrate form and
+            # sends as `override_reason`. CA-003: it is free operator text, so it
+            # goes through the platform's redaction choke point before it is
+            # persisted on the OVERRIDE record and shown in audit history.
+            override_reason = str(
+                redact_payload((getattr(run, "override_reason", "") or "").strip()),
+            )
             result = accel.run_phase(PhaseRunRequest(
                 config_path=config_for_phase,
                 phase=run.phase,
                 dry_run=run.dry_run,
                 force=True,
+                override_reason=override_reason,
                 db_path=adv.db_path,
             ))
             if result.completed == 0 and result.failed == 0:

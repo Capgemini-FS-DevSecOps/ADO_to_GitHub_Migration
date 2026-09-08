@@ -99,6 +99,9 @@ class PipelineRun:
     wave_id: Optional[int] = None
     repository_id: Optional[str] = None
     migrate_deps_only: bool = True
+    # Free operator text. Redacted at the point it is persisted (pipeline_steps.py),
+    # and deliberately absent from to_dict() so it never rides back out in a response.
+    override_reason: str = ""
     steps: list[PipelineStep] = field(default_factory=list)
     logs: list[str] = field(default_factory=list)
     error: Optional[str] = None

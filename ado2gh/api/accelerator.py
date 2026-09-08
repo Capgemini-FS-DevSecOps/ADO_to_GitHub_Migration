@@ -104,14 +104,22 @@ class Accelerator:
         gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
         db = create_state_db(request.db_path)
         phase_t = PhaseType(request.phase)
-        if not request.force:
+        from ado2gh.models import PHASE_ORDER
+        prev_idx = PHASE_ORDER.index(phase_t) - 1
+        if prev_idx >= 0:
+            prior = PHASE_ORDER[prev_idx]
             checker = PhaseGateChecker(db)
-            from ado2gh.models import PHASE_ORDER
-            prev_idx = PHASE_ORDER.index(phase_t) - 1
-            if prev_idx >= 0 and not checker.can_advance(PHASE_ORDER[prev_idx]):
-                raise ConfigurationError(
-                    f"Gate blocked for prior phase {PHASE_ORDER[prev_idx].value}"
-                )
+            # The gate is always evaluated; `force` escalates it, never skips it.
+            if not checker.can_advance(prior):
+                if not request.force:
+                    raise ConfigurationError(f"Gate blocked for prior phase {prior.value}")
+                reason = (request.override_reason or "").strip()
+                if not reason:
+                    raise ConfigurationError(
+                        f"Gate blocked for prior phase {prior.value}: forcing past it "
+                        "requires override_reason"
+                    )
+                checker.override(prior, reason)
         phase_scores = db.get_risk_scores_for_phase(phase_t)
         total_pipes = sum(
             db.inventory_count_for_repo(s["project"], s["repo_name"]) for s in phase_scores

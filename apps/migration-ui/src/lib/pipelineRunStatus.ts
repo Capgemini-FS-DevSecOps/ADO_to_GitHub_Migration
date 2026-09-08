@@ -21,3 +21,15 @@ export function pipelineRunStatusLabel(status: StepStatus | string): string {
 export function pipelineRunNeedsApproval(status: string): boolean {
   return status === 'awaiting_approval';
 }
+
+/**
+ * Normalise the gate override justification sent with a pipeline run.
+ *
+ * A live run forces past the previous phase's migration gate, and the
+ * accelerator only allows that escalation with a written justification, which it
+ * records on the gate override. A dry run never reaches the gate, so it carries
+ * no justification and cannot leave an override record behind.
+ */
+export function gateOverrideReason(dryRun: boolean, reason: string): string {
+  return dryRun ? '' : reason.trim();
+}

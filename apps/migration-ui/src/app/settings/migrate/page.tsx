@@ -11,6 +11,7 @@ import {
   fetchSettings,
   startPipelineRun,
 } from '@/lib/api';
+import { gateOverrideReason } from '@/lib/pipelineRunStatus';
 import type { DiscoveryRepoItem, PipelineStep } from '@/lib/types';
 
 export default function MigratePage() {
@@ -38,6 +39,9 @@ function MigrationView() {
 
   // Dependency migration option (default: include dependencies)
   const [migrateDepsOnly, setMigrateDepsOnly] = useState(true);
+
+  // Justification recorded when a live run forces past a blocking phase gate
+  const [overrideReason, setOverrideReason] = useState('');
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const profileId = settings?.active_profile_id;
@@ -71,6 +75,7 @@ function MigrationView() {
         steps: selectedSteps,
         repository_id: selectedRepoId || null,
         migrate_deps_only: migrateDepsOnly,
+        override_reason: gateOverrideReason(dryRun, overrideReason),
       }),
     onSuccess: (d) => router.push(`/?run=${d.run.id}`),
     onError: (err) => {
@@ -211,6 +216,24 @@ function MigrationView() {
                   Dry run
                 </label>
               </div>
+              {!dryRun && (
+                <div className="form-row">
+                  <label htmlFor="override-reason">Gate override justification</label>
+                  <textarea
+                    id="override-reason"
+                    className="oai-input"
+                    rows={2}
+                    placeholder="Why this migration may run before the previous phase's gate passes"
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                  />
+                  <p className="form-hint" style={{ marginTop: 4 }}>
+                    A live run forces past the previous phase&apos;s migration gate. If that gate
+                    is blocking, the run stops unless you record why here. Your justification is
+                    saved on the gate override record and shown in audit history under your name.
+                  </p>
+                </div>
+              )}
               {selectedRepoId && (
                 <div className="form-row form-row-checkbox">
                   <label htmlFor="migrate-deps">

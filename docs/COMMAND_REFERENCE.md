@@ -187,12 +187,22 @@ ado2gh phase run -p wave1 -c migration_phase.yaml
 ado2gh phase run -p wave2 -c migration_phase.yaml
 ado2gh phase run -p wave3 -c migration_phase.yaml
 
-# Skip gate check from previous phase
-ado2gh phase run -p pilot -c migration_phase.yaml --force
+# Get past a BLOCKED gate on the previous phase — two steps, in this order.
+# Record the override first (this is the audited act), then run the phase.
+ado2gh phase gate-check -p poc -c migration_phase.yaml --override --reason "2 repos excluded by design"
+ado2gh phase run -p pilot -c migration_phase.yaml
 
 # Custom DB
 ado2gh phase run -p poc -c migration_phase.yaml --db custom.db
 ```
+
+**`--force` no longer skips a blocked gate.** It used to bypass the previous phase's gate
+silently and leave no record of who did it or why. The gate is now always evaluated, and
+forcing past a *blocking* one requires a reason, which `phase run` has no flag to supply —
+so `phase run --force` against a blocked gate fails with `Gate blocked for prior phase
+<name>: forcing past it requires override_reason` and nothing is migrated. Record the
+override with `phase gate-check --override --reason "..."` first, as shown above. `--force`
+still has an effect where the previous gate is not blocking.
 
 **What it does:** Migrates repos in sub-batches with checkpointing. Auto-resumes if interrupted.
 **Side effects:** Creates GitHub repos, pushes code, transforms pipelines, creates issues.

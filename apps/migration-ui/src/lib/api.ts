@@ -371,6 +371,7 @@ export async function startPipelineRun(body: {
   steps?: string[];
   repository_id?: string | null;
   migrate_deps_only?: boolean;
+  override_reason?: string;
 }) {
   return api<{ run: PipelineRun }>('/v1/pipeline/runs', {
     method: 'POST',

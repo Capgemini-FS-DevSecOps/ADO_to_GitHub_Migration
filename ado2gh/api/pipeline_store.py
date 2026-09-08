@@ -96,6 +96,7 @@ class PipelineRunStore:
         started_by_display_name: str | None = None,
         repository_id: str | None = None,
         migrate_deps_only: bool = True,
+        override_reason: str = "",
     ) -> PipelineRun:
         defs = step_defs or ACCELERATOR_PIPELINE_STEPS
         now = datetime.now(timezone.utc).isoformat()
@@ -115,6 +116,7 @@ class PipelineRunStore:
             wave_id=wave_id,
             repository_id=repository_id,
             migrate_deps_only=migrate_deps_only,
+            override_reason=override_reason,
             steps=steps,
             created_at=now,
             updated_at=now,

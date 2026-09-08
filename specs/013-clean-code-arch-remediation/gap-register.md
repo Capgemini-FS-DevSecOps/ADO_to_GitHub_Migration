@@ -41,7 +41,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | remediated |
 | GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | remediated |
 | GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | remediated |
-| GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | open |
+| GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | remediated |
 | GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | remediated |
 | GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | remediated |
 | GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
@@ -105,7 +105,7 @@ in this register. T037 therefore had no dispute to put to the operator.
 - status: remediated
 - resolution: baseline stabilisation (T005–T010), commits `bcd9934, d72c117, 60b5b1f, 44564f2, 1345bde, b42bd07, d54ef1f, 57dce51, e85370e, 9c83a29` — all test-side, no production file changed — plus deletion of `[tool.coverage.run] omit` and replacement of the dishonest 85 % assertion with a never-lowered ratchet at the measured whole-package figure. The residual 56 % → 85 % shortfall is **not** closed here and is carried as a separate deferred gap (see GAP-022 (GAP-TOOL-01)).
 - regression_check: `.github/workflows/ci.yml:36` (`--cov-fail-under=56`, ratchet never lowered) and the full suite at `.venv\Scripts\python.exe -m pytest`
-- revert_proof: restoring the `[tool.coverage.run] omit` block and re-running `pytest --cov=ado2gh --cov-fail-under=56` measures a different (inflated) percentage over a smaller denominator; reverting any one stabilisation commit returns the suite to red. Proof to be recorded at T035.
+- revert_proof: restoring the `[tool.coverage.run] omit` block and re-running `pytest --cov=ado2gh --cov-fail-under=56` measures a different (inflated) percentage over a smaller denominator; reverting any one stabilisation commit returns the suite to red. **No stash-based revert proof exists for this entry, and none is owed.** FR-023's revert-proof discipline applies to the critical set (GAP-002 through GAP-016), each of which has a single regression test that must fail with its fix stashed; GAP-001 is rated `high`, its remediation is spread across ten test-side commits and a coverage-configuration change, and it has no single regression test to fail. The earlier note promising a proof "at T035" was wrong about which task would produce it — T035 filled the Summary and verified citations, and recorded no proof. The verification that does exist is the one named under `regression_check`: the whole-package ratchet in CI and the full suite, both of which are exercised on every run.
 - contract_change: false
 - closed_on: 2026-09-07
 
@@ -256,12 +256,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - repo-wide grep: `GateChecker.override` has no caller in `ado2gh/cli/`, `ado2gh/api/`, or `services/` — the audited path is dead code
 - severity: critical (critical_test: a)
 - blast_radius: the documented escalation contract (`--override --reason`, CLAUDE.md "Key Patterns") is unreachable; the reachable escalation writes nothing. Every gate bypass on a real wave — repo creation, git push, pipeline push, ADO cleanup — proceeds with no persisted record of who bypassed it or why, defeating the phase-gate audit trail entirely.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: The gate is now always evaluated. `ado2gh/api/accelerator.py` no longer wraps the whole `PhaseGateChecker` block in `if not request.force:`; `force` escalates a gate rather than skipping it, and escalating past a *blocking* gate goes through `checker.override(prior, reason)` — the designed audited path, which was previously dead code — so the override is persisted with its reason. With no reason supplied the call refuses: `Gate blocked for prior phase {prior}: forcing past it requires override_reason`, and nothing is migrated. `ado2gh/cli/phase.py` passes `override_reason=""` from `phase run`: **no `--reason` flag was added to `phase run`**, deliberately, both because the CLI surface is frozen and because an override should be a separate attributable act. Operator decision, 2026-09-08: the sanctioned path is `phase gate-check --override --reason "..."` followed by an ordinary `phase run`, and the same command now rejects `--override` without a non-empty `--reason` (`click.UsageError`) instead of raising the TypeError recorded as GAP-017. `docs/COMMAND_REFERENCE.md` and `docs/EXECUTION_MANUAL.md` document the two-step form and warn runbooks and CI jobs that currently use `phase run --force` against a red gate that they must change. The console keeps a usable path for the same escalation: `apps/migration-ui/src/app/settings/migrate/page.tsx` shows an inline justification field on live runs only, normalised by `gateOverrideReason` in `apps/migration-ui/src/lib/pipelineRunStatus.ts`, carried as `override_reason` through `PipelineRunStartRequest` and `PipelineRunStore`, and redacted by `redact_payload` in `ado2gh/api/pipeline_steps.py` at the point it is persisted. It is deliberately absent from `PipelineRun.to_dict()` so free operator text never rides back out in a run response un-redacted (CA-003).
+- regression_check: `tests/core/test_gap_009_phase_force_unaudited.py`
+- revert_proof: `git stash push -- ado2gh/api/accelerator.py`, then `.venv\Scripts\python.exe -m pytest tests/core/test_gap_009_phase_force_unaudited.py`, then `git stash pop`. With the fix reverted: `1 failed, 2 warnings in 3.80s` — `test_forced_phase_run_persists_audited_override`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: false in the frozen-surface sense — no CLI command, option, route, table or environment variable was added or removed, and `tests/contract/public_surface_snapshot.json` is unchanged by this gap. The *behaviour* of `phase run --force` does change: it no longer skips a blocking gate. That is recorded as approved change 3 in `contracts/public-contract-freeze.md` § Approved contract changes, with the migration note for existing runbooks.
+- closed_on: 2026-09-08
 
 ### GAP-010 (GAP-TOKEN-01) `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events
 
