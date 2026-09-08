@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any
 
+from ado2gh.assignments.audit import redact_payload
 from ado2gh.core.gei_runtime import gei_subprocess_env
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
@@ -17,12 +18,16 @@ from ado2gh.models import MigrationScope, RepoConfig
 
 def _redact(text: str, *secrets: str) -> str:
     """Strip known secret values (PATs, tokens) out of subprocess output before
-    it reaches error messages, logs, or audit records."""
+    it reaches error messages, logs, or audit records.
+
+    Exact-value stripping for the credentials we hold, then the platform's
+    single masking choke point (FR-025) for shapes we do not hold — a PAT echoed
+    by git for some *other* remote is still a leak."""
     redacted = text
     for secret in secrets:
         if secret:
             redacted = redacted.replace(secret, "***")
-    return redacted
+    return str(redact_payload(redacted))
 
 
 @dataclass

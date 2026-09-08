@@ -42,7 +42,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | remediated |
 | GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | remediated |
 | GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | open |
-| GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | open |
+| GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | remediated |
 | GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | open |
 | GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
 | GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | open |
@@ -277,12 +277,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - three independently maintained masking implementations with non-overlapping coverage and no reuse: `ado2gh/assignments/audit.py:10-18`, `ado2gh/core/scopes/git_scope.py:18-25`, `ado2gh/agents/migration_agent/utils.py:335`
 - severity: critical (critical_test: b)
 - blast_radius: any audit event whose free-text or payload carries an ADO PAT, a Bearer value, or a prefixed key name is persisted verbatim into `audit_events` — the highest-retention, most broadly exported artefact in the system (`GET /v1/history/sessions/export`). The single function designated as the containment choke point does not contain the platform's own primary credential type.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: `ado2gh/assignments/audit.py:redact_payload` is made the platform's single masking choke point (FR-025) and taught the shapes it was missing. It now covers bare Azure DevOps PATs — the platform's own primary credential, which has no prefix to match on — `Bearer <token>` values, and realistic key names such as `ado_pat`, `access_token` and `github_token`, which previously fell through because `_SECRET_KEY_NAMES` was matched by exact equality. The other two masking implementations stop being independent: `ado2gh/core/scopes/git_scope.py:_redact` keeps stripping the exact credential values it holds and then passes the result through `redact_payload`, because a PAT echoed by git for some *other* remote is still a leak, and `ado2gh/logging_config.py` gains `SecretRedactingFilter`, attached to the root handler so records propagated from any module's logger are covered. The filter never raises and never logs — it replaces the record with `<log record suppressed: redaction failed>` if masking fails, since an exception there would take logging down for the whole process.
+- regression_check: `tests/auth/test_gap_010_redact_payload_token_shapes.py`
+- revert_proof: `git stash push -- ado2gh/assignments/audit.py`, then `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_010_redact_payload_token_shapes.py`, then `git stash pop`. With the fix reverted: `1 failed in 3.60s` — `test_bare_ado_pat_under_realistic_key_is_not_persisted`, AssertionError at test line 58. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5). A first attempt stashed `audit.py` together with its five delegating call sites, which is broader than this gap's own fix; the proof was re-taken with `audit.py` alone and still failed, so the minimal proof is the one recorded here.
+- contract_change: false — `redact_payload` keeps its signature and return type; only the set of shapes it masks widens.
+- closed_on: 2026-09-08
 
 ### GAP-011 (GAP-AGT-02) `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked
 
