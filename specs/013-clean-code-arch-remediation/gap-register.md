@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-50 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused; the per-component placeholder each id
+51 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 was appended on 2026-09-08 with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -21,14 +21,14 @@ table below rather than by re-rating an entry here.
 
 | Severity | Count |
 |----------|-------|
-| critical | 15 |
+| critical | 16 |
 | high | 19 |
 | medium | 11 |
 | low | 5 |
-| **total** | **50** |
+| **total** | **51** |
 
-All 15 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 50 entries carries at least one path:line citation or a reproduction command
+All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
+one of the 51 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -67,6 +67,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-032 (GAP-PIPE-02) | The branch that keeps secret values out of generated YAML has no test | open |
 | GAP-033 (GAP-DEPLOY-02) | Scheduled migration workflow pushes to GitHub on a cron with no environment approval gate | open |
 | GAP-034 (GAP-DEPLOY-04) | Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback | open |
+| GAP-051 (GAP-TOOL-07) | The test suite opens the developer's real agent checkpoint DB and root `migration_state.db` | remediated |
 
 ## Disputes
 
@@ -1013,6 +1014,26 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: —
 - contract_change: false
 - closed_on: —
+
+### GAP-051 (GAP-TOOL-07) The test suite opens the developer's real agent checkpoint DB and root `migration_state.db`
+
+- components: tooling & guards, agent service, state persistence
+- violates: Principle V (Enterprise Migration Safeguards — migration state must not be written by anything but a migration run); Principle VI (CI reliability)
+- evidence:
+  - `ado2gh/agents/migration_agent/graph/builder.py:129` — `db_path = os.environ.get("ADO2GH_SQLITE_PATH", "data/agent_checkpoints.db")`, resolved at call time inside `_get_checkpointer`, relative to the working directory; `get_compiled_graph()` (`:335`) reaches it from the agent's `/health` route and from every session test
+  - `tests/conftest.py` (before this fix) — the session fixture isolated only `ADO2GH_DATA_DIR`; `ADO2GH_SQLITE_PATH` stayed unset, so the checkpointer opened the developer's real `data/agent_checkpoints.db` (2.3 MB, gitignored via `*.db`, the store for real agent sessions) and `ado2gh/auth/service.py:26,87,149`, `ado2gh/api/live_approval_store.py:50`, `ado2gh/api/agentic_routes.py:18`, `ado2gh/api/profile_governance.py:145` opened `migration_state.db` in the repo root
+  - `ado2gh/agents/migration_agent/graph/builder.py:364-389` — `clear_langgraph_thread` deletes a checkpoint thread by session id; session-lifecycle tests call it against whatever file the checkpointer holds
+  - `ado2gh/state/storage_config.py:51` — `sqlite_path = os.environ.get("ADO2GH_SQLITE_PATH", sqlite_default)`: the environment overrides an explicit `create_state_db(db_path)`, so a single session-wide override would have made every test that passes its own path share one file (measured: `tests/profile/test_profile_discovery.py` and `tests/profile/test_profile_scan_db.py`, 3 failures, `run-isolation-fix.first-attempt.txt`)
+  - `docs/STRUCTURAL_CHANGELOG.md:368,435` — increments 1–3 could only be verified in a detached worktree because the shared tree stalled mid-suite with `data/agent_checkpoints.db-wal` / `-shm` present
+  - reproduction: with `tests/conftest.py` at its pre-fix state, `.venv\Scripts\python.exe -m pytest` in the shared working tree wedges partway through and leaves `data/agent_checkpoints.db-wal` and `-shm` beside the real database; observed three times on 2026-09-08 (`tests/feature` test 17, `tests/contract/test_agent_pev_flow_contracts.py::test_health_endpoint_contract`, and after 12 tests)
+- severity: critical (critical_test: c)
+- blast_radius: every run of the suite on a developer machine writes checkpoint rows, and can delete checkpoint threads, in the database that holds real agent sessions, and writes auth, approval and profile rows into the root `migration_state.db`. A real session whose id collides with a test's is unresumable afterwards. The secondary effect is the one that surfaced first: a hot WAL left by a killed run wedges the next run on open, which is why three increments had to be verified in a detached worktree instead of the tree being shipped.
+- status: remediated
+- resolution: `tests/conftest.py` gains a function-scoped autouse fixture, `_isolated_sqlite_path`, that points `ADO2GH_SQLITE_PATH` at `tmp_path / "migration_state.db"` for every test through `monkeypatch`, so a test's own `monkeypatch.setenv` still wins and teardown restores the caller's environment. The variable already existed and is the one `_get_checkpointer` reads, so no environment variable was added and no production file changed. It is function-scoped rather than an extension of the session-scoped `_isolated_data_dir` because `create_state_db()` lets the variable override an explicit `db_path`; a single session-wide file would have made every test that passes its own path share one database (three tests failed that way on the first attempt). The three tests that build a `StateDB` directly and then call code that routes through `create_state_db()` — `tests/profile/test_profile_discovery.py` (two tests) and the `db` fixture in `tests/profile/test_profile_scan_db.py` — now pin the variable to the same file they construct, which they had silently relied on being unset. The pre-existing WAL/SHM files beside `data/agent_checkpoints.db` and `migration_state.db` were left in place; nothing under `data/` was created, modified or deleted.
+- regression_check: `tests/agent/test_gap_051_checkpointer_isolation.py` — builds the real checkpointer, asks its aiosqlite connection `PRAGMA database_list` for the file it holds, and asserts the file is neither under the repository's `data/` directory nor named `agent_checkpoints.db`
+- revert_proof: `git stash push -- tests/conftest.py`, then, from a temporary working directory so the reverted default cannot touch the real file, `.venv\Scripts\python.exe -m pytest d:\GitHub\Work\ADO_to_GitHub_Migration\tests\agent\test_gap_051_checkpointer_isolation.py --rootdir d:\GitHub\Work\ADO_to_GitHub_Migration`, then `git stash pop`. With the fix reverted: `1 failed in 4.16s` — `AssertionError: WindowsPath('.../gap051-revert-t86ifzdw/data/agent_checkpoints.db')`, and a fresh `data/agent_checkpoints.db` appeared under the temporary directory. Taken 2026-09-08 by the implementation agent (Claude Opus 5). With the fix in place the full suite in the shared working tree gives `898 passed, 30 skipped, 0 failed in 83.30s` (`run-isolation-fix.txt`; 886 baseline + this test + the 11 tests of the untracked `tests/unit/test_function_inventory_script.py` present in the tree), and the mtimes of `data/agent_checkpoints.db`, its `-wal`/`-shm`, and the root `migration_state.db` are byte-for-byte unchanged before and after (`run-isolation-fix.mtimes-before.txt`).
+- contract_change: false — no route, CLI command, table or environment variable changed; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-08
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 

@@ -7,8 +7,18 @@ so session and message tests issue live LLM calls — against a local Ollama the
 do not fail, they answer, and the suite hangs for minutes per test. CI has no
 such directory; pointing every test at an empty one restores parity.
 
-Tests that need their own data dir keep monkeypatching ``ADO2GH_DATA_DIR``;
-a function-scoped monkeypatch overrides this session default.
+``$ADO2GH_SQLITE_PATH`` gets the same treatment, per test. Unset, the
+LangGraph checkpointer opens ``data/agent_checkpoints.db`` — the developer's
+real agent session store — and the auth, live-approval and profile stores open
+``migration_state.db`` in the repo root. Any test that reaches ``/health`` or
+``get_compiled_graph()`` would otherwise write into live migration state, and
+a hot WAL left behind by a killed run wedges the next one on open. The path is
+function-scoped because ``create_state_db()`` lets the variable override an
+explicit ``db_path``: one session-wide file would make every test that passes
+its own path share a single database.
+
+Tests that need their own data dir or database keep monkeypatching these
+variables; a test's own monkeypatch overrides these defaults.
 
 The same fixture also closes the cached LangGraph checkpointer at session end.
 Its aiosqlite connection owns a *non-daemon* worker thread that blocks on its
@@ -20,6 +30,7 @@ from __future__ import annotations
 import os
 
 import pytest
+
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -34,3 +45,8 @@ def _isolated_data_dir(tmp_path_factory):
         os.environ.pop("ADO2GH_DATA_DIR", None)
     else:
         os.environ["ADO2GH_DATA_DIR"] = previous
+
+
+@pytest.fixture(autouse=True)
+def _isolated_sqlite_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADO2GH_SQLITE_PATH", str(tmp_path / "migration_state.db"))

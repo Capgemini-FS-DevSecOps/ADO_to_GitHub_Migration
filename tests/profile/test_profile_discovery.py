@@ -6,7 +6,8 @@ from ado2gh.api.profile_discovery import (
 from ado2gh.state.db import StateDB
 
 
-def test_sync_profile_scan_to_risk_scores(tmp_path):
+def test_sync_profile_scan_to_risk_scores(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADO2GH_SQLITE_PATH", str(tmp_path / "state.db"))
     db = StateDB(tmp_path / "state.db")
     profile_id = "prof-sync"
     scan = {
@@ -30,9 +31,10 @@ def test_sync_profile_scan_to_risk_scores(tmp_path):
     assert len(all_scores) == 2
 
 
-def test_sync_prunes_stale_risk_scores(tmp_path):
+def test_sync_prunes_stale_risk_scores(tmp_path, monkeypatch):
     from ado2gh.api.profile_discovery import risk_score_from_repo_dict
 
+    monkeypatch.setenv("ADO2GH_SQLITE_PATH", str(tmp_path / "state.db"))
     db = StateDB(tmp_path / "state.db")
     db.upsert_risk_score(risk_score_from_repo_dict({
         "project": "P1", "repo_name": "beta", "total_score": 20,

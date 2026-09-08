@@ -229,7 +229,9 @@ are preinstalled in the local venv.
 
 - If pytest appears to hang *after* the last test, suspect a leaked non-daemon aiosqlite
   checkpointer thread (`graph/builder.py` `_close_checkpointer` + session-scoped conftest
-  teardown). Diagnose with `py-spy dump`.
+  teardown). Diagnose with `py-spy dump`. A stall *mid-run* with `data/agent_checkpoints.db-wal`
+  appearing means a test reached the real checkpoint DB: `tests/conftest.py` points
+  `ADO2GH_SQLITE_PATH` at a per-test temp file, so look for a test that unsets it.
 - `tests/unit/test_no_orphaned_modules.py` guards against orphan modules — update its
   allowlist when adding or deleting dynamically imported modules.
 

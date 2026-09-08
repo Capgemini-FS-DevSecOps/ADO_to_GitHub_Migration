@@ -7,7 +7,8 @@ from ado2gh.state.db import StateDB
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> StateDB:
+def db(tmp_path: Path, monkeypatch) -> StateDB:
+    monkeypatch.setenv("ADO2GH_SQLITE_PATH", str(tmp_path / "test_state.db"))
     return StateDB(tmp_path / "test_state.db")
 
 
