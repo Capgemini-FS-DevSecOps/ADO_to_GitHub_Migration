@@ -82,18 +82,20 @@ def list_llm_provider_types(request: Request):
     return {"providers": list_provider_specs()}
 
 
-@router.get("/v1/settings/llm-models/catalog")
-def get_llm_catalog(
-    request: Request,
-    provider: str,
-    api_key: str = "",
-    base_url: str = "",
-):
+# POST, not GET: the provider api_key is a credential and a URL is the least private
+# part of a request (browser history, HAR exports, proxy access logs -- CWE-598).
+# Same body-carried shape as /v1/settings/llm-models/validate below.
+@router.post("/v1/settings/llm-models/catalog")
+def get_llm_catalog(request: Request, body: dict):
     require_manage_models(request)
     from ado2gh.api.llm.model_catalog import list_catalog
 
     try:
-        return list_catalog(provider=provider, api_key=api_key, base_url=base_url)
+        return list_catalog(
+            provider=body.get("provider", ""),
+            api_key=body.get("api_key", ""),
+            base_url=body.get("base_url", ""),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

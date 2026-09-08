@@ -100,10 +100,17 @@ export async function fetchCatalog(params: {
   apiKey?: string;
   baseUrl?: string;
 }): Promise<CatalogResponse> {
-  const query = new URLSearchParams({ provider: params.provider });
-  if (params.apiKey) query.set('api_key', params.apiKey);
-  if (params.baseUrl) query.set('base_url', params.baseUrl);
-  return llmFetch<CatalogResponse>(`/v1/settings/llm-models/catalog?${query.toString()}`);
+  // POST so the provider key rides in the body — a URL lands in browser history,
+  // HAR exports and every proxy access log on the path (CWE-598).
+  return llmFetch<CatalogResponse>('/v1/settings/llm-models/catalog', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: params.provider,
+      api_key: params.apiKey ?? '',
+      base_url: params.baseUrl ?? '',
+    }),
+  });
 }
 
 export async function fetchConnectivity(): Promise<ConnectivityProfile> {

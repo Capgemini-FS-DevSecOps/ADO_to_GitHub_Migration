@@ -44,7 +44,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | remediated |
 | GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | remediated |
 | GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | remediated |
-| GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
+| GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | remediated |
 | GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | remediated |
 | GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | remediated |
 | GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | remediated (residual recorded) |
@@ -315,12 +315,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `apps/migration-ui/src/lib/llmSettings.ts:125-131,139-145` — `validateModel` and `saveModel` in the same file POST the identical `api_key` field in a JSON body, proving the safe pattern was already available
 - severity: critical (critical_test: b)
 - blast_radius: CWE-598. By default the key lands in browser history, any intermediary proxy or server access log that records the request line, and any HAR/devtools capture — none of which requires a non-default topology (the "deployment topology never qualifies" caveat is scoped to test (d) only). Single call site, admin-gated by `require_manage_models`, but the exposure is to infrastructure rather than to other users.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: The unsafe channel was the contracted server API, not a lone client mistake, so both ends changed. `services/accelerator_api/routes/settings_routes.py` replaces `@router.get("/v1/settings/llm-models/catalog")` and its `api_key: str = ""` query parameter with `@router.post(...)` reading a JSON body, and `apps/migration-ui/src/lib/llmSettings.ts:fetchCatalog` sends that body instead of building `URLSearchParams`. The safe pattern already existed in the same file — `validateModel` and `saveModel` POST the identical `api_key` field in a JSON body — so this brings the one outlier into line rather than inventing a mechanism. The key no longer reaches browser history, intermediary proxy or server access logs that record the request line, or a HAR capture (CWE-598).
+- regression_check: `tests/contract/test_gap_012_api_key_in_query_string.py::test_no_accelerator_route_accepts_a_secret_as_a_query_parameter`, which asserts the property across every accelerator route rather than only this one
+- revert_proof: `git stash push -- services/accelerator_api/routes/settings_routes.py`, then `.venv\Scripts\python.exe -m pytest tests/contract/test_gap_012_api_key_in_query_string.py`, then `git stash pop`. With the fix reverted: `1 failed, 5 warnings in 4.23s` — `test_no_accelerator_route_accepts_a_secret_as_a_query_parameter`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: true — approved change 2 in `contracts/public-contract-freeze.md`, approved by the operator on 2026-09-08, and the only change in this remediation pass authorised to touch the frozen surface. `tests/contract/public_surface_snapshot.json` was edited in the same commit as the fix, exactly as § "Snapshot edit authorised for T040" specifies: `accelerator GET /v1/settings/llm-models/catalog` removed, `accelerator POST /v1/settings/llm-models/catalog` inserted in sort position, `http_routes` count unchanged at 148. Verified afterwards — `{'cli_commands': 96, 'db_tables': 25, 'env_vars': 68, 'http_routes': 148}`, a one-line insertion against a one-line deletion, and `tests/contract/test_public_surface_snapshot.py` green. No other snapshot drift was found.
+- closed_on: 2026-09-08
 
 ### GAP-013 (GAP-ENG-01) Workflow-integrity check is structurally incapable of reporting FAIL
 

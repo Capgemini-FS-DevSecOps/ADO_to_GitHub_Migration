@@ -60,9 +60,9 @@ def test_scenario1_catalog_validate_enable(client, monkeypatch):
     mock_validate_client.post.return_value = mock_validate_response
 
     with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_catalog_client):
-        catalog = client.get(
+        catalog = client.post(
             "/v1/settings/llm-models/catalog",
-            params={"provider": "anthropic", "api_key": "sk-ant-test"},
+            json={"provider": "anthropic", "api_key": "sk-ant-test"},
         )
     assert catalog.status_code == 200
     entry = catalog.json()["entries"][0]
@@ -103,9 +103,9 @@ def test_scenario2_openai_preset_fallback(client, monkeypatch):
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.side_effect = RuntimeError("network blocked")
     with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
-        catalog = client.get(
+        catalog = client.post(
             "/v1/settings/llm-models/catalog",
-            params={"provider": "openai", "api_key": "sk-test"},
+            json={"provider": "openai", "api_key": "sk-test"},
         )
     data = catalog.json()
     assert data["source"] == "preset"
@@ -140,7 +140,7 @@ def test_scenario7_operator_denied_models_and_connectivity(client):
     )
     client.post("/v1/auth/logout")
     client.post("/v1/auth/login", json={"username": "op1", "password": "twelve-char-pass"})
-    assert client.get("/v1/settings/llm-models/catalog", params={"provider": "anthropic"}).status_code == 403
+    assert client.post("/v1/settings/llm-models/catalog", json={"provider": "anthropic"}).status_code == 403
     assert client.get("/v1/settings/connectivity").status_code == 403
 
 

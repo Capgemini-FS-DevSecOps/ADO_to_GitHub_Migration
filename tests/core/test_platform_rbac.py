@@ -125,7 +125,7 @@ def test_operator_cannot_access_llm_catalog(client):
     _create_user(client, "op1", "operator")
     client.post("/v1/auth/logout")
     client.post("/v1/auth/login", json={"username": "op1", "password": "twelve-char-pass"})
-    r = client.get("/v1/settings/llm-models/catalog", params={"provider": "anthropic"})
+    r = client.post("/v1/settings/llm-models/catalog", json={"provider": "anthropic"})
     assert r.status_code == 403
 
 

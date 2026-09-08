@@ -70,11 +70,13 @@ def test_catalog_anthropic_live_contract(accel_client, monkeypatch):
         "ado2gh.api.llm.model_catalog.build_llm_http_client",
         lambda **kwargs: mock_client,
     )
-    r = accel_client.get(
+    # GAP-012: the key travels in the POST body, never in the URL (CWE-598).
+    r = accel_client.post(
         "/v1/settings/llm-models/catalog",
-        params={"provider": "anthropic", "api_key": "sk-ant-test"},
+        json={"provider": "anthropic", "api_key": "sk-ant-test"},
     )
     assert r.status_code == 200
+    assert "sk-ant-test" not in str(r.request.url)
     data = r.json()
     assert data["source"] == "live"
     assert data["entries"][0]["id"] == "claude-sonnet-4-6"
@@ -82,9 +84,9 @@ def test_catalog_anthropic_live_contract(accel_client, monkeypatch):
 
 def test_catalog_anthropic_empty_without_key(accel_client):
     _bootstrap_admin(accel_client)
-    r = accel_client.get(
+    r = accel_client.post(
         "/v1/settings/llm-models/catalog",
-        params={"provider": "anthropic"},
+        json={"provider": "anthropic"},
     )
     assert r.status_code == 200
     assert r.json()["entries"] == []
