@@ -9,7 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from typing import Any
 
-from ado2gh.assignments.audit import redact_payload
+from ado2gh.audit.audit import redact_payload
 from ado2gh.core.gei_runtime import gei_subprocess_env
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log

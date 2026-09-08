@@ -1,5 +1,5 @@
 """Audit payload redaction tests."""
-from ado2gh.assignments.audit import redact_payload
+from ado2gh.audit.audit import redact_payload
 
 
 def test_redact_github_token():

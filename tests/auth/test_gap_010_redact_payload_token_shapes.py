@@ -1,6 +1,6 @@
 """GAP-010 (GAP-TOKEN-01): audit redaction misses non-GitHub secret shapes.
 
-Reproduction from the gap register's evidence. ``ado2gh/assignments/audit.py``
+Reproduction from the gap register's evidence. ``ado2gh/audit/audit.py``
 declares seven ``_SECRET_PATTERNS`` that all match GitHub token prefixes
 (``ghp_``, ``gho_``, ``ghu_``, ``ghs_``, ``github_pat_``, ``pat-``) plus one
 JSON-key pattern, and a ``_SECRET_KEY_NAMES`` set matched by exact equality
@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 
-from ado2gh.assignments.audit import AuditWriter, redact_payload
+from ado2gh.audit.audit import AuditWriter, redact_payload
 
 # Obviously-fake literals shaped like the real thing (CA-003 -- never a real credential).
 FAKE_ADO_PAT = "a7x2k9q4m1p8s3v6y0b5n2h7j4l1d8f3g6t9w2z5c0r7e4u1i8o5"  # 52 chars, opaque

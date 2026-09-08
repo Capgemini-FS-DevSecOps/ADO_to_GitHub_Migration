@@ -338,3 +338,19 @@ on 2026-09-08; the route count is unchanged at 148. No file moved for it.
 
 - **Tests removed**: 0. Fifteen regression tests were added, one per gap, named `tests/**/test_gap_0NN_*.py`.
 - **Production functions deleted**: 2 — `agent_live_approved()` and the `PipelineRunStartApprovedRequest` model; plus two private methods merged into one and one private method renamed.
+
+## 2026-09-08 — 013 Increment 1: `ado2gh` root modules + `ado2gh/audit/`
+
+Phase 6 (US2) increment 1, run per the per-increment protocol in
+`specs/013-clean-code-arch-remediation/tasks.md`.
+
+`ado2gh/assignments/` held only the audit event writer and the platform's secret-masking
+choke point; the directory name described a feature that `859bb6b` deleted. The review
+agent confirmed the `module_name_review` proposal at T020 (`tag-decisions.json`,
+`decided_by: cavecrew-reviewer`), so the package moved to `ado2gh/audit/` (FR-013,
+GAP-036). Nothing remains at the old path (FR-006a): every importer under `ado2gh/` and
+`tests/` was updated in the same commit, and the package tree in `CLAUDE.md` follows.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `ado2gh/assignments/` | `ado2gh/audit/` | moved | GAP-036 / FR-013: the package holds only the audit writer; `module_name_review` confirmed at T020 | yes | pass | 2026-09-08 |

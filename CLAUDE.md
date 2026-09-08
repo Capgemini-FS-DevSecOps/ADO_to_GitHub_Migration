@@ -79,7 +79,7 @@ ado2gh/
 ├── api/                   # Accelerator SDK, pipeline runner, settings, audit history routes, llm/
 ├── agents/                # migration_agent/ (LangGraph PEV) + metrics
 ├── auth/                  # Platform users, sessions, RBAC
-├── assignments/           # Audit event writer (redaction, audit log)
+├── audit/                 # Audit event writer (redaction, audit log)
 ├── models.py
 ├── clients/               # ADO + GitHub + TokenManager
 ├── state/                 # SQLite, Postgres (factory); DynamoDB job store

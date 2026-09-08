@@ -29,7 +29,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ado2gh.assignments.audit import AuditWriter
+from ado2gh.audit.audit import AuditWriter
 from ado2gh.auth.models import PlatformRole, PlatformUser
 from ado2gh.auth.service import permissions_for
 from services.accelerator_api.routes import proxy_routes

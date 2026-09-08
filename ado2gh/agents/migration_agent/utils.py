@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from ado2gh.assignments.audit import redact_payload
+from ado2gh.audit.audit import redact_payload
 
 
 def _now() -> str:
@@ -365,7 +365,7 @@ class IdeAuditBridge:
 
     def _ensure_writer(self) -> Any:
         if self._writer is None:
-            from ado2gh.assignments.audit import AuditWriter
+            from ado2gh.audit.audit import AuditWriter
             from ado2gh.state.factory import create_state_db
 
             self._writer = AuditWriter(create_state_db())

@@ -4,7 +4,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional
 
-from ado2gh.assignments.audit import AuditWriter
+from ado2gh.audit.audit import AuditWriter
 from ado2gh.auth.models import PlatformRole
 from ado2gh.state.factory import create_state_db
 

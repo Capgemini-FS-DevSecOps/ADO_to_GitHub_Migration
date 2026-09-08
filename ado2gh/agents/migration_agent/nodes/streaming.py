@@ -68,7 +68,7 @@ async def _stream_llm_response(
     except (AttributeError, NotImplementedError, Exception):
         try:
             result = await llm.ainvoke(messages)
-            from ado2gh.assignments.audit import redact_payload
+            from ado2gh.audit.audit import redact_payload
 
             full_text = result.content if hasattr(result, "content") else str(result)
             # Non-streaming fallback emits one complete string, so it *can* be masked.
