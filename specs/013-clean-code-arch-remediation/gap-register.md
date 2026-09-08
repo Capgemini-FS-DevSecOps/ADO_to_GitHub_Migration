@@ -45,7 +45,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | remediated |
 | GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | remediated |
 | GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
-| GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | open |
+| GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | remediated |
 | GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | open |
 | GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | open |
 | GAP-016 (GAP-PIPE-04) | Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI | open |
@@ -334,12 +334,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `tests/unit/test_workflow_integrity.py:54,71,90,102` — all four tests `@patch` `_check_workflows`, mocking out the method the file exists to test; none exercise the guard or the hardcoded PASS
 - severity: critical (critical_test: c)
 - blast_radius: once `gh_count >= ado_count`, operators reading post-migration validation (CLI `report`, `ado2gh/api/run_reporting.py`) can never see a FAIL for missing or corrupted workflow files. A migration with silently missing workflows reads as fully validated — the outcome of the transfer cannot be verified, which is the property this check exists to provide.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: `ado2gh/reporting/post_migration_validator.py` no longer requires a workflow path to have two or more segments after the `.github/workflows/` prefix before it will check whether the file exists at the target. The producer emits a flat path — one segment — so the guard was never true and the Contents-API existence check could never run, which in turn meant `missing_files` could never be appended to. The existence check now runs for the shape the producer actually emits, and a missing or unreadable workflow file is reported as a FAIL rather than being absorbed by the enclosing `if gh_count >= ado_count` branch that returned a literal PASS regardless of the integrity result.
+- regression_check: `tests/unit/test_gap_013_workflow_integrity_can_fail.py`
+- revert_proof: `git stash push -- ado2gh/reporting/post_migration_validator.py`, then `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_013_workflow_integrity_can_fail.py`, then `git stash pop`. With the fix reverted: `1 failed, 1 warning in 3.68s` — `test_workflow_check_reports_fail_when_generated_workflow_absent_at_target`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: false — the verdict field keeps its shape; a case that could previously only report PASS can now report FAIL.
+- closed_on: 2026-09-08
 
 ### GAP-014 (GAP-ENG-07) FR-036 concurrency guard fails open when both of its own checks throw
 

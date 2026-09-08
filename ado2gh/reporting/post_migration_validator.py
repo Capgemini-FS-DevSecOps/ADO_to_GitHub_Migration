@@ -240,7 +240,9 @@ class PostMigrationValidator:
             return {"verdict": WARN, "ado_pipelines": ado_count, "gh_workflows": -1,
                     "detail": "Cannot read GH workflows"}
         if gh_count >= ado_count:
-            # Workflow integrity check: verify expected files exist
+            # Workflow integrity check: the count comparison above only proves the
+            # target has *some* workflows, so read back each file the migration
+            # produced. A file the Contents API cannot return did not land.
             integrity_result = {"verdict": PASS, "detail": "All pipelines have corresponding workflows"}
             if workflow_files:
                 repo_key = f"{repo.ado_project}/{repo.ado_repo}"
@@ -248,24 +250,28 @@ class PostMigrationValidator:
                 missing_files = []
                 for wf in repo_workflows:
                     wf_path = wf.get("output_path", "")
-                    if wf_path:
-                        # Check if file exists in GitHub via Contents API
-                        try:
-                            parts = wf_path.replace(".github/workflows/", "").split("/")
-                            if len(parts) >= 2:
-                                wf_name = parts[-1]
-                                self.gh._get(f"/repos/{repo.gh_org}/{repo.gh_repo}/contents/.github/workflows/{wf_name}")
-                        except Exception:
-                            missing_files.append(wf_path)
+                    if not wf_path:
+                        continue
+                    wf_name = wf_path.rstrip("/").rsplit("/", 1)[-1]
+                    try:
+                        self.gh._get(
+                            f"/repos/{repo.gh_org}/{repo.gh_repo}"
+                            f"/contents/.github/workflows/{wf_name}"
+                        )
+                    except Exception:
+                        missing_files.append(wf_path)
                 if missing_files:
                     integrity_result = {
                         "verdict": FAIL,
-                        "detail": f"{len(missing_files)} workflow files missing in GitHub",
-                        "missing_files": missing_files[:5]  # First 5
+                        "detail": f"{len(missing_files)} workflow file(s) missing at GitHub target: "
+                                  + ", ".join(missing_files[:5]),
+                        "missing_files": missing_files[:5],  # First 5
                     }
-            return {"verdict": PASS, "ado_pipelines": ado_count,
+            verdict = integrity_result["verdict"]
+            return {"verdict": verdict, "ado_pipelines": ado_count,
                     "gh_workflows": gh_count,
-                    "detail": "All pipelines have corresponding workflows",
+                    "detail": ("All pipelines have corresponding workflows"
+                               if verdict == PASS else integrity_result["detail"]),
                     "workflow_integrity": integrity_result}
         return {"verdict": WARN, "ado_pipelines": ado_count, "gh_workflows": gh_count,
                 "detail": f"{ado_count - gh_count} workflows missing"}
