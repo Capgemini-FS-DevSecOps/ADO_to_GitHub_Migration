@@ -51,6 +51,37 @@ class MigrationStrategy(str, Enum):
 DEFAULT_MIGRATION_STRATEGY = MigrationStrategy.GEI.value
 
 
+class ExecutionMode(str, Enum):
+    """How a migration action runs: preview only, or against the real targets.
+
+    Replaces the ``dry_run`` boolean in internal signatures. The external shapes
+    keep their boolean form and are converted at the boundary with
+    :meth:`from_dry_run`: the ``--dry-run`` CLI flag, the ``dry_run`` HTTP field
+    and the ``dry_run`` database column are all unchanged. ``DRY_RUN`` stays the
+    default wherever a default existed, so nothing runs live by omission.
+
+    Attributes:
+        DRY_RUN: Plan and report the work without touching ADO or GitHub.
+        LIVE: Execute against the real source and target, requiring approval.
+    """
+
+    DRY_RUN = "dry_run"
+    LIVE = "live"
+
+    @classmethod
+    def from_dry_run(cls, *, dry_run: bool) -> "ExecutionMode":
+        """Convert an external ``dry_run`` boolean into a mode.
+
+        Args:
+            dry_run: The flag as it arrives from a CLI option, an HTTP request
+                body or a persisted column.
+
+        Returns:
+            ``DRY_RUN`` when the flag is true, ``LIVE`` when it is false.
+        """
+        return cls.DRY_RUN if dry_run else cls.LIVE
+
+
 class GateStatus(str, Enum):
     PASS     = "pass"
     FAIL     = "fail"
