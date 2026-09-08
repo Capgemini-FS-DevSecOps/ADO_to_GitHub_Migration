@@ -38,6 +38,7 @@ from ado2gh.agents.migration_agent.utils import (
     _queue_user_message,
     _reset_turn_status_budget,
     _safe_reply,
+    mask_secrets,
     publish_orchestrator_chat,
 )
 
@@ -450,7 +451,9 @@ async def _handle_general_chat(
 
             w = get_stream_writer()
             if w:
-                w({"kind": "thinking", "content": thinking, "subagent": "orchestrator"})
+                # Mask before broadcast: the message-list copy is masked by
+                # _append_event, so the SSE frame must match (CA-003, FR-025).
+                w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
 
     tool_calls = parsed.get("tool_calls", [])
     if tool_calls:
@@ -519,7 +522,9 @@ async def _handle_migration_info(
 
             w = get_stream_writer()
             if w:
-                w({"kind": "thinking", "content": thinking, "subagent": "orchestrator"})
+                # Mask before broadcast: the message-list copy is masked by
+                # _append_event, so the SSE frame must match (CA-003, FR-025).
+                w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
         reply = _safe_reply(parsed, response_text)
     else:
         reply = info_text or "No migration data available."
@@ -650,7 +655,9 @@ async def _handle_migration_action(
 
             w = get_stream_writer()
             if w:
-                w({"kind": "thinking", "content": thinking, "subagent": "orchestrator"})
+                # Mask before broadcast: the message-list copy is masked by
+                # _append_event, so the SSE frame must match (CA-003, FR-025).
+                w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
 
         if tool_calls:
             reply = parsed.get("reply")

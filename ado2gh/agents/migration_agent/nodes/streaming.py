@@ -37,6 +37,13 @@ async def _stream_llm_response(
         pass
 
     def emit(evt: dict[str, Any]) -> None:
+        # ponytail: individual tokens are not masked — a secret split across two
+        # chunks is unmatchable by any regex, and one scan per token would cost
+        # more than the stream. The accumulated text is masked where it lands
+        # (`_append_event` in the `finally` block below, and the caller's
+        # message write), which is the durable/exported copy. Upgrade path if
+        # transient SSE fragments must be clean too: buffer to a whole line
+        # before emitting, then mask the line.
         state.setdefault("_streaming_tokens", []).append(evt)
         if writer:
             writer(evt)
@@ -61,8 +68,11 @@ async def _stream_llm_response(
     except (AttributeError, NotImplementedError, Exception):
         try:
             result = await llm.ainvoke(messages)
+            from ado2gh.assignments.audit import redact_payload
+
             full_text = result.content if hasattr(result, "content") else str(result)
-            emit({"kind": "token", "content": full_text, "subagent": subagent})
+            # Non-streaming fallback emits one complete string, so it *can* be masked.
+            emit(redact_payload({"kind": "token", "content": full_text, "subagent": subagent}))
         except Exception:
             full_text = ""
         else:

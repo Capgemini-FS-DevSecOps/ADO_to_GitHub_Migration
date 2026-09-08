@@ -9,6 +9,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from ado2gh.assignments.audit import redact_payload
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -38,20 +40,26 @@ def _append_event(
     kind: str = "message",
     subagent: str | None = None,
     meta: dict | None = None,
-) -> None:
-    """Append a message event to the session's message list."""
+) -> dict[str, Any]:
+    """Append a message event to the session's message list.
+
+    Sole entry point for the in-memory message list, so this is where CA-003
+    masking is applied — everything downstream (SSE, the persisted
+    ``messages_json`` column, the chat feed) reads the masked entry it returns.
+    """
     entry: dict[str, Any] = {
         "role": role,
-        "content": content,
+        "content": mask_secrets(content),
         "kind": kind,
         "timestamp": _now(),
     }
     if subagent:
         entry["subagent"] = subagent
     if meta:
-        entry["meta"] = meta
+        entry["meta"] = redact_payload(meta)
     session.setdefault("messages", []).append(entry)
     session["updated_at"] = _now()
+    return entry
 
 
 def publish_orchestrator_chat(session: dict[str, Any], content: str) -> str:
@@ -62,7 +70,7 @@ def publish_orchestrator_chat(session: dict[str, Any], content: str) -> str:
     )
 
     markdown = normalize_chat_markdown(content)
-    _append_event(
+    entry = _append_event(
         session,
         role="assistant",
         content=markdown,
@@ -70,7 +78,7 @@ def publish_orchestrator_chat(session: dict[str, Any], content: str) -> str:
         subagent="orchestrator",
         meta={"content_format": CHAT_CONTENT_FORMAT},
     )
-    return markdown
+    return str(entry["content"])
 
 
 def _append_and_stream(
@@ -83,17 +91,20 @@ def _append_and_stream(
     meta: dict[str, Any] | None = None,
 ) -> None:
     """Append event to session AND emit via LangGraph stream writer for live SSE."""
-    _append_event(session, role=role, content=content, kind=kind, subagent=subagent, meta=meta)
+    entry = _append_event(
+        session, role=role, content=content, kind=kind, subagent=subagent, meta=meta
+    )
     try:
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
         if writer:
-            evt: dict[str, Any] = {"kind": kind, "content": content}
+            # Stream the masked entry, never the raw arguments (CA-003).
+            evt: dict[str, Any] = {"kind": kind, "content": entry["content"]}
             if subagent:
                 evt["subagent"] = subagent
-            if meta:
-                evt["meta"] = meta
+            if entry.get("meta"):
+                evt["meta"] = entry["meta"]
             writer(evt)
     except Exception:
         pass
@@ -145,7 +156,7 @@ def _append_status_message(
     if session.get("_status_msg_count", 0) >= MAX_STATUS_MESSAGES_PER_TURN:
         return
     session["_status_msg_count"] = int(session.get("_status_msg_count", 0)) + 1
-    _append_event(
+    entry = _append_event(
         session,
         role="assistant",
         content=content,
@@ -159,7 +170,11 @@ def _append_status_message(
         writer = get_stream_writer()
         if writer:
             writer(
-                {"kind": "status", "content": content, "subagent": subagent or "orchestrator"}
+                {
+                    "kind": "status",
+                    "content": entry["content"],
+                    "subagent": subagent or "orchestrator",
+                }
             )
     except Exception:
         pass
@@ -227,12 +242,12 @@ def _emit_tool_result(
 
         writer = get_stream_writer()
         if writer:
-            writer({
+            writer(redact_payload({
                 "kind": "tool_result",
                 "content": summary,
                 "subagent": subagent,
                 "meta": {"tool_name": tool_name, **result},
-            })
+            }))
     except Exception:
         pass
 
@@ -326,24 +341,17 @@ def _safe_reply(parsed: dict[str, Any], response_text: str) -> str:
 
 # ─── Secret masking (moved from local/audit_bridge.py) ───────────────
 
-_SECRET_PATTERNS = [
-    re.compile(r"(?i)(password|secret|token|api[_-]?key|pat)\s*[=:]\s*\S+", re.IGNORECASE),
-    re.compile(r"(?i)Bearer\s+\S+"),
-]
-
 
 def mask_secrets(text: str) -> str:
-    """Mask secret values in text, keeping only the key name."""
+    """Mask secret values in text, keeping only the key name.
+
+    Thin delegate to the platform's single masking choke point (FR-025) so the
+    agent recognises every shape the audit writer does — GitHub prefixes, bare
+    ADO PATs, `Bearer <token>` and `key=value` pairs.
+    """
     if not text:
         return text
-    for pattern in _SECRET_PATTERNS:
-        text = pattern.sub(
-            lambda m: m.group(0).split("=")[0].split(":")[0] + "=***MASKED***"
-            if "=" in m.group(0) or ":" in m.group(0)
-            else "***MASKED***",
-            text,
-        )
-    return text
+    return str(redact_payload(text))
 
 
 # ─── Audit bridge (moved from local/audit_bridge.py) ─────────────────

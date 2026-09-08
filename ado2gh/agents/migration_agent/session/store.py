@@ -19,6 +19,18 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+def _messages_json(messages: Any) -> str:
+    """Serialise the chat message list for the durable ``messages_json`` column.
+
+    Masks at the write, not at the caller: this column is the only durable,
+    queryable copy of chat content, so a secret that reaches it survives
+    restarts and exports (CA-003, FR-025).
+    """
+    from ado2gh.assignments.audit import redact_payload
+
+    return json.dumps(redact_payload(messages or []))
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS agent_sessions (
     session_id        TEXT PRIMARY KEY,
@@ -225,7 +237,7 @@ class MigrationSessionStore:
         model_id = str(session.get("selected_model_id") or "")
         status = str(session.get("status") or "idle")
         dry_run = 1 if session.get("dry_run", True) else 0
-        messages_json = json.dumps(session.get("messages") or [])
+        messages_json = _messages_json(session.get("messages"))
         pending_form = session.get("pending_form")
         migration_plan = session.get("migration_plan")
         pending_form_json = json.dumps(pending_form) if pending_form else None
@@ -712,5 +724,5 @@ class MigrationSessionStore:
             })
             conn.execute(
                 "UPDATE agent_sessions SET messages_json=?, last_activity_at=? WHERE session_id=?",
-                (json.dumps(messages), now, session_id),
+                (_messages_json(messages), now, session_id),
             )

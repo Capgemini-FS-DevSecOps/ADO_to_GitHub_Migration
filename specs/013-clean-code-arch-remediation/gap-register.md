@@ -43,7 +43,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | remediated |
 | GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | open |
 | GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | remediated |
-| GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | open |
+| GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | remediated |
 | GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
 | GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | open |
 | GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | open |
@@ -296,12 +296,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/agents/migration_agent/hitl/intake.py:267-284` — `format_form_submission_summary` renders every submitted field as `f"{key}: {value}"` into a chat message; `ado2gh/agents/migration_agent/hitl/form_fields.py` defines no secret or masked field type
 - severity: critical (critical_test: b)
 - blast_radius: an operator pasting a token into free-text chat or a HITL form field — the realistic path, since automated flows use name-only secret mappings with empty-value placeholders (`nodes/executor/scope.py:507`) — has that value persisted verbatim to SQLite and broadcast unmasked over SSE to every viewer of the session, unconditionally, in the default configuration.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: Masking moved from the audit bridge, where it was one of two call sites, to the single entry point every message passes through. `ado2gh/agents/migration_agent/utils.py:_append_event` now masks `content` and `meta` as it builds the entry and returns that entry, so everything downstream — the SSE frame, the persisted `messages_json` column and the chat feed — reads the masked copy rather than re-deriving its own. `_append_and_stream` and `_emit_tool_call` stream the masked entry instead of the raw content or raw tool arguments. `ado2gh/agents/migration_agent/nodes/orchestrator.py` masks the three `thinking` broadcasts so the SSE frame matches the message-list copy. `ado2gh/agents/migration_agent/session/store.py` routes both `messages_json` writes through a `_messages_json` helper that applies `redact_payload` before `json.dumps`, so the durable SQLite artefact is masked even if an unmasked entry ever reaches the list by another path. `ado2gh/agents/migration_agent/nodes/streaming.py` masks the non-streaming fallback, which emits one complete string. **Deliberate limit, recorded rather than left to be discovered:** individual streamed tokens are not masked. A secret split across two chunks cannot be matched by any regex, and scanning per token would cost more than it buys; the accumulated text is masked where it lands, which is the durable and exported copy. If transient SSE fragments must also be clean, the upgrade path is to buffer to a whole line before emitting and mask the line.
+- regression_check: `tests/agent/test_gap_011_agent_message_masking.py`
+- revert_proof: `git stash push -- ado2gh/agents/migration_agent/utils.py ado2gh/agents/migration_agent/session/store.py ado2gh/agents/migration_agent/nodes/streaming.py ado2gh/agents/migration_agent/nodes/orchestrator.py ado2gh/logging_config.py`, then `.venv\Scripts\python.exe -m pytest tests/agent/test_gap_011_agent_message_masking.py`, then `git stash pop`. With the fix reverted: `1 failed in 3.54s` — `test_pasted_pat_does_not_reach_session_messages`, AssertionError at test line 71. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: false — no message or SSE field was added, removed or renamed; the values carried in them are masked.
+- closed_on: 2026-09-08
 
 ### GAP-012 (GAP-UI-01) LLM provider API key is transmitted in a URL query string
 
