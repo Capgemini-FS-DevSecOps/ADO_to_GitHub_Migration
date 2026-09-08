@@ -256,3 +256,20 @@ surface (`check`, `override`, `can_advance`) is already covered by
 
 - **Tests removed**: 1 (SC-004 input) — 1 deleted file.
 - **Production functions deleted**: 0. Deletions in `859bb6b` are recorded against that commit.
+
+## 2026-09-08 — 013 Phase 2 / T008: Test for the repo dependency-graph feature removed in `859bb6b`
+
+`859bb6b` deleted the repo dependency-graph feature end to end: `StateDB.upsert_dependency_edge`
+and its table from both backends (`ado2gh/state/sqlite_db.py` -168, `ado2gh/state/postgres_db.py`
+-138, plus the agentic mixins), and `BatchExecutor.plan_repo_order` / `BatchExecutor._sort_repos_topo`
+(`ado2gh/phase/batch_executor.py` -82). `0ec95d2` then deleted `ado2gh/pipelines/dependency_graph.py`
+and `ado2gh/api/dependency_graph.py`. A repo-wide search for `dependency` under `ado2gh/state/`
+returns zero hits, so there is no Postgres counterpart to mirror; re-adding the method would
+resurrect a deleted feature rather than repair a regression. No production code changed.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `tests/core/test_batch_executor_topo.py` | — | deleted | 2 tests on `StateDB.upsert_dependency_edge`, `BatchExecutor.plan_repo_order` and `BatchExecutor._sort_repos_topo`, all three deleted in `859bb6b` | yes | pass | 2026-09-08 |
+
+- **Tests removed**: 2 (SC-004 input) — 1 deleted file.
+- **Production functions deleted**: 0. Deletions in `859bb6b` and `0ec95d2` are recorded against those commits.
