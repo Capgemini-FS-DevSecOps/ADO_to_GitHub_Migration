@@ -1,0 +1,82 @@
+[
+  {
+    "id": "ado2gh/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Package name is the product identifier (Azure DevOps to GitHub), which is correct.",
+    "state_hash": "0fc2007fae431cc46f57ef9e4427a6cb6ad83f76",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/__main__.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Python convention for entry point modules; __main__.py is correct.",
+    "state_hash": "64f84dd2f84a3bb05b8a24ceb471ea6f028f1ab0",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/assignments/",
+    "tag": "module_name_review",
+    "decision": "confirm",
+    "rationale": "Package docstring declares \"Audit event writer\" but directory is named \"assignments\"; content is audit logging and secret redaction.",
+    "state_hash": "52e9daaf1ccdb7d9d6a157954e4d39f0fb09f443",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/assignments/audit.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name matches its sole function: audit event writing and secret redaction.",
+    "state_hash": "8677c8ad965a5dc8e821bd1f8e7773318df85fbd",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/http_utils.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module contains HTTP session factory, accurately named as utility helpers.",
+    "state_hash": "d71579fbf1a8d37e0cc83c041e6e334d21b549a8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/logging_config.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module configures logging and console, accurately named for its purpose.",
+    "state_hash": "94d0e557a1c3264236e51bed2596fdd09611213d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/models.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module contains only dataclass and enum schemas, correctly named as models.",
+    "state_hash": "044bd05c3d4dad7fbaa5afd29a1f00392cc08f10",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/output_dirs.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module centralizes output directory resolution, accurately named.",
+    "state_hash": "735dffd7cbac6956115e33171ed6d0a71f772556",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/output_dirs.py::output_base",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Function name describes what is returned (the base output directory), which is appropriate for a data accessor.",
+    "state_hash": "4c842eab8d2855b1a58647fbecf030dc6f6684cd",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/output_dirs.py::output_str",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Function name describes the return type and purpose (string path), which is standard for factory/builder functions.",
+    "state_hash": "677615696a38c00b129a577d53d434a5186806ee",
+    "decided_by": "cavecrew-reviewer"
+  }
+]
