@@ -19,7 +19,7 @@ class TestOperatorResolutionPersistence:
         mock_load.return_value = mock_settings
         mock_save.return_value = None
 
-        store = SettingsStore(db_path=":memory:")
+        store = SettingsStore()
         resolutions = {
             "secret_mapping__Project__SCName": "AZURE_CLIENT_ID",
             "secret_mapping__Project__SCName2": "AZURE_TENANT_ID",
@@ -44,7 +44,7 @@ class TestOperatorResolutionPersistence:
         }
         mock_load.return_value = mock_settings
 
-        store = SettingsStore(db_path=":memory:")
+        store = SettingsStore()
         resolutions = store.get_operator_resolutions("profile-1")
 
         assert resolutions == {
@@ -60,7 +60,7 @@ class TestOperatorResolutionPersistence:
         mock_settings.operator_resolutions = {}
         mock_load.return_value = mock_settings
 
-        store = SettingsStore(db_path=":memory:")
+        store = SettingsStore()
         resolutions = store.get_operator_resolutions("profile-1")
 
         assert resolutions == {}
@@ -75,7 +75,7 @@ class TestOperatorResolutionPersistence:
         mock_load.return_value = mock_settings
         mock_save.return_value = None
 
-        store = SettingsStore(db_path=":memory:")
+        store = SettingsStore()
 
         # Set resolutions for profile-1
         store.set_operator_resolutions("profile-1", {"sc1": "secret1"})
@@ -107,7 +107,7 @@ class TestOperatorResolutionPersistence:
         mock_load.return_value = mock_settings
         mock_save.return_value = None
 
-        store = SettingsStore(db_path=":memory:")
+        store = SettingsStore()
         new_resolutions = {"new_sc": "new_secret"}
         store.set_operator_resolutions("profile-1", new_resolutions)
 

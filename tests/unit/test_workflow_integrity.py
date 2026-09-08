@@ -3,7 +3,49 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from ado2gh.models import RepoConfig
 from ado2gh.reporting.post_migration_validator import PostMigrationValidator
+
+
+def _validator(gh: MagicMock | None = None) -> PostMigrationValidator:
+    """A validator whose non-workflow checks all pass.
+
+    ``_validate_one`` runs repo_exists, default_branch, head_commit and
+    branch_count before it reaches the workflow check; bare MagicMocks make those
+    return MagicMock instead of str/int and blow up on comparison. Give them real
+    values so the workflow-integrity path is what the assertions actually measure.
+    """
+    ado = MagicMock()
+    ado.get_repo.return_value = {"defaultBranch": "refs/heads/main", "id": "repo-id"}
+    ado.get_repo_commits.return_value = [{"commitId": "abc123"}]
+    ado.get_repo_stats.return_value = {"branch_count": 1}
+
+    gh = gh or MagicMock()
+    gh.repo_exists.return_value = True
+    gh.get_repo.return_value = {"default_branch": "main"}
+    gh.list_branches.return_value = [{"name": "main", "commit": {"sha": "abc123"}}]
+
+    return PostMigrationValidator(ado=ado, gh=gh, db=MagicMock())
+
+
+def _repo() -> RepoConfig:
+    # "pipelines" scope is what makes _validate_one call _check_workflows at all.
+    return RepoConfig(
+        ado_project="org",
+        ado_repo="repo",
+        gh_org="org",
+        gh_repo="repo",
+        scopes=["pipelines"],
+    )
+
+
+WORKFLOW_FILES = [
+    {
+        "repo": "org/repo",
+        "output_path": ".github/workflows/build.yml",
+        "commit_sha": "abc123",
+    }
+]
 
 
 class TestWorkflowIntegrityCheck:
@@ -21,32 +63,10 @@ class TestWorkflowIntegrityCheck:
             },
         }
 
-        from ado2gh.models import RepoConfig
-        validator = PostMigrationValidator(
-            ado=MagicMock(),
-            gh=MagicMock(),
-            db=MagicMock(),
-        )
+        result = _validator()._validate_one(_repo(), workflow_files=WORKFLOW_FILES)
 
-        workflow_files = [
-            {
-                "repo": "org/repo",
-                "output_path": ".github/workflows/build.yml",
-                "commit_sha": "abc123",
-            }
-        ]
-
-        repo = RepoConfig(
-            ado_project="org",
-            ado_repo="repo",
-            gh_org="org",
-            gh_repo="repo",
-            scopes=[],
-        )
-        result = validator._validate_one(repo, workflow_files=workflow_files)
-
-        integrity_check = result["checks"].get("workflow_integrity", {})
-        assert integrity_check.get("verdict") == "PASS"
+        integrity_check = result["checks"]["workflows"]["workflow_integrity"]
+        assert integrity_check["verdict"] == "PASS"
 
     @patch("ado2gh.reporting.post_migration_validator.PostMigrationValidator._check_workflows")
     def test_fail_when_files_missing(self, mock_check_workflows):
@@ -61,33 +81,11 @@ class TestWorkflowIntegrityCheck:
             },
         }
 
-        from ado2gh.models import RepoConfig
-        validator = PostMigrationValidator(
-            ado=MagicMock(),
-            gh=MagicMock(),
-            db=MagicMock(),
-        )
+        result = _validator()._validate_one(_repo(), workflow_files=WORKFLOW_FILES)
 
-        workflow_files = [
-            {
-                "repo": "org/repo",
-                "output_path": ".github/workflows/build.yml",
-                "commit_sha": "abc123",
-            }
-        ]
-
-        repo = RepoConfig(
-            ado_project="org",
-            ado_repo="repo",
-            gh_org="org",
-            gh_repo="repo",
-            scopes=[],
-        )
-        result = validator._validate_one(repo, workflow_files=workflow_files)
-
-        integrity_check = result["checks"].get("workflow_integrity", {})
-        assert integrity_check.get("verdict") == "FAIL"
-        assert "missing" in integrity_check.get("detail", "").lower()
+        integrity_check = result["checks"]["workflows"]["workflow_integrity"]
+        assert integrity_check["verdict"] == "FAIL"
+        assert "missing" in integrity_check["detail"].lower()
 
     @patch("ado2gh.reporting.post_migration_validator.PostMigrationValidator._check_workflows")
     def test_no_integrity_check_when_no_workflow_files(self, mock_check_workflows):
@@ -97,29 +95,13 @@ class TestWorkflowIntegrityCheck:
             "detail": "No pipelines to convert",
         }
 
-        from ado2gh.models import RepoConfig
-        validator = PostMigrationValidator(
-            ado=MagicMock(),
-            gh=MagicMock(),
-            db=MagicMock(),
-        )
+        result = _validator()._validate_one(_repo(), workflow_files=None)
 
-        repo = RepoConfig(
-            ado_project="org",
-            ado_repo="repo",
-            gh_org="org",
-            gh_repo="repo",
-            scopes=[],
-        )
-        result = validator._validate_one(repo, workflow_files=None)
-
-        # When no workflow_files, the integrity check should not be present
-        integrity_check = result["checks"].get("workflow_integrity")
-        assert integrity_check is None or "workflow_integrity" not in integrity_check
+        assert "workflow_integrity" not in result["checks"]["workflows"]
 
     @patch("ado2gh.reporting.post_migration_validator.PostMigrationValidator._check_workflows")
     def test_integrity_check_uses_github_contents_api(self, mock_check_workflows):
-        """Verify integrity check uses GitHub Contents API to verify file existence."""
+        """Verify the workflow check is handed the files it must verify via the Contents API."""
         mock_check_workflows.return_value = {
             "verdict": "PASS",
             "detail": "All pipelines have corresponding workflows",
@@ -129,32 +111,7 @@ class TestWorkflowIntegrityCheck:
             },
         }
 
-        gh_client = MagicMock()
-        from ado2gh.models import RepoConfig
-        validator = PostMigrationValidator(
-            ado=MagicMock(),
-            gh=gh_client,
-            db=MagicMock(),
-        )
+        repo = _repo()
+        _validator()._validate_one(repo, workflow_files=WORKFLOW_FILES)
 
-        workflow_files = [
-            {
-                "repo": "org/repo",
-                "output_path": ".github/workflows/build.yml",
-                "commit_sha": "abc123",
-            }
-        ]
-
-        repo = RepoConfig(
-            ado_project="org",
-            ado_repo="repo",
-            gh_org="org",
-            gh_repo="repo",
-            scopes=[],
-        )
-        validator._validate_one(repo, workflow_files=workflow_files)
-
-        # Verify GitHub Contents API was called
-        # The actual implementation calls gh._get with the file path
-        # This is verified indirectly through the mock_check_workflows return value
-        mock_check_workflows.assert_called_once()
+        mock_check_workflows.assert_called_once_with(repo, WORKFLOW_FILES)
