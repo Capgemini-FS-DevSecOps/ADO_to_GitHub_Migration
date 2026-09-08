@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 # ─── Agent scope guardrails ───────────────────────────────────────────
 
@@ -122,10 +122,15 @@ def _role_may_execute_live(role: str | None) -> bool:
 
 
 def can_execute_live_without_approval(session: dict[str, Any]) -> bool:
+    """Live execution is a safety gate, not an identity gate.
+
+    Deliberately does not consult ``auth_enabled()``: it used to return ``True``
+    whenever ``ADO2GH_AUTH_ENABLED`` was unset — the shipped default — which made the
+    whole agent approval gate inert (GAP-002). A session with no attached actor now
+    has no live authority, exactly like an OPERATOR session. Dry-run still short-
+    circuits first, so auth-disabled local development is unaffected.
+    """
     if session.get("dry_run", True):
-        return True
-    from ado2gh.auth.service import auth_enabled
-    if not auth_enabled():
         return True
     if session.get("live_approval_status") == "approved":
         return True
@@ -136,17 +141,82 @@ def can_execute_live_without_approval(session: dict[str, Any]) -> bool:
 
 
 def session_requires_live_approval(session: dict[str, Any]) -> bool:
+    """Exact complement of :func:`can_execute_live_without_approval` for live sessions.
+
+    Previously ended in a role-name comparison against OPERATOR, so a COORDINATOR —
+    a role that can operate and cannot approve — fell through to "no approval needed"
+    (the agent-side twin of GAP-005).
+    """
     if session.get("dry_run", True):
         return False
-    from ado2gh.auth.service import auth_enabled
-    if not auth_enabled():
+    return not can_execute_live_without_approval(session)
+
+
+def enforce_live_mode_request(
+    request: Request | None,
+    dry_run: bool,
+    session: dict[str, Any] | None = None,
+) -> None:
+    """The single check every non-dry-run entry point routes through.
+
+    Two tiers, both skipped entirely for dry-run:
+
+    * **Identity** — an OPERATOR or COORDINATOR *may* switch a session to live; they
+      are then routed through the approval queue by
+      :func:`session_requires_live_approval`. A caller with no identity at all cannot
+      be: there is no actor to attribute the run to and no requester to open an
+      approval on behalf of, so the transition is refused outright (GAP-002).
+    * **Authority** — pass ``session`` on an entry point that takes the session live
+      *without* a downstream approval queue behind it (``confirm-live``). The caller
+      must then already hold live authority: an approval on record, or a role that
+      can approve. Attach the actor to ``session`` first so the check sees the
+      caller's permissions.
+
+    ``session`` is probed as if it were already live, because both predicates
+    short-circuit to "no approval needed" while ``session["dry_run"]`` is still
+    ``True`` — the exact window ``confirm-live`` used to escalate through (GAP-006).
+
+    Call this *before* mutating ``dry_run`` so a refused request leaves the session
+    in dry-run.
+    """
+    if dry_run:
+        return
+    if not getattr(getattr(request, "state", None), "platform_user", None):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if session is not None and session_requires_live_approval({**session, "dry_run": False}):
+        raise HTTPException(status_code=403, detail="live_execution_requires_approval")
+
+
+def resolve_execution_dry_run(
+    session: dict[str, Any],
+    migration_plan: dict[str, Any] | None,
+) -> bool:
+    """Reconcile the two ``dry_run`` flags at execution time; the safe one wins.
+
+    The executor used to read ``migration_plan["dry_run"]`` on its own and write that
+    value straight onto the shared session dict, so plan data alone took a dry-run
+    session live and disarmed every downstream guardrail — all of which key off
+    ``session["dry_run"]`` — for the rest of the session (GAP-006, Principle IV: two
+    disagreeing sources of truth).
+
+    A plan may only ever be *more* conservative than its session. It may take the
+    session live only when the session already holds live authority, which is the same
+    predicate every other live entry point uses.
+
+    The caller is
+    :func:`~ado2gh.agents.migration_agent.nodes.executor.node.executor_node`, which
+    resolves the mode once here and then uses that single value for both the
+    dry-run/live banner it streams and the migration run itself. That node still
+    assigns the result back to ``session["dry_run"]``; the assignment is safe now
+    precisely because the value has been through this reconciliation first.
+    """
+    session_dry = bool(session.get("dry_run", True))
+    plan_dry = bool((migration_plan or {}).get("dry_run", session_dry))
+    if plan_dry:
+        return True
+    if not session_dry:
         return False
-    if session.get("live_approval_status") == "approved":
-        return False
-    if can_execute_live_without_approval(session):
-        return False
-    from ado2gh.auth.models import PlatformRole
-    return session.get("user_role") == PlatformRole.OPERATOR.value or not session.get("user_role")
+    return not can_execute_live_without_approval({**session, "dry_run": False})
 
 
 def live_execution_block_message(session: dict[str, Any]) -> str:

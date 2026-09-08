@@ -34,7 +34,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | Id | Title | Status |
 |----|-------|--------|
 | GAP-001 (GAP-STAB-01) | Red test suite plus a coverage gate that could not fail | remediated |
-| GAP-002 (GAP-AUTH-01) | Live-execution approval is inert in the default configuration | open |
+| GAP-002 (GAP-AUTH-01) | Live-execution approval is inert in the default configuration | remediated |
 | GAP-003 (GAP-AUTH-02) | Agent internal resume-live/deny-live routes have no authorization in any shipped configuration | open |
 | GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | open |
 | GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | open |
@@ -123,12 +123,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/api/audit_access.py:12-13` — `can_view_all_audit_history` is disabled by the same short-circuit, exposing the audit trail
 - severity: critical (critical_test: a)
 - blast_radius: in the default configuration every RBAC capability check on both services is inert. Any caller who can reach either API — no login, no cookie, no role — can flip a session to live and write real changes to GitHub via `/approve`, `/execution-mode`, or `/confirm-live`, with no approval queue entry and no role-derived audit actor. Every other approval finding in this register is additionally masked by this one.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: Live-execution authority no longer depends on `ADO2GH_AUTH_ENABLED`. `ado2gh/agents/migration_agent/policies.py:can_execute_live_without_approval` no longer consults `auth_enabled()`, and `session_requires_live_approval` is now its exact complement, so a session without an approved live-approval row always requires approval. A new `enforce_live_mode_request` in the same module is the single check every agent route that can flip a session to live now calls: it raises 401 `Not authenticated` when the request carries no identity and 403 `live_execution_requires_approval` when the caller holds no approve-live capability. `ado2gh/api/platform_rbac.py:require_approve_live_execution` no longer routes through `require_capability`'s auth-disabled short circuit; it raises 401 without an identity and 403 without the capability in every configuration. Dry-run paths are untouched — the identity gate applies only to a request that asks for live execution. **Scoped exclusion:** `ado2gh/api/audit_access.py:12-13` was deliberately not changed. `can_view_all_audit_history` guards an ordinary read, not an irreversible action; tightening it would change who can read migration history without closing any path to live execution, so it stays permissive under the auth-disabled default. The exclusion covers audit reads only and is recorded here so it is not mistaken for an oversight. Operator decision, 2026-09-08: the gate was approved as it stands — live execution now requires `ADO2GH_AUTH_ENABLED=true` plus an ADMIN or APPROVER identity, identity-less live requests receive 401, and dry-run behaviour is unchanged.
+- regression_check: `tests/auth/test_gap_002_auth_disabled_bypasses_live_approval.py`
+- revert_proof: `git stash push -- ado2gh/api/platform_rbac.py ado2gh/agents/migration_agent/policies.py services/agent/routes/session_routes.py`, then `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_002_auth_disabled_bypasses_live_approval.py`, then `git stash pop`. With the fix reverted: `1 failed, 16 warnings in 4.17s` — `test_anonymous_caller_cannot_switch_agent_session_to_live`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5). `services/agent/routes/session_routes.py` had to be stashed alongside the other two files because it imports `enforce_live_mode_request` from `policies.py`; stashing `policies.py` on its own leaves that route module unimportable, which would have produced a collection error instead of a behavioural failure.
+- contract_change: true — recorded as approved change 1 in `contracts/public-contract-freeze.md` § Approved contract changes. No route, CLI command, table, or environment variable was added or removed, so `tests/contract/public_surface_snapshot.json` is unchanged by this gap.
+- closed_on: 2026-09-08
 
 ### GAP-003 (GAP-AUTH-02) Agent internal resume-live/deny-live routes have no authorization in any shipped configuration
 

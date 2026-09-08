@@ -19,6 +19,7 @@ from ado2gh.agents.migration_agent.hitl.forms import (
 from ado2gh.agents.migration_agent.policies import (
     attach_actor_to_session,
     can_execute_live_without_approval,
+    enforce_live_mode_request,
     is_admin_request,
     live_execution_block_message,
     request_username,
@@ -491,6 +492,17 @@ async def resume_live_internal(session_id: str):
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
         session["run_id"] = run_id
+    _audit.record(
+        "session.resume_live",
+        profile_id=session.get("profile_id"),
+        session_id=session_id,
+        metadata={
+            "run_id": run_id,
+            "live_approval_status": "approved",
+            "approval_id": session.get("live_approval_id"),
+            "source": "internal_service_to_service",
+        },
+    )
     return {"session_id": session_id, "status": "executing"}
 
 
@@ -1174,6 +1186,7 @@ async def update_execution_mode(
 ):
     """Set dry-run vs live on an agent session (admins/approvers use live without approval queue)."""
     _require_operate(request)
+    enforce_live_mode_request(request, req.dry_run)
     session = _get_accessible_session(session_id, request)
     if is_session_busy(session.get("status")):
         raise HTTPException(status_code=409, detail="session_busy")
@@ -1328,14 +1341,27 @@ def get_plan_summary(session_id: str, request: Request):
 
 @router.post("/v1/sessions/{session_id}/confirm-live")
 def confirm_live_execution(session_id: str, request: Request):
-    """T063: Explicit user confirmation for live execution (CA-001)."""
+    """T063: Explicit user confirmation for live execution (CA-001).
+
+    Confirming is the *last* gate — nothing downstream re-checks the plan's dry-run
+    flag — so the caller must already hold live authority here, unlike
+    ``execution-mode`` which hands an unauthorised caller to the approval queue.
+    """
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
     plan = session.get("migration_plan")
     if not plan:
         raise HTTPException(status_code=404, detail="No migration plan found")
+    attach_actor_to_session(session, getattr(request.state, "platform_user", None))
+    enforce_live_mode_request(request, False, session=session)
     plan["dry_run"] = False
     session["migration_plan"] = plan
+    _audit.record(
+        "session.confirm_live",
+        profile_id=session.get("profile_id"),
+        session_id=session_id,
+        metadata={"plan_id": plan.get("plan_id"), "repos": plan.get("repo_order", [])},
+    )
     return {"status": "confirmed", "dry_run": False, "session_id": session_id}
 
 
