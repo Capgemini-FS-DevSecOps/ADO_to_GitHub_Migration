@@ -289,3 +289,52 @@ No production code changed.
 
 - **Tests removed**: 2 (SC-004 input) — 0 deleted files, 2 in-place.
 - **Production functions deleted**: 0. Deletions in `859bb6b` are recorded against that commit.
+
+## 2026-09-08 — 013 Phase 5 / T040: Structural changes from the fifteen critical gap fixes
+
+T039 remediated the fifteen critical gaps (GAP-002 through GAP-016) and T040 committed them,
+one commit per gap. Most of that work changed behaviour inside existing functions and left the
+file layout alone; the rows below are the moves, deletions and renames it did produce.
+
+The largest is GAP-007. The nine `/v1/migrate/*` routes each carried their own ad-hoc live
+check, so a new route could be added without one. `services/accelerator_api/routes/migrate_guard.py`
+is the single choke point that replaced them (FR-025): one router-level dependency that resolves
+the caller, requires the approve-live capability, parks operate-only callers in `LiveApprovalStore`,
+and writes the audit event through a field allowlist so a secret value cannot reach an audit row.
+
+GAP-004 removed the client's ability to certify its own live authority. The `agent_live_approved`
+field on `PipelineRunStartRequest` and the whole `PipelineRunStartApprovedRequest` model were
+deleted with no shim, and `PipelineRunStartRequest` gained `extra="forbid"` so the field cannot
+be smuggled back in as an unknown key. The agent-side reader `agent_live_approved()` was deleted
+with them. The operator approved this on 2026-09-08; entry 4 of the public contract freeze
+records it.
+
+GAP-003 merged `LiveApprovalStore._notify_agent_resume` and `_notify_agent_denied`, which were
+the same request with a different URL and each swallowed failures with `pass`, into one
+`_notify_agent` that logs and writes an audit event on failure.
+
+GAP-014 split the concurrency guard's answer in two. `other_run_holds_repo` returned False both
+when the repo was free and when the check had raised, so a failed check read as "no conflict".
+Its body moved into a new `repo_conflict_reason`, which returns why the repo is unavailable or
+None when it is provably free; `other_run_holds_repo` stays as a one-line wrapper for its
+existing callers. In the engine, `_try_clear_orphaned_in_progress` became `_in_progress_block_reason`
+for the same reason: a boolean could not say whether the refusal was a real conflict or a failed
+check.
+
+One public route changed method: `GET /v1/settings/llm-models/catalog` became
+`POST /v1/settings/llm-models/catalog` so the API key stops travelling in a URL query string
+(GAP-012). The operator authorised the matching edit to `tests/contract/public_surface_snapshot.json`
+on 2026-09-08; the route count is unchanged at 148. No file moved for it.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `services/accelerator_api/routes/migrate_guard.py` | — | added | Single live-execution choke point for the nine `/v1/migrate/*` routes, replacing nine per-route checks (GAP-007, FR-025) | yes | pass | 2026-09-08 |
+| `ado2gh/api/contracts.py` | (same) | model deleted | `PipelineRunStartApprovedRequest` let a client assert its own live approval; deleted outright with no shim (GAP-004, freeze entry 4) | yes | pass | 2026-09-08 |
+| `ado2gh/api/contracts.py` | (same) | field deleted | `PipelineRunStartRequest.agent_live_approved`; the model now sets `extra="forbid"` so the key cannot return as an unknown field (GAP-004) | yes | pass | 2026-09-08 |
+| `ado2gh/agents/migration_agent/nodes/executor/pipeline.py` | (same) | function deleted | `agent_live_approved()` read the deleted field; live authority now comes from server state (GAP-004) | yes | pass | 2026-09-08 |
+| `ado2gh/api/live_approval_store.py` | (same) | functions merged | `_notify_agent_resume` and `_notify_agent_denied` merged into `_notify_agent`; both swallowed notify failures with `pass` (GAP-003) | yes | pass | 2026-09-08 |
+| `ado2gh/core/migration_fr036.py` | (same) | function added | `repo_conflict_reason` holds the body of `other_run_holds_repo`, which stays as a wrapper for existing callers (GAP-014) | yes | pass | 2026-09-08 |
+| `ado2gh/core/migration_engine.py` | (same) | method renamed | `_try_clear_orphaned_in_progress` became `_in_progress_block_reason`; a boolean could not distinguish a real conflict from a failed check (GAP-014) | yes | pass | 2026-09-08 |
+
+- **Tests removed**: 0. Fifteen regression tests were added, one per gap, named `tests/**/test_gap_0NN_*.py`.
+- **Production functions deleted**: 2 — `agent_live_approved()` and the `PipelineRunStartApprovedRequest` model; plus two private methods merged into one and one private method renamed.
