@@ -21,17 +21,6 @@ _STEP_TO_SCOPE = {
 }
 
 
-def agent_live_approved(session: dict[str, Any], *, dry_run: bool) -> bool:
-    """True when the agent session already passed the platform live gate."""
-    if dry_run:
-        return False
-    if session.get("live_approval_status") == "approved":
-        return True
-    from ado2gh.agents.migration_agent.policies import can_execute_live_without_approval
-
-    return can_execute_live_without_approval(session)
-
-
 def resolve_agent_repository_id(
     session: dict[str, Any],
     migration_plan: dict[str, Any] | None,
@@ -100,7 +89,6 @@ async def ensure_agent_pipeline_run(
         "steps": migration_plan.get("pipeline_step_ids") or AGENT_PIPELINE_STEP_IDS,
         "repository_id": repo_id or None,
         "migrate_deps_only": False,
-        "agent_live_approved": agent_live_approved(session, dry_run=dry_run),
     }
     phase = resolve_migration_phase(session, migration_plan)
     if phase:
@@ -119,21 +107,21 @@ async def ensure_agent_pipeline_run(
 
 
 async def ensure_pipeline_running(
-    session: dict[str, Any],
     run_id: str,
     *,
     accel_post: AccelPost | None,
     session_token: str | None,
-    dry_run: bool,
 ) -> None:
-    """Start a pipeline run that was created but left awaiting approval."""
+    """Start a pipeline run that was created but left awaiting approval.
+
+    The accelerator decides whether the run may go live; this call carries no
+    approval claim of its own.
+    """
     if not accel_post or not run_id:
         return
     try:
         await accel_post(
-            f"/v1/pipeline/runs/{run_id}/start",
-            {"agent_live_approved": agent_live_approved(session, dry_run=dry_run)},
-            session_token=session_token,
+            f"/v1/pipeline/runs/{run_id}/start", {}, session_token=session_token,
         )
     except Exception:
         return
@@ -341,11 +329,9 @@ async def execute_repo_via_pipeline(
         on_progress("Monitoring run created", "pending", {"id": run_id})
 
     await ensure_pipeline_running(
-        session,
         run_id,
         accel_post=accel_post,
         session_token=session_token,
-        dry_run=dry_run,
     )
 
     run = await poll_pipeline_run(

@@ -36,7 +36,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-001 (GAP-STAB-01) | Red test suite plus a coverage gate that could not fail | remediated |
 | GAP-002 (GAP-AUTH-01) | Live-execution approval is inert in the default configuration | remediated |
 | GAP-003 (GAP-AUTH-02) | Agent internal resume-live/deny-live routes have no authorization in any shipped configuration | remediated |
-| GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | open |
+| GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | remediated |
 | GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | open |
 | GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | open |
 | GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | open |
@@ -164,12 +164,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/auth/service.py:71-72` — `can_approve_live_execution` is denied to OPERATOR, yet an authenticated OPERATOR can set this field themselves
 - severity: critical (critical_test: a)
 - blast_radius: the most directly exploitable finding. Real pipeline execution proceeds and is recorded as approved on the caller's own say-so. Not contingent on GAP-002 (GAP-AUTH-01)'s default — it defeats the OPERATOR/APPROVER separation even with `ADO2GH_AUTH_ENABLED=true`, and leaves an audit record that falsely asserts an approval occurred.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: Live authority is now derived only from server-side state — the authenticated user's role on `POST /v1/pipeline/runs`, or an approved `LiveApprovalStore` row on `POST /v1/pipeline/runs/{run_id}/start`. The `agent_live_approved` field is deleted from `ado2gh/api/contracts.py` and is no longer read anywhere; `services/accelerator_api/routes/pipeline_routes.py` no longer computes `skip_live_gate`, and a parked run is released only when `_live_store().has_approved(...)` says an approver decided or when the caller can approve live execution in their own right. `ado2gh/agents/migration_agent/nodes/executor/pipeline.py` loses the `agent_live_approved` helper and stops sending any live-approval claim, so the agent no longer certifies itself. Per approved change 4 in `contracts/public-contract-freeze.md`, two further decisions were taken and are recorded there in the form that landed: **Decision C** — `PipelineRunStartRequest` now carries `model_config = ConfigDict(extra="forbid")`, so a client still posting `agent_live_approved` to `POST /v1/pipeline/runs` receives 422 with `detail[].loc == ["body", "agent_live_approved"]` and `type: "extra_forbidden"` (measured, not inferred) rather than having the field silently ignored; the freeze doc notes the breadth of this, that `extra="forbid"` rejects **any** undeclared field, so every future field addition on this endpoint is a coordinated server/caller change. **Decision D** — `PipelineRunStartApprovedRequest` held nothing but the removed field, so it is deleted outright with no stand-in, and `POST /v1/pipeline/runs/{run_id}/start` now declares no body parameter at all; Decision C does not apply there because no model is left to forbid extras on, so a caller still sending the old field to that route keeps working and it simply has no effect. One field was added in the same change: `override_reason: str = ""` on `PipelineRunStartRequest`, required because the console had already begun sending it for GAP-009 and would otherwise have hit the new `extra="forbid"`. It is deliberately excluded from `PipelineRun.to_dict()`: the value is free operator text redacted only where it is persisted (`redact_payload` in `ado2gh/api/pipeline_steps.py`), so echoing the in-memory value back in a run response would return text that never passed through redaction. The freeze doc records that coupling as permanent — redaction lives on the persist path, not the response path, and nothing in the type system enforces it.
+- regression_check: `tests/pipeline/test_gap_004_client_self_certified_live_approval.py`, plus `tests/unit/test_pipeline_executor.py::test_agent_never_self_certifies_live_approval_in_run_body`
+- revert_proof: `git stash push -- ado2gh/api/contracts.py services/accelerator_api/routes/pipeline_routes.py`, then `.venv\Scripts\python.exe -m pytest tests/pipeline/test_gap_004_client_self_certified_live_approval.py`, then `git stash pop`. With the fix reverted: `1 failed, 5 warnings in 4.46s` — `test_client_supplied_agent_live_approved_cannot_start_a_live_run`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: true — approved change 4 in `contracts/public-contract-freeze.md`. Snapshot impact none: request-model fields, model deletions and validation strictness are not among the four frozen keys, and no route path, method, CLI command, environment variable or table name changed. Confirmed against the snapshot test.
+- closed_on: 2026-09-08
 
 ### GAP-005 (GAP-AUTH-05) `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely
 

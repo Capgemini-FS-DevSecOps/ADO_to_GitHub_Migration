@@ -4,7 +4,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiscoverRequest(BaseModel):
@@ -39,6 +39,11 @@ class PhaseRunRequest(BaseModel):
     phase: Literal["poc", "pilot", "wave1", "wave2", "wave3"]
     dry_run: bool = False
     force: bool = False
+    override_reason: str = Field(
+        default="",
+        description="Escalation justification, required when `force` bypasses a "
+                    "blocking prior-phase gate; persisted on the OVERRIDE record.",
+    )
     db_path: str = "migration_state.db"
 
 
@@ -392,6 +397,17 @@ class ValidateConnectionResponse(BaseModel):
 
 
 class PipelineRunStartRequest(BaseModel):
+    """Body of ``POST /v1/pipeline/runs``.
+
+    Unknown fields are rejected with 422 rather than dropped (GAP-004). This
+    route used to accept a client-supplied ``agent_live_approved`` boolean that
+    disabled the live-execution gate; that field is gone, and a caller still
+    sending it — or any other field this model does not declare — now gets a
+    loud validation error instead of a silent 200 that ignored it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
     name: str = "Manual migration"
     dry_run: bool = True
     phase: str = ""
@@ -399,16 +415,10 @@ class PipelineRunStartRequest(BaseModel):
     steps: Optional[list[str]] = None
     repository_id: Optional[str] = None
     migrate_deps_only: bool = True
-    agent_live_approved: bool = Field(
-        default=False,
-        description="Skip platform live gate when agent session already approved live execution",
-    )
-
-
-class PipelineRunStartApprovedRequest(BaseModel):
-    agent_live_approved: bool = Field(
-        default=False,
-        description="Start a run left in awaiting_approval after agent live approval",
+    override_reason: str = Field(
+        default="",
+        description="Escalation justification the console collects for a live run; "
+                    "carried through to the persisted gate OVERRIDE record.",
     )
 
 

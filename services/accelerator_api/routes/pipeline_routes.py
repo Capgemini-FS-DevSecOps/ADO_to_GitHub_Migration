@@ -9,7 +9,6 @@ from ado2gh.api.contracts import (
     LiveApprovalItem,
     LiveApprovalListResponse,
     PipelineRunResponse,
-    PipelineRunStartApprovedRequest,
     PipelineRunStartRequest,
     PipelineStepDefinition,
 )
@@ -113,9 +112,13 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
         ) if user else "admin",
         repository_id=req.repository_id,
         migrate_deps_only=req.migrate_deps_only,
+        override_reason=req.override_reason,
     )
-    skip_live_gate = req.agent_live_approved and not dry
-    if operator_requires_live_approval(user, dry) and not skip_live_gate:
+    # Live authority comes only from server-side state — the authenticated user's role
+    # here, or an approved LiveApprovalStore row on the /start route. The request body
+    # cannot influence it: PipelineRunStartRequest declares no live-approval field and
+    # forbids extras, so the old self-certifying agent_live_approved is a 422 (GAP-004).
+    if operator_requires_live_approval(user, dry):
         store = _live_store()
         store.create_or_get_pending(
             user,
@@ -132,21 +135,19 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
             run.steps[0].message = "Waiting for live execution approval"
         db = create_state_db(adv.db_path)
         return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
-    run.live_approval_status = "approved" if skip_live_gate else (
-        "auto_approved" if not dry else "not_required"
-    )
+    run.live_approval_status = "auto_approved" if not dry else "not_required"
     _runner.start_async(run.id, step_ids)
     db = create_state_db(adv.db_path)
     return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
 
 
 @router.post("/v1/pipeline/runs/{run_id}/start", response_model=PipelineRunResponse)
-def start_existing_pipeline_run(
-    run_id: str,
-    request: Request,
-    req: PipelineRunStartApprovedRequest | None = None,
-):
-    """Start a pipeline run that was created but not started (e.g. awaiting approval)."""
+def start_existing_pipeline_run(run_id: str, request: Request):
+    """Start a pipeline run that was created but not started (e.g. awaiting approval).
+
+    The route takes no request body. Whether a parked run may go live is decided
+    entirely from server-side state, so there is nothing for a caller to send.
+    """
     run = PipelineRunStore.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -155,11 +156,17 @@ def start_existing_pipeline_run(
         return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
 
     user = _platform_user(request)
-    skip_live_gate = bool(req and req.agent_live_approved and not run.dry_run)
     if run.status == "awaiting_approval":
-        if operator_requires_live_approval(user, run.dry_run) and not skip_live_gate:
+        # A parked run is released either by a caller who can approve live execution,
+        # or by LiveApprovalStore itself once an approver decides — which calls the
+        # registered executor directly and never comes back through this route. Since
+        # the handler reads no body, a caller posting its own approval claim (the old
+        # agent_live_approved, GAP-004) changes nothing here.
+        approved = _live_store().has_approved("pipeline_run", run_id)
+        if not approved and operator_requires_live_approval(user, run.dry_run):
             raise HTTPException(status_code=409, detail="awaiting_approval")
-        run.live_approval_status = "approved" if skip_live_gate else "auto_approved"
+        if not approved:
+            run.live_approval_status = "auto_approved"
     elif run.status not in ("pending", "awaiting_approval"):
         raise HTTPException(status_code=409, detail=f"Run is already {run.status}")
 
