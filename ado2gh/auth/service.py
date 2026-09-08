@@ -107,16 +107,13 @@ class AuthService:
         validate_password_strength(password)
         user_id = f"usr_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
-        self.db.create_platform_user(
-            user_id=user_id,
-            username=username.strip().lower(),
-            password_hash=hash_password(password),
-            role=PlatformRole.ADMIN.value,
-            display_name=display_name or username,
-            created_at=now,
-            status=PlatformUserStatus.ACTIVE.value,
-        )
         user = PlatformUser(user_id, username.strip().lower(), PlatformRole.ADMIN, display_name or username)
+        self.db.create_platform_user(
+            user,
+            password_hash=hash_password(password),
+            status=PlatformUserStatus.ACTIVE.value,
+            created_at=now,
+        )
         session = self._create_session(user)
         _audit_auth("user.bootstrap", user.username, {"role": user.role.value})
         return session
@@ -134,13 +131,10 @@ class AuthService:
         user_id = f"usr_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
         self.db.create_platform_user(
-            user_id=user_id,
-            username=normalized,
+            PlatformUser(user_id, normalized, PlatformRole.OPERATOR, display_name or username),
             password_hash=hash_password(password),
-            role=PlatformRole.OPERATOR.value,
-            display_name=display_name or username,
-            created_at=now,
             status=PlatformUserStatus.PENDING_APPROVAL.value,
+            created_at=now,
         )
         from ado2gh.api.profile_governance import write_profile_audit
 
@@ -217,16 +211,13 @@ class AuthService:
             raise ValueError("User already exists")
         user_id = f"usr_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
-        self.db.create_platform_user(
-            user_id=user_id,
-            username=normalized,
-            password_hash=hash_password(password),
-            role=platform_role.value,
-            display_name=display_name or username,
-            created_at=now,
-            status=PlatformUserStatus.ACTIVE.value,
-        )
         user = PlatformUser(user_id, normalized, platform_role, display_name or username)
+        self.db.create_platform_user(
+            user,
+            password_hash=hash_password(password),
+            status=PlatformUserStatus.ACTIVE.value,
+            created_at=now,
+        )
         _audit_auth(
             "user.created",
             actor,

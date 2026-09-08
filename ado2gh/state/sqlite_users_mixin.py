@@ -1,42 +1,48 @@
-"""Platform users, auth sessions, and live execution approval mixin.
+"""SQLite platform-user, session and live-approval methods, mixed into ``SQLiteStateDB``.
 
-Extracted from SQLiteStateDB to keep file under 800 lines.
-Provides: count_platform_users, create_platform_user, get_platform_user_by_username,
-get_platform_user_by_id, list_platform_users, update_platform_user,
-delete_auth_sessions_for_user, create_auth_session, get_auth_session, delete_auth_session,
-create_live_execution_approval, get_live_execution_approval,
-find_pending_live_execution_approval, find_approved_live_execution_approval,
-get_live_execution_approval_for_scope, list_live_execution_approvals,
-decide_live_execution_approval.
+Kept separate so ``sqlite_db.py`` stays under the 800-line cap. Password
+hashes and session tokens are stored as opaque strings and never logged.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ado2gh.auth.models import PlatformUser
 
 
 class PlatformUsersMixin:
-    """Platform users, auth sessions, and live execution approval methods."""
+    """Platform users, auth sessions and live execution approvals; expects ``self._conn()``."""
 
     def count_platform_users(self) -> int:
+        """Return the number of platform users."""
         with self._conn() as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM platform_users").fetchone()
         return int(row["c"]) if row else 0
 
     def create_platform_user(
-        self, user_id: str, username: str, password_hash: str,
-        role: str, display_name: str, created_at: str,
-        status: str = "active",
-    ):
+        self,
+        user: PlatformUser,
+        *,
+        password_hash: str,
+        status: str,
+        created_at: str,
+    ) -> None:
+        """Insert one ``platform_users`` row; see :meth:`StateDBBase.create_platform_user`."""
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO platform_users (id, username, password_hash, role, display_name, status, created_at)
                 VALUES (?,?,?,?,?,?,?)
                 """,
-                (user_id, username, password_hash, role, display_name, status, created_at),
+                (
+                    user.id, user.username, password_hash, user.role.value,
+                    user.display_name, status, created_at,
+                ),
             )
 
-    def get_platform_user_by_username(self, username: str) -> Optional[dict]:
+    def get_platform_user_by_username(self, username: str) -> dict | None:
+        """Return the user row with this username, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM platform_users WHERE username=?",
@@ -44,7 +50,8 @@ class PlatformUsersMixin:
             ).fetchone()
         return dict(row) if row else None
 
-    def get_platform_user_by_id(self, user_id: str) -> Optional[dict]:
+    def get_platform_user_by_id(self, user_id: str) -> dict | None:
+        """Return the user row with this id, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM platform_users WHERE id=?",
@@ -53,6 +60,7 @@ class PlatformUsersMixin:
         return dict(row) if row else None
 
     def list_platform_users(self) -> list[dict]:
+        """Return every user ordered by username, without password hashes."""
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT id, username, role, display_name, status, created_at FROM platform_users ORDER BY username",
@@ -67,6 +75,7 @@ class PlatformUsersMixin:
         status: str | None = None,
         display_name: str | None = None,
     ) -> bool:
+        """Update the given fields of a user; see :meth:`StateDBBase.update_platform_user`."""
         fields: list[str] = []
         values: list[Any] = []
         if role is not None:
@@ -89,10 +98,14 @@ class PlatformUsersMixin:
         return cur.rowcount > 0
 
     def delete_auth_sessions_for_user(self, user_id: str) -> None:
+        """Delete every session of a user."""
         with self._conn() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
 
-    def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
+    def create_auth_session(
+        self, token: str, user_id: str, expires_at: str, created_at: str,
+    ) -> None:
+        """Insert one ``auth_sessions`` row keyed by the session token."""
         with self._conn() as conn:
             conn.execute(
                 """
@@ -102,7 +115,8 @@ class PlatformUsersMixin:
                 (token, user_id, expires_at, created_at),
             )
 
-    def get_auth_session(self, token: str) -> Optional[dict]:
+    def get_auth_session(self, token: str) -> dict | None:
+        """Return the session row for a token, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM auth_sessions WHERE token=?",
@@ -110,11 +124,12 @@ class PlatformUsersMixin:
             ).fetchone()
         return dict(row) if row else None
 
-    def delete_auth_session(self, token: str):
+    def delete_auth_session(self, token: str) -> None:
+        """Delete the session with this token, if any."""
         with self._conn() as conn:
             conn.execute("DELETE FROM auth_sessions WHERE token=?", (token,))
 
-    def create_live_execution_approval(
+    def create_live_execution_approval(  # noqa: PLR0913  # approval row columns; see exception-register.md
         self,
         approval_id: str,
         requester_user_id: str,
@@ -127,6 +142,7 @@ class PlatformUsersMixin:
         reason_request: str | None = None,
         context_json: str | None = None,
     ) -> dict:
+        """Insert a ``pending`` approval; see :meth:`StateDBBase.create_live_execution_approval`."""
         with self._conn() as conn:
             conn.execute(
                 """
@@ -144,7 +160,8 @@ class PlatformUsersMixin:
             )
         return self.get_live_execution_approval(approval_id) or {}
 
-    def get_live_execution_approval(self, approval_id: str) -> Optional[dict]:
+    def get_live_execution_approval(self, approval_id: str) -> dict | None:
+        """Return the approval row with this id, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM live_execution_approvals WHERE id=?",
@@ -154,7 +171,8 @@ class PlatformUsersMixin:
 
     def find_pending_live_execution_approval(
         self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Return the newest ``pending`` approval for a scope, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 """
@@ -168,7 +186,8 @@ class PlatformUsersMixin:
 
     def find_approved_live_execution_approval(
         self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Return the most recently decided ``approved`` approval for a scope, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 """
@@ -182,7 +201,8 @@ class PlatformUsersMixin:
 
     def get_live_execution_approval_for_scope(
         self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Return the newest approval for a scope regardless of status, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 """
@@ -197,6 +217,7 @@ class PlatformUsersMixin:
     def list_live_execution_approvals(
         self, status: str | None = None, limit: int = 100,
     ) -> list[dict]:
+        """Return the newest approvals, filtered by status unless it is ``None`` or ``"all"``."""
         with self._conn() as conn:
             if status and status != "all":
                 rows = conn.execute(
@@ -221,11 +242,11 @@ class PlatformUsersMixin:
         self,
         approval_id: str,
         status: str,
-        approver_user_id: str,
-        approver_username: str,
+        approver: PlatformUser,
         reason_decision: str,
         decided_at: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Record a decision; see :meth:`StateDBBase.decide_live_execution_approval`."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT status FROM live_execution_approvals WHERE id=?",
@@ -243,7 +264,7 @@ class PlatformUsersMixin:
                 WHERE id=?
                 """,
                 (
-                    status, approver_user_id, approver_username,
+                    status, approver.id, approver.username,
                     reason_decision, decided_at, approval_id,
                 ),
             )

@@ -18,6 +18,7 @@ from ado2gh.logging_config import console, log
 from ado2gh.models import (
     DEFAULT_PHASES,
     BatchCheckpoint,
+    ExecutionMode,
     PhaseType,
     RepoConfig,
     WaveConfig,
@@ -154,7 +155,9 @@ class BatchExecutor:
         on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
     ) -> dict:
         if not dry_run:
-            self.db.mark_wave_run(wave.wave_id, "started", dry_run)
+            self.db.mark_wave_run(
+                wave.wave_id, "started", ExecutionMode.from_dry_run(dry_run=dry_run),
+            )
         result = {"completed": 0, "failed": 0, "repo_statuses": {}}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),

@@ -1,4 +1,4 @@
-"""Storage backend selection — SQLite (local/dev) vs PostgreSQL/DynamoDB (production)."""
+"""Storage backend selection: SQLite for local use, PostgreSQL or DynamoDB in production."""
 from __future__ import annotations
 
 import os
@@ -7,6 +7,8 @@ from enum import Enum
 
 
 class StorageBackend(str, Enum):
+    """Persistence backends selectable through ``ADO2GH_STORAGE_BACKEND``."""
+
     SQLITE = "sqlite"
     POSTGRES = "postgres"
     DYNAMODB = "dynamodb"
@@ -14,6 +16,11 @@ class StorageBackend(str, Enum):
 
 @dataclass(frozen=True)
 class StorageConfig:
+    """Resolved storage settings; only the fields of the chosen backend are meaningful.
+
+    ``database_url`` carries database credentials and must not be logged.
+    """
+
     backend: StorageBackend
     sqlite_path: str
     database_url: str
@@ -22,6 +29,16 @@ class StorageConfig:
 
     @classmethod
     def from_env(cls, sqlite_default: str = "migration_state.db") -> StorageConfig:
+        """Build the configuration from ``ADO2GH_*`` and ``AWS_*`` environment variables.
+
+        Args:
+            sqlite_default: SQLite path used when ``ADO2GH_SQLITE_PATH`` is unset.
+
+        Raises:
+            ValueError: The backend name is unknown, or the backend's required
+                setting (``ADO2GH_DATABASE_URL`` or ``ADO2GH_DYNAMODB_TABLE``)
+                is missing.
+        """
         raw = (os.environ.get("ADO2GH_STORAGE_BACKEND") or "sqlite").strip().lower()
         try:
             backend = StorageBackend(raw)
@@ -56,4 +73,3 @@ class StorageConfig:
             dynamodb_table=dynamodb_table,
             aws_region=aws_region,
         )
-

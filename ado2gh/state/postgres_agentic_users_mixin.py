@@ -1,14 +1,21 @@
-"""Postgres agentic platform, audit, users, and live execution approvals mixin.
+"""PostgreSQL audit-event, platform-user, session and live-approval methods, mixed into ``PostgresStateDB``.
 
-Extracted from PostgresStateDB to keep file under 800 lines.
+Kept separate so ``postgres_db.py`` stays under the 800-line cap. Password
+hashes and session tokens are stored as opaque strings and never logged.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
+
+from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
+
+if TYPE_CHECKING:
+    from ado2gh.auth.models import PlatformUser
 
 
 class PostgresAgenticUsersMixin:
-    """Agentic platform, audit events, platform users, auth sessions, live execution approvals."""
+    """Audit events, platform users, auth sessions and live execution approvals; expects ``self._conn()``."""
 
     def insert_audit_event(
         self,
@@ -17,52 +24,32 @@ class PostgresAgenticUsersMixin:
         profile_id: str,
         actor: str,
         payload_json: str,
-        created_at: str,
-        assignment_id: str | None = None,
-    ):
+    ) -> None:
+        """Append one ``audit_events`` row; see :meth:`StateDBBase.insert_audit_event`."""
+        created_at = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO audit_events
-                    (id, event_type, profile_id, actor, assignment_id, payload_json, created_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                    (id, event_type, profile_id, actor, payload_json, created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s)
                     """,
-                    (
-                        event_id, event_type, profile_id, actor,
-                        assignment_id, payload_json, created_at,
-                    ),
+                    (event_id, event_type, profile_id, actor, payload_json, created_at),
                 )
 
     def list_audit_events(
         self, profile_id: str | None = None, limit: int = 100,
     ) -> list[dict]:
+        """Return the newest audit events, restricted to one profile when given."""
         return self.search_audit_events(
-            profile_id=profile_id, limit=limit, offset=0,
+            AuditEventFilters(profile_id=profile_id), limit=limit, offset=0,
         )
 
     def search_audit_events(
-        self,
-        *,
-        profile_id: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-        actor: str | None = None,
-        event_type: str | None = None,
-        search: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
+        self, filters: AuditEventFilters, *, limit: int = 20, offset: int = 0,
     ) -> list[dict]:
-        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
-
-        filters = AuditEventFilters(
-            profile_id=profile_id,
-            actor=actor,
-            event_type=event_type,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-        )
+        """Return one page of audit events matching ``filters``, newest first."""
         clauses, params = build_audit_filters(filters)
         where = " AND ".join(clauses).replace("?", "%s")
         sql = (
@@ -74,26 +61,8 @@ class PostgresAgenticUsersMixin:
                 cur.execute(sql, (*params, limit, offset))
                 return [dict(r) for r in cur.fetchall()]
 
-    def count_audit_events(
-        self,
-        *,
-        profile_id: str | None = None,
-        actor: str | None = None,
-        event_type: str | None = None,
-        search: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-    ) -> int:
-        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
-
-        filters = AuditEventFilters(
-            profile_id=profile_id,
-            actor=actor,
-            event_type=event_type,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-        )
+    def count_audit_events(self, filters: AuditEventFilters) -> int:
+        """Return the number of audit events matching ``filters``."""
         clauses, params = build_audit_filters(filters)
         where = " AND ".join(clauses).replace("?", "%s")
         sql = f"SELECT COUNT(*) AS c FROM audit_events WHERE {where}"
@@ -109,6 +78,7 @@ class PostgresAgenticUsersMixin:
         limit: int = 200,
         actor: str | None = None,
     ) -> list[str]:
+        """Return distinct event types, optionally restricted to a profile or actor."""
         clauses = ["1=1"]
         params: list[Any] = []
         if profile_id:
@@ -128,6 +98,7 @@ class PostgresAgenticUsersMixin:
                 return [str(row[0]) for row in cur.fetchall()]
 
     def count_platform_users(self) -> int:
+        """Return the number of platform users."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM platform_users")
@@ -135,10 +106,14 @@ class PostgresAgenticUsersMixin:
                 return int(row[0]) if row else 0
 
     def create_platform_user(
-        self, user_id: str, username: str, password_hash: str,
-        role: str, display_name: str, created_at: str,
-        status: str = "active",
-    ):
+        self,
+        user: PlatformUser,
+        *,
+        password_hash: str,
+        status: str,
+        created_at: str,
+    ) -> None:
+        """Insert one ``platform_users`` row; see :meth:`StateDBBase.create_platform_user`."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -146,17 +121,22 @@ class PostgresAgenticUsersMixin:
                     INSERT INTO platform_users (id, username, password_hash, role, display_name, status, created_at)
                     VALUES (%s,%s,%s,%s,%s,%s,%s)
                     """,
-                    (user_id, username, password_hash, role, display_name, status, created_at),
+                    (
+                        user.id, user.username, password_hash, user.role.value,
+                        user.display_name, status, created_at,
+                    ),
                 )
 
-    def get_platform_user_by_username(self, username: str) -> Optional[dict]:
+    def get_platform_user_by_username(self, username: str) -> dict | None:
+        """Return the user row with this username, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM platform_users WHERE username=%s", (username,))
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def get_platform_user_by_id(self, user_id: str) -> Optional[dict]:
+    def get_platform_user_by_id(self, user_id: str) -> dict | None:
+        """Return the user row with this id, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM platform_users WHERE id=%s", (user_id,))
@@ -164,6 +144,7 @@ class PostgresAgenticUsersMixin:
                 return dict(row) if row else None
 
     def list_platform_users(self) -> list[dict]:
+        """Return every user ordered by username, without password hashes."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -179,6 +160,7 @@ class PostgresAgenticUsersMixin:
         status: str | None = None,
         display_name: str | None = None,
     ) -> bool:
+        """Update the given fields of a user; see :meth:`StateDBBase.update_platform_user`."""
         fields: list[str] = []
         values: list[Any] = []
         if role is not None:
@@ -202,11 +184,15 @@ class PostgresAgenticUsersMixin:
                 return cur.rowcount > 0
 
     def delete_auth_sessions_for_user(self, user_id: str) -> None:
+        """Delete every session of a user."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM auth_sessions WHERE user_id=%s", (user_id,))
 
-    def create_auth_session(self, token: str, user_id: str, expires_at: str, created_at: str):
+    def create_auth_session(
+        self, token: str, user_id: str, expires_at: str, created_at: str,
+    ) -> None:
+        """Insert one ``auth_sessions`` row keyed by the session token."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -217,19 +203,21 @@ class PostgresAgenticUsersMixin:
                     (token, user_id, expires_at, created_at),
                 )
 
-    def get_auth_session(self, token: str) -> Optional[dict]:
+    def get_auth_session(self, token: str) -> dict | None:
+        """Return the session row for a token, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM auth_sessions WHERE token=%s", (token,))
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def delete_auth_session(self, token: str):
+    def delete_auth_session(self, token: str) -> None:
+        """Delete the session with this token, if any."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM auth_sessions WHERE token=%s", (token,))
 
-    def create_live_execution_approval(
+    def create_live_execution_approval(  # noqa: PLR0913  # approval row columns; see exception-register.md
         self,
         approval_id: str,
         requester_user_id: str,
@@ -242,6 +230,7 @@ class PostgresAgenticUsersMixin:
         reason_request: str | None = None,
         context_json: str | None = None,
     ) -> dict:
+        """Insert a ``pending`` approval; see :meth:`StateDBBase.create_live_execution_approval`."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -260,7 +249,8 @@ class PostgresAgenticUsersMixin:
                 )
         return self.get_live_execution_approval(approval_id) or {}
 
-    def get_live_execution_approval(self, approval_id: str) -> Optional[dict]:
+    def get_live_execution_approval(self, approval_id: str) -> dict | None:
+        """Return the approval row with this id, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -272,7 +262,8 @@ class PostgresAgenticUsersMixin:
 
     def find_pending_live_execution_approval(
         self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Return the newest ``pending`` approval for a scope, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -288,7 +279,8 @@ class PostgresAgenticUsersMixin:
 
     def find_approved_live_execution_approval(
         self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Return the most recently decided ``approved`` approval for a scope, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -304,7 +296,8 @@ class PostgresAgenticUsersMixin:
 
     def get_live_execution_approval_for_scope(
         self, scope_type: str, scope_id: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Return the newest approval for a scope regardless of status, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -321,6 +314,7 @@ class PostgresAgenticUsersMixin:
     def list_live_execution_approvals(
         self, status: str | None = None, limit: int = 100,
     ) -> list[dict]:
+        """Return the newest approvals, filtered by status unless it is ``None`` or ``"all"``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 if status and status != "all":
@@ -343,6 +337,7 @@ class PostgresAgenticUsersMixin:
         return [dict(r) for r in rows]
 
     def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
+        """Return whether any scope of a repository is currently ``in_progress``."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -357,11 +352,11 @@ class PostgresAgenticUsersMixin:
         self,
         approval_id: str,
         status: str,
-        approver_user_id: str,
-        approver_username: str,
+        approver: PlatformUser,
         reason_decision: str,
         decided_at: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
+        """Record a decision; see :meth:`StateDBBase.decide_live_execution_approval`."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -381,7 +376,7 @@ class PostgresAgenticUsersMixin:
                     WHERE id=%s
                     """,
                     (
-                        status, approver_user_id, approver_username,
+                        status, approver.id, approver.username,
                         reason_decision, decided_at, approval_id,
                     ),
                 )

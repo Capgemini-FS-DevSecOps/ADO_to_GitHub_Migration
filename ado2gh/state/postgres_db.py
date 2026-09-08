@@ -1,23 +1,30 @@
-"""PostgreSQL migration state store (production backend)."""
+"""PostgreSQL state store (production backend).
+
+Same tables and method contract as the SQLite store, with ``psycopg2``
+placeholders and ``RETURNING``. The agentic, user, profile-scan and
+risk-gate methods come from the mixins.
+"""
 from __future__ import annotations
 
 import json
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Iterator
+from typing import Any, Iterator
 
-from ado2gh.models import MigrationStatus, PipelineMetadata
+from ado2gh.models import ExecutionMode, MigrationStatus, PhaseType, PipelineMetadata, RepoConfig
 from ado2gh.state.base import StateDBBase
 from ado2gh.state.postgres_agentic_users_mixin import PostgresAgenticUsersMixin
 from ado2gh.state.postgres_risk_gates_scan_mixin import PostgresRiskGatesScanMixin
 
 
-def _phase_value(phase) -> str:
-    """Accept PhaseType enum or plain phase id string."""
+def _phase_value(phase: PhaseType | str) -> str:
+    """Return the phase id of a ``PhaseType`` member or pass a plain id through."""
     return phase.value if hasattr(phase, "value") else str(phase)
 
 
 class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, StateDBBase):
+    """State store backed by a PostgreSQL database."""
+
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS migrations (
         id SERIAL PRIMARY KEY,
@@ -188,7 +195,13 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
 
     """
 
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str) -> None:
+        """Connect with ``psycopg2`` and apply the schema.
+
+        Args:
+            dsn: A ``postgresql://`` connection string; it carries the
+                credentials and is never logged.
+        """
         import psycopg2
         import psycopg2.extras
 
@@ -198,7 +211,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
         self._init_db()
 
     @contextmanager
-    def _conn(self) -> Iterator:
+    def _conn(self) -> Iterator[Any]:
+        """Yield a connection that commits on success and rolls back on error."""
         conn = self._psycopg2.connect(self.dsn)
         try:
             yield conn
@@ -210,6 +224,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
             conn.close()
 
     def _init_db(self) -> None:
+        """Create the tables in ``SCHEMA`` and apply in-place column upgrades."""
         statements = [
             s.strip() for s in self.SCHEMA.split(";")
             if s.strip() and not s.strip().startswith("--")
@@ -223,9 +238,17 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                     "status TEXT NOT NULL DEFAULT 'active'",
                 )
 
-    def upsert_migration(self, wave_id: int, repo, scope: str,
-                         status: MigrationStatus, error: str = None,
-                         gh_migration_id: str = None, stats: dict = None):
+    def upsert_migration(  # noqa: PLR0913  # row key plus outcome columns; see exception-register.md
+        self,
+        wave_id: int,
+        repo: RepoConfig,
+        scope: str,
+        status: MigrationStatus,
+        error: str | None = None,
+        gh_migration_id: str | None = None,
+        stats: dict | None = None,
+    ) -> None:
+        """Insert or update one ``migrations`` row; see :meth:`StateDBBase.upsert_migration`."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -254,6 +277,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 ))
 
     def get_wave_migrations(self, wave_id: int) -> list[dict]:
+        """Return every ``migrations`` row of a wave in insertion order."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -262,12 +286,14 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 return [dict(r) for r in cur.fetchall()]
 
     def get_all_migrations(self) -> list[dict]:
+        """Return every ``migrations`` row ordered by wave then insertion."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM migrations ORDER BY wave_id, id")
                 return [dict(r) for r in cur.fetchall()]
 
-    def migration_status_counts(self) -> dict:
+    def migration_status_counts(self) -> dict[str, int]:
+        """Return the number of distinct repositories per migration status."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -276,7 +302,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 )
                 return {r["status"]: r["cnt"] for r in cur.fetchall()}
 
-    def get_migration_repo_counts(self) -> dict:
+    def get_migration_repo_counts(self) -> dict[str, int]:
+        """Return repository and pipeline totals; see :meth:`StateDBBase.get_migration_repo_counts`."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("""
@@ -307,7 +334,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
             "total_pipelines": total_pipelines,
         }
 
-    def get_failed_migrations(self, wave_id: int = None) -> list[dict]:
+    def get_failed_migrations(self, wave_id: int | None = None) -> list[dict]:
+        """Return ``FAILED`` rows, restricted to one wave when ``wave_id`` is given."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 if wave_id:
@@ -319,7 +347,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                     cur.execute("SELECT * FROM migrations WHERE status='failed'")
                 return [dict(r) for r in cur.fetchall()]
 
-    def wave_summary(self, wave_id: int) -> dict:
+    def wave_summary(self, wave_id: int) -> dict[str, dict[str, int]]:
+        """Return row counts of a wave grouped by scope and then by status."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -333,7 +362,10 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
             result.setdefault(r["scope"], {})[r["status"]] = r["cnt"]
         return result
 
-    def mark_wave_run(self, wave_id: int, status: str, dry_run: bool = False) -> int:
+    def mark_wave_run(
+        self, wave_id: int, status: str, mode: ExecutionMode = ExecutionMode.LIVE,
+    ) -> int:
+        """Open or close a ``wave_runs`` row; see :meth:`StateDBBase.mark_wave_run`."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -341,7 +373,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                     cur.execute(
                         "INSERT INTO wave_runs (wave_id, started_at, status, dry_run) "
                         "VALUES (%s,%s,%s,%s) RETURNING id",
-                        (wave_id, now, "in_progress", int(dry_run)),
+                        (wave_id, now, "in_progress", int(mode is ExecutionMode.DRY_RUN)),
                     )
                     return cur.fetchone()[0]
                 cur.execute(
@@ -351,7 +383,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 )
                 return -1
 
-    def upsert_pipeline_inventory(self, meta: PipelineMetadata):
+    def upsert_pipeline_inventory(self, meta: PipelineMetadata) -> None:
+        """Insert or refresh one ``pipeline_inventory`` row keyed by project and pipeline id."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -378,6 +411,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 ))
 
     def get_pipelines_for_repo(self, project: str, repo_name: str) -> list[PipelineMetadata]:
+        """Return a repository's pipelines; see :meth:`StateDBBase.get_pipelines_for_repo`."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -404,7 +438,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
             pipelines.append(meta)
         return pipelines
 
-    def get_all_inventory(self, project: str = None) -> list[dict]:
+    def get_all_inventory(self, project: str | None = None) -> list[dict]:
+        """Return inventory rows, restricted to one project when given."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 if project:
@@ -418,7 +453,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                     )
                 return [dict(r) for r in cur.fetchall()]
 
-    def inventory_count(self, project: str = None) -> int:
+    def inventory_count(self, project: str | None = None) -> int:
+        """Return the number of inventory rows, restricted to one project when given."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 if project:
@@ -431,6 +467,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 return cur.fetchone()[0]
 
     def inventory_count_for_repo(self, project: str, repo_name: str) -> int:
+        """Return the number of distinct pipelines :meth:`get_pipelines_for_repo` would return."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -448,6 +485,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 return cur.fetchone()[0]
 
     def get_latest_repo_migrations(self) -> dict[str, dict]:
+        """Return the newest ``repo``-scope row per repository, keyed ``project:repo``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -468,7 +506,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
         }
 
     def get_latest_pipeline_migrations(self) -> dict[str, dict]:
-        """Latest migration row per project:pipeline_id."""
+        """Return the newest pipeline migration row per pipeline, keyed ``project:pipeline_id``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -490,22 +528,19 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
             lookup[key] = item
         return lookup
 
-    def clear_inventory(self, project: str = None):
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                if project:
-                    cur.execute("DELETE FROM pipeline_inventory WHERE project=%s", (project,))
-                else:
-                    cur.execute("DELETE FROM pipeline_inventory")
-
-    def upsert_pipeline_migration(self, wave_id: int, meta: PipelineMetadata,
-                                  gh_org: str, gh_repo: str,
-                                  status: MigrationStatus,
-                                  workflow_file: str = None,
-                                  error: str = None,
-                                  warnings: list = None,
-                                  unsupported: list = None,
-                                  transform_stats: dict = None):
+    def upsert_pipeline_migration(  # noqa: PLR0913  # row key plus transform outcome columns; see exception-register.md
+        self,
+        wave_id: int,
+        meta: PipelineMetadata,
+        repo: RepoConfig,
+        status: MigrationStatus,
+        workflow_file: str | None = None,
+        error: str | None = None,
+        warnings: list | None = None,
+        unsupported: list | None = None,
+        transform_stats: dict | None = None,
+    ) -> None:
+        """Insert or update one ``pipeline_migrations`` row; see :meth:`StateDBBase.upsert_pipeline_migration`."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -528,7 +563,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                         transform_stats = EXCLUDED.transform_stats
                 """, (
                     wave_id, meta.project, meta.pipeline_id, meta.pipeline_name,
-                    meta.repo_name, gh_org, gh_repo, workflow_file,
+                    meta.repo_name, repo.gh_org, repo.gh_repo, workflow_file,
                     status.value,
                     now if status == MigrationStatus.IN_PROGRESS else None,
                     now if status in (MigrationStatus.COMPLETED, MigrationStatus.FAILED) else None,
@@ -540,6 +575,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 ))
 
     def get_wave_pipeline_migrations(self, wave_id: int) -> list[dict]:
+        """Return every pipeline migration row of a wave in insertion order."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -549,6 +585,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 return [dict(r) for r in cur.fetchall()]
 
     def get_failed_pipeline_migrations(self, wave_id: int) -> list[dict]:
+        """Return a wave's pipeline rows whose status is ``failed`` or ``pending``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -558,7 +595,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 )
                 return [dict(r) for r in cur.fetchall()]
 
-    def pipeline_migration_summary(self, wave_id: int) -> dict:
+    def pipeline_migration_summary(self, wave_id: int) -> dict[str, dict[str, int]]:
+        """Return a wave's pipeline row counts under ``by_status`` and ``by_complexity``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -576,7 +614,8 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 result["by_complexity"].get(r["complexity"], 0) + r["cnt"]
         return result
 
-    def reset_failed_pipeline_migrations(self, wave_id: int):
+    def reset_failed_pipeline_migrations(self, wave_id: int) -> None:
+        """Delete a wave's ``failed`` pipeline rows so they can be retried."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(

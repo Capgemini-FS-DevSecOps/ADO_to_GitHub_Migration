@@ -6,7 +6,6 @@ it is serialised, so no secret reaches the database (CA-003).
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
@@ -49,6 +48,5 @@ class AuditWriter:
             profile_id=profile_id,
             actor=actor,
             payload_json=json.dumps(safe),
-            created_at=datetime.now(timezone.utc).isoformat(),
         )
         return event_id

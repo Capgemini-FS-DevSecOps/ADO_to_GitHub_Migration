@@ -142,5 +142,461 @@
     "rationale": "Function name describes the return type and purpose (string path), which is standard for factory/builder functions.",
     "state_hash": "677615696a38c00b129a577d53d434a5186806ee",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "package name describes persistence layer accurately.",
+    "state_hash": "efd33ac584b1254c4de343d0d6a3a169a5c1aa56",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/audit_query.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes audit event query helpers.",
+    "state_hash": "049dfd6ed7dfe2f6565bbfe3042cb1ca4f7e73ea",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/audit_query.py::audit_events_to_csv",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "converts event dicts to CSV string; name describes transformation accurately.",
+    "state_hash": "5d5fb228674acc6c96c2cca83a70c77fad0f0d64",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes abstract base class.",
+    "state_hash": "208370141faa01215b09112d2aedc71a00659fe2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.inventory_count",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns count of pipeline inventory items; noun-phrase getter consistent with project pattern.",
+    "state_hash": "d0585ba202cfc4226074a149a695e48ef0d1fca3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.inventory_count_for_repo",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns count of pipelines for repo; describes result accurately.",
+    "state_hash": "15eaf86b4f2682ad89f74be816b80765f6fa005a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.migration_status_counts",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict of counts grouped by migration status; noun-phrase name describes result.",
+    "state_hash": "347acb824fec516edcc5f5a69f2db8dd0f7685e4",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.pipeline_migration_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict with pipeline migration counts by status and complexity; name matches implementation.",
+    "state_hash": "57f5303e4c167f6c07baeefcdaa650c6b767e941",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.reassign_phase_repos",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "UPDATEs phase assignments; verb-phrase name describes action accurately.",
+    "state_hash": "e8af0e69dd7a81207e15dee4fb0f6f41a9e229e3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.search_audit_events",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "filters and returns audit event dicts; verb-phrase name describes action accurately.",
+    "state_hash": "70e6d737ffe3172c6135206ca40d8be0f78452a7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/base.py::StateDBBase.wave_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict with wave migration summary by scope and status; noun-phrase name describes result.",
+    "state_hash": "b27b7c19995c84a4f4ff814e15a685acfbf18b74",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/db.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes re-export compatibility shim.",
+    "state_hash": "97111db46535526c7bbcff81524282b42528332f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/factory.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes state store factory.",
+    "state_hash": "fab068e371cad0357b76a57ef59e39e6e3258680",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes job queue persistence abstractions.",
+    "state_hash": "9f4e4062a660c214b325a12023e6479849cb82db",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore._table",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "property accessor returning DynamoDB table resource; underscore name and clear purpose.",
+    "state_hash": "8969bd93817db48ef6410fe46c91c9b6420002ec",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "selects and updates next pending job to RUNNING; verb-phrase action name accurate.",
+    "state_hash": "d7deca4bcb8015f6cc80125595154199a0b8878b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.complete",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "marks job as COMPLETED with result; verb-phrase action name accurate.",
+    "state_hash": "5f4b17643e192ee146cc4fa072eb51bbdee829a5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "inserts job record; verb-phrase action name accurate.",
+    "state_hash": "a58c99e3abf16660bbfe5146aecadd8b793ebde0",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::JobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "abstract method for claiming next job; verb-phrase name clear.",
+    "state_hash": "9a6778a5227c30d8cf5994d42e4370723595613a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::JobStore.complete",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "abstract method for completing job; verb-phrase name clear.",
+    "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::JobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "abstract method for enqueuing job; verb-phrase name clear.",
+    "state_hash": "8a2b8cd419b9670f11b3f7adaa8c9cfe476bc173",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore._conn",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "context manager returning connection; property-like accessor name clear.",
+    "state_hash": "7eaab3804c2f512cbffbf81be99fb109a5d8fdc2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore._row_to_record",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "static helper converting database row to JobRecord; helper name clear.",
+    "state_hash": "5c70de0282d769392c8a10dd925b09dabef08ae9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "selects next pending job with lock; verb-phrase name accurate.",
+    "state_hash": "1fca13a48e09956fc4c8b6956728204a8ea78739",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore.complete",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "updates job to COMPLETED; verb-phrase name accurate.",
+    "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "inserts job record; verb-phrase name accurate.",
+    "state_hash": "a58c99e3abf16660bbfe5146aecadd8b793ebde0",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore._conn",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns SQLite connection; property-like accessor name clear.",
+    "state_hash": "ccdff6fa8226d159784798994727521463e66dcf",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore._row_to_record",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "static helper converting sqlite3.Row to JobRecord; helper name clear.",
+    "state_hash": "ae0c3d8fd66e08ab581fc371828c2bf688e32606",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "selects and updates next pending job; verb-phrase name accurate.",
+    "state_hash": "476456e31e96680d4a9019cf8bc9ad83a50b9734",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore.complete",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "updates job to COMPLETED; verb-phrase name accurate.",
+    "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "inserts job record; verb-phrase name accurate.",
+    "state_hash": "a58c99e3abf16660bbfe5146aecadd8b793ebde0",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_agentic_users_mixin.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes Postgres-specific platform/audit/users/approvals mixin.",
+    "state_hash": "a1e0b444a82f60b7ff20cb05b3ba1567ea75707a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_agentic_users_mixin.py::PostgresAgenticUsersMixin.search_audit_events",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "filters and returns audit events from PostgreSQL; verb-phrase name accurate.",
+    "state_hash": "70e6d737ffe3172c6135206ca40d8be0f78452a7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes PostgreSQL state DB implementation.",
+    "state_hash": "aa303e8687937160091c7b6ade5e4eb69a95bce7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::PostgresStateDB._conn",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "context manager yielding PostgreSQL connection; property-like accessor name clear.",
+    "state_hash": "2a57ef964cf85d9e87379d1afa631ed7899ebfe2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::PostgresStateDB.inventory_count",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns count of pipeline inventory items; noun-phrase name describes result.",
+    "state_hash": "d0585ba202cfc4226074a149a695e48ef0d1fca3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::PostgresStateDB.inventory_count_for_repo",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns count of distinct pipelines for repo; name accurate.",
+    "state_hash": "15eaf86b4f2682ad89f74be816b80765f6fa005a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::PostgresStateDB.migration_status_counts",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict of migration counts by status; noun-phrase name describes result.",
+    "state_hash": "347acb824fec516edcc5f5a69f2db8dd0f7685e4",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::PostgresStateDB.pipeline_migration_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict with pipeline migration counts by status/complexity; name accurate.",
+    "state_hash": "57f5303e4c167f6c07baeefcdaa650c6b767e941",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::PostgresStateDB.wave_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict with wave migration summary by scope/status; name accurate.",
+    "state_hash": "b27b7c19995c84a4f4ff814e15a685acfbf18b74",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_db.py::_phase_value",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "helper converting PhaseType enum or string to string value; helper name clear.",
+    "state_hash": "19e3392f18bbdf17e8a736ec6006cf9a23e80db8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_risk_gates_scan_mixin.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes Postgres-specific risk/gates/scan mixin.",
+    "state_hash": "916106132d6ed9dbd62b78b5f73c95d1e1d2b3cd",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/postgres_risk_gates_scan_mixin.py::PostgresRiskGatesScanMixin.reassign_phase_repos",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "UPDATEs phase assignments for Postgres; verb-phrase name accurate.",
+    "state_hash": "efd6db0a7d81c43c43de31cf5de430c4f34d15d2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_agentic_mixin.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes SQLite agentic platform mixin.",
+    "state_hash": "096273cb5f6813f3bdd952bf5244a0b0fee8fd3f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_agentic_mixin.py::AgenticPlatformMixin.search_audit_events",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "filters and returns audit events from SQLite; verb-phrase name accurate.",
+    "state_hash": "70e6d737ffe3172c6135206ca40d8be0f78452a7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes SQLite state DB implementation.",
+    "state_hash": "72cc6c43107a2a6b521b4c89459284b517bb6320",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py::SQLiteStateDB._conn",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns SQLite connection; property-like accessor name clear.",
+    "state_hash": "50d243758a18dae83b249da89b5fa6b0ad7820b9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py::SQLiteStateDB.inventory_count",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns count of pipeline inventory; noun-phrase name describes result.",
+    "state_hash": "d0585ba202cfc4226074a149a695e48ef0d1fca3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py::SQLiteStateDB.inventory_count_for_repo",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns distinct pipeline count for repo; name accurate.",
+    "state_hash": "15eaf86b4f2682ad89f74be816b80765f6fa005a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py::SQLiteStateDB.migration_status_counts",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict of migration counts by status; name accurate.",
+    "state_hash": "347acb824fec516edcc5f5a69f2db8dd0f7685e4",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py::SQLiteStateDB.pipeline_migration_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict with pipeline migration counts by status/complexity; name accurate.",
+    "state_hash": "57f5303e4c167f6c07baeefcdaa650c6b767e941",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_db.py::SQLiteStateDB.wave_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns dict with wave summary by scope/status; name accurate.",
+    "state_hash": "b27b7c19995c84a4f4ff814e15a685acfbf18b74",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_profile_scan_mixin.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes SQLite profile scan mixin.",
+    "state_hash": "2cba151c9b0d189bfe91830c085d4fe90cea4d32",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_risk_gates_mixin.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes SQLite risk/gates mixin.",
+    "state_hash": "493db460c174dbaf3c2fe3860ac2ee7c5531418e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_risk_gates_mixin.py::RiskGatesMixin.reassign_phase_repos",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "UPDATEs phase assignments; verb-phrase name accurate.",
+    "state_hash": "efd6db0a7d81c43c43de31cf5de430c4f34d15d2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_users_mixin.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes SQLite users/auth mixin.",
+    "state_hash": "910bfae18224be73176d10a14450f52afa4c1442",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/storage_config.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module name accurately describes storage backend configuration.",
+    "state_hash": "bf0d43269a97f9ac8e6a9ecef7546990bd767c65",
+    "decided_by": "cavecrew-reviewer"
   }
 ]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType
+from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RepoConfig
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
 from ado2gh.state.db import StateDB
 
@@ -33,8 +33,7 @@ def test_readiness_includes_classification_and_migration_status(tmp_path):
     db.upsert_pipeline_migration(
         1,
         meta,
-        "gh-org",
-        "repo-a",
+        RepoConfig(ado_project="Proj", ado_repo="repo-a", gh_org="gh-org", gh_repo="repo-a"),
         __import__("ado2gh.models", fromlist=["MigrationStatus"]).MigrationStatus.COMPLETED,
         workflow_file=".github/workflows/build-ci.yml",
     )

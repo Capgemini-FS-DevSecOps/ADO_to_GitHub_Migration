@@ -105,7 +105,7 @@ def test_rescan_preserves_manual_phase_overrides(db: StateDB):
 
     rescan = _sample_scan()
     rescan["scanned_at"] = "2026-06-09T12:00:00+00:00"
-    db.save_profile_scan(profile_id, rescan, preserve_manual_assignments=True)
+    db.save_profile_scan(profile_id, rescan)
 
     alpha = next(
         r for r in db.get_profile_scan_repos(profile_id) if r["repo_name"] == "alpha"

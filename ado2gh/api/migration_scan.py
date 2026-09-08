@@ -436,11 +436,10 @@ def persist_scan_results(
 
     db = get_state_db()
     if hasattr(db, "save_profile_scan"):
-        db.save_profile_scan(
-            profile_id,
-            results,
-            preserve_manual_assignments=preserve_manual_assignments,
-        )
+        if preserve_manual_assignments:
+            db.save_profile_scan(profile_id, results)
+        else:
+            db.replace_profile_scan(profile_id, results)
 
     path = _scan_results_path(profile_id)
     path.parent.mkdir(parents=True, exist_ok=True)

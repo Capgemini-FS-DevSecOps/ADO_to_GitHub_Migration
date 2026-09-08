@@ -145,12 +145,7 @@ class LiveApprovalStore:
             )
         now = datetime.now(timezone.utc).isoformat()
         updated = self.db.decide_live_execution_approval(
-            approval_id,
-            "approved",
-            approver.id,
-            approver.username,
-            reason,
-            now,
+            approval_id, "approved", approver, reason, now,
         )
         assert updated is not None
         if updated["scope_type"] == "pipeline_run":
@@ -187,12 +182,7 @@ class LiveApprovalStore:
             )
         now = datetime.now(timezone.utc).isoformat()
         updated = self.db.decide_live_execution_approval(
-            approval_id,
-            "denied",
-            approver.id,
-            approver.username,
-            reason,
-            now,
+            approval_id, "denied", approver, reason, now,
         )
         assert updated is not None
         if updated["scope_type"] == "agent_session":

@@ -1,18 +1,39 @@
-"""Postgres risk scores, phase gates, batch checkpoints, and profile scan mixin.
+"""PostgreSQL risk-score, phase-gate, checkpoint and profile-scan methods, mixed into ``PostgresStateDB``.
 
-Extracted from PostgresStateDB to keep file under 800 lines.
+Kept separate so ``postgres_db.py`` stays under the 800-line cap.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
+
+from ado2gh.models import BatchCheckpoint, PhaseGateResult, PhaseType, RiskScore
 
 
 class PostgresRiskGatesScanMixin:
-    """Risk scores, phase gates, batch checkpoints, profile scan — for PostgresStateDB."""
+    """Risk scores, phase gates, batch checkpoints and profile scans; expects ``self._conn()``."""
 
-    def upsert_risk_score(self, score):
+    def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:
+        """Delete risk scores not in ``keys``; see :meth:`StateDBBase.prune_risk_scores_not_in`."""
+        if not keys:
+            return 0
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT project, repo_name FROM repo_risk_scores")
+                rows = cur.fetchall()
+                removed = 0
+                for project, repo_name in rows:
+                    if (project, repo_name) not in keys:
+                        cur.execute(
+                            "DELETE FROM repo_risk_scores WHERE project=%s AND repo_name=%s",
+                            (project, repo_name),
+                        )
+                        removed += 1
+        return removed
+
+    def upsert_risk_score(self, score: RiskScore) -> None:
+        """Insert or refresh one ``repo_risk_scores`` row keyed by project and repository."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -32,18 +53,17 @@ class PostgresRiskGatesScanMixin:
                     json.dumps(score.to_dict()), now,
                 ))
 
-    def get_all_risk_scores(self) -> list:
+    def get_all_risk_scores(self) -> list[dict]:
+        """Return every risk score row ordered by ascending total score."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM repo_risk_scores ORDER BY total_score")
                 return [dict(r) for r in cur.fetchall()]
 
-    def get_risk_scores_for_phase(self, phase) -> list:
+    def get_risk_scores_for_phase(self, phase: PhaseType | str | None) -> list[dict]:
+        """Return risk score rows assigned to ``phase``, or all rows when it is ``None``."""
         if phase is None:
-            with self._conn() as conn:
-                with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                    cur.execute("SELECT * FROM repo_risk_scores ORDER BY total_score")
-                    return [dict(r) for r in cur.fetchall()]
+            return self.get_all_risk_scores()
         from ado2gh.state.postgres_db import _phase_value
         phase_val = _phase_value(phase)
         with self._conn() as conn:
@@ -55,6 +75,7 @@ class PostgresRiskGatesScanMixin:
                 return [dict(r) for r in cur.fetchall()]
 
     def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
+        """Count repositories assigned to a phase; see :meth:`StateDBBase.count_repos_by_phase`."""
         counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -83,6 +104,7 @@ class PostgresRiskGatesScanMixin:
         to_phase: str,
         profile_id: str | None = None,
     ) -> dict[str, int]:
+        """Move repositories between phases; see :meth:`StateDBBase.reassign_phase_repos`."""
         updated = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -106,6 +128,7 @@ class PostgresRiskGatesScanMixin:
         return updated
 
     def scan_repo_scores(self, profile_id: str | None = None) -> list[float]:
+        """Return total scores from the profile scan, falling back to risk scores when empty."""
         with self._conn() as conn:
             with conn.cursor() as cur:
                 if profile_id:
@@ -122,28 +145,29 @@ class PostgresRiskGatesScanMixin:
                 rows = cur.fetchall()
         return [float(r[0]) for r in rows]
 
-    def risk_score_count(self) -> int:
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM repo_risk_scores")
-                return cur.fetchone()[0]
+    def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        """Persist a scan, keeping operator phase assignments; see :meth:`StateDBBase.save_profile_scan`."""
+        from ado2gh.api.profile_discovery import manual_phase_overrides
 
-    def save_profile_scan(
+        overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
+        self._write_profile_scan(profile_id, raw, overrides)
+
+    def replace_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        """Persist a scan, discarding operator phase assignments; see :meth:`StateDBBase.replace_profile_scan`."""
+        self._write_profile_scan(profile_id, raw, {})
+
+    def _write_profile_scan(
         self,
         profile_id: str,
         raw: dict[str, Any],
-        *,
-        preserve_manual_assignments: bool = True,
+        overrides: dict[tuple[str, str], str],
     ) -> None:
+        """Replace a profile's scan rows, applying ``overrides`` to ``assigned_phase``."""
         from ado2gh.api.migration_scan import pack_scan_summary_json
-        from ado2gh.api.profile_discovery import manual_phase_overrides
 
         now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
         gh_org = raw.get("gh_org", "")
         summary = pack_scan_summary_json(raw)
-        overrides: dict[tuple[str, str], str] = {}
-        if preserve_manual_assignments:
-            overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -172,9 +196,9 @@ class PostgresRiskGatesScanMixin:
                         project = repo.get("project", "")
                         repo_name = repo.get("repo_name", "")
                         suggested = repo.get("suggested_phase") or bucket_phase
-                        assigned = repo.get("assigned_phase") or bucket_phase
-                        if preserve_manual_assignments and (project, repo_name) in overrides:
-                            assigned = overrides[(project, repo_name)]
+                        assigned = overrides.get(
+                            (project, repo_name), repo.get("assigned_phase") or bucket_phase,
+                        )
                         cur.execute("""
                             INSERT INTO profile_scan_repos
                                 (profile_id, project, repo_name, total_score, suggested_phase,
@@ -193,7 +217,8 @@ class PostgresRiskGatesScanMixin:
                             json.dumps(repo),
                         ))
 
-    def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]:
+    def get_profile_scan_meta(self, profile_id: str) -> dict | None:
+        """Return the ``profile_scans`` row of a profile, or ``None`` when never scanned."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -203,9 +228,8 @@ class PostgresRiskGatesScanMixin:
                 row = cur.fetchone()
         return dict(row) if row else None
 
-    def get_profile_scan_repos(
-        self, profile_id: str, phase: str | None = None,
-    ) -> list[dict]:
+    def get_profile_scan_repos(self, profile_id: str) -> list[dict]:
+        """Return a profile's scanned repositories ordered by score, project and name."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(
@@ -218,6 +242,7 @@ class PostgresRiskGatesScanMixin:
     def update_profile_repo_phases(
         self, profile_id: str, assignments: list[dict[str, str]],
     ) -> int:
+        """Apply per-repository phase assignments; see :meth:`StateDBBase.update_profile_repo_phases`."""
         updated = 0
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -235,7 +260,8 @@ class PostgresRiskGatesScanMixin:
                     updated += cur.rowcount
         return updated
 
-    def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
+    def build_profile_scan_payload(self, profile_id: str) -> dict[str, Any] | None:
+        """Rebuild the scan payload the console reads, as one ``unassigned`` bucket."""
         from ado2gh.api.migration_scan import extract_discovery_fields
 
         meta = self.get_profile_scan_meta(profile_id)
@@ -273,7 +299,8 @@ class PostgresRiskGatesScanMixin:
             **discovery,
         }
 
-    def upsert_phase_gate(self, result):
+    def upsert_phase_gate(self, result: PhaseGateResult) -> None:
+        """Insert or refresh the single ``phase_gates`` row of ``result.phase``."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -303,7 +330,8 @@ class PostgresRiskGatesScanMixin:
                     result.checked_at or now,
                 ))
 
-    def get_phase_gate(self, phase) -> Optional[dict]:
+    def get_phase_gate(self, phase: PhaseType) -> dict | None:
+        """Return the gate row of a phase, or ``None`` when it was never checked."""
         from ado2gh.state.postgres_db import _phase_value
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
@@ -311,13 +339,15 @@ class PostgresRiskGatesScanMixin:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
-    def get_all_phase_gates(self) -> list:
+    def get_all_phase_gates(self) -> list[dict]:
+        """Return every gate row in insertion order."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM phase_gates ORDER BY id")
                 return [dict(r) for r in cur.fetchall()]
 
-    def upsert_batch_checkpoint(self, cp):
+    def upsert_batch_checkpoint(self, cp: BatchCheckpoint) -> None:
+        """Insert or update one checkpoint; see :meth:`StateDBBase.upsert_batch_checkpoint`."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -334,17 +364,8 @@ class PostgresRiskGatesScanMixin:
                     cp.started_at or now, cp.completed_at,
                 ))
 
-    def get_batch_checkpoints(self, phase) -> list:
-        from ado2gh.state.postgres_db import _phase_value
-        with self._conn() as conn:
-            with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM batch_checkpoints WHERE phase=%s ORDER BY batch_num",
-                    (_phase_value(phase),),
-                )
-                return [dict(r) for r in cur.fetchall()]
-
-    def get_last_completed_batch(self, phase) -> int:
+    def get_last_completed_batch(self, phase: PhaseType) -> int:
+        """Return the highest completed batch number of a phase, or ``-1`` when none."""
         from ado2gh.state.postgres_db import _phase_value
         with self._conn() as conn:
             with conn.cursor() as cur:

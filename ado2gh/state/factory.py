@@ -1,4 +1,4 @@
-"""Factory for migration state store — backend selected via environment."""
+"""Factory for the migration state store; the backend is selected from the environment."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Union
@@ -15,8 +15,16 @@ StateStore = Union[SQLiteStateDB, "PostgresStateDB"]
 def create_state_db(db_path: str = "migration_state.db") -> StateStore:
     """Return the configured state store.
 
-    Local / development (default): SQLite file.
-    Production: PostgreSQL via ``ADO2GH_STORAGE_BACKEND``.
+    Args:
+        db_path: SQLite file used unless the environment selects another
+            backend (see ``StorageConfig.from_env``).
+
+    Returns:
+        A ``SQLiteStateDB`` by default, or a ``PostgresStateDB`` when
+        ``ADO2GH_STORAGE_BACKEND=postgres``.
+
+    Raises:
+        ValueError: The configured backend has no state-store implementation.
     """
     cfg = StorageConfig.from_env(sqlite_default=db_path)
 

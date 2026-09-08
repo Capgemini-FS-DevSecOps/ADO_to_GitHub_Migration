@@ -154,8 +154,8 @@
 
 ### Increment 3 — `ado2gh/state/`
 
-- [ ] T047 [US2] Review-agent decisions for `--package ado2gh/state`; record
-- [ ] T048 [US2] Clean `ado2gh/state/` per protocol (239 functions; 228 without docstrings; 47 untyped; 22 with > 5 params — group column arguments into the existing record models in `ado2gh/models.py` / `ado2gh/api/pipeline_models.py`, never a new type; persisted `dry_run` columns keep shape with `ExecutionMode.from_dry_run` at read/write; `sqlite_db.py` and `postgres_db.py` signatures change together — FR-011; `job_store.py` abstract methods likewise); callers in `phase/`, `pipelines/`, `reporting/`, `core/`, `api/`, `agents/`, `cli/`, `services/`; verify, changelog, commit
+- [X] T047 [US2] Review-agent decisions for `--package ado2gh/state`; record
+- [X] T048 [US2] Clean `ado2gh/state/` per protocol (239 functions; 228 without docstrings; 47 untyped; 22 with > 5 params — group column arguments into the existing record models in `ado2gh/models.py` / `ado2gh/api/pipeline_models.py`, never a new type; persisted `dry_run` columns keep shape with `ExecutionMode.from_dry_run` at read/write; `sqlite_db.py` and `postgres_db.py` signatures change together — FR-011; `job_store.py` abstract methods likewise); callers in `phase/`, `pipelines/`, `reporting/`, `core/`, `api/`, `agents/`, `cli/`, `services/`; verify, changelog, commit
 
 ### Increment 4 — `ado2gh/phase/`
 

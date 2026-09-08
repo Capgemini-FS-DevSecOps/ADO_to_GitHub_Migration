@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
 from ado2gh.auth.service import AuthService
+from ado2gh.state.audit_query import AuditEventFilters
 from ado2gh.state.factory import create_state_db
 
 
@@ -148,7 +149,7 @@ def test_failed_agent_notify_is_recorded_not_swallowed(client, tmp_path, monkeyp
     # ... but the failed notify is surfaced in both places an operator looks.
     assert "401" in caplog.text, "a rejected notify left no error in the log"
     events = create_state_db(str(tmp_path / "approvals.db")).search_audit_events(
-        event_type="platform.live_execution.notify_failed", limit=10,
+        AuditEventFilters(event_type="platform.live_execution.notify_failed"), limit=10,
     )
     assert events, (
         "the agent rejected the resume notification and the approval was still "

@@ -1,4 +1,4 @@
-"""Shared audit event query helpers for SQLite and Postgres backends."""
+"""Audit-event query helpers shared by the SQLite and PostgreSQL backends."""
 from __future__ import annotations
 
 import csv
@@ -10,6 +10,13 @@ from typing import Any
 
 @dataclass
 class AuditEventFilters:
+    """Optional criteria for searching ``audit_events``; ``None`` means no restriction.
+
+    ``actor`` and ``search`` match case-insensitively as substrings;
+    ``search`` looks in the event type, actor and payload. ``date_to`` given
+    as a bare ``YYYY-MM-DD`` covers the whole day.
+    """
+
     profile_id: str | None = None
     actor: str | None = None
     event_type: str | None = None
@@ -19,6 +26,7 @@ class AuditEventFilters:
 
 
 def normalize_date_to(value: str | None) -> str | None:
+    """Extend a bare ``YYYY-MM-DD`` upper bound to the end of that day (UTC)."""
     if not value:
         return None
     text = value.strip()
@@ -28,7 +36,11 @@ def normalize_date_to(value: str | None) -> str | None:
 
 
 def build_audit_filters(filters: AuditEventFilters) -> tuple[list[str], list[Any]]:
-    """Return SQL WHERE fragments and bound values (placeholder-agnostic)."""
+    """Translate filters into SQL ``WHERE`` fragments and their bound values.
+
+    Fragments use ``?`` placeholders; the PostgreSQL backend rewrites them
+    to ``%s``. With no criteria the single fragment ``1=1`` is returned.
+    """
     clauses: list[str] = []
     params: list[Any] = []
 
@@ -61,7 +73,7 @@ def build_audit_filters(filters: AuditEventFilters) -> tuple[list[str], list[Any
 
 
 def audit_events_to_csv(events: list[dict]) -> str:
-    """Serialize audit rows to CSV (payload summarized as JSON string)."""
+    """Serialise audit rows to CSV text with the payload as one JSON column."""
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(

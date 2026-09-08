@@ -1,35 +1,40 @@
-"""Profile scan mixin — discovery scan persistence per migration profile.
+"""SQLite profile-scan methods, mixed into ``SQLiteStateDB``.
 
-Extracted from SQLiteStateDB to keep file under 800 lines.
-Provides: save_profile_scan, get_profile_scan_meta, get_profile_scan_repos,
-update_profile_repo_phases, build_profile_scan_payload.
+Kept separate so ``sqlite_db.py`` stays under the 800-line cap.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 
 class ProfileScanMixin:
-    """Profile scan and wave methods — mixed into SQLiteStateDB / PostgresStateDB."""
+    """Discovery scan persistence per migration profile; expects ``self._conn()``."""
 
-    def save_profile_scan(
+    def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        """Persist a scan, keeping operator phase assignments; see :meth:`StateDBBase.save_profile_scan`."""
+        from ado2gh.api.profile_discovery import manual_phase_overrides
+
+        overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
+        self._write_profile_scan(profile_id, raw, overrides)
+
+    def replace_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
+        """Persist a scan, discarding operator phase assignments; see :meth:`StateDBBase.replace_profile_scan`."""
+        self._write_profile_scan(profile_id, raw, {})
+
+    def _write_profile_scan(
         self,
         profile_id: str,
         raw: dict[str, Any],
-        *,
-        preserve_manual_assignments: bool = True,
+        overrides: dict[tuple[str, str], str],
     ) -> None:
+        """Replace a profile's scan rows, applying ``overrides`` to ``assigned_phase``."""
         from ado2gh.api.migration_scan import pack_scan_summary_json
-        from ado2gh.api.profile_discovery import manual_phase_overrides
 
         now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
         gh_org = raw.get("gh_org", "")
         summary = pack_scan_summary_json(raw)
-        overrides: dict[tuple[str, str], str] = {}
-        if preserve_manual_assignments:
-            overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
         with self._conn() as conn:
             conn.execute("DELETE FROM profile_scan_repos WHERE profile_id=?", (profile_id,))
             conn.execute("""
@@ -54,9 +59,9 @@ class ProfileScanMixin:
                     project = repo.get("project", "")
                     repo_name = repo.get("repo_name", "")
                     suggested = repo.get("suggested_phase") or bucket_phase
-                    assigned = repo.get("assigned_phase") or bucket_phase
-                    if preserve_manual_assignments and (project, repo_name) in overrides:
-                        assigned = overrides[(project, repo_name)]
+                    assigned = overrides.get(
+                        (project, repo_name), repo.get("assigned_phase") or bucket_phase,
+                    )
                     conn.execute("""
                         INSERT INTO profile_scan_repos
                             (profile_id, project, repo_name, total_score, suggested_phase,
@@ -75,16 +80,16 @@ class ProfileScanMixin:
                         json.dumps(repo),
                     ))
 
-    def get_profile_scan_meta(self, profile_id: str) -> Optional[dict]:
+    def get_profile_scan_meta(self, profile_id: str) -> dict | None:
+        """Return the ``profile_scans`` row of a profile, or ``None`` when never scanned."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM profile_scans WHERE profile_id=?", (profile_id,)
             ).fetchone()
         return dict(row) if row else None
 
-    def get_profile_scan_repos(
-        self, profile_id: str, phase: str | None = None,
-    ) -> list[dict]:
+    def get_profile_scan_repos(self, profile_id: str) -> list[dict]:
+        """Return a profile's scanned repositories ordered by score, project and name."""
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT * FROM profile_scan_repos WHERE profile_id=? "
@@ -96,6 +101,7 @@ class ProfileScanMixin:
     def update_profile_repo_phases(
         self, profile_id: str, assignments: list[dict[str, str]],
     ) -> int:
+        """Apply per-repository phase assignments; see :meth:`StateDBBase.update_profile_repo_phases`."""
         updated = 0
         with self._conn() as conn:
             for item in assignments:
@@ -112,7 +118,8 @@ class ProfileScanMixin:
                 updated += cur.rowcount
         return updated
 
-    def build_profile_scan_payload(self, profile_id: str) -> Optional[dict[str, Any]]:
+    def build_profile_scan_payload(self, profile_id: str) -> dict[str, Any] | None:
+        """Rebuild the scan payload the console reads, bucketed by assigned phase."""
         from ado2gh.api.migration_scan import extract_discovery_fields
 
         meta = self.get_profile_scan_meta(profile_id)

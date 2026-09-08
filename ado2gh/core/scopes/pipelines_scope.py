@@ -246,9 +246,7 @@ class PipelinesScopeHandler:
         self, pipe: PipelineMetadata, wave_id: int, repo: RepoConfig,
         ctx: ScopeContext, output_root,
     ) -> dict:
-        ctx.db.upsert_pipeline_migration(
-            wave_id, pipe, repo.gh_org, repo.gh_repo, MigrationStatus.IN_PROGRESS,
-        )
+        ctx.db.upsert_pipeline_migration(wave_id, pipe, repo, MigrationStatus.IN_PROGRESS)
         try:
             fetch_template = make_ado_git_fetcher(
                 ctx.ado,
@@ -261,8 +259,7 @@ class PipelinesScopeHandler:
                 pipe, output_root, fetch_template=fetch_template,
             )
             ctx.db.upsert_pipeline_migration(
-                wave_id, pipe, repo.gh_org, repo.gh_repo,
-                MigrationStatus.COMPLETED,
+                wave_id, pipe, repo, MigrationStatus.COMPLETED,
                 workflow_file=str(result.get("workflow_file", "")),
                 warnings=result.get("warnings", []),
                 unsupported=result.get("unsupported_tasks", []),
@@ -271,7 +268,6 @@ class PipelinesScopeHandler:
             return {"pipeline_id": pipe.pipeline_id, "status": "completed"}
         except Exception as exc:
             ctx.db.upsert_pipeline_migration(
-                wave_id, pipe, repo.gh_org, repo.gh_repo,
-                MigrationStatus.FAILED, error=str(exc),
+                wave_id, pipe, repo, MigrationStatus.FAILED, error=str(exc),
             )
             return {"pipeline_id": pipe.pipeline_id, "status": "failed", "error": str(exc)}

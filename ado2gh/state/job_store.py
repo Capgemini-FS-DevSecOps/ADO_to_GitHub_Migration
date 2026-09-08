@@ -1,4 +1,8 @@
-"""Job persistence — SQLite (dev) and PostgreSQL (prod) backends."""
+"""Job queue persistence: SQLite (development), PostgreSQL and DynamoDB (production).
+
+Every store implements :class:`JobStore` with identical signatures; the
+factory picks one from ``ADO2GH_STORAGE_BACKEND``.
+"""
 from __future__ import annotations
 
 import json
@@ -7,12 +11,19 @@ import sqlite3
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from ado2gh.api.contracts import JobRecord, JobStatus
 from ado2gh.api.contracts import JobTypeEnum as JobType
 
+if TYPE_CHECKING:
+    from boto3.resources.base import ServiceResource
+    from psycopg2.extensions import connection as PgConnection
+
 
 class JobStore(ABC):
+    """Abstract queue of background jobs with at-most-once claiming."""
+
     @abstractmethod
     def enqueue(
         self,
@@ -20,26 +31,35 @@ class JobStore(ABC):
         payload: dict,
         idempotency_key: str | None = None,
     ) -> JobRecord:
-        ...
+        """Add a ``pending`` job, or return the existing job with the same idempotency key.
+
+        Args:
+            job_type: What the worker should run.
+            payload: Job arguments, stored as JSON.
+            idempotency_key: Optional unique key that makes repeated calls return
+                the first job instead of creating another.
+        """
 
     @abstractmethod
     def get(self, job_id: str) -> JobRecord | None:
-        ...
+        """Return the job with this id, or ``None``."""
 
     @abstractmethod
     def claim_next(self) -> JobRecord | None:
-        ...
+        """Move the oldest ``pending`` job to ``running`` and return it, or ``None`` when idle."""
 
     @abstractmethod
     def complete(self, job_id: str, result: dict | None = None) -> None:
-        ...
+        """Mark a job ``completed`` and store its result."""
 
     @abstractmethod
     def fail(self, job_id: str, error: str) -> None:
-        ...
+        """Mark a job ``failed`` and store the error message."""
 
 
 class SQLiteJobStore(JobStore):
+    """Job store backed by a ``jobs`` table in a SQLite file."""
+
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS jobs (
         id TEXT PRIMARY KEY,
@@ -54,18 +74,21 @@ class SQLiteJobStore(JobStore):
     );
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
+        """Open (or create) the database file and apply the schema."""
         self.db_path = db_path
         with self._conn() as conn:
             conn.executescript(self.SCHEMA)
 
     def _conn(self) -> sqlite3.Connection:
+        """Return a fresh connection with dict-like rows."""
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn
 
     def enqueue(self, job_type: JobType, payload: dict,
                 idempotency_key: str | None = None) -> JobRecord:
+        """Add a ``pending`` job; see :meth:`JobStore.enqueue`."""
         now = datetime.now(timezone.utc).isoformat()
         if idempotency_key:
             existing = self.get_by_idempotency(idempotency_key)
@@ -92,6 +115,7 @@ class SQLiteJobStore(JobStore):
         return record
 
     def get_by_idempotency(self, key: str) -> JobRecord | None:
+        """Return the job created with this idempotency key, or ``None``."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM jobs WHERE idempotency_key=?", (key,)
@@ -99,11 +123,13 @@ class SQLiteJobStore(JobStore):
         return self._row_to_record(row) if row else None
 
     def get(self, job_id: str) -> JobRecord | None:
+        """Return the job with this id, or ``None``."""
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         return self._row_to_record(row) if row else None
 
     def claim_next(self) -> JobRecord | None:
+        """Claim the oldest ``pending`` job; see :meth:`JobStore.claim_next`."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             row = conn.execute(
@@ -121,6 +147,7 @@ class SQLiteJobStore(JobStore):
         return rec
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
+        """Mark a job ``completed`` and store its result."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             conn.execute(
@@ -129,6 +156,7 @@ class SQLiteJobStore(JobStore):
             )
 
     def fail(self, job_id: str, error: str) -> None:
+        """Mark a job ``failed`` and store the error message."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             conn.execute(
@@ -138,6 +166,7 @@ class SQLiteJobStore(JobStore):
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> JobRecord:
+        """Build a ``JobRecord`` from a ``jobs`` row, decoding the JSON columns."""
         return JobRecord(
             id=row["id"],
             job_type=JobType(row["job_type"]),
@@ -152,9 +181,15 @@ class SQLiteJobStore(JobStore):
 
 
 class PostgresJobStore(JobStore):
-    """PostgreSQL job store for production deployments."""
+    """Job store backed by a ``jobs`` table in PostgreSQL, claiming with ``SKIP LOCKED``."""
 
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str) -> None:
+        """Connect with ``psycopg2`` and create the ``jobs`` table.
+
+        Args:
+            dsn: A ``postgresql://`` connection string; it carries the
+                credentials and is never logged.
+        """
         import psycopg2
         import psycopg2.extras
         self._psycopg2 = psycopg2
@@ -177,11 +212,13 @@ class PostgresJobStore(JobStore):
                 """)
             conn.commit()
 
-    def _conn(self):
+    def _conn(self) -> PgConnection:
+        """Return a new connection; callers commit explicitly."""
         return self._psycopg2.connect(self.dsn)
 
     def enqueue(self, job_type: JobType, payload: dict,
                 idempotency_key: str | None = None) -> JobRecord:
+        """Add a ``pending`` job; see :meth:`JobStore.enqueue`."""
         if idempotency_key:
             existing = self.get_by_idempotency(idempotency_key)
             if existing:
@@ -204,6 +241,7 @@ class PostgresJobStore(JobStore):
         )
 
     def get_by_idempotency(self, key: str) -> JobRecord | None:
+        """Return the job created with this idempotency key, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM jobs WHERE idempotency_key=%s", (key,))
@@ -211,6 +249,7 @@ class PostgresJobStore(JobStore):
         return self._row_to_record(row) if row else None
 
     def get(self, job_id: str) -> JobRecord | None:
+        """Return the job with this id, or ``None``."""
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM jobs WHERE id=%s", (job_id,))
@@ -218,6 +257,7 @@ class PostgresJobStore(JobStore):
         return self._row_to_record(row) if row else None
 
     def claim_next(self) -> JobRecord | None:
+        """Claim the oldest ``pending`` job under a row lock; see :meth:`JobStore.claim_next`."""
         now = datetime.now(timezone.utc)
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
@@ -238,6 +278,7 @@ class PostgresJobStore(JobStore):
         return rec
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
+        """Mark a job ``completed`` and store its result."""
         now = datetime.now(timezone.utc)
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -248,6 +289,7 @@ class PostgresJobStore(JobStore):
             conn.commit()
 
     def fail(self, job_id: str, error: str) -> None:
+        """Mark a job ``failed`` and store the error message."""
         now = datetime.now(timezone.utc)
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -259,6 +301,7 @@ class PostgresJobStore(JobStore):
 
     @staticmethod
     def _row_to_record(row: dict) -> JobRecord:
+        """Build a ``JobRecord`` from a ``jobs`` row; JSONB columns may already be decoded."""
         return JobRecord(
             id=row["id"],
             job_type=JobType(row["job_type"]),
@@ -275,9 +318,16 @@ class PostgresJobStore(JobStore):
 
 
 class DynamoDBJobStore(JobStore):
-    """DynamoDB job store for serverless production deployments."""
+    """Job store backed by one DynamoDB table keyed by job id."""
 
-    def __init__(self, table_name: str, region: str = "us-east-1", endpoint_url: str | None = None):
+    def __init__(self, table_name: str, region: str = "us-east-1", endpoint_url: str | None = None) -> None:
+        """Connect with ``boto3`` and create the table if it does not exist.
+
+        Args:
+            table_name: DynamoDB table holding the jobs.
+            region: AWS region of the table.
+            endpoint_url: Override for a local DynamoDB endpoint.
+        """
         import boto3
 
         kwargs: dict = {"region_name": region}
@@ -288,10 +338,12 @@ class DynamoDBJobStore(JobStore):
         self._client = boto3.client("dynamodb", **kwargs)
         self._ensure_table()
 
-    def _table(self):
+    def _table(self) -> ServiceResource:
+        """Return the ``Table`` resource for the jobs table."""
         return self._dynamodb.Table(self._table_name)
 
     def _ensure_table(self) -> None:
+        """Create the jobs table with pay-per-request billing when it is missing."""
         if self._table_name in self._client.list_tables().get("TableNames", []):
             return
         self._client.create_table(
@@ -303,6 +355,7 @@ class DynamoDBJobStore(JobStore):
         self._client.get_waiter("table_exists").wait(TableName=self._table_name)
 
     def _save(self, record: JobRecord) -> JobRecord:
+        """Write the whole record as one item and return it."""
         self._table().put_item(Item={
             "id": record.id,
             "job_type": record.job_type.value,
@@ -317,6 +370,7 @@ class DynamoDBJobStore(JobStore):
         return record
 
     def _load(self, job_id: str) -> JobRecord | None:
+        """Read one item by id and rebuild the record, or ``None`` when absent."""
         resp = self._table().get_item(Key={"id": job_id})
         item = resp.get("Item")
         if not item:
@@ -335,6 +389,7 @@ class DynamoDBJobStore(JobStore):
 
     def enqueue(self, job_type: JobType, payload: dict,
                 idempotency_key: str | None = None) -> JobRecord:
+        """Add a ``pending`` job; see :meth:`JobStore.enqueue`."""
         if idempotency_key:
             existing = self.get_by_idempotency(idempotency_key)
             if existing:
@@ -352,6 +407,7 @@ class DynamoDBJobStore(JobStore):
         return self._save(record)
 
     def get_by_idempotency(self, key: str) -> JobRecord | None:
+        """Return the job created with this idempotency key, or ``None`` (table scan)."""
         from boto3.dynamodb.conditions import Attr
         resp = self._table().scan(FilterExpression=Attr("idempotency_key").eq(key), Limit=1)
         items = resp.get("Items", [])
@@ -360,9 +416,11 @@ class DynamoDBJobStore(JobStore):
         return self._load(items[0]["id"])
 
     def get(self, job_id: str) -> JobRecord | None:
+        """Return the job with this id, or ``None``."""
         return self._load(job_id)
 
     def claim_next(self) -> JobRecord | None:
+        """Claim a ``pending`` job found by table scan; see :meth:`JobStore.claim_next`."""
         from boto3.dynamodb.conditions import Attr
         resp = self._table().scan(
             FilterExpression=Attr("status").eq(JobStatus.PENDING.value),
@@ -379,6 +437,7 @@ class DynamoDBJobStore(JobStore):
         return self._save(rec)
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
+        """Mark a job ``completed`` and store its result; unknown ids are ignored."""
         rec = self.get(job_id)
         if not rec:
             return
@@ -388,6 +447,7 @@ class DynamoDBJobStore(JobStore):
         self._save(rec)
 
     def fail(self, job_id: str, error: str) -> None:
+        """Mark a job ``failed`` and store the error message; unknown ids are ignored."""
         rec = self.get(job_id)
         if not rec:
             return
@@ -398,8 +458,16 @@ class DynamoDBJobStore(JobStore):
 
 
 class JobStoreFactory:
+    """Builds the job store selected by the environment."""
+
     @staticmethod
     def from_env(sqlite_fallback: str = "migration_state.db") -> JobStore:
+        """Return the configured job store.
+
+        Args:
+            sqlite_fallback: SQLite path used when no backend or job database
+                (``ADO2GH_JOB_DB``) is configured.
+        """
         from ado2gh.state.storage_config import StorageBackend, StorageConfig
 
         cfg = StorageConfig.from_env(sqlite_default=sqlite_fallback)

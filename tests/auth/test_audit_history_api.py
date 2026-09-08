@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from ado2gh.api.agentic_routes import router
 from ado2gh.audit import AuditWriter
-from ado2gh.state.audit_query import audit_events_to_csv
+from ado2gh.state.audit_query import AuditEventFilters, audit_events_to_csv
 from ado2gh.state.db import StateDB
 
 
@@ -27,18 +27,20 @@ def test_search_audit_events_filters(tmp_path):
     writer.write("profile.updated", "p1", actor="bob", payload={"field": "name"})
     writer.write("user.login", "p2", actor="alice", payload={"ok": True})
 
-    by_actor = db.search_audit_events(actor="alice", limit=10, offset=0)
+    by_actor = db.search_audit_events(AuditEventFilters(actor="alice"), limit=10, offset=0)
     assert len(by_actor) == 2
 
-    by_type = db.search_audit_events(event_type="profile.updated", limit=10, offset=0)
+    by_type = db.search_audit_events(
+        AuditEventFilters(event_type="profile.updated"), limit=10, offset=0,
+    )
     assert len(by_type) == 1
     assert by_type[0]["actor"] == "bob"
 
-    by_profile = db.search_audit_events(profile_id="p1", limit=10, offset=0)
+    by_profile = db.search_audit_events(AuditEventFilters(profile_id="p1"), limit=10, offset=0)
     assert len(by_profile) == 2
-    assert db.count_audit_events(profile_id="p1") == 2
+    assert db.count_audit_events(AuditEventFilters(profile_id="p1")) == 2
 
-    by_search = db.search_audit_events(search="profile", limit=10, offset=0)
+    by_search = db.search_audit_events(AuditEventFilters(search="profile"), limit=10, offset=0)
     assert len(by_search) == 1
 
 
@@ -48,11 +50,11 @@ def test_audit_pagination(tmp_path):
     for i in range(5):
         writer.write("user.login", "p1", actor=f"user{i}", payload={"n": i})
 
-    page0 = db.search_audit_events(profile_id="p1", limit=2, offset=0)
-    page1 = db.search_audit_events(profile_id="p1", limit=2, offset=2)
+    page0 = db.search_audit_events(AuditEventFilters(profile_id="p1"), limit=2, offset=0)
+    page1 = db.search_audit_events(AuditEventFilters(profile_id="p1"), limit=2, offset=2)
     assert len(page0) == 2
     assert len(page1) == 2
-    assert db.count_audit_events(profile_id="p1") == 5
+    assert db.count_audit_events(AuditEventFilters(profile_id="p1")) == 5
 
 
 def test_audit_events_to_csv():

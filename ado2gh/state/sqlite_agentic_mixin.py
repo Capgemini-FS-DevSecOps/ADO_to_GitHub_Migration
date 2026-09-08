@@ -1,17 +1,17 @@
-"""Agentic platform mixin — audit events.
+"""SQLite audit-event methods, mixed into ``SQLiteStateDB``.
 
-Extracted from SQLiteStateDB to keep file under 800 lines.
-Provides: insert_audit_event, list_audit_events, search_audit_events,
-count_audit_events, list_audit_event_types, has_repo_in_progress.
+Kept separate so ``sqlite_db.py`` stays under the 800-line cap.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
+
+from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
 
 
 class AgenticPlatformMixin:
-    """Agentic platform methods — mixed into SQLiteStateDB / PostgresStateDB."""
+    """Audit events and the in-progress guard; expects ``self._conn()``."""
 
     def insert_audit_event(
         self,
@@ -20,51 +20,31 @@ class AgenticPlatformMixin:
         profile_id: str,
         actor: str,
         payload_json: str,
-        created_at: str,
-        assignment_id: str | None = None,
-    ):
+    ) -> None:
+        """Append one ``audit_events`` row; see :meth:`StateDBBase.insert_audit_event`."""
+        created_at = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO audit_events
-                (id, event_type, profile_id, actor, assignment_id, payload_json, created_at)
-                VALUES (?,?,?,?,?,?,?)
+                (id, event_type, profile_id, actor, payload_json, created_at)
+                VALUES (?,?,?,?,?,?)
                 """,
-                (
-                    event_id, event_type, profile_id, actor,
-                    assignment_id, payload_json, created_at,
-                ),
+                (event_id, event_type, profile_id, actor, payload_json, created_at),
             )
 
     def list_audit_events(
         self, profile_id: str | None = None, limit: int = 100,
     ) -> list[dict]:
+        """Return the newest audit events, restricted to one profile when given."""
         return self.search_audit_events(
-            profile_id=profile_id, limit=limit, offset=0,
+            AuditEventFilters(profile_id=profile_id), limit=limit, offset=0,
         )
 
     def search_audit_events(
-        self,
-        *,
-        profile_id: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-        actor: str | None = None,
-        event_type: str | None = None,
-        search: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
+        self, filters: AuditEventFilters, *, limit: int = 20, offset: int = 0,
     ) -> list[dict]:
-        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
-
-        filters = AuditEventFilters(
-            profile_id=profile_id,
-            actor=actor,
-            event_type=event_type,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-        )
+        """Return one page of audit events matching ``filters``, newest first."""
         clauses, params = build_audit_filters(filters)
         where = " AND ".join(clauses)
         sql = (
@@ -75,26 +55,8 @@ class AgenticPlatformMixin:
             rows = conn.execute(sql, (*params, limit, offset)).fetchall()
         return [dict(r) for r in rows]
 
-    def count_audit_events(
-        self,
-        *,
-        profile_id: str | None = None,
-        actor: str | None = None,
-        event_type: str | None = None,
-        search: str | None = None,
-        date_from: str | None = None,
-        date_to: str | None = None,
-    ) -> int:
-        from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
-
-        filters = AuditEventFilters(
-            profile_id=profile_id,
-            actor=actor,
-            event_type=event_type,
-            search=search,
-            date_from=date_from,
-            date_to=date_to,
-        )
+    def count_audit_events(self, filters: AuditEventFilters) -> int:
+        """Return the number of audit events matching ``filters``."""
         clauses, params = build_audit_filters(filters)
         where = " AND ".join(clauses)
         sql = f"SELECT COUNT(*) AS c FROM audit_events WHERE {where}"
@@ -108,6 +70,7 @@ class AgenticPlatformMixin:
         limit: int = 200,
         actor: str | None = None,
     ) -> list[str]:
+        """Return distinct event types, optionally restricted to a profile or actor."""
         clauses = ["1=1"]
         params: list[Any] = []
         if profile_id:
@@ -126,6 +89,7 @@ class AgenticPlatformMixin:
         return [str(r["event_type"]) for r in rows]
 
     def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
+        """Return whether any scope of a repository is currently ``in_progress``."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT 1 FROM migrations WHERE ado_project=? AND ado_repo=? "
@@ -133,4 +97,3 @@ class AgenticPlatformMixin:
                 (ado_project, ado_repo),
             ).fetchone()
         return row is not None
-

@@ -1,18 +1,20 @@
-"""Risk scores, phase gates, and batch checkpoints mixin.
+"""SQLite risk-score, phase-gate and batch-checkpoint methods, mixed into ``SQLiteStateDB``.
 
-Extracted from SQLiteStateDB to keep file under 800 lines.
+Kept separate so ``sqlite_db.py`` stays under the 800-line cap.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional
+
+from ado2gh.models import BatchCheckpoint, PhaseGateResult, PhaseType, RiskScore
 
 
 class RiskGatesMixin:
-    """Risk scores, phase gates, batch checkpoints — mixed into SQLiteStateDB."""
+    """Risk scores, phase gates and batch checkpoints; expects ``self._conn()``."""
 
     def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:
+        """Delete risk scores not in ``keys``; see :meth:`StateDBBase.prune_risk_scores_not_in`."""
         if not keys:
             return 0
         with self._conn() as conn:
@@ -29,7 +31,8 @@ class RiskGatesMixin:
                     removed += 1
         return removed
 
-    def upsert_risk_score(self, score):
+    def upsert_risk_score(self, score: RiskScore) -> None:
+        """Insert or refresh one ``repo_risk_scores`` row keyed by project and repository."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             conn.execute("""
@@ -48,18 +51,17 @@ class RiskGatesMixin:
                 json.dumps(score.to_dict()), now,
             ))
 
-    def get_all_risk_scores(self) -> list:
+    def get_all_risk_scores(self) -> list[dict]:
+        """Return every risk score row ordered by ascending total score."""
         with self._conn() as conn:
             return [dict(r) for r in conn.execute(
                 "SELECT * FROM repo_risk_scores ORDER BY total_score"
             ).fetchall()]
 
-    def get_risk_scores_for_phase(self, phase) -> list:
+    def get_risk_scores_for_phase(self, phase: PhaseType | str | None) -> list[dict]:
+        """Return risk score rows assigned to ``phase``, or all rows when it is ``None``."""
         if phase is None:
-            with self._conn() as conn:
-                return [dict(r) for r in conn.execute(
-                    "SELECT * FROM repo_risk_scores ORDER BY total_score"
-                ).fetchall()]
+            return self.get_all_risk_scores()
         phase_val = phase.value if hasattr(phase, "value") else str(phase)
         with self._conn() as conn:
             return [dict(r) for r in conn.execute(
@@ -68,6 +70,7 @@ class RiskGatesMixin:
             ).fetchall()]
 
     def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
+        """Count repositories assigned to a phase; see :meth:`StateDBBase.count_repos_by_phase`."""
         counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             counts["risk_scores"] = conn.execute(
@@ -93,6 +96,7 @@ class RiskGatesMixin:
         to_phase: str,
         profile_id: str | None = None,
     ) -> dict[str, int]:
+        """Move repositories between phases; see :meth:`StateDBBase.reassign_phase_repos`."""
         updated = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             cur = conn.execute(
@@ -115,6 +119,7 @@ class RiskGatesMixin:
         return updated
 
     def scan_repo_scores(self, profile_id: str | None = None) -> list[float]:
+        """Return total scores from the profile scan, falling back to risk scores when empty."""
         with self._conn() as conn:
             if profile_id:
                 rows = conn.execute(
@@ -128,11 +133,8 @@ class RiskGatesMixin:
             rows = conn.execute("SELECT total_score FROM repo_risk_scores").fetchall()
         return [float(r[0]) for r in rows]
 
-    def risk_score_count(self) -> int:
-        with self._conn() as conn:
-            return conn.execute("SELECT COUNT(*) FROM repo_risk_scores").fetchone()[0]
-
-    def upsert_phase_gate(self, result):
+    def upsert_phase_gate(self, result: PhaseGateResult) -> None:
+        """Insert or refresh the single ``phase_gates`` row of ``result.phase``."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             conn.execute("""
@@ -161,19 +163,22 @@ class RiskGatesMixin:
                 result.checked_at or now,
             ))
 
-    def get_phase_gate(self, phase) -> Optional[dict]:
+    def get_phase_gate(self, phase: PhaseType) -> dict | None:
+        """Return the gate row of a phase, or ``None`` when it was never checked."""
         with self._conn() as conn:
             row = conn.execute("SELECT * FROM phase_gates WHERE phase=?",
                                (phase.value,)).fetchone()
             return dict(row) if row else None
 
-    def get_all_phase_gates(self) -> list:
+    def get_all_phase_gates(self) -> list[dict]:
+        """Return every gate row in insertion order."""
         with self._conn() as conn:
             return [dict(r) for r in conn.execute(
                 "SELECT * FROM phase_gates ORDER BY rowid"
             ).fetchall()]
 
-    def upsert_batch_checkpoint(self, cp):
+    def upsert_batch_checkpoint(self, cp: BatchCheckpoint) -> None:
+        """Insert or update one checkpoint; see :meth:`StateDBBase.upsert_batch_checkpoint`."""
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             conn.execute("""
@@ -189,14 +194,8 @@ class RiskGatesMixin:
                 cp.started_at or now, cp.completed_at,
             ))
 
-    def get_batch_checkpoints(self, phase) -> list:
-        with self._conn() as conn:
-            return [dict(r) for r in conn.execute(
-                "SELECT * FROM batch_checkpoints WHERE phase=? ORDER BY batch_num",
-                (phase.value,)
-            ).fetchall()]
-
-    def get_last_completed_batch(self, phase) -> int:
+    def get_last_completed_batch(self, phase: PhaseType) -> int:
+        """Return the highest completed batch number of a phase, or ``-1`` when none."""
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT MAX(batch_num) FROM batch_checkpoints WHERE phase=? AND status='completed'",
