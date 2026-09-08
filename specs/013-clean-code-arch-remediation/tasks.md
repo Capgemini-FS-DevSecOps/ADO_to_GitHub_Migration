@@ -142,10 +142,10 @@
 
 ### Increment 1 — root modules + `ado2gh/assignments/`
 
-- [ ] T041 [P] [US2] Write `tests/unit/test_execution_mode.py`: `ExecutionMode.DRY_RUN.value == "dry_run"`, `ExecutionMode("live") is ExecutionMode.LIVE`, boundary helper `ExecutionMode.from_dry_run(flag: bool)` maps `True → DRY_RUN`; fails until T042
-- [ ] T042 [US2] Add `ExecutionMode(str, Enum)` with `DRY_RUN`, `LIVE`, and `from_dry_run()` to `ado2gh/models.py` (docstring per data-model.md); no call sites yet
-- [ ] T043 [US2] If the review agent confirmed the `module_name_review` proposal for `ado2gh/assignments/` in T020 (expected: the package holds only the audit event writer), rename `ado2gh/assignments/` → `ado2gh/audit/` (FR-013); update imports in `ado2gh/api/`, `ado2gh/agents/`, `services/`, `tests/`; add changelog row; confirm orphan guard passes
-- [ ] T044 [US2] Clean increment 1 per protocol: `ado2gh/models.py`, `ado2gh/http_utils.py`, `ado2gh/logging_config.py`, `ado2gh/output_dirs.py`, `ado2gh/audit/` (callers: every package); verify, changelog, commit
+- [X] T041 [P] [US2] Write `tests/unit/test_execution_mode.py`: `ExecutionMode.DRY_RUN.value == "dry_run"`, `ExecutionMode("live") is ExecutionMode.LIVE`, boundary helper `ExecutionMode.from_dry_run(flag: bool)` maps `True → DRY_RUN`; fails until T042
+- [X] T042 [US2] Add `ExecutionMode(str, Enum)` with `DRY_RUN`, `LIVE`, and `from_dry_run()` to `ado2gh/models.py` (docstring per data-model.md); no call sites yet
+- [X] T043 [US2] If the review agent confirmed the `module_name_review` proposal for `ado2gh/assignments/` in T020 (expected: the package holds only the audit event writer), rename `ado2gh/assignments/` → `ado2gh/audit/` (FR-013); update imports in `ado2gh/api/`, `ado2gh/agents/`, `services/`, `tests/`; add changelog row; confirm orphan guard passes
+- [X] T044 [US2] Clean increment 1 per protocol: `ado2gh/models.py`, `ado2gh/http_utils.py`, `ado2gh/logging_config.py`, `ado2gh/output_dirs.py`, `ado2gh/audit/` (callers: every package); verify, changelog, commit
 
 ### Increment 2 — `ado2gh/clients/`
 
