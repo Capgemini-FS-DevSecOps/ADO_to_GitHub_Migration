@@ -25,6 +25,12 @@ services:
       ADO2GH_DATA_DIR: /app/data
       ADO2GH_AUTH_ENABLED: "true"
       SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      # Shared secret for the agent's /v1/internal/ live-approval routes. Mandatory
+      # because auth is on here: the accelerator sends it as x-ado2gh-internal-token
+      # and the agent compares against its own copy, so both services below must get
+      # the identical value or resume-live/deny-live returns 401. No default on
+      # purpose — a shipped default would be a publicly known shared secret.
+      ADO2GH_INTERNAL_TOKEN: ${ADO2GH_INTERNAL_TOKEN:?set ADO2GH_INTERNAL_TOKEN to a random secret shared by the accelerator and the agent}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
     depends_on:
@@ -43,6 +49,8 @@ services:
   agent:
     environment:
       ADO2GH_AUTH_ENABLED: "true"
+      # Must be the same value the accelerator sends (see above).
+      ADO2GH_INTERNAL_TOKEN: ${ADO2GH_INTERNAL_TOKEN:?set ADO2GH_INTERNAL_TOKEN to a random secret shared by the accelerator and the agent}
       ADO2GH_STORAGE_BACKEND: postgres
       ADO2GH_DATABASE_URL: postgresql://ado2gh:ado2gh@postgres:5432/ado2gh
       ADO2GH_DATA_DIR: /app/data

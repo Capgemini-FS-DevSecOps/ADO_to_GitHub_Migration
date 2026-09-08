@@ -1,7 +1,9 @@
 """Unified live execution approval queue tests."""
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from ado2gh.auth.service import AuthService
 from ado2gh.state.factory import create_state_db
@@ -114,6 +116,48 @@ def test_deny_agent_session_approval(client):
     )
     assert denied.status_code == 200
     assert denied.json()["status"] == "denied"
+
+
+def test_failed_agent_notify_is_recorded_not_swallowed(client, tmp_path, monkeypatch, caplog):
+    """A 401 from the agent must not leave the operator looking at a clean approval.
+
+    The agent's /v1/internal/ range fails closed on a missing or mismatched
+    ADO2GH_INTERNAL_TOKEN, so the notify that resumes the session can be rejected
+    outright. The decision still stands, but the session parks until someone
+    notices — which they only can if the failure is on the record.
+    """
+    monkeypatch.setenv("ADO2GH_INTERNAL_TOKEN", "shared-secret-value")
+    _bootstrap(client)
+    created = client.post(
+        "/v1/platform/approvals",
+        json={"scope_type": "agent_session", "scope_id": "sess_notify_fail"},
+    )
+    approval_id = created.json()["id"]
+
+    unauthorized = MagicMock(status_code=401, is_success=False)
+    with patch("ado2gh.api.live_approval_store.httpx.post", return_value=unauthorized):
+        with caplog.at_level(logging.ERROR, logger="ado2gh.api.live_approval_store"):
+            approved = client.post(
+                f"/v1/platform/approvals/{approval_id}/approve",
+                json={"reason": "go live"},
+            )
+
+    # The decision is already persisted, so the caller still gets a clean 200 ...
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    # ... but the failed notify is surfaced in both places an operator looks.
+    assert "401" in caplog.text, "a rejected notify left no error in the log"
+    events = create_state_db(str(tmp_path / "approvals.db")).search_audit_events(
+        event_type="platform.live_execution.notify_failed", limit=10,
+    )
+    assert events, (
+        "the agent rejected the resume notification and the approval was still "
+        "recorded as a plain success — nothing tells the operator the session is stuck"
+    )
+    assert events[0]["actor"] == "admin"
+    # CA-003: the shared secret never reaches a log line or an audit payload.
+    assert "shared-secret-value" not in caplog.text
+    assert "shared-secret-value" not in events[0]["payload_json"]
 
 
 def test_approve_idempotent_conflict(client):

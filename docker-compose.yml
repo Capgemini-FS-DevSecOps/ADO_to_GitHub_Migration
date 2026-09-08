@@ -25,6 +25,9 @@ services:
       ADO_ORG_URL: ${ADO_ORG_URL:-}
       ADO_PAT: ${ADO_PAT:-}
       GH_TOKEN: ${GH_TOKEN:-}
+      # Unused while auth is off below, but plumbed from .env so the value reaches
+      # both services if auth is ever turned on here. See .env.example.
+      ADO2GH_INTERNAL_TOKEN: ${ADO2GH_INTERNAL_TOKEN:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
@@ -51,6 +54,9 @@ services:
       ADO2GH_LOCAL_HOST_ALIAS: host.docker.internal
       ADO2GH_LIGHTWEIGHT_MODE: "true"
       ADO2GH_AUTH_ENABLED: "false"
+      # Ignored while ADO2GH_AUTH_ENABLED is "false" (the agent skips all /v1/ auth,
+      # including /v1/internal/). Kept in step with the accelerator above.
+      ADO2GH_INTERNAL_TOKEN: ${ADO2GH_INTERNAL_TOKEN:-}
       LLM_PROVIDER: stub
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}

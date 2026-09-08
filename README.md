@@ -31,6 +31,9 @@ Full local setup (native processes, lightweight agent, state paths): **[docs/LOC
 **Production (PostgreSQL + auth):**
 
 ```bash
+# Required with auth on — the same value reaches the accelerator and the agent,
+# and compose refuses to start without it:
+echo "ADO2GH_INTERNAL_TOKEN=$(openssl rand -hex 32)" >> .env
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 # First visit: /login?bootstrap=1 to create the platform admin
 ```

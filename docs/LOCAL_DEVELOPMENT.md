@@ -211,7 +211,14 @@ For local testing without cloud APIs:
 | Compose | `docker compose up` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up` |
 | Backend | `ADO2GH_STORAGE_BACKEND=sqlite` | `postgres` |
 | Auth | Off by default | `ADO2GH_AUTH_ENABLED=true` |
+| Internal token | Not needed while auth is off | `ADO2GH_INTERNAL_TOKEN=<random secret>`, the same value on the accelerator and the agent |
 | Bootstrap | Optional | `/login?bootstrap=1` for first admin |
+
+`ADO2GH_INTERNAL_TOKEN` is required whenever `ADO2GH_AUTH_ENABLED=true`. It is the shared
+secret the accelerator presents on the agent's `/v1/internal/` routes, which is how an
+approved live migration is resumed. If it is unset, or differs between the two services,
+the agent answers 401 and approved sessions never resume. `docker-compose.prod.yml`
+refuses to start without it.
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for PAT scopes and [ARCHITECTURE.md](ARCHITECTURE.md) for deployment modes.
 

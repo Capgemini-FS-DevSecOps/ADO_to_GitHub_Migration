@@ -78,14 +78,20 @@ _AGENT_AUTH_EXEMPT = {
 
 # /v1/internal/ is the service-to-service range the accelerator uses to resume or
 # deny a live migration, so it carries no operator session cookie. Guard it with a
-# shared secret instead. Unset (the docker-compose default) keeps it open so local
-# development works; production must set it on both the agent and the accelerator.
+# shared secret instead. The secret is mandatory whenever authentication is on: an
+# unset token used to open the range unconditionally (GAP-003), leaving the published
+# agent port one request away from an unauthenticated live-execution resume. It now
+# fails closed, and the hardened manifests supply the token — docker-compose.prod.yml
+# refuses to start without it and deploy/kubernetes/secret.yaml.example carries it.
+# The dev docker-compose.yml still leaves it empty, which is harmless there because
+# it also turns authentication off, so the middleware never reaches this check.
 INTERNAL_TOKEN_HEADER = "x-ado2gh-internal-token"
 _INTERNAL_TOKEN = os.environ.get("ADO2GH_INTERNAL_TOKEN", "")
 if not _INTERNAL_TOKEN:
     logger.warning(
         "ADO2GH_INTERNAL_TOKEN is unset — /v1/internal/ (live-migration approval) "
-        "is reachable without authentication. Set it on the agent and the accelerator."
+        "is refused whenever ADO2GH_AUTH_ENABLED is on. Set it on the agent and the "
+        "accelerator."
     )
 
 
@@ -97,10 +103,8 @@ async def agent_auth_middleware(request: Request, call_next):
     if not path.startswith("/v1/") or path in _AGENT_AUTH_EXEMPT:
         return await call_next(request)
     if path.startswith("/v1/internal/"):
-        if not _INTERNAL_TOKEN:
-            return await call_next(request)
         supplied = request.headers.get(INTERNAL_TOKEN_HEADER, "")
-        if hmac.compare_digest(supplied, _INTERNAL_TOKEN):
+        if _INTERNAL_TOKEN and hmac.compare_digest(supplied, _INTERNAL_TOKEN):
             return await call_next(request)
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=401, content={"detail": "Not authenticated"})

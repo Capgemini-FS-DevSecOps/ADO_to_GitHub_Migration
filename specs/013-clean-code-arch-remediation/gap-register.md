@@ -35,7 +35,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 |----|-------|--------|
 | GAP-001 (GAP-STAB-01) | Red test suite plus a coverage gate that could not fail | remediated |
 | GAP-002 (GAP-AUTH-01) | Live-execution approval is inert in the default configuration | remediated |
-| GAP-003 (GAP-AUTH-02) | Agent internal resume-live/deny-live routes have no authorization in any shipped configuration | open |
+| GAP-003 (GAP-AUTH-02) | Agent internal resume-live/deny-live routes have no authorization in any shipped configuration | remediated |
 | GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | open |
 | GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | open |
 | GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | open |
@@ -143,12 +143,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/api/live_approval_store.py:239-248` — the intended caller is the correctly gated accelerator route (`pipeline_routes.py:205-209`), but nothing prevents any other caller POSTing the same URL
 - severity: critical (critical_test: a)
 - blast_radius: unlike GAP-002 (GAP-AUTH-01) this is **not** closed by setting `ADO2GH_AUTH_ENABLED=true` — it survives in the hardened prod and k8s configs as shipped, because neither sets the token. Anyone reaching agent port 8090 can resume a session into live execution or silently deny a legitimate approver's decision, entirely outside the accelerator's approval queue, with no audit record on the resume path.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: The agent's `/v1/internal/` range now fails closed. `services/agent/main.py` rejects a request to that range with 401 when `ADO2GH_INTERNAL_TOKEN` is unset or does not match, instead of waving it through; there is no configuration in which the resume-live and deny-live routes are reachable without the shared secret. The token is now supplied everywhere the platform ships a configuration that could reach those routes: `docker-compose.prod.yml` and `deploy/kubernetes/secret.yaml.example` make it mandatory with no default value (a shipped default would be a publicly known shared secret), `docker-compose.yml` plumbs it from `.env` so both services see the same value if auth is ever turned on, and `.env.example`, `README.md`, `docs/LOCAL_DEVELOPMENT.md` and `docs/SETUP_GUIDE.md` state that it is required whenever `ADO2GH_AUTH_ENABLED=true`. Because the range now fails closed, a missing or mismatched token turns a silent no-op into a visible failure, so `ado2gh/api/live_approval_store.py` no longer swallows the notify: the approval row is still committed first (rolling the approver back would lose a recorded decision), but a failed notify is written as a `platform.live_execution.notify_failed` audit event under the approver's own name and logged at ERROR with the status code and exception type only — never the request or its headers, which carry the token (CA-003).
+- regression_check: `tests/agent/test_gap_003_internal_live_routes_unauthenticated.py`, plus `tests/core/test_live_approval_queue.py::test_failed_agent_notify_is_recorded_not_swallowed` for the notify path
+- revert_proof: `git stash push -- services/agent/main.py`, then `.venv\Scripts\python.exe -m pytest tests/agent/test_gap_003_internal_live_routes_unauthenticated.py`, then `git stash pop`. With the fix reverted: `1 failed, 15 warnings in 4.09s` — `test_unauthenticated_caller_cannot_resume_a_session_into_live_execution`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: true — `ADO2GH_INTERNAL_TOKEN` changes from optional to required under `ADO2GH_AUTH_ENABLED=true`, and the deployment manifests now set it. The variable was already in the frozen environment surface, so `tests/contract/public_surface_snapshot.json` is unchanged by this gap.
+- closed_on: 2026-09-08
 
 ### GAP-004 (GAP-AUTH-04) Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue
 

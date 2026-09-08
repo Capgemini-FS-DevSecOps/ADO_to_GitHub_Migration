@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +15,8 @@ from ado2gh.api.profile_governance import write_profile_audit
 from ado2gh.auth.models import PlatformUser
 from ado2gh.state.factory import create_state_db
 
+logger = logging.getLogger(__name__)
+
 ScopeType = str
 ExecuteCallback = Callable[[dict], Any]
 
@@ -25,7 +28,9 @@ def _internal_headers() -> dict[str, str]:
     """Shared secret for the agent's /v1/internal/ routes (see services/agent/main.py).
 
     Read per call rather than at import so tests and redeploys can change it without
-    reimporting the module. Empty when unset, which the agent treats as open access.
+    reimporting the module. When it is unset we send no header at all, and the agent
+    answers 401 — the range fails closed on both sides, so an accelerator that is
+    missing the token can no longer resume or deny anything.
     """
     token = os.environ.get("ADO2GH_INTERNAL_TOKEN", "")
     return {"x-ado2gh-internal-token": token} if token else {}
@@ -191,7 +196,7 @@ class LiveApprovalStore:
         )
         assert updated is not None
         if updated["scope_type"] == "agent_session":
-            self._notify_agent_denied(updated["scope_id"], reason)
+            self._notify_agent(updated, "deny-live", {"reason": reason})
         elif updated["scope_type"] == "pipeline_run":
             self._stamp_pipeline_approval(updated, "denied", approver)
             self._mark_pipeline_denied(updated["scope_id"], reason)
@@ -211,7 +216,7 @@ class LiveApprovalStore:
     def _resume_scope(self, row: dict) -> None:
         scope_type = row["scope_type"]
         if scope_type == "agent_session":
-            self._notify_agent_resume(row["scope_id"])
+            self._notify_agent(row, "resume-live")
         elif scope_type == "migrate_job":
             self._execute_migrate(row)
         elif scope_type == "pipeline_run":
@@ -236,28 +241,60 @@ class LiveApprovalStore:
         ctx = self._context(row)
         _pipeline_executor(ctx)
 
-    def _notify_agent_resume(self, session_id: str) -> None:
-        agent_url = os.environ.get("AGENT_URL", "http://agent:8090")
-        try:
-            httpx.post(
-                f"{agent_url}/v1/internal/sessions/{session_id}/resume-live",
-                headers=_internal_headers(),
-                timeout=30.0,
-            )
-        except httpx.HTTPError:
-            pass
+    def _notify_agent(
+        self, row: dict, route: str, payload: dict | None = None,
+    ) -> None:
+        """Tell the agent about a decision that has already been written.
 
-    def _notify_agent_denied(self, session_id: str, reason: str) -> None:
+        The approval row is committed before we get here, so a failed notify must not
+        raise: rolling the caller back would leave the decision recorded while the
+        approver sees a 500. It must not be silent either. Since the /v1/internal/
+        range started failing closed, a missing or mismatched ADO2GH_INTERNAL_TOKEN
+        answers 401, and the session then waits forever with the approval showing as
+        decided. So record the failure where an operator already looks — an audit
+        event under the approver's own name, plus an ERROR log.
+
+        Nothing derived from the request or its headers may be logged: they carry the
+        internal token (CA-003). The status code and the exception type are enough.
+        """
+        session_id = row["scope_id"]
         agent_url = os.environ.get("AGENT_URL", "http://agent:8090")
         try:
-            httpx.post(
-                f"{agent_url}/v1/internal/sessions/{session_id}/deny-live",
-                json={"reason": reason},
+            resp = httpx.post(
+                f"{agent_url}/v1/internal/sessions/{session_id}/{route}",
+                json=payload,
                 headers=_internal_headers(),
                 timeout=30.0,
             )
-        except httpx.HTTPError:
-            pass
+            if resp.is_success:
+                return
+            error = f"agent returned HTTP {resp.status_code}"
+        except httpx.HTTPError as exc:
+            error = f"agent unreachable ({type(exc).__name__})"
+        logger.error(
+            "Live-execution %s notify failed for agent session %s: %s. The decision is "
+            "recorded, but the session will not move until the agent is told — check "
+            "that ADO2GH_INTERNAL_TOKEN is set to the same value on both services.",
+            route,
+            session_id,
+            error,
+        )
+        try:
+            write_profile_audit(
+                "platform.live_execution.notify_failed",
+                profile_id=row.get("profile_id") or "_platform",
+                actor=row.get("approver_username") or "_system",
+                payload={
+                    "approval_id": row["id"],
+                    "scope_type": row["scope_type"],
+                    "scope_id": session_id,
+                    "route": route,
+                    "error": error,
+                },
+                db_path=self.db_path,
+            )
+        except Exception:  # noqa: BLE001 - reporting a failure must not become one
+            logger.exception("Could not record the live-execution notify failure")
 
     def _mark_pipeline_denied(self, run_id: str, reason: str) -> None:
         from ado2gh.api.pipeline_runner import PipelineRunStore

@@ -188,6 +188,11 @@ ado2gh discover --config migration.yaml --output test_discovery.yaml
 | **Production (PostgreSQL + auth)** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile default up --build` |
 | **Native agent-only stack** | `.\scripts\dev\run-local-agent.ps1` |
 
+The production stack turns authentication on, which makes `ADO2GH_INTERNAL_TOKEN`
+required: set it in `.env` to a random secret (`openssl rand -hex 32`) before the
+production command above. Compose refuses to start without it, and both the accelerator
+and the agent must see the same value or approved live migrations never resume.
+
 See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for ports, first-login steps, SQLite paths, and cleanup.
 
 ---
