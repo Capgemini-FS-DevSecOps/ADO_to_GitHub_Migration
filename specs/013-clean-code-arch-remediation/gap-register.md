@@ -38,7 +38,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-003 (GAP-AUTH-02) | Agent internal resume-live/deny-live routes have no authorization in any shipped configuration | remediated |
 | GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | remediated |
 | GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | remediated |
-| GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | open |
+| GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | remediated |
 | GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | open |
 | GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | open |
 | GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | open |
@@ -201,12 +201,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - test coverage: `confirm-live` / `confirm_live_execution` appear in `tests/` only in `tests/contract/public_surface_snapshot.json`, a route-registration snapshot — zero behavioural tests
 - severity: critical (critical_test: a, e)
 - blast_radius: any holder of the routine operate permission — OPERATOR or COORDINATOR, precisely the roles the approval system exists to restrict — converts a session to live GitHub-writing mode with one unguarded POST, no approver review, and no audit record of how live mode was reached. The plan/session `dry_run` split then disables the per-tool guardrail for the remainder of the session.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: Two defects, both closed. **Self-escalation:** `confirm_live_execution` in `services/agent/routes/session_routes.py` no longer relies on the routine operate check. It goes through `policies.enforce_live_mode_request`, the single check introduced for GAP-002, so an OPERATOR or COORDINATOR — the roles the approval system exists to restrict — receives 403 `live_execution_requires_approval` instead of converting the session to live, and an identity-less caller receives 401. **Two sources of truth for `dry_run`:** `ado2gh/agents/migration_agent/policies.py` gains `resolve_execution_dry_run(session, migration_plan)`, and `ado2gh/agents/migration_agent/nodes/executor/node.py` calls it instead of letting the plan-level flag win and writing itself back onto the shared session dict. The safe flag now wins: if either the session or the plan says dry-run, the execution is dry-run, so a plan that says live can no longer disable the per-tool-call guardrail in `guardrails.py` and the approval gate in `policies.py` for the rest of the session.
+- regression_check: `tests/agent/test_gap_006_confirm_live_self_escalation.py`, plus `tests/unit/test_executor_node.py::test_executor_tracks_rollback_live` which now has to give the session an approved status to reach live execution
+- revert_proof: `git stash push -- ado2gh/agents/migration_agent/policies.py ado2gh/agents/migration_agent/nodes/executor/node.py services/agent/routes/session_routes.py`, then `.venv\Scripts\python.exe -m pytest tests/agent/test_gap_006_confirm_live_self_escalation.py`, then `git stash pop`. With the fix reverted: `1 failed, 11 warnings in 4.27s` — `test_operate_only_role_cannot_self_confirm_live[operator-gap6_operator]`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: true — covered by approved change 1 in `contracts/public-contract-freeze.md` § Approved contract changes. `POST /v1/sessions/{id}/confirm-live` keeps its path and method and now answers 401 or 403 to callers it previously accepted; no frozen surface key changes.
+- closed_on: 2026-09-08
 
 ### GAP-007 (GAP-ACC-01) Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit
 

@@ -65,7 +65,11 @@ async def test_executor_tracks_rollback_live():
     }
     async def mock_post(url, json=None, session_token=None):
         return {"status": "success"}
-    state = _make_state(migration_plan=plan, accel_post=mock_post)
+    state = _make_state(
+        session={"live_approval_status": "approved"},
+        migration_plan=plan,
+        accel_post=mock_post,
+    )
     result = await executor_node(state)
     # Rollback records should be created for live execution
     assert len(result.get("rollback_records", [])) >= 1

@@ -118,19 +118,17 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
 
     iteration += 1
 
-    migration_plan_early = state.get("migration_plan") or session.get("migration_plan")
-    dry_run_early = True
-    if isinstance(migration_plan_early, dict):
-        dry_run_early = bool(migration_plan_early.get("dry_run", session.get("dry_run", True)))
-    else:
-        dry_run_early = bool(session.get("dry_run", True))
+    # GAP-006: one resolution for both the banner and the run — the banner must
+    # announce the mode the run actually executes in.
+    from ado2gh.agents.migration_agent.policies import resolve_execution_dry_run
+    dry_run = resolve_execution_dry_run(session, migration_plan)
 
     _append_and_stream(
         session,
         role="system",
         content=(
             "Executor: starting migration operations in dry-run (simulated) mode…"
-            if dry_run_early
+            if dry_run
             else "Executor: starting migration operations in live mode…"
         ),
         subagent="executor",
@@ -157,7 +155,6 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
         }
 
     work_items = migration_plan.get("work_items", [])
-    dry_run = migration_plan.get("dry_run", session.get("dry_run", True))
     session["dry_run"] = dry_run
 
     from ado2gh.agents.migration_agent.nodes.executor.pipeline import execute_repo_migration
@@ -240,7 +237,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                     skipped.append({
                         "repo": repo_id,
                         "reason": "blocked",
-                        "details": wi.get("blocked_reasons", []),
+                        "details": [wi.get("blocker") or "Work item status: blocked"],
                     })
 
             ready_items = executable_work_items(item_work_items)
@@ -367,7 +364,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
             skipped.append({
                 "repo": wi.get("repo", ""),
                 "reason": "blocked",
-                "details": wi.get("blocked_reasons", []),
+                "details": [wi.get("blocker") or "Work item status: blocked"],
             })
 
     for repo_id, repo_ready_items in group_work_items_by_repo(
