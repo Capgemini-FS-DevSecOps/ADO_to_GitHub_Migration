@@ -93,7 +93,6 @@ def test_accelerator_migrate_dry_run(accel_client):
 def test_agent_health_llm_and_session(agent_client):
     assert agent_client.get("/health").status_code == 200
     assert agent_client.get("/v1/llm/status").status_code == 200
-    assert agent_client.get("/v1/mcp/tools").status_code == 200
     with patch("services.agent.routes.session_routes._accel_post", new_callable=AsyncMock) as mock_post, patch(
         "services.agent.routes.session_routes._accel_get", new_callable=AsyncMock
     ) as mock_get:

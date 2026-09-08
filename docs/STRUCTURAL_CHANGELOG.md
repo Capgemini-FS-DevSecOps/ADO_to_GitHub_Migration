@@ -216,3 +216,27 @@ This file records every file move, rename, split, merge, deletion, and gitignore
 | `ado2gh/api/models/` | — | deleted | Empty package (only stale `__pycache__`, source already removed in a prior refactor) | yes | n/a | 2026-09-02 |
 | `tests/assignments/` | — | deleted | Empty package (only stale `__pycache__`, no test source) | yes | n/a | 2026-09-02 |
 | `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/ARCHITECTURE.md`, `docs/LOCAL_DEVELOPMENT.md` | — | updated | FR-035: aligned with spec-012 agent layout, current scripts/, spec list | yes | pass | 2026-08-25 |
+
+## 2026-09-08 — 013 Phase 2 / T006: Tests for routers removed in `0ec95d2`
+
+`0ec95d2` deleted `ado2gh/api/routers/{discovery_router,migration_router}.py`,
+`ado2gh/api/models/`, `ado2gh/api/workflow_readiness.py`, `ado2gh/assignments/*`
+and `services/agent/{mcp_server.py,routes/mcp_routes.py}` without removing the
+tests that exercised them. 40 tests asserted 2xx from paths that now 404; 4 more
+were false passes (they asserted the 404 a deleted route naturally returns).
+No production code changed.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `tests/contract/test_migration_api_contracts.py` | — | deleted | 16 tests on `/v1/migration/{repo,wave,pre-migration-form}` (`migration_router.py`); fixture also required the `migration_operations` table, whose model died with `ado2gh/api/models/` | yes | pass | 2026-09-08 |
+| `tests/contract/test_discovery_api_contracts.py` | — | deleted | 8 tests on `/v1/discovery/{scan,results}` (`discovery_router.py`) | yes | pass | 2026-09-08 |
+| `tests/agent/test_agentic_api.py` | — | deleted | 4 tests on `/v1/profiles/{id}/assignments`, `/v1/workflow-readiness`, `/v1/rollback`; `agentic_routes.router` now exposes only `/v1/history/*` | yes | pass | 2026-09-08 |
+| `tests/integration/test_agent_interface_integration.py` | — | deleted | 4 tests on the removed discovery/migration-wave workflow; one already imported the deleted `ado2gh.api.models` | yes | pass | 2026-09-08 |
+| `tests/integration/test_unified_tabs_integration.py` | — | deleted | 5 tests on `/v1/discovery/results` + `/v1/migration/wave`; one imported the deleted `ado2gh.api.models` and the orphaned `migration_operations` table | yes | pass | 2026-09-08 |
+| `tests/contract/test_agent_interface_contracts.py` | (same) | tests deleted | 3 of 4 tests removed (`test_discovery_results_accessible`, `test_migration_wave_creation_accessible`, `test_pre_migration_form_endpoint_exists`); `test_health_endpoint_works` kept | yes | pass | 2026-09-08 |
+| `tests/contract/test_unified_tabs_contracts.py` | (same) | tests deleted | 4 of 5 tests removed (`test_discovery_api_endpoint_exists`, `test_migration_api_endpoint_exists`, `test_discovery_scan_endpoint_exists`, `test_pre_migration_form_endpoint_exists`); `test_health_check_passes` kept | yes | pass | 2026-09-08 |
+| `tests/agent/test_local_host_parity.py` | (same) | test deleted | `test_mcp_plan_tool_accepts_dry_run` spawned `python -m services.agent.mcp_server`, deleted in `0ec95d2`; unused `json`/`subprocess`/`sys` imports and the stale module docstring removed with it | yes | pass | 2026-09-08 |
+| `tests/feature/test_services_coverage.py` | (same) | assertion deleted | `test_agent_health_llm_and_session` asserted 200 from `/v1/mcp/tools` (`routes/mcp_routes.py`, deleted in `0ec95d2`); rest of the test kept | yes | pass | 2026-09-08 |
+
+- **Tests removed**: 44 (SC-004 input) — 37 deleted files, 7 in-place.
+- **Production functions deleted**: 0. Deletions in `0ec95d2` are recorded against that commit.
