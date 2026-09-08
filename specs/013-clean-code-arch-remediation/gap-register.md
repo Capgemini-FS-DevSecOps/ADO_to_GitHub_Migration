@@ -37,7 +37,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-002 (GAP-AUTH-01) | Live-execution approval is inert in the default configuration | remediated |
 | GAP-003 (GAP-AUTH-02) | Agent internal resume-live/deny-live routes have no authorization in any shipped configuration | remediated |
 | GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | remediated |
-| GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | open |
+| GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | remediated |
 | GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | open |
 | GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | open |
 | GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | open |
@@ -181,12 +181,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `services/accelerator_api/main.py:262-274` — `POST /v1/migrate` routes its approval decision through this one function
 - severity: critical (critical_test: a)
 - blast_radius: an authenticated COORDINATOR, even under the hardened `ADO2GH_AUTH_ENABLED=true` config, can call `POST /v1/migrate` or `POST /v1/pipeline/runs` with `dry_run=false` and is never routed through `LiveApprovalStore` — no approval step, no queue entry, no confirmation. Independent of GAP-002 (GAP-AUTH-01) and GAP-004 (GAP-AUTH-04); turning auth on does not close it.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: `ado2gh/api/platform_rbac.py:operator_requires_live_approval` no longer tests for a single role. It now asks the capability question directly — `return not permissions_for(user.role).get("can_approve_live_execution", False)` — so every role that lacks approve-live rights is routed through the approval queue, COORDINATOR included, and a new role added to `permissions_for()` inherits the correct behaviour without touching this function. The same function now raises 401 rather than returning `False` when a live request arrives with no identity at all, so an unauthenticated live call cannot pass by having no role to check. The fix is a single function in the file GAP-002 also changes, and both were committed together for that reason.
+- regression_check: `tests/auth/test_gap_005_coordinator_bypasses_live_approval.py`
+- revert_proof: `git stash push -- ado2gh/api/platform_rbac.py`, then `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_005_coordinator_bypasses_live_approval.py`, then `git stash pop`. With the fix reverted: `1 failed, 5 warnings in 4.34s` — `test_coordinator_live_pipeline_run_is_routed_through_approval`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5). Unlike GAP-002's proof this one needed only the single file.
+- contract_change: true — covered by approved change 1 in `contracts/public-contract-freeze.md` § Approved contract changes, the same live-execution gate entry as GAP-002. No frozen surface key changes.
+- closed_on: 2026-09-08
 
 ### GAP-006 (GAP-AGT-01) `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate
 
