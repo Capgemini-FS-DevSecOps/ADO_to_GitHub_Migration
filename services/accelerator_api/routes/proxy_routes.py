@@ -1,15 +1,25 @@
-"""Read-only ADO and GitHub API proxies for the migration agent."""
+"""ADO and GitHub API proxies for the migration agent.
+
+The ADO proxy is read-only. The GitHub proxy also forwards the executor's write
+verbs, so every write goes through the same live-execution capability the rest of
+the platform requires and leaves an audit event behind (GAP-008).
+"""
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import parse_qs, unquote
 
 import requests
 from fastapi import APIRouter, HTTPException, Request
 
-from ado2gh.api.platform_rbac import require_operate
+from ado2gh.api.platform_rbac import require_approve_live_execution, require_operate
+from services.accelerator_api.routes.migrate_guard import active_profile_id
 from services.accelerator_api.routes.migrate_routes import _get_clients
 
 router = APIRouter(tags=["api-proxy"])
+
+# Verbs this proxy forwards that mutate GitHub — up to DELETE /repos/{org}/{repo}.
+_WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 
 
 def _http_error(exc: requests.HTTPError) -> HTTPException:
@@ -69,12 +79,39 @@ def _github_endpoint(path: str) -> str:
     return endpoint.split("?", 1)[0]
 
 
+def _audit_github_write(user: Any, method: str, endpoint: str) -> None:
+    """Record a GitHub write before it is forwarded (CA-004).
+
+    Verb, endpoint and actor only: the forwarded body and the platform's own
+    ``Authorization`` header must never reach an audit row (CA-003).
+    """
+    from ado2gh.api.profile_governance import write_profile_audit
+
+    write_profile_audit(
+        "accelerator.github_proxy.write",
+        profile_id=active_profile_id() or "_platform",
+        actor=getattr(user, "username", "") or "",
+        payload={
+            "method": method,
+            "endpoint": endpoint,
+            "role": user.role.value if user else None,
+        },
+    )
+
+
 def _proxy_github_request(method: str, path: str, request: Request, body: dict | None = None):
     """Proxy GitHub REST requests (GET read-only; POST/PATCH/PUT/DELETE for executor writes)."""
-    require_operate(request)
+    method_upper = method.upper()
+    if method_upper in _WRITE_METHODS:
+        # A write here is an irreversible GitHub mutation, so it takes the
+        # live-execution capability rather than the routine operate permission,
+        # and it is recorded before it leaves the process.
+        user = require_approve_live_execution(request)
+        _audit_github_write(user, method_upper, _github_endpoint(path))
+    else:
+        require_operate(request)
     _, gh, _, _ = _get_clients()
     clean = unquote(path.strip("/"))
-    method_upper = method.upper()
 
     if method_upper == "GET" and clean.startswith("repos/"):
         parts = clean.split("/")

@@ -40,7 +40,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | remediated |
 | GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | remediated |
 | GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | remediated |
-| GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | open |
+| GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | remediated |
 | GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | open |
 | GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | open |
 | GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | open |
@@ -237,12 +237,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `services/accelerator_api/routes/proxy_routes.py` — `_proxy_github_request` calls `require_operate(request)` as its only guard; no approval check, no `AuditWriter` call, no path allowlist for write verbs (the only path inspection is a `GET`-only branch on `clean.startswith("repos/")`)
 - severity: critical (critical_test: a)
 - blast_radius: an arbitrary authenticated operate-capable caller can issue any GitHub REST write the platform token can perform — including `DELETE /repos/{org}/{repo}` — through a route whose own documentation says it is read-only, with no audit record. Inert-by-default under GAP-002 (GAP-AUTH-01) means unauthenticated in the default configuration.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: `services/accelerator_api/routes/proxy_routes.py` now separates reads from writes. `_WRITE_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})` names the verbs that mutate; a request using one of them goes through `require_approve_live_execution(request)` rather than `require_operate`, so the ability to issue an arbitrary GitHub write — up to `DELETE /repos/{org}/{repo}` — now requires the same capability as approving a live migration, and an identity-less caller receives 401. Each write is then recorded by `_audit_github_write(user, method, endpoint)`, which stores the verb, the endpoint path and the acting user and nothing else: not the request body and not the `Authorization` header, either of which can carry a credential (CA-003). GET behaviour is unchanged, so the read proxy the agent depends on is unaffected, and the module docstring no longer claims a read-only property the code does not have.
+- regression_check: `tests/unit/test_gap_008_github_write_proxy_unguarded.py`
+- revert_proof: `git stash push -- services/accelerator_api/routes/proxy_routes.py`, then `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_008_github_write_proxy_unguarded.py`, then `git stash pop`. With the fix reverted: `1 failed, 3 warnings in 3.89s` — `test_github_write_not_reachable_on_operate_permission_alone[DELETE-repos/acme/production-service]`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: false — no route path or method changed; the write verbs answer 401 or 403 to callers they previously accepted.
+- closed_on: 2026-09-08
 
 ### GAP-009 (GAP-CLI-02) `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called
 
