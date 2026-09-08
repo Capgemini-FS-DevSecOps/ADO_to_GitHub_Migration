@@ -47,7 +47,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
 | GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | remediated |
 | GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | remediated |
-| GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | open |
+| GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | remediated (residual recorded) |
 | GAP-016 (GAP-PIPE-04) | Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI | open |
 | GAP-017 (GAP-CLI-01) | `phase gate-check` always raises TypeError; no gate row can be written through the CLI | open |
 | GAP-018 (GAP-CLI-03) | Migration commands execute live by default with no confirmation, and a declared approval token is discarded | open |
@@ -376,12 +376,13 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `tests/contract/test_agent_pev_flow_contracts.py:472-493` — the one contract test asserting `"scopes" in work_item` is `@pytest.mark.skip(reason="Legacy planner module deleted in spec 012 — rewrite for migration_agent")`
 - severity: critical (critical_test: e)
 - blast_radius: CA-002's individual confirmation of destructive operations can never trigger, because the list feeding it is unconditionally empty. Every blocked work item loses its human-readable reason from the executor's audit record. `plan-summary` reports zero destructive operations and zero blocker text on the wire. No `.tsx` currently calls `getPlanSummary()`, so no user sees wrong data through that specific path today, but the contract and its own type declaration are wired to fail silently the moment it is used.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated (see the residual finding below — the transport is fixed, CA-002 is still unreachable for a second reason)
+- resolution: The singular `scope`/`blocker` fields stay canonical, and `ado2gh/api/migration_work_plan.py` gains `sync_work_item_wire_keys(work_item)`, which derives the plural `scopes` and `blocked_reasons` the consumers read from them. It is called wherever a work item is created or mutated — `build_work_items_for_repos`, `apply_operator_secret_mappings`, `apply_scope_results_to_work_items`, and `ado2gh/agents/migration_agent/hitl/blockers.py` — so the two shapes cannot drift apart again from one side. `services/agent/routes/session_routes.py` therefore serialises real values on the wire, and `ado2gh/agents/migration_agent/nodes/executor/node.py` records the actual blocker text on every skip instead of an empty list. `ado2gh/agents/migration_agent/prompts/planner.md` is corrected so the prompt no longer documents singular `scope` while instructing the model to emit `blocked_reasons`.
+- **Residual finding — CA-002 is still unreachable in production, for a different reason.** This gap fixed the transport: `destructive_operations` is now built from a key that is actually populated. The producer still cannot emit a destructive scope. `MigrationScope` (`ado2gh/models.py:17-23`) has exactly six members — `repo`, `work_items`, `pipelines`, `wiki`, `secrets`, `branch_policies` — and none of them is destructive. The four values the confirmation logic tests for exist only as string literals, in `ado2gh/agents/migration_agent/guardrails.py:69-70,178` and `services/agent/routes/session_routes.py:1311`; no producer path can put any of them on a work item (measured 2026-09-08). Per-item destructive confirmation therefore still cannot fire in production, and closing this gap must not be read as closing CA-002. Recorded here against GAP-015 rather than opened as a new sequential id, because the register's ids were assigned at T035 and this is a residual of an existing entry, not a newly assessed component. It needs either a destructive member on `MigrationScope` with a producer that emits it, or an explicit decision that destructive scopes are out of scope for the platform and the confirmation logic should be removed rather than left as unreachable code.
+- regression_check: `tests/contract/test_gap_015_work_item_field_contract.py`
+- revert_proof: `git stash push -- ado2gh/api/migration_work_plan.py ado2gh/agents/migration_agent/hitl/blockers.py ado2gh/agents/migration_agent/nodes/executor/node.py ado2gh/agents/migration_agent/prompts/planner.md`, then `.venv\Scripts\python.exe -m pytest tests/contract/test_gap_015_work_item_field_contract.py`, then `git stash pop`. With the fix reverted: `1 failed, 9 warnings in 3.99s` — `test_plan_summary_flags_destructive_scope_on_producer_work_item`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: true — the `plan-summary` payload now carries populated `scopes` and `blocked_reasons` where it previously always sent empty lists. No field was added, removed or renamed and no frozen surface key changes; the console's existing plural declarations become correct rather than needing an edit.
+- closed_on: 2026-09-08
 
 ### GAP-016 (GAP-PIPE-04) Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI
 

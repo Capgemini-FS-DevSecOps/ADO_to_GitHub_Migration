@@ -7,6 +7,24 @@ from typing import Any
 from ado2gh.models import MigrationScope, RepoConfig
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
 
+
+def sync_work_item_wire_keys(work_item: dict[str, Any]) -> dict[str, Any]:
+    """Derive the plural wire aliases from the canonical singular fields (GAP-015).
+
+    ``scope``/``blocker`` are this producer's canonical spellings and what every
+    in-process reader uses. ``scopes``/``blocked_reasons`` are the list-shaped
+    aliases the ``plan-summary`` wire contract and the UI types declare. Both
+    spellings must be written together — writing only one leaves the other side
+    silently reading an empty value, which is the bug this closes. Call this
+    after any mutation of ``scope`` or ``blocker``.
+    """
+    scope = str(work_item.get("scope") or "")
+    work_item["scopes"] = [scope] if scope else []
+    blocker = str(work_item.get("blocker") or "").strip()
+    work_item["blocked_reasons"] = [blocker] if blocker else []
+    return work_item
+
+
 SCOPE_META: dict[str, dict[str, str]] = {
     MigrationScope.REPO.value: {
         "label": "Migrate repository (git / GEI)",
@@ -83,6 +101,7 @@ def apply_operator_secret_mappings(
             wi["status"] = "ready"
             wi["blocker"] = ""
             wi["detail"] = f"Operator mapped {len(mappings)} secret(s)"
+            sync_work_item_wire_keys(wi)
     return work_items
 
 
@@ -250,7 +269,7 @@ def build_work_items_for_repos(
                 secrets_blockers=secrets_blockers,
                 pipeline_count=pipeline_count,
             )
-            items.append({
+            items.append(sync_work_item_wire_keys({
                 "id": _work_item_id(repo_key, scope),
                 "repo": repo_key,
                 "project": repo.ado_project,
@@ -270,7 +289,7 @@ def build_work_items_for_repos(
                 "status": status,
                 "blocker": blocker,
                 "pipeline_count": pipeline_count if scope == MigrationScope.PIPELINES.value else None,
-            })
+            }))
     return items
 
 
@@ -374,6 +393,7 @@ def apply_scope_results_to_work_items(
                 wi["detail"] = row.get("error") or row.get("detail") or "Failed"
             elif st == "skipped":
                 wi["status"] = "skipped"
+            sync_work_item_wire_keys(wi)
     return work_items
 
 

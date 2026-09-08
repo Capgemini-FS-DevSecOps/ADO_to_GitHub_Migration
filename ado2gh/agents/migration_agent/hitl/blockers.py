@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ado2gh.api.migration_work_plan import sync_work_item_wire_keys
+
 
 def _blocker_text(work_item: dict[str, Any]) -> str:
     return str(work_item.get("blocker") or work_item.get("block_reason") or "").strip()
@@ -68,6 +70,7 @@ def apply_skip_blocked_scopes(
             wi["status"] = "skipped"
             wi["blocker"] = ""
             wi["detail"] = "Skipped by operator"
+            sync_work_item_wire_keys(wi)
     plan["work_items"] = work_items
     plan["blocked"] = any(
         wi.get("status") == "blocked" for wi in work_items if isinstance(wi, dict)

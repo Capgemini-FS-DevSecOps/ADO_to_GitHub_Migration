@@ -102,7 +102,7 @@ Work items use per-scope entries (`scope: "repo"`, `scope: "pipelines"`, etc.) a
 ## Plan Structure
 
 1. **repos** — Topological order (dependencies first)
-2. **work_items** — Per-repo, per-scope items with `status` ready/blocked/skipped and `blocked_reasons` when applicable
+2. **work_items** — Per-repo, per-scope items with `scope` (a single scope name, e.g. `"repo"` or `"pipelines"`), `status` ready/blocked/skipped, and `blocker` when applicable. `blocker` is a **single string** holding one reason the item is blocked — not a list. If several conditions block the same item, state the primary reason in `blocker` and record the remaining detail in `blocked_items` or `assumptions`.
 3. **dry_run** — Match session unless operator requested live
 4. **assumptions** — Every incomplete discovery gap documented
 5. **blocked_items** — Items that cannot run without operator action
