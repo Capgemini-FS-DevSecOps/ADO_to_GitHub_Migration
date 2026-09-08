@@ -3,11 +3,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ado2gh.api.credentials.cloud_credential_probe import probe_provider
 from ado2gh.api.credentials.cloud_credentials_store import CloudCredentialSource
 
 
 def test_probe_aws_passed(monkeypatch):
+    pytest.importorskip("boto3")  # optional AWS extra; patch("boto3.client") needs it importable
     monkeypatch.setenv("ADO2GH_BEDROCK_MODEL_ID", "anthropic.claude-3")
     source = CloudCredentialSource(provider="aws", region="us-east-1")
     mock_client = MagicMock()
