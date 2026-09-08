@@ -132,8 +132,10 @@ def test_agent_request_live_offline_fallback(agent_client):
     assert body.get("live_approval_status") == "pending"
 
 
-def test_agent_deprecated_approvals_list(agent_client):
-    with pytest.warns(DeprecationWarning):
-        r = agent_client.get("/v1/approvals")
-    assert r.status_code == 200
-    assert r.json() == []
+def test_agent_approvals_alias_is_gone(agent_client):
+    """The deprecated /v1/approvals alias was removed in 859bb6b.
+
+    Live approvals are served by the accelerator at /v1/platform/approvals; the agent
+    only calls out to it (session_routes.py).
+    """
+    assert agent_client.get("/v1/approvals").status_code == 404

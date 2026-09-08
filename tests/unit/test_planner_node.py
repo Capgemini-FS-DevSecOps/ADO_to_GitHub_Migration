@@ -83,7 +83,7 @@ def test_heuristic_plan_circular_deps():
 
 
 def test_blockers_from_baseline_probes():
-    from ado2gh.agents.migration_agent.operator_input import (
+    from ado2gh.agents.migration_agent.hitl.operator_input import (
         blockers_from_baseline_probes,
         operator_input_from_probe_failures,
     )
@@ -100,7 +100,8 @@ def test_blockers_from_baseline_probes():
     ])
     assert len(blockers) == 1
     req = operator_input_from_probe_failures(blockers, {"plan_repository_id": "Proj/Missing"})
-    assert req.fields[0].options[0] == "fix_repository_id"
+    # Options are {value, label, description} dicts, not bare strings.
+    assert "fix_repository_id" in [o["value"] for o in req.fields[0].options]
 
 
 # ─── LLM plan builder ─────────────────────────────────────────────────

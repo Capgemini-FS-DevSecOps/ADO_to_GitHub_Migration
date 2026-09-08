@@ -64,9 +64,9 @@ class TestWorkflowValidatorWithActionlint:
         assert result.validation_status == VALID
         assert result.validation_mode == MODE_ACTIONLINT
         mock_run.assert_called_once()
-        # Verify actionlint was called with the file path
-        call_args = mock_run.call_args[0]
-        assert "actionlint" in call_args[0]
+        # argv[0] is the resolved path from shutil.which, not the bare binary name.
+        argv = mock_run.call_args[0][0]
+        assert "actionlint" in argv[0]
 
     @patch("shutil.which")
     @patch("subprocess.run")

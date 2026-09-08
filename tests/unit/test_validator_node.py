@@ -440,9 +440,13 @@ async def test_validator_baseline_probe_escalates_operator_input(monkeypatch):
             "github_target": {"exists": False},
         }]
 
-    monkeypatch.setattr(nodes, "_gather_validator_baseline_probes", fake_probes)
+    # validator.py binds both names at import time, so patching the nodes package
+    # re-export would not reach the reference validator_node actually calls.
+    from ado2gh.agents.migration_agent.nodes import validator as validator_module
+
+    monkeypatch.setattr(validator_module, "_gather_validator_baseline_probes", fake_probes)
     monkeypatch.setattr(
-        nodes,
+        validator_module,
         "_run_validator_llm_investigation",
         AsyncMock(return_value=None),
     )

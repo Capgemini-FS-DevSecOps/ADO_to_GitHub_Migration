@@ -50,10 +50,10 @@ def test_create_state_db_returns_sqlite(tmp_path, monkeypatch):
 
 
 def test_postgres_schema_includes_agentic_tables():
+    # migration_assignments and remediation_loops went with ado2gh/assignments/* in 859bb6b.
     from ado2gh.state.postgres_db import PostgresStateDB
-    assert "migration_assignments" in PostgresStateDB.SCHEMA
     assert "audit_events" in PostgresStateDB.SCHEMA
-    assert "remediation_loops" in PostgresStateDB.SCHEMA
+    assert "live_execution_approvals" in PostgresStateDB.SCHEMA
 
 
 def test_postgres_state_db_has_audit_methods():

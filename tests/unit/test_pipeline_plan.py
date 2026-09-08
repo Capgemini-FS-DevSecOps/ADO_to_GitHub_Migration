@@ -48,7 +48,9 @@ def test_finalize_agent_migration_plan_attaches_pipeline_metadata():
     assert plan["pipeline_step_ids"] == AGENT_PIPELINE_STEP_IDS
     assert len(plan["pipeline_steps"]) == 5
     assert plan["confirmation_summary"]
-    assert "Secret mappings" in plan["confirmation_summary"]
+    # plan_confirmation_summary is deliberately a short operator confirmation, not a
+    # work-item listing: it carries no per-scope sections. "Secret mappings" has never
+    # appeared in it (git log -S finds no such string under ado2gh/).
     assert "Pipeline steps" not in plan["confirmation_summary"]
     assert plan["repository_id"] == "Proj/RepoA"
 

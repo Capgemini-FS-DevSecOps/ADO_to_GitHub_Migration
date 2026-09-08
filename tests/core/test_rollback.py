@@ -15,8 +15,7 @@ def test_enable_pipelines_dry_run(tmp_path):
         "name": "build",
         "repository": {"name": "repo1"},
     }
-    db = StateDB(str(tmp_path / "r.db"))
-    cleanup = ADOCleanup(ado, db, dry_run=True)
+    cleanup = ADOCleanup(ado, dry_run=True)
     repo = RepoConfig(ado_project="P", ado_repo="repo1", gh_org="o", gh_repo="repo1")
     stats = cleanup.enable_pipelines(repo)
     assert stats.get("dry_run") is True
