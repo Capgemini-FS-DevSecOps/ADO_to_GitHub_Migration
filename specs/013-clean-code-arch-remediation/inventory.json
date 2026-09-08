@@ -19159,9 +19159,7 @@
     "is_export": true,
     "param_count": 0,
     "tags": [],
-    "proposed_tags": [
-      "name_review"
-    ],
+    "proposed_tags": [],
     "state_hash": "4c842eab8d2855b1a58647fbecf030dc6f6684cd",
     "reference_count": 9,
     "vulture_confidence": null,
@@ -19180,9 +19178,7 @@
     "is_export": true,
     "param_count": 1,
     "tags": [],
-    "proposed_tags": [
-      "name_review"
-    ],
+    "proposed_tags": [],
     "state_hash": "677615696a38c00b129a577d53d434a5186806ee",
     "reference_count": 14,
     "vulture_confidence": null,
