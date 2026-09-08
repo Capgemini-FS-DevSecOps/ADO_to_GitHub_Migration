@@ -18,7 +18,7 @@ import logging
 from typing import Any
 
 import requests
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 from ado2gh.core.config_loader import ConfigLoader
@@ -28,6 +28,7 @@ from ado2gh.state.factory import create_state_db
 from services.accelerator_api.routes._shared import (
     _settings,
 )
+from services.accelerator_api.routes.migrate_guard import guard_live_migration
 from services.accelerator_api.routes.migrate_routes_models import (
     ArtifactsPublishRequest,
     BoardsMigrateRequest,
@@ -41,7 +42,11 @@ from services.accelerator_api.routes.migrate_routes_models import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/v1/migrate", tags=["migration-features"])
+router = APIRouter(
+    prefix="/v1/migrate",
+    tags=["migration-features"],
+    dependencies=[Depends(guard_live_migration)],
+)
 
 
 # ─── Helpers ───

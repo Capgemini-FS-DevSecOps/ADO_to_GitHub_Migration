@@ -39,7 +39,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-004 (GAP-AUTH-04) | Pipeline-run routes let the client self-certify `agent_live_approved` to skip the approval queue | remediated |
 | GAP-005 (GAP-AUTH-05) | `operator_requires_live_approval` gates only the OPERATOR role; COORDINATOR bypasses approval entirely | remediated |
 | GAP-006 (GAP-AGT-01) | `confirm-live` self-escalates an operator to live execution, and plan-level `dry_run` silently overrides the session gate | remediated |
-| GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | open |
+| GAP-007 (GAP-ACC-01) | Nine `/v1/migrate/*` feature routes perform live mutations with no RBAC, approval, or audit | remediated |
 | GAP-008 (GAP-ACC-02) | GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited | open |
 | GAP-009 (GAP-CLI-02) | `phase run --force` skips the gate with no reason and no audit record, while the audited override path is never called | open |
 | GAP-010 (GAP-TOKEN-01) | `redact_payload` misses ADO PAT, Bearer, and prefixed key-name shapes before persisting audit events | open |
@@ -220,12 +220,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - reproduction: existing passing test `tests/unit/test_migrate_routes_core.py:14-18,52-74` POSTs `"dry_run": false` and asserts HTTP 200
 - severity: critical (critical_test: a)
 - blast_radius: every resource type the platform migrates — repos, pipelines, secrets, service connections, boards, test plans, artifacts, wiki, branch policies — has a live-write route reachable with no role check, no approval queue entry, and no audit event. Under GAP-002 (GAP-AUTH-01)'s default these are reachable unauthenticated; under the hardened config any logged-in user of any role reaches them.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: The nine `/v1/migrate/*` routes now hang a single dependency off their router — `guard_live_migration` in the new `services/accelerator_api/routes/migrate_guard.py` — rather than repeating a check per handler, so a route added to that router later is covered by construction. The guard reads `dry_run` from the request body and lets dry runs through unchanged, keeping local development permissive for everything reversible. A live run needs an identity and the `can_approve_live_execution` capability; a caller who can only operate is parked in the same `LiveApprovalStore` queue that the sibling `POST /v1/migrate` already used, which supplies both the audit record (CA-004) and the approve/deny preview path (CA-001), and receives 403 `awaiting_approval` with the approval id. Every live run that does proceed is recorded first, before any irreversible work starts, as an `accelerator.migrate.live_execution` audit event. The scope id and audit payload are built from an allowlist of identity fields (`project`, `repo`, `repo_name`, `github_org`, `github_repo`, `connection_name`, `feed_name`, `wiki_name`, `secret_name`) rather than from the whole body: an allowlist, not a blocklist, so `secret_value` on `/v1/migrate/secret-provision` cannot reach a permanent audit row (CA-003).
+- regression_check: `tests/unit/test_gap_007_migrate_routes_unguarded.py`
+- revert_proof: `git stash push -- services/accelerator_api/routes/migrate_routes.py`, then `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_007_migrate_routes_unguarded.py`, then `git stash pop`. With the fix reverted: `1 failed, 3 warnings in 4.00s` — `test_live_migrate_route_rejects_unauthenticated_caller[/v1/migrate/git-mirror]`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: false — no route path or method changed and no new module is a public entry point; the nine routes answer 401 or 403 to live callers they previously accepted. `services/accelerator_api/routes/migrate_guard.py` is a new file and is recorded in `docs/STRUCTURAL_CHANGELOG.md` (FR-029).
+- closed_on: 2026-09-08
 
 ### GAP-008 (GAP-ACC-02) GitHub write proxy documented as read-only, guarded only by `require_operate`, unaudited
 

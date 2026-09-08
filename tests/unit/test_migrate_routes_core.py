@@ -63,7 +63,10 @@ def test_git_mirror_defaults_github_org_from_profile(mock_db, mock_cfg, mock_cli
       json={
         "project": "MyProject",
         "repo_name": "my-repo",
-        "dry_run": False,
+        # Dry run: this test is about defaulting github_org from the profile, and
+        # a live run now needs an approved identity (GAP-007), covered by
+        # tests/unit/test_gap_007_migrate_routes_unguarded.py.
+        "dry_run": True,
       },
     )
 
