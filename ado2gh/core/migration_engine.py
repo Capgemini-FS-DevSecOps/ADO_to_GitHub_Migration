@@ -42,17 +42,32 @@ class MigrationEngine:
         self.allowed_repo_keys = allowed_repo_keys
         self.pipeline_run_id = pipeline_run_id
 
-    def _try_clear_orphaned_in_progress(self, repo: RepoConfig) -> bool:
-        """Clear stale in_progress rows when no other pipeline run holds the repo."""
-        from ado2gh.core.migration_fr036 import clear_stale_in_progress_migrations
+    def _in_progress_block_reason(self, repo: RepoConfig) -> str | None:
+        """None when the stale in_progress row was cleared, else why it was kept.
 
+        The reason distinguishes "another run holds this repo" from "conflict
+        detection failed", so a refusal is not silently attributed to the wrong
+        cause (FR-036).
+        """
+        from ado2gh.core.migration_fr036 import (
+            clear_stale_in_progress_migrations,
+            repo_conflict_reason,
+        )
+
+        reason = repo_conflict_reason(
+            f"{repo.ado_project}/{repo.ado_repo}", self.pipeline_run_id
+        )
+        if reason:
+            return reason
         cleared = clear_stale_in_progress_migrations(
             self.db,
             repo.ado_project,
             repo.ado_repo,
             current_run_id=self.pipeline_run_id,
         )
-        return cleared > 0
+        if cleared > 0:
+            return None
+        return "an in_progress migration row is recorded and could not be cleared"
 
     def migrate_repo(
         self,
@@ -70,11 +85,14 @@ class MigrationEngine:
                 "errors": ["cross-cohort mutation blocked"],
             }
         if not self.dry_run and self.db.has_repo_in_progress(repo.ado_project, repo.ado_repo):
-            if not self._try_clear_orphaned_in_progress(repo):
+            block_reason = self._in_progress_block_reason(repo)
+            if block_reason:
                 return {
                     "status": "failed",
                     "scopes": {},
-                    "errors": ["repo already has active live migration (FR-036)"],
+                    "errors": [
+                        f"repo already has active live migration (FR-036): {block_reason}"
+                    ],
                 }
         results: dict[str, dict] = {}
         requested = repo.scopes or self.SCOPES

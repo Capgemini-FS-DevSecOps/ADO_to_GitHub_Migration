@@ -46,7 +46,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-011 (GAP-AGT-02) | `mask_secrets` is wired only into the audit bridge; chat, SSE, and persisted session messages are unmasked | remediated |
 | GAP-012 (GAP-UI-01) | LLM provider API key is transmitted in a URL query string | open |
 | GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | remediated |
-| GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | open |
+| GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | remediated |
 | GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | open |
 | GAP-016 (GAP-PIPE-04) | Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI | open |
 | GAP-017 (GAP-CLI-01) | `phase gate-check` always raises TypeError; no gate row can be written through the CLI | open |
@@ -353,12 +353,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/core/migration_engine.py:72-78` — `migrate_repo()`'s only guard against two concurrent live migrations of the same repo is `has_repo_in_progress(...)` followed by `_try_clear_orphaned_in_progress(repo)`; a cleared row is what permits the migration to proceed
 - severity: critical (critical_test: d)
 - blast_radius: a transient error in either the lock manager or the pipeline-run store silently downgrades "conflict detection failed" to "no conflict, proceed". Two live migrations can then race the same repo — corrupting git state, double-applying branch-policy changes, or racing two GEI/mirror pushes at the same target. Reachable on any live migration of a repo carrying a stale in-progress row, which is the normal post-interruption scenario this code exists to handle.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: `ado2gh/core/migration_fr036.py` is rebuilt around a new `repo_conflict_reason(repo_key, current_run_id) -> str | None`, which returns a reason string when a check cannot complete instead of swallowing the exception. `other_run_holds_repo` is now a thin wrapper over it, so a transient error in the lock manager or the pipeline-run store is reported as a conflict — the fail-closed direction — rather than being downgraded to "no other run holds this repo". `clear_stale_in_progress_migrations` therefore refuses to clear the in-progress row when conflict detection was inconclusive, and `ado2gh/core/migration_engine.py` no longer proceeds into a live migration on the strength of a check that failed. The reason string is carried rather than discarded so an operator can see *why* the guard held.
+- regression_check: `tests/core/test_gap_014_concurrency_guard_fails_closed.py`
+- revert_proof: `git stash push -- ado2gh/core/migration_fr036.py ado2gh/core/migration_engine.py`, then `.venv\Scripts\python.exe -m pytest tests/core/test_gap_014_concurrency_guard_fails_closed.py`, then `git stash pop`. With the fix reverted: `1 failed` — `test_guard_does_not_report_no_conflict_when_both_checks_fail`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: false — `other_run_holds_repo` keeps its name and boolean return; `repo_conflict_reason` is a new internal helper with no public surface.
+- closed_on: 2026-09-08
 
 ### GAP-015 (GAP-SEAM-01) Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons`
 
