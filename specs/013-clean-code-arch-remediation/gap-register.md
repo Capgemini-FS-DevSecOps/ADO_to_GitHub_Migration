@@ -48,7 +48,7 @@ one of the 50 entries carries at least one path:line citation or a reproduction 
 | GAP-013 (GAP-ENG-01) | Workflow-integrity check is structurally incapable of reporting FAIL | remediated |
 | GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | remediated |
 | GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | remediated (residual recorded) |
-| GAP-016 (GAP-PIPE-04) | Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI | open |
+| GAP-016 (GAP-PIPE-04) | Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI | remediated |
 | GAP-017 (GAP-CLI-01) | `phase gate-check` always raises TypeError; no gate row can be written through the CLI | open |
 | GAP-018 (GAP-CLI-03) | Migration commands execute live by default with no confirmation, and a declared approval token is discarded | open |
 | GAP-019 (GAP-AUTH-03) | `/sessions/{id}/provision` and `/remediate` take no `Request` and trust a client-supplied `actor` | open |
@@ -398,12 +398,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/cli/misc.py:51-76` — the `push-workflows` command exposes no flag for either parameter and calls `push_workflows_for_repos` without them, so `push_workflows.py:154-155`'s `approver_ok: bool = False` applies and every live invocation returns `"live workflow push requires approval"`; `push_workflows_for_repos` (`:158-167`) never inspects `outcome["error"]`, so `misc.py:76` prints `"Pushed workflows for 0 repo(s)"` — a success-shaped message hiding the real cause
 - severity: critical (critical_test: e)
 - blast_radius: the two components disagree on the shared contract in both directions. In the default engine path the approval/readiness gate provides zero protection — a pipeline classified "manual" gets a branch and a PR identically to a supported one, with no readiness caveat in the PR. Through the documented CLI command the same gate can never be satisfied, and the failure is reported as a zero-count success.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: true
-- closed_on: —
+- status: remediated
+- resolution: The two boolean parameters a caller could assert for itself are gone. `push_repo_workflows` and `push_workflows_for_repos` no longer take `readiness_ok` and `approver_ok`; they take `db`, and a live push is gated on `workflow_push_readiness(db, repo)` — the same auto/assisted/manual grading the `pipeline-readiness` command reports, now actually consulted at push time. A pipeline that grades `manual` blocks the push and the reason is returned on `result["error"]`; a pipeline that grades `assisted` is pushed with its caveats appended to the PR body, so the reviewer is told the pipeline needs manual attention instead of receiving the same generic text as a fully supported one. `ado2gh/core/scopes/pipelines_scope.py` passes the run's state store at both live-push call sites instead of the two `True` literals, and `ado2gh/cli/misc.py` builds a state store from the configured backend for a live run, so `push-workflows` is satisfiable from the CLI for the first time. `push_workflows_for_repos` now inspects `outcome["error"]`, so a blocked push is reported as a blocked push rather than counted as `"Pushed workflows for 0 repo(s)"` — a success-shaped message that hid the real cause. `dry_run=True` remains the ungated preview path (CA-001).
+- regression_check: `tests/pipeline/test_gap_016_workflow_push_approval_gate.py`
+- revert_proof: `git stash push -- ado2gh/pipelines/push_workflows.py ado2gh/core/scopes/pipelines_scope.py ado2gh/cli/misc.py ado2gh/reporting/pipeline_readiness.py`, then `.venv\Scripts\python.exe -m pytest tests/pipeline/test_gap_016_workflow_push_approval_gate.py`, then `git stash pop`. With the fix reverted: `1 failed, 2 warnings in 3.73s` — `test_cli_push_workflows_does_not_report_blocked_push_as_zero_count_success`. Taken 2026-09-08 by the T040 implementation agent (Claude Opus 5).
+- contract_change: true — `push_repo_workflows` and `push_workflows_for_repos` lose the `readiness_ok` and `approver_ok` parameters and gain `db`, and the result dict gains `readiness_blockers` and `readiness_notes`. Both are internal Python functions with no non-test callers outside `ado2gh/`; no CLI command, route, table or environment variable changes, so `tests/contract/public_surface_snapshot.json` is unchanged by this gap.
+- closed_on: 2026-09-08
 
 ### GAP-017 (GAP-CLI-01) `phase gate-check` always raises TypeError; no gate row can be written through the CLI
 

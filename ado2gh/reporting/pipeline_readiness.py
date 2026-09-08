@@ -18,6 +18,45 @@ from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
 from ado2gh.state.db import StateDB
 
 
+def workflow_push_readiness(db, repo: RepoConfig) -> dict[str, list[str]]:
+    """Readiness verdict for a live workflow push to one repo (GAP-016).
+
+    Consults the same auto/assisted/manual assessment the ``pipeline-readiness``
+    command reports, so the push path and the report agree by construction
+    instead of the push being gated on a caller-supplied literal.
+
+    Returns ``{"blockers": [...], "notes": [...]}``. A non-empty ``blockers``
+    means the live push must not proceed: a pipeline graded ``manual`` has hard
+    conversion blockers and its generated YAML needs a human before it lands on
+    the destination repo. ``notes`` are reviewer-facing caveats for pipelines
+    graded ``assisted`` — they do not block. Fails closed: if readiness cannot
+    be established at all, that is a blocker, not an approval.
+    """
+    if db is None:
+        return {"blockers": ["pipeline readiness unavailable (no state store)"], "notes": []}
+    try:
+        assessments = PipelineReadinessReport(db).generate(repos=[repo]).get("pipelines") or []
+    except Exception:
+        # Never surface the underlying error text: a Postgres DSN can carry a password (CA-003).
+        log.warning(
+            "pipeline readiness assessment failed for %s/%s",
+            repo.ado_project, repo.ado_repo, exc_info=True,
+        )
+        return {"blockers": ["pipeline readiness assessment failed"], "notes": []}
+
+    blockers: list[str] = []
+    notes: list[str] = []
+    for a in assessments:
+        name = a.get("pipeline_name") or f"pipeline {a.get('pipeline_id', '?')}"
+        if a.get("classification") == "manual":
+            reasons = "; ".join(a.get("blockers") or []) or "manual conversion required"
+            blockers.append(f"{name}: {reasons}")
+        elif a.get("classification") == "assisted":
+            caveats = "; ".join(a.get("warnings") or []) or "needs review before enabling"
+            notes.append(f"{name}: {caveats}")
+    return {"blockers": blockers, "notes": notes}
+
+
 class PipelineReadinessReport:
     """Analyze pipeline inventory and generate a readiness assessment.
 

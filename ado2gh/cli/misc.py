@@ -63,6 +63,7 @@ def register(cli):
         """Push locally generated workflow YAML to GitHub via branch + PR."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.pipelines.push_workflows import push_workflows_for_repos
+        from ado2gh.state.factory import create_state_db
 
         global_cfg, waves = ConfigLoader.load(config)
         _, gh = load_clients(global_cfg)
@@ -70,7 +71,10 @@ def register(cli):
         if not repos:
             console.print("[red]No repos. Use --input <file> or configure waves.[/red]")
             return
+        # GAP-016: the readiness assessment gates each live push; the state store
+        # comes from the configured backend, same as `pipeline-readiness`.
         count = push_workflows_for_repos(
             gh, repos, workflows_dir, branch=branch, base=base, dry_run=dry_run,
+            db=None if dry_run else create_state_db(),
         )
         console.print(f"\n[green]Pushed workflows for {count} repo(s)[/green]")

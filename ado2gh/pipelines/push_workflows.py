@@ -10,6 +10,7 @@ import requests
 from ado2gh.clients.gh_client import GHClient
 from ado2gh.logging_config import console
 from ado2gh.models import RepoConfig
+from ado2gh.reporting.pipeline_readiness import workflow_push_readiness
 
 
 def remote_workflow_files(
@@ -41,10 +42,17 @@ def push_repo_workflows(
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
     dry_run: bool = False,
-    readiness_ok: bool = True,
-    approver_ok: bool = False,
+    db: Any = None,
 ) -> dict[str, Any]:
-    """Push workflow YAML for one repo. Returns structured result for UI/logging."""
+    """Push workflow YAML for one repo. Returns structured result for UI/logging.
+
+    A live push is gated on the pipeline readiness assessment computed from
+    ``db`` (the same auto/assisted/manual grading the ``pipeline-readiness``
+    command reports): any pipeline this repo owns that grades ``manual`` blocks
+    the push, and the reason is reported on ``result["error"]`` (GAP-016).
+    ``dry_run=True`` is the ungated preview path — it lists what would be pushed
+    without contacting GitHub.
+    """
     wf_root = Path(workflows_dir) / repo.gh_org / repo.gh_repo / ".github" / "workflows"
     result: dict[str, Any] = {
         "pushed": False,
@@ -54,13 +62,20 @@ def push_repo_workflows(
         "pr_url": "",
         "error": "",
         "local_dir": str(wf_root),
+        "readiness_blockers": [],
+        "readiness_notes": [],
     }
-    if not dry_run and not readiness_ok:
-        result["error"] = "workflow readiness check failed"
-        return result
-    if not dry_run and not approver_ok:
-        result["error"] = "live workflow push requires approval"
-        return result
+    readiness = {"blockers": [], "notes": []}
+    if not dry_run:
+        readiness = workflow_push_readiness(db, repo)
+        result["readiness_blockers"] = readiness["blockers"]
+        result["readiness_notes"] = readiness["notes"]
+        if readiness["blockers"]:
+            result["error"] = (
+                "live workflow push blocked by pipeline readiness: "
+                + "; ".join(readiness["blockers"])
+            )
+            return result
     if not wf_root.exists():
         result["error"] = f"no local workflows at {wf_root}"
         return result
@@ -120,6 +135,12 @@ def push_repo_workflows(
             "pipelines via `ado2gh`.\n\n"
             "**Review needed** — generated YAML may contain `TODO` placeholders."
         )
+        if readiness["notes"]:
+            pr_body += (
+                "\n\n**Pipeline readiness: assisted** — these need manual "
+                "attention before the workflows are enabled:\n"
+                + "\n".join(f"- {n}" for n in readiness["notes"])
+            )
         try:
             pr = gh.create_pull_request(
                 repo.gh_org, repo.gh_repo, pr_title, pr_body,
@@ -151,17 +172,22 @@ def push_workflows_for_repos(
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
     dry_run: bool = False,
-    readiness_ok: bool = True,
-    approver_ok: bool = False,
+    db: Any = None,
 ) -> int:
-    """Commit local workflow YAML to destination repos. Returns count pushed."""
+    """Commit local workflow YAML to destination repos. Returns count pushed.
+
+    ``db`` supplies the pipeline readiness assessment that gates each live push.
+    """
     pushed_repos = 0
     for r in repos:
         outcome = push_repo_workflows(
             gh, r, workflows_dir,
             branch=branch, base=base, pr_title=pr_title,
-            dry_run=dry_run, readiness_ok=readiness_ok, approver_ok=approver_ok,
+            dry_run=dry_run, db=db,
         )
         if outcome.get("pushed"):
             pushed_repos += 1
+        elif outcome.get("error"):
+            # GAP-016: never let a skipped repo look like a silent success.
+            console.print(f"[yellow]{outcome['repo']}: {outcome['error']}[/yellow]")
     return pushed_repos

@@ -33,8 +33,7 @@ def _finish_with_push(
         str(output_base() / "workflows"),
         branch=workflow_branch,
         dry_run=False,
-        readiness_ok=True,
-        approver_ok=True,
+        db=ctx.db,
     )
     stats["workflow_branch"] = workflow_branch
     stats["workflow_files"] = push.get("workflow_files") or []
@@ -192,8 +191,7 @@ class PipelinesScopeHandler:
                 str(output_base() / "workflows"),
                 branch=workflow_branch,
                 dry_run=False,
-                readiness_ok=True,
-                approver_ok=True,
+                db=ctx.db,
             )
             if push.get("pushed"):
                 stats["workflow_branch"] = workflow_branch
