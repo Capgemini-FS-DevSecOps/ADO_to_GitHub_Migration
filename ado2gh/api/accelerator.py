@@ -20,7 +20,7 @@ from ado2gh.api.errors import ConfigurationError
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.clients.gh_client import GHClient
-from ado2gh.clients.token_manager import TokenManager
+from ado2gh.clients.gh_token_manager import TokenManager
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.discovery import DiscoveryScanner
 from ado2gh.core.migration_engine import MigrationEngine

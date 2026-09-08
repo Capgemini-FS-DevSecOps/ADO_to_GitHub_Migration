@@ -149,8 +149,8 @@
 
 ### Increment 2 — `ado2gh/clients/`
 
-- [ ] T045 [US2] Review-agent decisions for `--package ado2gh/clients`; record; escalations to operator
-- [ ] T046 [US2] Clean `ado2gh/clients/` per protocol (80 functions; 68 without docstrings; `token_manager.py` must keep every token value out of docstrings and log lines — CA-003); callers in `core/`, `pipelines/`, `reporting/`, `cli/`, `api/`; verify, changelog, commit
+- [X] T045 [US2] Review-agent decisions for `--package ado2gh/clients`; record; escalations to operator
+- [X] T046 [US2] Clean `ado2gh/clients/` per protocol (80 functions; 68 without docstrings; `token_manager.py` must keep every token value out of docstrings and log lines — CA-003); callers in `core/`, `pipelines/`, `reporting/`, `cli/`, `api/`; verify, changelog, commit
 
 ### Increment 3 — `ado2gh/state/`
 

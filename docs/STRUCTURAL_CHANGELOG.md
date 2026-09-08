@@ -366,3 +366,34 @@ GAP-036). Nothing remains at the old path (FR-006a): every importer under `ado2g
 - **Exception register**: 1 row of the 29-row cap. `ado2gh/models.py::ExecutionMode.from_dry_run` keeps `bool_flag`: the review agent confirmed the tag, but the parameter is the external boolean the converter exists to translate, so the FR-012 remediation would delete the boundary converter that data-model.md mandates.
 - **Inventory**: `ado2gh` 8 functions (7 clean, 1 exception), `ado2gh/audit` 5 functions (all clean); `--pending --package` exits 0 for both; the T002 ruff set and the project ruff config report nothing; public-surface snapshot unchanged; orphan guard green.
 - **Why a worktree**: in the shared working tree `tests/feature` stalls at its 17th test whatever the code state. The cause is local runtime state, not code: `data/agent_checkpoints.db` carries a hot WAL (`-wal` 3.5 MB, `-shm`) left behind by force-killed test processes, and the LangGraph checkpointer wedges on opening it. The same tests pass in the main tree once `ADO2GH_SQLITE_PATH` points at a fresh file (28 passed, 21.9 s), and the whole suite passes in a fresh detached worktree of this tree. CI has no such file. Nothing in this commit touches that path.
+
+## 2026-09-08 — 013 Increment 2: `ado2gh/clients/`
+
+Phase 6 (US2) increment 2, run per the per-increment protocol in
+`specs/013-clean-code-arch-remediation/tasks.md`. Pre-increment inventory ref: `0c6ea27`.
+
+The review agent (`cavecrew-reviewer`) decided the package's nine proposals: four
+CONFIRM (`ADOClient._p:name_review`, `GHClient.create_repo:bool_flag`,
+`TokenManager.summary:name_review`, `ado2gh/clients/token_manager.py:module_name_review`),
+five REJECT (`GHClient.repo_exists:name_review` and `module_name_review` on the package,
+`ado_client.py`, `ado_token_manager.py`, `gh_client.py`), no ESCALATE. After the move it
+rejected `module_name_review` on the new `gh_token_manager.py`. The six REJECT lines are in
+`tag-decisions.json`; the four CONFIRM lines were acted on and their targets no longer
+exist, so the generator dropped those records at the next regeneration (it keeps a decision
+only while the decided state exists) — this entry is their record.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `ado2gh/clients/token_manager.py` | `ado2gh/clients/gh_token_manager.py` | moved | Review agent confirmed `module_name_review`: the bare name collided with `ado_token_manager.py`; the module is GitHub-specific. Class name `TokenManager` unchanged; importers in `ado2gh/clients/`, `ado2gh/cli/helpers.py`, `ado2gh/api/accelerator.py`, `tests/core/test_gh_client.py` and `docs/ARCHITECTURE.md` updated; nothing remains at the old path (FR-006a/FR-013) | yes | pass (886) | 2026-09-08 |
+| `ado2gh/clients/gh_token_manager.py` | (same) | renamed function | `TokenManager.summary` → `get_token_status` (review agent confirmed `name_review`); caller `ado2gh/cli/run_cmd.py` updated | yes | pass (886) | 2026-09-08 |
+| `ado2gh/clients/ado_client.py` | (same) | renamed function | `ADOClient._p` → `_encode_project` (review agent confirmed `name_review`); 25 internal call sites and 5 in `ado2gh/core/ado_cleanup.py` updated | yes | pass (886) | 2026-09-08 |
+| `ado2gh/clients/gh_client.py` | (same) | renamed function | `GHClient.create_repo(private: bool = True, …)` → `create_private_repo(org, repo, description)` (review agent confirmed `bool_flag`, FR-012). The flag's only caller, `ado2gh/core/scopes/git_scope.py`, always passed `private=True`; a `create_public_repo` twin would have had zero references and been deleted as `dead` at the next regeneration, so only the intent-named function that is used exists | yes | pass (886) | 2026-09-08 |
+| `ado2gh/clients/gh_client.py` | (same) | signature grouped | `put_file` and `create_pull_request` (`gt5_params`) take the existing `RepoConfig` domain object instead of `org, repo`; `put_file` looks up the existing blob SHA itself (same request sequence its only caller, `ado2gh/pipelines/push_workflows.py`, performed), dropping the `sha` parameter | yes | pass (886) | 2026-09-08 |
+| `ado2gh/clients/*.py` | (same) | docstrings and annotations | Package, class and method docstrings (Google style, R3) on all 80 functions; `-> None` on setters and `__init__`; `params`/`body`/`labels`/`reviewers`/`status_checks` typed `… \| None`; `_get`/`_post`/`_patch` return `dict[str, Any]` (GitHub `_get`: `dict[str, Any] \| list[dict[str, Any]]`, the two array endpoints) instead of `Any` (ANN401). Token managers describe credential shape in words only; no token value appears in any docstring, log line or message (CA-003) | yes | pass (886) | 2026-09-08 |
+
+- **Tests removed**: 0. Measured after the increment: 886 passed, 30 skipped, 0 failed, coverage TOTAL 58 %, in a detached worktree of this exact tree (see below).
+- **Production functions deleted**: 0. No `dead` rows in `ado2gh/clients`, so no `inventory.json@0c6ea27` pointer is needed.
+- **Exception register**: unchanged (1 row of the 29-row cap); no `# noqa` added.
+- **Coverage ratchet**: `--cov-fail-under` stays at 58 (measured TOTAL 58 %, not higher).
+- **Inventory**: `ado2gh/clients` 80 functions, all `clean`; `--pending --package ado2gh/clients` exits 0; the T002 ruff set with `max-args=5` reports nothing for the package; public-surface snapshot unchanged; orphan guard green.
+- **Why a worktree, again**: in the shared working tree the suite stalls at `tests/contract/test_agent_pev_flow_contracts.py::test_health_endpoint_contract` (`/health` → `get_compiled_graph()`), the same wedge as increment 1. Pointing `ADO2GH_SQLITE_PATH` at a fresh file makes that test pass alone but does not unblock the full run, and it makes `tests/profile/test_profile_discovery.py` (2) and `tests/profile/test_profile_scan_db.py` (1) fail because the variable overrides the `db_path` those tests pass to `sync_profile_scan_to_risk_scores` — do not set it for a full run. The whole suite passes in a fresh detached worktree with no environment overrides. Nothing in this commit touches that path.

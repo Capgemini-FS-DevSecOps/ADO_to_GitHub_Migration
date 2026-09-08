@@ -1,4 +1,4 @@
-"""Multi-token load balancer with rate-limit awareness and GitHub App auth."""
+"""GitHub multi-token load balancer with rate-limit awareness and GitHub App auth."""
 from __future__ import annotations
 
 import json
@@ -16,6 +16,17 @@ log = logging.getLogger("ado2gh")
 
 @dataclass
 class TokenInfo:
+    """One GitHub credential in the rotation pool and its last known rate-limit state.
+
+    Attributes:
+        token: The credential value. It is never written to logs or messages.
+        remaining: Requests left in the current rate-limit window, as last reported.
+        reset_at: Unix timestamp at which GitHub resets the window.
+        last_checked: Unix timestamp of the last rate-limit update.
+        is_app_token: True when the credential is a short-lived App installation token.
+        app_token_expiry: Unix timestamp at which an App installation token expires.
+    """
+
     token: str
     remaining: int = 5000
     reset_at: float = 0.0
@@ -26,15 +37,31 @@ class TokenInfo:
 
 @dataclass
 class AppCredentials:
+    """GitHub App identity used to mint installation tokens.
+
+    Attributes:
+        app_id: Numeric GitHub App identifier, as a string.
+        installation_id: Installation identifier for the target organisation.
+        private_key_path: Filesystem path to the App's PEM private key.
+    """
+
     app_id: str
     installation_id: str
     private_key_path: str
 
 
 class TokenManager:
-    """Round-robin token manager with rate-limit awareness."""
+    """Round-robin GitHub token manager with rate-limit awareness.
 
-    def __init__(self):
+    Tokens are handed out in turn; one whose remaining quota is low is skipped until
+    its window resets, and when every token is exhausted ``get_token`` sleeps until
+    the soonest reset. A GitHub App may be configured instead of, or alongside,
+    personal access tokens: installation tokens are minted on demand and cached until
+    shortly before they expire.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty pool; the ``from_*`` constructors populate it."""
         self._tokens: list[TokenInfo] = []
         self._lock = threading.Lock()
         self._idx = 0
@@ -42,6 +69,18 @@ class TokenManager:
 
     @classmethod
     def from_env(cls, token_env_vars: list[str]) -> "TokenManager":
+        """Build a pool from the tokens held in the named environment variables.
+
+        Args:
+            token_env_vars: Environment variable names to read, in rotation order.
+                Unset or empty variables are skipped with a warning naming the variable.
+
+        Returns:
+            A manager holding one token per populated variable.
+
+        Raises:
+            ValueError: If none of the variables is set.
+        """
         mgr = cls()
         for var in token_env_vars:
             val = os.environ.get(var, "")
@@ -55,6 +94,14 @@ class TokenManager:
 
     @classmethod
     def from_single_token(cls, token: str) -> "TokenManager":
+        """Build a pool holding exactly one token.
+
+        Args:
+            token: The credential value.
+
+        Returns:
+            A manager that always returns that token.
+        """
         mgr = cls()
         mgr._tokens.append(TokenInfo(token=token))
         return mgr
@@ -62,6 +109,24 @@ class TokenManager:
     @classmethod
     def from_json_config(cls, config_path: str,
                          token_key: str = "target") -> "TokenManager":
+        """Build a pool from a JSON token configuration file.
+
+        The file maps ``pat_token_envs`` and ``app_token_envs`` to per-key lists of
+        environment variable names; the credentials themselves stay in the
+        environment. Each ``app_token_envs`` entry is a triple naming the variables
+        that hold the App id, the installation id and the private-key path.
+
+        Args:
+            config_path: Path to the JSON file.
+            token_key: Which entry to read, for example ``"target"`` for the GitHub side.
+
+        Returns:
+            A manager holding every token found, plus App credentials when all three
+            App variables are set.
+
+        Raises:
+            ValueError: If the file yields neither tokens nor App credentials for the key.
+        """
         mgr = cls()
         with open(config_path) as f:
             cfg = json.load(f)
@@ -86,11 +151,31 @@ class TokenManager:
         return mgr
 
     def configure_app_auth(self, app_id: str, installation_id: str,
-                           private_key_path: str):
+                           private_key_path: str) -> None:
+        """Enable GitHub App authentication for this pool.
+
+        Args:
+            app_id: Numeric GitHub App identifier, as a string.
+            installation_id: Installation identifier for the target organisation.
+            private_key_path: Filesystem path to the App's PEM private key.
+        """
         self._app_creds = AppCredentials(app_id, installation_id, private_key_path)
 
     def get_token(self) -> str:
-        """Get the next available token via round-robin with rate-limit awareness."""
+        """Return the next usable token, rotating round-robin and honouring rate limits.
+
+        A token with more than 50 requests remaining is returned at once; one whose
+        reset time has passed is treated as replenished. When every token is
+        exhausted this call sleeps until the soonest reset and then returns that
+        token. With no tokens in the pool but App credentials configured, an
+        installation token is minted instead.
+
+        Returns:
+            The credential value to send as a bearer token.
+
+        Raises:
+            ValueError: If the pool has neither tokens nor App credentials.
+        """
         with self._lock:
             if not self._tokens:
                 if self._app_creds:
@@ -123,8 +208,14 @@ class TokenManager:
 
             raise ValueError("No tokens available")
 
-    def update_rate_limit(self, token: str, remaining: int, reset_at: float):
-        """Update rate limit info after an API call."""
+    def update_rate_limit(self, token: str, remaining: int, reset_at: float) -> None:
+        """Record the rate-limit state GitHub reported for one token.
+
+        Args:
+            token: The credential the response was made with; unknown values are ignored.
+            remaining: Value of the ``x-ratelimit-remaining`` response header.
+            reset_at: Value of the ``x-ratelimit-reset`` header, a Unix timestamp.
+        """
         with self._lock:
             for t in self._tokens:
                 if t.token == token:
@@ -133,8 +224,15 @@ class TokenManager:
                     t.last_checked = time.time()
                     break
 
-    def check_rate_limits(self, api_base: str = "https://api.github.com"):
-        """Proactively check rate limits for all tokens."""
+    def check_rate_limits(self, api_base: str = "https://api.github.com") -> None:
+        """Refresh the rate-limit state of every personal access token from GitHub.
+
+        App installation tokens are skipped. A failed request leaves that token's
+        previous state untouched.
+
+        Args:
+            api_base: Base URL of the GitHub REST API.
+        """
         for t in self._tokens:
             if t.is_app_token:
                 continue
@@ -153,7 +251,20 @@ class TokenManager:
                 pass
 
     def _get_app_token(self) -> str:
-        """Generate a GitHub App installation token via JWT."""
+        """Mint, cache and return a GitHub App installation token.
+
+        A cached token is reused until one minute before it expires. Minting signs a
+        ten-minute JWT with the App's private key and exchanges it for an
+        installation token, which replaces any earlier App token in the pool.
+
+        Returns:
+            The installation token value.
+
+        Raises:
+            ValueError: If no App credentials are configured.
+            ImportError: If ``cryptography`` or ``PyJWT`` is not installed.
+            requests.HTTPError: If GitHub rejects the token request.
+        """
         if not self._app_creds:
             raise ValueError("No app credentials configured")
 
@@ -210,9 +321,18 @@ class TokenManager:
 
     @property
     def token_count(self) -> int:
+        """Number of credentials available: pooled tokens plus one for a configured App."""
         return len(self._tokens) + (1 if self._app_creds else 0)
 
-    def summary(self) -> dict:
+    def get_token_status(self) -> dict:
+        """Describe the pool for the ``token-status`` command.
+
+        Returns:
+            A mapping with ``pat_count`` (personal access tokens in the pool),
+            ``app_configured`` (whether App credentials are set) and ``tokens``, a list
+            with one entry per pooled token giving its ``remaining`` quota and whether
+            it ``is_app``. Token values are never included.
+        """
         return {
             "pat_count": len([t for t in self._tokens if not t.is_app_token]),
             "app_configured": self._app_creds is not None,

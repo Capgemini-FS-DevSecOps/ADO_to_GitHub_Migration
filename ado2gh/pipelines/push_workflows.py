@@ -122,11 +122,10 @@ def push_repo_workflows(
 
         for f in wf_files:
             rel_path = f".github/workflows/{f.name}"
-            existing_sha = gh.get_file_sha(repo.gh_org, repo.gh_repo, rel_path, branch)
             content_b64 = base64.b64encode(f.read_bytes()).decode("ascii")
             gh.put_file(
-                repo.gh_org, repo.gh_repo, rel_path, content_b64, branch,
-                f"Add migrated workflow: {f.name}", sha=existing_sha,
+                repo, rel_path, content_b64, branch,
+                f"Add migrated workflow: {f.name}",
             )
             console.print(f"  pushed {rel_path}")
 
@@ -143,8 +142,7 @@ def push_repo_workflows(
             )
         try:
             pr = gh.create_pull_request(
-                repo.gh_org, repo.gh_repo, pr_title, pr_body,
-                head=branch, base=base_branch,
+                repo, pr_title, pr_body, head=branch, base=base_branch,
             )
             result["pr_url"] = pr.get("html_url", "")
             console.print(f"[green]  PR opened: {result['pr_url']}[/green]")

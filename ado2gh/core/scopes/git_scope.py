@@ -176,8 +176,8 @@ class GitScopeHandler:
                 stats.update(self._run_gei(repo, source, ctx))
         else:
             if not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
-                ctx.gh.create_repo(
-                    repo.gh_org, repo.gh_repo, private=True,
+                ctx.gh.create_private_repo(
+                    repo.gh_org, repo.gh_repo,
                     description=f"Migrated from ADO: {repo.ado_project}/{repo.ado_repo}",
                 )
             if cm:

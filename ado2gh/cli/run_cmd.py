@@ -167,7 +167,7 @@ def register(cli):
         global_cfg, _ = ConfigLoader.load(config)
         _, gh = load_clients(global_cfg)
         gh.token_manager.check_rate_limits()
-        info = gh.token_manager.summary()
+        info = gh.token_manager.get_token_status()
         t = Table(title="Token Status", box=box.ROUNDED)
         t.add_column("Type")
         t.add_column("Remaining", justify="right")

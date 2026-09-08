@@ -14,7 +14,7 @@ def load_clients(cfg_global: dict):
     from ado2gh.clients.ado_client import ADOClient
     from ado2gh.clients.ado_token_manager import ADOTokenManager
     from ado2gh.clients.gh_client import GHClient
-    from ado2gh.clients.token_manager import TokenManager
+    from ado2gh.clients.gh_token_manager import TokenManager
 
     ado_url = os.environ.get("ADO_ORG_URL") or cfg_global.get("ado_org_url", "")
     ado_pat = os.environ.get("ADO_PAT") or cfg_global.get("ado_pat", "")

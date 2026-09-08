@@ -1,6 +1,6 @@
 """GHClient construction and token_manager access."""
 from ado2gh.clients.gh_client import GHClient
-from ado2gh.clients.token_manager import TokenManager
+from ado2gh.clients.gh_token_manager import TokenManager
 
 
 def test_gh_client_token_manager_property():

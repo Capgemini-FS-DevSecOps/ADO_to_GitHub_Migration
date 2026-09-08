@@ -40,6 +40,54 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/clients/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "package name describes primary content (API client classes); token managers are supporting utilities co-located for initialisation",
+    "state_hash": "b86f60d8c7a0468c2671d6c2c04a0a0f04fcd5bb",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/clients/ado_client.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name directly matches class name and responsibility",
+    "state_hash": "219307d1034764459ead1061876f0e6b5cb7b316",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/clients/ado_token_manager.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "prefix clearly scopes to ADO; mirrors GitHub pattern",
+    "state_hash": "e37819b31517db78819b34bdd11d35e39131e551",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/clients/gh_client.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name matches class and intent",
+    "state_hash": "990f4cc70b99152ac910a376a4a6b5aadf53eeec",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/clients/gh_client.py::GHClient.repo_exists",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "verb-based name matches body (queries existence, returns bool); unambiguous",
+    "state_hash": "32855df7c617fd697ea9ab71d7385eb4444c17c9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/clients/gh_token_manager.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name now clearly specifies GitHub scope and responsibility; parallels ado_token_manager.py",
+    "state_hash": "1ed31219b974f02ead220b8fb5b536ef1f75a4a3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/http_utils.py",
     "tag": "module_name_review",
     "decision": "reject",

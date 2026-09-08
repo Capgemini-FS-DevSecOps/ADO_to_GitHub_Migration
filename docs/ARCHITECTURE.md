@@ -211,7 +211,7 @@ Phase lookups accept `PhaseType` enum **or** plain string phase ids (e.g. `"poc"
 
 ## Token management
 
-`ado2gh/clients/token_manager.py` — round-robin PAT pool, rate-limit tracking from response headers, optional GitHub App JWT.
+`ado2gh/clients/gh_token_manager.py` — round-robin PAT pool, rate-limit tracking from response headers, optional GitHub App JWT.
 
 Multi-token env: `GH_TOKEN_1`, `GH_TOKEN_2`, …
 

@@ -121,7 +121,7 @@ class ADOCleanup:
             try:
                 # Disable by setting queueStatus to "disabled"
                 pipe_id = defn.get("id", 0)
-                url = (f"{self.ado.org_url}/{self.ado._p(repo.ado_project)}"
+                url = (f"{self.ado.org_url}/{self.ado._encode_project(repo.ado_project)}"
                        f"/_apis/build/definitions/{pipe_id}?{self.ado.API}")
                 defn["queueStatus"] = "disabled"
                 r = self.ado.session.put(url, json=defn, timeout=30)
@@ -159,7 +159,7 @@ class ADOCleanup:
             try:
                 pipe_id = defn.get("id", 0)
                 url = (
-                    f"{self.ado.org_url}/{self.ado._p(repo.ado_project)}"
+                    f"{self.ado.org_url}/{self.ado._encode_project(repo.ado_project)}"
                     f"/_apis/build/definitions/{pipe_id}?{self.ado.API}"
                 )
                 defn["queueStatus"] = "enabled"
@@ -201,7 +201,7 @@ class ADOCleanup:
                               .replace("refs/heads/", ""))
 
             # Get the latest commit on default branch for the push
-            url = (f"{self.ado.org_url}/{self.ado._p(repo.ado_project)}"
+            url = (f"{self.ado.org_url}/{self.ado._encode_project(repo.ado_project)}"
                    f"/_apis/git/repositories/{repo_id}/refs"
                    f"?filter=heads/{default_branch}&{self.ado.API}")
             refs = self.ado._get(url).get("value", [])
@@ -229,7 +229,7 @@ class ADOCleanup:
                 }],
             }
 
-            push_url = (f"{self.ado.org_url}/{self.ado._p(repo.ado_project)}"
+            push_url = (f"{self.ado.org_url}/{self.ado._encode_project(repo.ado_project)}"
                         f"/_apis/git/repositories/{repo_id}/pushes?{self.ado.API}")
             r = self.ado.session.post(push_url, json=push_body, timeout=30)
             if r.ok:
@@ -253,7 +253,7 @@ class ADOCleanup:
             source = self.ado.get_repo(repo.ado_project, repo.ado_repo)
             repo_id = source.get("id", "")
 
-            url = (f"{self.ado.org_url}/{self.ado._p(repo.ado_project)}"
+            url = (f"{self.ado.org_url}/{self.ado._encode_project(repo.ado_project)}"
                    f"/_apis/git/repositories/{repo_id}?{self.ado.API}")
             r = self.ado.session.patch(
                 url, json={"isDisabled": True}, timeout=30,
