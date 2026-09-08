@@ -273,3 +273,19 @@ resurrect a deleted feature rather than repair a regression. No production code 
 
 - **Tests removed**: 2 (SC-004 input) — 1 deleted file.
 - **Production functions deleted**: 0. Deletions in `859bb6b` and `0ec95d2` are recorded against those commits.
+
+## 2026-09-08 — 013 Phase 2 / T011 prep: Tests for the assignment live gate removed in `859bb6b`
+
+`859bb6b` deleted `ado2gh/assignments/*` and, with it, `enforce_live_gate` and the
+`assignment_id` keyword on `LiveApprovalStore.create_or_get_pending`
+(`ado2gh/api/live_approval_store.py` -33). `enforce_live_gate` now appears nowhere in
+`ado2gh/` or `services/`; the surviving live-approval flow is platform approval only.
+No production code changed.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `tests/agent/test_agent_pev_live_gate.py` | (same) | test deleted | `test_approve_calls_enforce_live_gate_before_resume` patched `enforce_live_gate` and passed `assignment_id=`, both deleted in `859bb6b`; unused `LiveApprovalStore`/`PlatformRole`/`PlatformUser` imports removed with it | yes | pass | 2026-09-08 |
+| `tests/feature/test_agent_pev_quickstart_scenarios.py` | (same) | test + class deleted | `TestQuickstartScenario9DualAndGates::test_gate_blocks_after_platform_approval` was the same assertion; the class held no other test | yes | pass | 2026-09-08 |
+
+- **Tests removed**: 2 (SC-004 input) — 0 deleted files, 2 in-place.
+- **Production functions deleted**: 0. Deletions in `859bb6b` are recorded against that commit.

@@ -238,27 +238,3 @@ class TestQuickstartScenario8Remediation:
         data = r.json()
         assert data["accelerator_reachable"] is False
         assert len(data.get("remediation_steps", [])) >= 1
-
-
-class TestQuickstartScenario9DualAndGates:
-    """Scenario 9: Platform approve then assignment gate blocks live."""
-
-    def test_gate_blocks_after_platform_approval(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("ADO2GH_STORAGE_BACKEND", "sqlite")
-        db_path = tmp_path / "gate.db"
-        monkeypatch.setenv("ADO2GH_SQLITE_PATH", str(db_path))
-        from ado2gh.api.live_approval_store import LiveApprovalStore
-        from ado2gh.auth.models import PlatformRole, PlatformUser
-
-        store = LiveApprovalStore(str(db_path))
-        operator = PlatformUser("u1", "op1", PlatformRole.OPERATOR, "Op")
-        approver = PlatformUser("u2", "admin", PlatformRole.ADMIN, "Admin")
-        row = store.create_or_get_pending(
-            operator, "agent_session", "sess_and", assignment_id="asgn_x", reason_request="live",
-        )
-        with patch("ado2gh.api.live_approval_store.enforce_live_gate") as gate:
-            from fastapi import HTTPException
-            gate.side_effect = HTTPException(status_code=409, detail={"message": "blocked"})
-            with pytest.raises(HTTPException) as exc:
-                store.approve(row["id"], approver, "approved anyway")
-            assert exc.value.status_code == 409
