@@ -86,11 +86,8 @@ markers = [
 addopts = ""
 
 [tool.coverage.run]
-omit = [
-    "ado2gh/cli/*",
-    "ado2gh/state/*",
-    "ado2gh/core/*",
-]
+# FR-027a: no omit list. Coverage is measured over the whole package so the
+# CI ratchet (--cov-fail-under in .github/workflows/ci.yml) is honest.
 
 [tool.ruff]
 line-length = 120
