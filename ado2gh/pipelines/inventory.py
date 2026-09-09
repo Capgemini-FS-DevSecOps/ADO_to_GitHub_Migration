@@ -76,6 +76,13 @@ def _pick_best_yaml(configured_path: str, repo_name: str,
     repo_norm = repo_name.lower().replace("-migration", "").replace("migration-", "")
 
     def _score(path: str) -> float:
+        """Score one candidate YAML path against both naming signals.
+
+        Returns:
+            The higher of the two basename similarity ratios, against the configured
+            path's basename and against the normalised repository name, in ``0.0``
+            to ``1.0``.
+        """
         base = path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
         return max(
             difflib.SequenceMatcher(None, base, cfg_base).ratio(),

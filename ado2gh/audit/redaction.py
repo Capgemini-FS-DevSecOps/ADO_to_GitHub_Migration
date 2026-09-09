@@ -55,6 +55,14 @@ def _mask_match(m: "re.Match[str]") -> str:
 
 
 def _is_secret_key(key: object) -> bool:
+    """Report whether a mapping key name looks like it holds a secret.
+
+    Args:
+        key: Candidate mapping key; anything that is not a string never matches.
+
+    Returns:
+        ``True`` when the lower-cased key matches the secret-name pattern.
+    """
     return isinstance(key, str) and _SECRET_KEY_RE.search(key.lower()) is not None
 
 

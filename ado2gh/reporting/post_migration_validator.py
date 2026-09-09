@@ -102,6 +102,22 @@ class PostMigrationValidator:
         return results
 
     def _validate_one(self, repo: RepoConfig, workflow_files: list[dict] | None = None) -> dict:
+        """Run every applicable check against one migrated repository.
+
+        The repository-exists check short-circuits: when the GitHub repository is
+        missing, no further check runs. The workflow and branch-protection checks
+        run only when the matching scope was migrated.
+
+        Args:
+            repo: Repository whose ADO source and GitHub target are compared.
+            workflow_files: Workflow files the migration wrote, used for the
+                read-back integrity check; ``None`` skips that read-back.
+
+        Returns:
+            A result dict holding the repository identifiers, ``gh_target``,
+            ``validated_at``, the per-check results under ``checks``, and ``overall``
+            set to the worst verdict among them.
+        """
         result: dict[str, Any] = {
             "ado_project": repo.ado_project,
             "ado_repo": repo.ado_repo,
@@ -147,6 +163,12 @@ class PostMigrationValidator:
         return result
 
     def _check_repo_exists(self, repo: RepoConfig) -> dict:
+        """Check that the GitHub target repository exists.
+
+        Returns:
+            A verdict dict with ``verdict`` and ``detail``: ``PASS`` when the
+            repository is present, ``FAIL`` when it is absent or the lookup raised.
+        """
         try:
             exists = self.gh.repo_exists(repo.gh_org, repo.gh_repo)
             return {
@@ -223,6 +245,14 @@ class PostMigrationValidator:
         }
 
     def _check_branch_count(self, repo: RepoConfig) -> dict:
+        """Compare the branch counts of the ADO source and the GitHub target.
+
+        Returns:
+            A dict with ``verdict``, ``ado_count``, ``gh_count`` and ``detail``.
+            ``PASS`` when GitHub has at least as many branches, ``WARN`` when it has
+            at least 90 % of them or when either count could not be read (reported as
+            ``-1``), and ``FAIL`` otherwise.
+        """
         try:
             ado_repo = self.ado.get_repo(repo.ado_project, repo.ado_repo)
             ado_stats = self.ado.get_repo_stats(
@@ -250,6 +280,24 @@ class PostMigrationValidator:
                 "detail": f"{ado_count - gh_count} branches missing"}
 
     def _check_workflows(self, repo: RepoConfig, workflow_files: list[dict] = None) -> dict:
+        """Compare inventoried ADO pipelines against workflows at the GitHub target.
+
+        When the counts are satisfied and ``workflow_files`` is given, each file the
+        migration wrote is also read back through the Contents API, because a count
+        alone does not prove the individual files landed.
+
+        Args:
+            repo: Repository being validated.
+            workflow_files: Workflow files the migration wrote; only those whose
+                ``repo`` names this repository are read back.
+
+        Returns:
+            A dict with ``verdict``, ``ado_pipelines``, ``gh_workflows`` and
+            ``detail``, plus ``workflow_integrity`` when the read-back ran. ``PASS``
+            when the repository has no pipelines or every workflow is present,
+            ``FAIL`` when a written file is missing from the target, and ``WARN``
+            when workflows are short or GitHub could not be read.
+        """
         ado_count = self.db.inventory_count_for_repo(repo.ado_project, repo.ado_repo)
         try:
             gh_workflows = self.gh.list_workflows(repo.gh_org, repo.gh_repo)
@@ -301,6 +349,13 @@ class PostMigrationValidator:
                 "detail": f"{ado_count - gh_count} workflows missing"}
 
     def _check_branch_protection(self, repo: RepoConfig) -> dict:
+        """Check whether the GitHub default branch has protection configured.
+
+        Returns:
+            A verdict dict with ``verdict`` and ``detail``: ``PASS`` when a
+            protection rule can be read, ``WARN`` when none is configured, which may
+            be intentional. This check never fails.
+        """
         try:
             gh_repo = self.gh.get_repo(repo.gh_org, repo.gh_repo)
             default_branch = gh_repo.get("default_branch", "main")

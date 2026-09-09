@@ -88,7 +88,12 @@ class SQLiteJobStore(JobStore):
 
     def enqueue(self, job_type: JobType, payload: dict,
                 idempotency_key: str | None = None) -> JobRecord:
-        """Add a ``pending`` job; see :meth:`JobStore.enqueue`."""
+        """Add a ``pending`` job; see :meth:`JobStore.enqueue`.
+
+        Returns:
+            The stored job record with ``pending`` status, or the job created by an
+            earlier call when ``idempotency_key`` matches one.
+        """
         now = datetime.now(timezone.utc).isoformat()
         if idempotency_key:
             existing = self.get_by_idempotency(idempotency_key)
@@ -129,7 +134,12 @@ class SQLiteJobStore(JobStore):
         return self._row_to_record(row) if row else None
 
     def claim_next(self) -> JobRecord | None:
-        """Claim the oldest ``pending`` job; see :meth:`JobStore.claim_next`."""
+        """Claim the oldest ``pending`` job; see :meth:`JobStore.claim_next`.
+
+        Returns:
+            The claimed job with its status set to ``running``, or ``None`` when no
+            job is pending.
+        """
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             row = conn.execute(
@@ -218,7 +228,12 @@ class PostgresJobStore(JobStore):
 
     def enqueue(self, job_type: JobType, payload: dict,
                 idempotency_key: str | None = None) -> JobRecord:
-        """Add a ``pending`` job; see :meth:`JobStore.enqueue`."""
+        """Add a ``pending`` job; see :meth:`JobStore.enqueue`.
+
+        Returns:
+            The stored job record with ``pending`` status, or the job created by an
+            earlier call when ``idempotency_key`` matches one.
+        """
         if idempotency_key:
             existing = self.get_by_idempotency(idempotency_key)
             if existing:
@@ -257,7 +272,12 @@ class PostgresJobStore(JobStore):
         return self._row_to_record(row) if row else None
 
     def claim_next(self) -> JobRecord | None:
-        """Claim the oldest ``pending`` job under a row lock; see :meth:`JobStore.claim_next`."""
+        """Claim the oldest ``pending`` job under a row lock; see :meth:`JobStore.claim_next`.
+
+        Returns:
+            The claimed job with its status set to ``running``, or ``None`` when no
+            job is pending.
+        """
         now = datetime.now(timezone.utc)
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
@@ -389,7 +409,12 @@ class DynamoDBJobStore(JobStore):
 
     def enqueue(self, job_type: JobType, payload: dict,
                 idempotency_key: str | None = None) -> JobRecord:
-        """Add a ``pending`` job; see :meth:`JobStore.enqueue`."""
+        """Add a ``pending`` job; see :meth:`JobStore.enqueue`.
+
+        Returns:
+            The stored job record with ``pending`` status, or the job created by an
+            earlier call when ``idempotency_key`` matches one.
+        """
         if idempotency_key:
             existing = self.get_by_idempotency(idempotency_key)
             if existing:
@@ -420,7 +445,12 @@ class DynamoDBJobStore(JobStore):
         return self._load(job_id)
 
     def claim_next(self) -> JobRecord | None:
-        """Claim a ``pending`` job found by table scan; see :meth:`JobStore.claim_next`."""
+        """Claim a ``pending`` job found by table scan; see :meth:`JobStore.claim_next`.
+
+        Returns:
+            The claimed job with its status set to ``running``, or ``None`` when no
+            job is pending.
+        """
         from boto3.dynamodb.conditions import Attr
         resp = self._table().scan(
             FilterExpression=Attr("status").eq(JobStatus.PENDING.value),

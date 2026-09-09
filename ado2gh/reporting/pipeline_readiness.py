@@ -298,6 +298,18 @@ class PipelineReadinessReport:
         }
 
     def _build_summary(self, assessments: list[dict]) -> dict:
+        """Aggregate per-pipeline assessments into the report's headline figures.
+
+        Args:
+            assessments: Assessment dicts as returned by :meth:`_assess_pipeline`.
+
+        Returns:
+            ``total_pipelines``; the ``auto``, ``assisted`` and ``manual`` conversion
+            counts; ``auto_pct`` as the percentage converted automatically, ``0``
+            when there are no pipelines; the ``by_type`` and ``by_complexity`` count
+            maps; and the effort as ``total_effort_hours`` plus
+            ``total_effort_days`` at eight hours to the day.
+        """
         total = len(assessments)
         by_conversion = defaultdict(int)
         by_type = defaultdict(int)

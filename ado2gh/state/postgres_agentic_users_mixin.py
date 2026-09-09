@@ -160,7 +160,12 @@ class PostgresAgenticUsersMixin:
         status: str | None = None,
         display_name: str | None = None,
     ) -> bool:
-        """Update the given fields of a user; see :meth:`StateDBBase.update_platform_user`."""
+        """Update the given fields of a user; see :meth:`StateDBBase.update_platform_user`.
+
+        Returns:
+            ``True`` when a row changed; ``False`` when no field was given or the
+            user does not exist.
+        """
         fields: list[str] = []
         values: list[Any] = []
         if role is not None:
@@ -230,7 +235,12 @@ class PostgresAgenticUsersMixin:
         reason_request: str | None = None,
         context_json: str | None = None,
     ) -> dict:
-        """Insert a ``pending`` approval; see :meth:`StateDBBase.create_live_execution_approval`."""
+        """Insert a ``pending`` approval; see :meth:`StateDBBase.create_live_execution_approval`.
+
+        Returns:
+            The stored approval row, still ``pending``, or an empty dict when the row
+            cannot be read back.
+        """
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -356,7 +366,12 @@ class PostgresAgenticUsersMixin:
         reason_decision: str,
         decided_at: str,
     ) -> dict | None:
-        """Record a decision; see :meth:`StateDBBase.decide_live_execution_approval`."""
+        """Record a decision; see :meth:`StateDBBase.decide_live_execution_approval`.
+
+        Returns:
+            The approval row after the decision, returned unchanged when it was
+            already decided, or ``None`` when the id is unknown.
+        """
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(

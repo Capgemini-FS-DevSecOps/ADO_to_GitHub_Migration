@@ -101,7 +101,12 @@ class ProfileScanMixin:
     def update_profile_repo_phases(
         self, profile_id: str, assignments: list[dict[str, str]],
     ) -> int:
-        """Apply per-repository phase assignments; see :meth:`StateDBBase.update_profile_repo_phases`."""
+        """Apply per-repository phase assignments; see :meth:`StateDBBase.update_profile_repo_phases`.
+
+        Returns:
+            The total number of ``profile_scan_repos`` rows updated across all
+            assignments.
+        """
         updated = 0
         with self._conn() as conn:
             for item in assignments:

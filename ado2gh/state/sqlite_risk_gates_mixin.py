@@ -14,7 +14,11 @@ class RiskGatesMixin:
     """Risk scores, phase gates and batch checkpoints; expects ``self._conn()``."""
 
     def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:
-        """Delete risk scores not in ``keys``; see :meth:`StateDBBase.prune_risk_scores_not_in`."""
+        """Delete risk scores not in ``keys``; see :meth:`StateDBBase.prune_risk_scores_not_in`.
+
+        Returns:
+            The number of risk-score rows deleted; ``0`` when ``keys`` is empty.
+        """
         if not keys:
             return 0
         with self._conn() as conn:
@@ -70,7 +74,13 @@ class RiskGatesMixin:
             ).fetchall()]
 
     def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
-        """Count repositories assigned to a phase; see :meth:`StateDBBase.count_repos_by_phase`."""
+        """Count repositories assigned to a phase; see :meth:`StateDBBase.count_repos_by_phase`.
+
+        Returns:
+            Counts keyed ``risk_scores`` (rows in ``repo_risk_scores``) and
+            ``profile_scan`` (rows in ``profile_scan_repos``, restricted to
+            ``profile_id`` when one is given).
+        """
         counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             counts["risk_scores"] = conn.execute(
@@ -96,7 +106,12 @@ class RiskGatesMixin:
         to_phase: str,
         profile_id: str | None = None,
     ) -> dict[str, int]:
-        """Move repositories between phases; see :meth:`StateDBBase.reassign_phase_repos`."""
+        """Move repositories between phases; see :meth:`StateDBBase.reassign_phase_repos`.
+
+        Returns:
+            The rows moved, keyed ``risk_scores`` and ``profile_scan`` like
+            :meth:`count_repos_by_phase`.
+        """
         updated = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             cur = conn.execute(

@@ -15,7 +15,11 @@ class PostgresRiskGatesScanMixin:
     """Risk scores, phase gates, batch checkpoints and profile scans; expects ``self._conn()``."""
 
     def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:
-        """Delete risk scores not in ``keys``; see :meth:`StateDBBase.prune_risk_scores_not_in`."""
+        """Delete risk scores not in ``keys``; see :meth:`StateDBBase.prune_risk_scores_not_in`.
+
+        Returns:
+            The number of risk-score rows deleted; ``0`` when ``keys`` is empty.
+        """
         if not keys:
             return 0
         with self._conn() as conn:
@@ -75,7 +79,13 @@ class PostgresRiskGatesScanMixin:
                 return [dict(r) for r in cur.fetchall()]
 
     def count_repos_by_phase(self, phase_id: str, profile_id: str | None = None) -> dict[str, int]:
-        """Count repositories assigned to a phase; see :meth:`StateDBBase.count_repos_by_phase`."""
+        """Count repositories assigned to a phase; see :meth:`StateDBBase.count_repos_by_phase`.
+
+        Returns:
+            Counts keyed ``risk_scores`` (rows in ``repo_risk_scores``) and
+            ``profile_scan`` (rows in ``profile_scan_repos``, restricted to
+            ``profile_id`` when one is given).
+        """
         counts: dict[str, int] = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -104,7 +114,12 @@ class PostgresRiskGatesScanMixin:
         to_phase: str,
         profile_id: str | None = None,
     ) -> dict[str, int]:
-        """Move repositories between phases; see :meth:`StateDBBase.reassign_phase_repos`."""
+        """Move repositories between phases; see :meth:`StateDBBase.reassign_phase_repos`.
+
+        Returns:
+            The rows moved, keyed ``risk_scores`` and ``profile_scan`` like
+            :meth:`count_repos_by_phase`.
+        """
         updated = {"risk_scores": 0, "profile_scan": 0}
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -242,7 +257,12 @@ class PostgresRiskGatesScanMixin:
     def update_profile_repo_phases(
         self, profile_id: str, assignments: list[dict[str, str]],
     ) -> int:
-        """Apply per-repository phase assignments; see :meth:`StateDBBase.update_profile_repo_phases`."""
+        """Apply per-repository phase assignments; see :meth:`StateDBBase.update_profile_repo_phases`.
+
+        Returns:
+            The total number of ``profile_scan_repos`` rows updated across all
+            assignments.
+        """
         updated = 0
         with self._conn() as conn:
             with conn.cursor() as cur:

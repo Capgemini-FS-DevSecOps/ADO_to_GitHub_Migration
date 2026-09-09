@@ -55,6 +55,12 @@ def rewrite_expression_string(s: str, env_keys: set[str]) -> str:
     s = _RE_ADO_PARAM.sub(r"${{ inputs.\1 }}", s)
     if env_keys:
         def _macro(m: re.Match) -> str:
+            """Rewrite one matched ADO macro reference to a GitHub expression.
+
+            Returns:
+                An ``env`` expression for the name when it is one of ``env_keys``,
+                otherwise the original matched text unchanged.
+            """
             name = m.group(1)
             return f"${{{{ env.{name} }}}}" if name in env_keys else m.group(0)
         s = _RE_ADO_MACRO.sub(_macro, s)

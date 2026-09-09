@@ -303,7 +303,13 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 return {r["status"]: r["cnt"] for r in cur.fetchall()}
 
     def get_migration_repo_counts(self) -> dict[str, int]:
-        """Return repository and pipeline totals; see :meth:`StateDBBase.get_migration_repo_counts`."""
+        """Return repository and pipeline totals; see :meth:`StateDBBase.get_migration_repo_counts`.
+
+        Returns:
+            Totals keyed ``total_repos``, ``completed_repos``, ``failed_repos`` and
+            ``total_pipelines``. A repository with both a completed and a failed scope
+            is counted in neither bucket.
+        """
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute("""
@@ -365,7 +371,11 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
     def mark_wave_run(
         self, wave_id: int, status: str, mode: ExecutionMode = ExecutionMode.LIVE,
     ) -> int:
-        """Open or close a ``wave_runs`` row; see :meth:`StateDBBase.mark_wave_run`."""
+        """Open or close a ``wave_runs`` row; see :meth:`StateDBBase.mark_wave_run`.
+
+        Returns:
+            The new run's row id when opening; ``-1`` when closing.
+        """
         now = datetime.now(timezone.utc).isoformat()
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -411,7 +421,12 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
                 ))
 
     def get_pipelines_for_repo(self, project: str, repo_name: str) -> list[PipelineMetadata]:
-        """Return a repository's pipelines; see :meth:`StateDBBase.get_pipelines_for_repo`."""
+        """Return a repository's pipelines; see :meth:`StateDBBase.get_pipelines_for_repo`.
+
+        Returns:
+            The matching pipelines ordered by pipeline id and deduplicated on it;
+            empty when the repository has none.
+        """
         with self._conn() as conn:
             with conn.cursor(cursor_factory=self._extras.RealDictCursor) as cur:
                 cur.execute(

@@ -109,6 +109,18 @@ def make_ado_git_fetcher(
     """
 
     def fetch(template_name: str, _template_ref: object, source_path: str) -> Optional[str]:
+        """Read one referenced template from the captured repository and branch.
+
+        Args:
+            template_name: Template reference exactly as written in the pipeline YAML.
+            _template_ref: Unused; present to satisfy the fetcher signature.
+            source_path: Path of the file holding the reference, used as the base for
+                resolving a relative template path.
+
+        Returns:
+            The template YAML, or ``None`` when the reference is empty, the file is
+            absent from the repository, or its content is blank.
+        """
         if not repo_id or not template_name:
             return None
         base = source_path or yaml_path or ""

@@ -194,6 +194,18 @@ class ServiceConnectionManifest:
         }
 
     def _build_summary(self, connections: list[dict]) -> dict:
+        """Aggregate mapped service connections into the manifest's headline figures.
+
+        Args:
+            connections: Mapped connection dicts carrying ``type``,
+                ``recommendation`` and ``gh_secret_names``.
+
+        Returns:
+            ``total_connections``; a ``by_type`` count map; ``oidc_eligible``, the
+            connections whose recommendation mentions OIDC; ``manual_setup_required``,
+            which is every connection because none can be migrated automatically; and
+            ``unique_secret_names``, the number of distinct GitHub secret names.
+        """
         by_type: dict[str, int] = {}
         for c in connections:
             t = c["type"]
