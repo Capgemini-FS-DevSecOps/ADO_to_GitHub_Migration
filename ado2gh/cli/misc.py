@@ -8,13 +8,34 @@ from ado2gh.logging_config import console
 from ado2gh.output_dirs import output_str
 
 
-def register(cli):
+def register(cli: click.Group) -> None:
+    """Attach the miscellaneous commands to the top-level CLI group.
+
+    Args:
+        cli: The root Click group that these commands are registered on.
+    """
+
     @cli.command("pipeline-readiness")
-    @click.option("--config", "-c", required=True)
-    @click.option("--input", "-i", "input_file", default=None)
-    @click.option("--output", "-o", default=lambda: output_str("pipeline_readiness.csv"))
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def pipeline_readiness(config, input_file, output, db):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option(
+        "--input", "-i", "input_file", default=None,
+        help="File listing the repos to assess. Defaults to the repos in the config waves.",
+    )
+    @click.option(
+        "--output", "-o", default=lambda: output_str("pipeline_readiness.csv"),
+        help="Path of the CSV report to write.",
+    )
+    @click.option(
+        "--db", default="migration_state.db", show_default=True,
+        help="Path to the migration state database file holding the pipeline inventory.",
+    )
+    def pipeline_readiness(config: str, input_file: str | None, output: str, db: str) -> None:
+        """Classify every inventoried pipeline as an automatic, assisted or manual conversion.
+
+        Each pipeline gets an effort estimate so teams can plan the conversion
+        work before committing to a migration. The full assessment is written to
+        a CSV report and a summary is printed.
+        """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
         from ado2gh.state.factory import create_state_db
@@ -24,10 +45,23 @@ def register(cli):
         console.print(report)
 
     @cli.command("service-connections")
-    @click.option("--config", "-c", required=True)
-    @click.option("--input", "-i", "input_file", default=None)
-    @click.option("--output", "-o", default=lambda: output_str("service_connections"))
-    def service_connections(config, input_file, output):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option(
+        "--input", "-i", "input_file", default=None,
+        help="File listing the repos to cover. Defaults to the repos in the config waves.",
+    )
+    @click.option(
+        "--output", "-o", default=lambda: output_str("service_connections"),
+        help="Directory the generated manifest is written to.",
+    )
+    def service_connections(config: str, input_file: str | None, output: str) -> None:
+        """Generate the ops manifest for the ADO service connections of the selected repos.
+
+        Only the names of a service connection are readable through the ADO API,
+        never its credentials, so the connections themselves cannot be migrated.
+        The manifest lists the GitHub secrets and the OIDC setup an ops team has
+        to create by hand on the target side.
+        """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.service_connection_manifest import ServiceConnectionManifest
         global_cfg, waves = ConfigLoader.load(config)
@@ -36,11 +70,29 @@ def register(cli):
         ServiceConnectionManifest(ado).generate(repos, output)
 
     @cli.command("ado-cleanup")
-    @click.option("--config", "-c", required=True)
-    @click.option("--input", "-i", "input_file", default=None)
-    @click.option("--archive", is_flag=True, default=False)
-    @click.option("--dry-run", is_flag=True, default=False)
-    def ado_cleanup(config, input_file, archive, dry_run):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option(
+        "--input", "-i", "input_file", default=None,
+        help="File listing the repos to clean up. Defaults to the repos in the config waves.",
+    )
+    @click.option(
+        "--archive", is_flag=True, default=False,
+        help="Also archive the ADO repository once its pipelines are disabled.",
+    )
+    @click.option(
+        "--dry-run", is_flag=True, default=False,
+        help="Report what would happen on the ADO side without changing anything.",
+    )
+    def ado_cleanup(
+        config: str, input_file: str | None, *, archive: bool, dry_run: bool,
+    ) -> None:
+        """Tidy up the ADO side once a migration has landed.
+
+        Disables the ADO pipelines for each repo and pushes a MIGRATION_NOTICE.md
+        redirecting readers to the GitHub repository, optionally archiving the ADO
+        repository afterwards. Use --dry-run first: it reports every action it
+        would take and changes nothing.
+        """
         from ado2gh.core.ado_cleanup import ADOCleanup
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.models import ExecutionMode
@@ -52,17 +104,35 @@ def register(cli):
         ).cleanup_repos(repos, archive_repo=archive)
 
     @cli.command("push-workflows")
-    @click.option("--config", "-c", required=True)
-    @click.option("--input", "-i", "input_file", default=None)
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option(
+        "--input", "-i", "input_file", default=None,
+        help="File listing the repos to push to. Defaults to the repos in the config waves.",
+    )
     @click.option(
         "--workflows-dir", "-d",
         default=lambda: output_str("workflows"),
         show_default="$ADO2GH_OUTPUT_DIR/workflows",
+        help="Directory holding the generated workflow YAML to push.",
     )
-    @click.option("--branch", default="ado2gh/migrated-workflows", show_default=True)
+    @click.option(
+        "--branch", default="ado2gh/migrated-workflows", show_default=True,
+        help="Branch the workflows are committed to before the pull request is opened.",
+    )
     @click.option("--base", default=None, help="Base branch (default: repo default branch)")
-    @click.option("--dry-run", is_flag=True, default=False)
-    def push_workflows(config, input_file, workflows_dir, branch, base, dry_run):
+    @click.option(
+        "--dry-run", is_flag=True, default=False,
+        help="Report what would be pushed without creating a branch or pull request.",
+    )
+    def push_workflows(  # noqa: PLR0913 - six frozen CLI options; no existing config object groups them (exception-register.md)
+        config: str,
+        input_file: str | None,
+        workflows_dir: str,
+        branch: str,
+        base: str | None,
+        *,
+        dry_run: bool,
+    ) -> None:
         """Push locally generated workflow YAML to GitHub via branch + PR."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.models import ExecutionMode

@@ -2654,5 +2654,77 @@
     "rationale": "Operator decision 2026-09-08, overriding both the review agent's ESCALATE and the REJECT recorded in review-precheck.md: the 1439-line module spanned six domains and was split into session_routes (session lifecycle CRUD, provision, remediate), message_routes, form_routes, plan_routes, execution_routes and model_routes. Decided by the operator, not the reviewer. Split executed in increment 13; HTTP surface unchanged.",
     "state_hash": "e3c704108dace4ce4c66fa74d136cd088e654234",
     "decided_by": "operator"
+  },
+  {
+    "id": "ado2gh/cli/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes the package as the CLI.",
+    "state_hash": "aa5c4f62d05bbb41f190feae6d387a1de1627437",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/discover.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes discovery-related commands (planning is closely related to discovery).",
+    "state_hash": "71d9c1c2cf88e4f9598eba993ffe96685721e804",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/helpers.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes shared helper functions.",
+    "state_hash": "c069a68d37fcb0e413340e98317f9d18d764a911",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/main.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes the main CLI entry point.",
+    "state_hash": "9ea73560646c7a0fc4e51da342cdd74511820a0d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/main.py::cli",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Re-asked in increment 11 because cleanup changed the signature to 'def cli() -> None:' and the state_hash no longer matched the pre-check. Unchanged rationale: Click group callback, 'cli' is the framework-fixed name that becomes the CLI group; only the return annotation changed.",
+    "state_hash": "6e5bcd7c3578847a5d1a3f2f26c27f405aad3235",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/migration.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Re-asked in increment 11 after the confirmed run_cmd.py move created this path. Name matches contents: the module docstring and the seven registered commands (run, status, report, rollback, export-failed, validate, token-status) are all migration execution and reporting; consistent with sibling modules discover/phase/pipelines named by domain.",
+    "state_hash": "94a7e1849d89557d214b4fa1a429209ca03c3fd6",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/misc.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes miscellaneous commands.",
+    "state_hash": "1e48c5ab11cd977c6fc046e753c83736c881e84b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/phase.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes phase-related commands.",
+    "state_hash": "2ba74f3f81d9032f2e2d03393ade1b5ba3e6f9e8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/cli/pipelines.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name appropriately describes pipeline-related commands.",
+    "state_hash": "43346df030a3863f65a46572675df0cf4cb0f876",
+    "decided_by": "cavecrew-reviewer"
   }
 ]

@@ -62,9 +62,15 @@ def _write_phase_config(config_path: str, global_cfg: dict, assigned: dict) -> P
     return out_path
 
 
-def register(cli):
+def register(cli: click.Group) -> None:
+    """Attach the ``phase`` command group to the top-level CLI group.
+
+    Args:
+        cli: The root Click group that the ``phase`` group is registered on.
+    """
+
     @cli.group("phase")
-    def phase_group():
+    def phase_group() -> None:
         """Phase orchestration: assign / plan / run / gate-check / dashboard."""
         pass
 
@@ -82,7 +88,9 @@ def register(cli):
                        "first with 'phase gate-check --override --reason \"...\"'.")
     @click.option("--db", default="migration_state.db", show_default=True,
                   help="Migration state database file.")
-    def phase_run(config, phase_name, dry_run, force, db):
+    def phase_run(
+        config: str, phase_name: str, db: str, *, dry_run: bool, force: bool,
+    ) -> None:
         """Migrate the repos assigned to one phase, in batches, with checkpoints.
 
         Every phase after poc checks the previous phase's gate before it starts.
@@ -127,7 +135,9 @@ def register(cli):
                        "on the gate record for the audit trail.")
     @click.option("--db", default="migration_state.db", show_default=True,
                   help="Migration state database file.")
-    def gate_check(config, phase_name, override, reason, db):
+    def gate_check(
+        config: str, phase_name: str, reason: str, db: str, *, override: bool,
+    ) -> None:
         """Check a phase's gate, or record an operator override of it.
 
         The gate measures how much of the phase actually succeeded against the
@@ -154,9 +164,17 @@ def register(cli):
         print_gate_result(result, phase_name)
 
     @phase_group.command("assign")
-    @click.option("--config", "-c", required=True)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def phase_assign(config, db):
+    @click.option("--config", "-c", required=True,
+                  help="Settings config file with the ADO organisation and target org.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file the risk scores are written to.")
+    def phase_assign(config: str, db: str) -> None:
+        """Risk-score every repo in the organisation and assign it to a phase.
+
+        Writes migration_phase.yaml next to the settings config, one wave per
+        non-empty phase, and stores each repo's risk score in the state
+        database. Run this before 'phase plan' and 'phase run'.
+        """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.phase.repo_scoring import score_org_repos
         from ado2gh.phase.wave_assigner import WaveAssigner
@@ -176,9 +194,12 @@ def register(cli):
             console.print(f"  {phase.value}: {len(assigned.get(phase.value, []))} repo(s)")
 
     @phase_group.command("plan")
-    @click.option("--config", "-c", required=True)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def phase_plan(config, db):
+    @click.option("--config", "-c", required=True,
+                  help="Phase config file, normally migration_phase.yaml.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file.")
+    def phase_plan(config: str, db: str) -> None:
+        """Show how many repos and waves each phase holds, without running anything."""
         from rich.panel import Panel
 
         from ado2gh.core.config_loader import ConfigLoader
@@ -194,9 +215,14 @@ def register(cli):
             ))
 
     @phase_group.command("dashboard")
-    @click.option("--config", "-c", required=True)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def phase_dashboard(config, db):
+    # Accepted for consistency with the sibling phase commands; the snapshot is
+    # read entirely from --db, so the value is never used here.
+    @click.option("--config", "-c", required=True, expose_value=False,
+                  help="Phase config file, normally migration_phase.yaml.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file the snapshot is read from.")
+    def phase_dashboard(db: str) -> None:
+        """Print a snapshot of migration progress across every phase."""
         from ado2gh.api.accelerator import Accelerator
         snap = Accelerator(db_path=db).status(db)
         console.print(snap)

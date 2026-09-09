@@ -7,18 +7,41 @@ from ado2gh.cli.helpers import load_clients
 from ado2gh.logging_config import console
 
 
-def register(cli):
+def register(cli: click.Group) -> None:
+    """Attach the ``pipelines`` command group to the top-level CLI group.
+
+    Args:
+        cli: The root Click group that the ``pipelines`` group is registered on.
+    """
+
     @cli.group("pipelines")
-    def pipelines_group():
+    def pipelines_group() -> None:
         """Pipeline inventory, plan, status, retry."""
         pass
 
     @pipelines_group.command("inventory")
-    @click.option("--config", "-c", required=True)
-    @click.option("--project", "-p", multiple=True)
-    @click.option("--parallel", default=12, show_default=True)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def pipelines_inventory(config, project, parallel, db):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option(
+        "--project", "-p", multiple=True,
+        help="ADO project to scan. Repeat to scan several; omit to scan every project.",
+    )
+    @click.option(
+        "--parallel", default=12, show_default=True,
+        help="How many pipelines to read from ADO at once.",
+    )
+    @click.option(
+        "--db", default="migration_state.db", show_default=True,
+        help="Migration state database file the inventory is written to.",
+    )
+    def pipelines_inventory(
+        config: str, project: tuple[str, ...], parallel: int, db: str,
+    ) -> None:
+        """Scan ADO projects and record every pipeline found in the state database.
+
+        Without --project every project in the organisation is scanned. The
+        inventory this writes is what `pipeline-readiness` and the pipeline
+        migration steps read.
+        """
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.core.config_loader import ConfigLoader
         global_cfg, _ = ConfigLoader.load(config)
@@ -29,20 +52,40 @@ def register(cli):
         console.print(summary)
 
     @pipelines_group.command("status")
-    @click.option("--config", "-c", required=True)
-    @click.option("--wave", "-w", type=int, required=True)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def pipelines_status(config, wave, db):
+    # Accepted for consistency with the sibling pipeline commands; the status
+    # report is read entirely from --db, so the value is never used here.
+    @click.option(
+        "--config", "-c", required=True, expose_value=False,
+        help="Path to the migration config YAML.",
+    )
+    @click.option("--wave", "-w", type=int, required=True, help="Wave number to report on.")
+    @click.option(
+        "--db", default="migration_state.db", show_default=True,
+        help="Migration state database file to read the pipeline results from.",
+    )
+    def pipelines_status(wave: int, db: str) -> None:
+        """Print the pipeline migration status for one wave."""
         from ado2gh.reporting.reporter import Reporter
         from ado2gh.state.factory import create_state_db
         Reporter(create_state_db(db)).print_pipeline_status(wave)
 
     @pipelines_group.command("retry-failed")
-    @click.option("--config", "-c", required=True)
-    @click.option("--wave", "-w", type=int, required=True)
-    @click.option("--dry-run", is_flag=True, default=False)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def pipelines_retry_failed(config, wave, dry_run, db):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option("--wave", "-w", type=int, required=True, help="Wave number to retry.")
+    @click.option(
+        "--dry-run", is_flag=True, default=False,
+        help="Report which pipelines would be retried without changing anything.",
+    )
+    @click.option(
+        "--db", default="migration_state.db", show_default=True,
+        help="Migration state database file holding the failed pipeline records.",
+    )
+    def pipelines_retry_failed(config: str, wave: int, db: str, *, dry_run: bool) -> None:
+        """Re-attempt the pipelines that failed in one wave.
+
+        Their previous failure is cleared before the wave is run again, unless
+        this is a dry run, in which case nothing is reset and nothing is pushed.
+        """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
         from ado2gh.core.wave_runner import WaveRunner

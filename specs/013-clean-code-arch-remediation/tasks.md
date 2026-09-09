@@ -194,8 +194,8 @@
 
 ### Increment 11 — `ado2gh/cli/`
 
-- [ ] T063 [US2] Review-agent decisions for `--package ado2gh/cli`; record
-- [ ] T064 [US2] Clean `ado2gh/cli/` per protocol (32 functions, 31 untyped: annotate every Click handler parameter; `--dry-run` flags unchanged, convert with `ExecutionMode.from_dry_run` on the first line — `contracts/public-contract-freeze.md`; command docstrings are help text — FR-010a; confirm `ado2gh <cmd> --help` output unchanged for every command via the existing CLI tests); verify, changelog, commit
+- [X] T063 [US2] Review-agent decisions for `--package ado2gh/cli`; record
+- [X] T064 [US2] Clean `ado2gh/cli/` per protocol (32 functions, 31 untyped: annotate every Click handler parameter; `--dry-run` flags unchanged, convert with `ExecutionMode.from_dry_run` on the first line — `contracts/public-contract-freeze.md`; command docstrings are help text — FR-010a; confirm `ado2gh <cmd> --help` output unchanged for every command via the existing CLI tests); verify, changelog, commit
 
 ### Increment 12 — `services/accelerator_api/`
 

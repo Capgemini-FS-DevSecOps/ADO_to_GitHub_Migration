@@ -8,12 +8,19 @@ from ado2gh.logging_config import console
 from ado2gh.output_dirs import output_str
 
 
-def register(cli):
+def register(cli: click.Group) -> None:
+    """Attach the discovery and planning commands to the top-level CLI group.
+
+    Args:
+        cli: The root Click group that these commands are registered on.
+    """
+
     @cli.command("discover")
-    @click.option("--config", "-c", required=True)
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
     @click.option("--output", "-o", default=lambda: output_str("discovery"),
-                  show_default="$ADO2GH_OUTPUT_DIR/discovery")
-    def discover_cmd(config, output):
+                  show_default="$ADO2GH_OUTPUT_DIR/discovery",
+                  help="Directory the discovery inventory is written to.")
+    def discover_cmd(config: str, output: str) -> None:
         """Scan ADO org and output structured inventory for planning."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.discovery import DiscoveryScanner
@@ -22,8 +29,8 @@ def register(cli):
         DiscoveryScanner(ado).scan(output)
 
     @cli.command()
-    @click.option("--config", "-c", required=True)
-    def plan(config):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    def plan(config: str) -> None:
         """Print migration plan without running."""
         from rich import box
         from rich.panel import Panel

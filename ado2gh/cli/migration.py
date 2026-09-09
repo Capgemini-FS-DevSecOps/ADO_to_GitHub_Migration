@@ -1,4 +1,12 @@
-"""Run, status, report, rollback, validate commands."""
+"""Commands that execute a migration and report on what it did.
+
+Covers the whole run-and-account-for-it half of the CLI: ``run`` executes the
+waves, ``status`` and ``report`` show where they got to, ``validate`` compares
+the ADO source against the GitHub target commit by commit, ``rollback`` undoes a
+wave or one of its scopes, ``export-failed`` writes the failures out for a
+targeted retry, and ``token-status`` shows the GitHub rate-limit headroom the
+rest of them depend on.
+"""
 from __future__ import annotations
 
 import json
@@ -12,13 +20,22 @@ from ado2gh.logging_config import console
 from ado2gh.output_dirs import output_str
 
 
-def register(cli):
+def register(cli: click.Group) -> None:
+    """Attach the migration execution and reporting commands to the CLI group.
+
+    Args:
+        cli: The root Click group that these commands are registered on.
+    """
+
     @cli.command()
-    @click.option("--config", "-c", required=True)
-    @click.option("--wave", "-w", type=int, default=None)
-    @click.option("--dry-run", is_flag=True, default=False)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def run(config, wave, dry_run, db):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option("--wave", "-w", type=int, default=None,
+                  help="Wave number to run. Omit to run every wave in the config.")
+    @click.option("--dry-run", is_flag=True, default=False,
+                  help="Report what would be migrated without creating or pushing anything.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file.")
+    def run(config: str, wave: int | None, db: str, *, dry_run: bool) -> None:
         """Execute migration wave(s). Idempotent — skips completed scopes."""
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.contracts import RunWaveRequest
@@ -46,10 +63,12 @@ def register(cli):
             )
 
     @cli.command()
-    @click.option("--config", "-c", required=True)
-    @click.option("--wave", "-w", type=int, default=None)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def status(config, wave, db):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option("--wave", "-w", type=int, default=None,
+                  help="Wave number to report on. Omit for a summary of every wave.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file the status is read from.")
+    def status(config: str, wave: int | None, db: str) -> None:
         """Show repo + pipeline migration status."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.reporter import Reporter
@@ -63,13 +82,19 @@ def register(cli):
             rep.print_all_status()
 
     @cli.command()
-    @click.option("--config", "-c", required=True)
+    # Accepted for consistency with the sibling commands; the report is built
+    # entirely from --db, so the value is never used here.
+    @click.option("--config", "-c", required=True, expose_value=False,
+                  help="Path to the migration config YAML.")
     @click.option("--output", default=lambda: output_str("migration_report.html"),
-                  show_default="$ADO2GH_OUTPUT_DIR/migration_report.html")
+                  show_default="$ADO2GH_OUTPUT_DIR/migration_report.html",
+                  help="Path of the report file to write.")
     @click.option("--format", "fmt", default="html",
-                  type=click.Choice(["html", "json", "csv"]), show_default=True)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    def report(config, output, fmt, db):
+                  type=click.Choice(["html", "json", "csv"]), show_default=True,
+                  help="Report format to generate.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file the report is built from.")
+    def report(output: str, fmt: str, db: str) -> None:
         """Generate HTML, JSON, or CSV migration report."""
         from ado2gh.reporting.csv_exporter import CSVExporter
         from ado2gh.reporting.reporter import Reporter
@@ -91,12 +116,19 @@ def register(cli):
             console.print(f"[green]JSON report -> {output}[/green]")
 
     @cli.command()
-    @click.option("--config", "-c", required=True)
-    @click.option("--wave", "-w", type=int, required=True)
-    @click.option("--dry-run", is_flag=True, default=False)
-    @click.option("--db", default="migration_state.db", show_default=True)
-    @click.option("--scopes", "-s", default=None)
-    def rollback(config, wave, dry_run, db, scopes):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option("--wave", "-w", type=int, required=True, help="Wave number to roll back.")
+    @click.option("--dry-run", is_flag=True, default=False,
+                  help="Report what would be undone without deleting or changing anything.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file.")
+    @click.option("--scopes", "-s", default=None,
+                  help="Comma-separated scopes to undo, for example "
+                       "branch_policies,pipelines. Omit to roll back the whole wave, "
+                       "which deletes the GitHub repositories it created.")
+    def rollback(
+        config: str, wave: int, db: str, scopes: str | None, *, dry_run: bool,
+    ) -> None:
         """Rollback migration artifacts — scope-targeted or full wave."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.rollback import RollbackHandler
@@ -125,11 +157,14 @@ def register(cli):
         )
 
     @cli.command("export-failed")
-    @click.option("--db", default="migration_state.db", show_default=True)
-    @click.option("--phase", "-p", default=None)
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file the failures are read from.")
+    @click.option("--phase", "-p", default=None,
+                  help="Limit the export to one phase. Omit to export every failure.")
     @click.option("--output", "-o", default=lambda: output_str("failed_repos.txt"),
-                  show_default="$ADO2GH_OUTPUT_DIR/failed_repos.txt")
-    def export_failed(db, phase, output):
+                  show_default="$ADO2GH_OUTPUT_DIR/failed_repos.txt",
+                  help="Path of the text file to write.")
+    def export_failed(db: str, phase: str | None, output: str) -> None:
         """Export failed repos as a text file for targeted retries."""
         from ado2gh.reporting.csv_exporter import CSVExporter
         from ado2gh.state.factory import create_state_db
@@ -138,12 +173,16 @@ def register(cli):
         console.print(f"[green]Failed repos -> {output}[/green]")
 
     @cli.command()
-    @click.option("--config", "-c", required=True)
-    @click.option("--input", "-i", "input_file", default=None)
-    @click.option("--db", default="migration_state.db", show_default=True)
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    @click.option("--input", "-i", "input_file", default=None,
+                  help="File listing the repos to validate. Defaults to the repos "
+                       "in the config waves.")
+    @click.option("--db", default="migration_state.db", show_default=True,
+                  help="Migration state database file.")
     @click.option("--output", "-o", default=lambda: output_str("validation_report.csv"),
-                  show_default="$ADO2GH_OUTPUT_DIR/validation_report.csv")
-    def validate(config, input_file, db, output):
+                  show_default="$ADO2GH_OUTPUT_DIR/validation_report.csv",
+                  help="Path of the CSV validation report to write.")
+    def validate(config: str, input_file: str | None, db: str, output: str) -> None:
         """Post-migration validation: compare ADO source vs GitHub target."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.post_migration_validator import PostMigrationValidator
@@ -161,8 +200,8 @@ def register(cli):
         validator.print_summary(results)
 
     @cli.command("token-status")
-    @click.option("--config", "-c", required=True)
-    def token_status(config):
+    @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
+    def token_status(config: str) -> None:
         """Show GitHub token rate limit status."""
         from rich import box
         from rich.table import Table

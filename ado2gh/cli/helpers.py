@@ -4,13 +4,38 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ado2gh.logging_config import console, log
-from ado2gh.models import DEFAULT_PHASES
+from ado2gh.models import DEFAULT_PHASES, PhaseGateResult, RepoConfig, WaveConfig
+
+if TYPE_CHECKING:  # imported lazily at runtime so `--help` stays fast
+    from ado2gh.clients.ado_client import ADOClient
+    from ado2gh.clients.gh_client import GHClient
 
 
-def load_clients(cfg_global: dict):
-    """Initialize ADO + GH clients from env vars or config."""
+def load_clients(cfg_global: dict) -> tuple[ADOClient, GHClient]:
+    """Initialize ADO + GH clients from env vars or config.
+
+    Credentials are read from the environment first and from the config's
+    ``global`` block only as a fallback. Multi-token load balancing is picked up
+    automatically when ``ADO_PAT_1..N`` or ``GH_TOKEN_1..N`` are set, and GitHub
+    App authentication is configured when ``GH_APP_ID``,
+    ``GH_APP_INSTALLATION_ID`` and ``GH_APP_PRIVATE_KEY_PATH`` are all present.
+
+    Args:
+        cfg_global: The ``global`` block of the migration config, used wherever
+            the corresponding environment variable is unset.
+
+    Returns:
+        The ADO client and the GitHub client, in that order, each wired to its
+        own token manager.
+
+    Raises:
+        SystemExit: With status 1 when no ADO organisation URL or no ADO or
+            GitHub credential can be found. The message names the missing
+            variable; no credential value is ever printed or logged.
+    """
     from ado2gh.clients.ado_client import ADOClient
     from ado2gh.clients.ado_token_manager import ADOTokenManager
     from ado2gh.clients.gh_client import GHClient
@@ -56,8 +81,23 @@ def load_clients(cfg_global: dict):
     return ADOClient(ado_url, token_manager=ado_tm), GHClient(tm)
 
 
-def load_repos(input_path: str, global_cfg: dict, waves: list = None) -> list:
-    """Load repos from --input file, or fall back to waves in config."""
+def load_repos(
+    input_path: str, global_cfg: dict, waves: list[WaveConfig] | None = None,
+) -> list[RepoConfig]:
+    """Load repos from --input file, or fall back to waves in config.
+
+    Args:
+        input_path: Path of the ``--input`` file naming the repos to act on. An
+            empty value means no file was given and the waves are used instead.
+        global_cfg: The ``global`` block of the migration config, which supplies
+            the target GitHub organisation and the default scope list.
+        waves: The waves parsed from the config, used only when no input file
+            was given.
+
+    Returns:
+        The repositories to act on. An empty list when neither source yielded
+        any, in which case a message has already been printed to the console.
+    """
     from ado2gh.core.config_loader import ConfigLoader
 
     if input_path:
@@ -79,7 +119,17 @@ def load_repos(input_path: str, global_cfg: dict, waves: list = None) -> list:
     return []
 
 
-def print_gate_result(result, phase: str):
+def print_gate_result(result: PhaseGateResult, phase: str) -> None:
+    """Print a phase gate result as a bordered panel on the console.
+
+    The panel shows the measured repo and pipeline success rates next to the
+    thresholds the phase config requires, colour-coded by outcome, followed by
+    the individual failures and the override reason when there is one.
+
+    Args:
+        result: The gate result to render, as returned by ``PhaseGateChecker``.
+        phase: The phase name to show in the panel title and heading.
+    """
     from rich.panel import Panel
 
     cfg = DEFAULT_PHASES[result.phase]

@@ -312,6 +312,10 @@
     "reason": "orphan_allowlist"
   },
   {
+    "id": "ado2gh/cli/migration.py::register",
+    "reason": "cli_command"
+  },
+  {
     "id": "ado2gh/cli/misc.py::register",
     "reason": "cli_command"
   },
@@ -321,10 +325,6 @@
   },
   {
     "id": "ado2gh/cli/pipelines.py::register",
-    "reason": "cli_command"
-  },
-  {
-    "id": "ado2gh/cli/run_cmd.py::register",
     "reason": "cli_command"
   },
   {

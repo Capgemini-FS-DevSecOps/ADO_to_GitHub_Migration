@@ -813,3 +813,67 @@ Two rows were decided by the **operator**, not the reviewer, and are recorded in
 - **Not changed, for later increments**: `agentic_routes.py` stays inside the package — moving HTTP route code out is T079. The `api → cli` import edge (GAP-021) was neither deepened nor fixed; that is T078. `LLMProviderSpec.for_cloud` became provably dead state once the client-factory split removed its only consumer — it is a dataclass field rather than an inventory row, so it was left in place for the follow-up that owns wire shapes. `services/accelerator_api` still reports 254 findings under the T002 set; that is increment 12.
 - **Concurrent work**: increment 14 (`apps/migration-ui/`) committed as `50fd533` and the inventory-tool fix `baee79d` landed before any regeneration here, so no TypeScript decision was lost — `tag-decisions.json` kept all 11 of them and the row counts for `apps/migration-ui` (198) and `services/agent` (40) were re-checked before and after every regeneration and never moved.
 - **Known stale reference, deliberately not edited**: `tests/pipeline/test_gap_004_client_self_certified_live_approval.py`'s module docstring quotes the source line `if operator_requires_live_approval(user, dry)`, which now reads `... (user, ExecutionMode.from_dry_run(dry_run=dry))`. The test is on the untouchable list, it passes, and only its prose is out of date.
+
+## 2026-09-09 — 013 Increment 11: `ado2gh/cli`
+
+Phase 6 (US2) increment 11, run per the per-increment protocol in
+`specs/013-clean-code-arch-remediation/tasks.md`. Pre-increment inventory ref: `d11d25e`.
+
+**Run alongside increments 10 and 12**, at the operator's request, and safe because the
+package is almost a leaf: nothing in `ado2gh/` or `services/` imports `ado2gh/cli` except
+`ado2gh/__main__.py` and the one `api → cli` edge GAP-021 records —
+`from ado2gh.cli.helpers import load_repos` in `ado2gh/api/validation_run.py:135,146` and
+`ado2gh/api/pipeline_steps.py:1158`. That edge was neither deepened nor removed here; T078
+owns it. `load_repos` kept its runtime signature exactly (only its annotations were
+corrected), so the importers are unaffected.
+
+The review agent (`cavecrew-reviewer`) decided the package's nine proposals: one CONFIRM,
+eight REJECT, no ESCALATE, all matching `review-precheck.md` batch B10 by `state_hash`.
+The single CONFIRM was the `module_name_review` on `ado2gh/cli/run_cmd.py`, and it was
+executed — see the table. Two rows had to be re-decided rather than reused. Executing the
+move created a fresh, undecided `module_name_review` on the new path
+`ado2gh/cli/migration.py`; the reviewer rejected it, on the grounds that the name now
+matches the seven commands the module registers. And `ado2gh/cli/main.py::cli` changed from
+`def cli():` to `def cli() -> None:`, so its `state_hash` no longer matched the pre-check
+and the `name_review` verdict was re-taken — REJECT again, unchanged rationale: `cli` is the
+Click group callback name and is framework-fixed. Nine decisions are recorded in
+`tag-decisions.json`. The tenth, the `run_cmd.py` CONFIRM, deliberately is not: the
+generator's `apply_decisions` prunes any decision whose target no longer exists in a package
+it walked, so a decision against a module that the confirmed move has just deleted cannot
+survive the next regeneration. The same thing happened to `ado2gh/assignments/` in increment
+1 and to `agent.ts::patchAgentExecutionMode` in increment 14; this section is the record.
+
+No function was deleted — every row has callers — so there is no FR-029 deletion pointer,
+only the move below. The package had no `mutable_default` and no inconsistent return. Its
+`--dry-run` flags are untouched and still `is_flag=True`; the four `ExecutionMode.from_dry_run`
+conversions that increments 5 and 7 had already placed at the Click boundary
+(`ado-cleanup`, `push-workflows`, `pipelines retry-failed`, `rollback`) were left exactly as
+they were and none was added or doubled. `run` and `phase run` still forward a plain
+`dry_run` bool into `RunWaveRequest` / `PhaseRunRequest`, which is what the boundary contract
+requires.
+
+| File | New Path | Change Type | Reason | Verified | Test Status | Date |
+|------|----------|-------------|--------|----------|-------------|------|
+| `ado2gh/cli/run_cmd.py` | `ado2gh/cli/migration.py` | moved (renamed) | FR-013: confirmed `module_name_review`. "run_cmd" named only the `run` command while the module also owns `status`, `report`, `rollback`, `export-failed`, `validate` and `token-status`. Module docstring rewritten to state the full responsibility. Only `ado2gh/cli/main.py` needed updating (`register_run` → `register_migration`); no test, no doc, no orphan-guard entry and no `pyproject.toml` entry referenced the old path. Pre-increment inventory: `inventory.json@d11d25e` | yes | see note | 2026-09-09 |
+| `ado2gh/cli/*.py` | (same) | annotations + docstrings | Every function annotated and documented: 118 ruff findings across the T002 set (`D1`, `ANN`, `PLR0913`, `ARG`) reduced to zero. Google-style docstrings with real `Returns:`/`Raises:` on the non-Click helpers in `helpers.py`; `TYPE_CHECKING` block there so the deliberate lazy client imports stay lazy | yes | see note | 2026-09-09 |
+| `ado2gh/cli/misc.py`, `phase.py`, `pipelines.py`, `migration.py` | (same) | boolean parameters made keyword-only | Annotating the flags turned them into boolean positional arguments and raised `FBT001` on `dry_run`, `force`, `archive` and `override`. Click invokes a callback as `callback(**ctx.params)`, so making them keyword-only clears the rule with no behaviour change, no `# noqa` and no exception row. The `@click.option` declarations are untouched | yes | see note | 2026-09-09 |
+| `ado2gh/cli/migration.py`, `phase.py`, `pipelines.py` | (same) | unused parameter dropped via `expose_value=False` | `report`, `phase dashboard` and `pipelines status` each declared `--config` as required and never read it (`ARG001` ×3). The option is frozen, so it stays; Click's own `expose_value=False` keeps it on the command line and drops it from the callback. Measured byte-identical afterwards: the `cli_commands` snapshot line, the `--help` text and the "Missing option '--config'" error | yes | see note | 2026-09-09 |
+| `ado2gh/cli/misc.py` | (same) | `gt5_params` exception | `push_workflows` takes the six frozen `push-workflows` options. `# noqa: PLR0913` with a reason, and one row added to `exception-register.md` (21 → 22, cap 29 at `totals.functions` 1483). `RUF100` confirms the suppression is live, not decorative | yes | see note | 2026-09-09 |
+
+- **`--help` changed on 22 of 24 command pages, all additively.** FR-010a puts the parameter
+  documentation in the option `help=` strings rather than in the rendered docstring, so nearly
+  every option gained one, and the nine commands that had no docstring at all gained a help
+  body: `pipelines inventory`, `pipelines status`, `pipelines retry-failed`, `phase assign`,
+  `phase plan`, `phase dashboard`, `pipeline-readiness`, `service-connections`, `ado-cleanup`.
+  The three group pages (`ado2gh`, `ado2gh pipelines`, `ado2gh phase`) changed only because
+  those new short-helps now appear in their command lists. **`ado2gh phase run` and
+  `ado2gh phase gate-check` are byte-identical** — both already carried full docstrings and
+  option help from the GAP-009/GAP-017 work, and were touched only on their `def` lines.
+  Every existing docstring was preserved verbatim. No test in the repository asserts `--help`
+  output; verified by grep over `tests/` before and after.
+- **Frozen surface intact.** `tests/contract/test_public_surface_snapshot.py` passes unchanged:
+  no option was added, removed, renamed, retyped, re-defaulted, and no `is_flag` or `multiple`
+  changed. `expose_value` and `help` are not among the seven fields the collector records.
+- **Inventory**: `ado2gh/cli` 10 rows, all tag-free — nine `clean`, one `exception`
+  (`misc.py::register`, carrying the nested `push_workflows` finding).
+  `--pending --package ado2gh/cli` exits 0.
