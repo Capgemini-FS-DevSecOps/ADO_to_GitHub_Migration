@@ -188,6 +188,7 @@ def ssl_error_type() -> type[Exception]:
 
 
 def _parse_agent_json(text: str) -> dict[str, Any]:
+    """Return the agent JSON in a model reply, stripping code fences and rewriting an action key to tool_calls."""
     if not text:
         return {}
     cleaned = text.strip()
@@ -217,6 +218,7 @@ def _parse_agent_json(text: str) -> dict[str, Any]:
 
 
 def _extract_openai_message_text(payload: dict[str, Any]) -> str:
+    """Return the assistant text from an OpenAI-shaped payload, joining the text parts when content is a list."""
     choices = payload.get("choices") or []
     if choices:
         message = choices[0].get("message") or {}
@@ -264,6 +266,7 @@ def _gemini_payload_has_function_call(payload: dict[str, Any]) -> bool:
 
 
 def _extract_gemini_text(payload: dict[str, Any]) -> str:
+    """Return the text of the first Gemini candidate part that carries any, or an empty string when none does."""
     for candidate in payload.get("candidates") or []:
         content = candidate.get("content") or {}
         for part in content.get("parts") or []:
@@ -314,6 +317,7 @@ def _infer_capabilities(provider: str, payload: dict[str, Any]) -> dict[str, Any
 
 
 def _require_agent_capabilities(provider: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the capabilities inferred from a payload, raising AgentCapabilityProbeError if it shows no tool call."""
     caps = _infer_capabilities(provider, payload)
     if not caps or not caps.get("supports_tool_calling"):
         raise AgentCapabilityProbeError(_AGENT_CAPABILITY_MESSAGE)
@@ -457,6 +461,7 @@ def _validate_local_openai_compatible(
 
 
 def _validate_anthropic(api_key: str, model_id: str) -> dict[str, Any]:
+    """Return capability flags for an Anthropic model, probing it for a tool call and then for that call as JSON."""
     with build_cloud_llm_http_client() as client:
         response = client.post(
             "https://api.anthropic.com/v1/messages",
@@ -500,6 +505,7 @@ def _validate_anthropic(api_key: str, model_id: str) -> dict[str, Any]:
 
 
 def _validate_ollama(base_url: str, model_id: str, api_key: str = "") -> dict[str, Any]:
+    """Return capability flags for an Ollama model, trying its OpenAI-compatible endpoint then its native chat API."""
     resolved = resolve_local_service_url(base_url)
     headers: dict[str, str] | None = None
     if api_key:
@@ -537,6 +543,7 @@ def _validate_ollama(base_url: str, model_id: str, api_key: str = "") -> dict[st
 
 
 def _validate_gemini(api_key: str, model_id: str, base_url: str = "") -> dict[str, Any]:
+    """Return capability flags for a Gemini model, probing generateContent for a function call and then for JSON."""
     spec = get_provider_spec("google_gemini")
     root = (base_url or (spec.default_base_url if spec else "")).rstrip("/")
     with build_cloud_llm_http_client() as client:
@@ -576,6 +583,7 @@ def _validate_gemini(api_key: str, model_id: str, base_url: str = "") -> dict[st
 
 
 def _validate_ambient_platform(body: dict[str, Any]) -> dict[str, Any]:
+    """Return a verdict for a platform-supplied model, passing only when its cloud credential source is approved."""
     from ado2gh.api.credentials.cloud_credential_probe import probe_provider
     from ado2gh.api.credentials.cloud_credentials_store import CloudCredentialsStore
 
@@ -605,6 +613,7 @@ def _validate_ambient_platform(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
+    """Return a verdict for a model configuration, dispatching to its provider's validator and classifying failures."""
     provider = body.get("provider", "")
     model_id = body.get("model_id", "")
     api_key = (body.get("api_key") or "").strip()
@@ -763,6 +772,7 @@ def validate_saved(
     key = f"saved|{model_id}"
 
     def _run() -> dict[str, Any]:
+        """Return the provider verdict for the saved model, recording its status and any capabilities in the store."""
         result = _run_provider_check(body)
         if result["status"] == "passed":
             caps = result.get("capabilities")
