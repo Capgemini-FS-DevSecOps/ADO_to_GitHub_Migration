@@ -164,8 +164,8 @@
 
 ### Increment 5 — `ado2gh/pipelines/`
 
-- [ ] T051 [US2] Review-agent decisions for `--package ado2gh/pipelines`; record
-- [ ] T052 [US2] Clean `ado2gh/pipelines/` per protocol (77 functions; the task-mapping tables in `ado2gh/pipelines/transform/` are data, not functions — list them as excluded in `inventory-summary.md`); callers in `core/`, `reporting/`, `api/`, `agents/`, `cli/`; verify, changelog, commit
+- [X] T051 [US2] Review-agent decisions for `--package ado2gh/pipelines`; record
+- [X] T052 [US2] Clean `ado2gh/pipelines/` per protocol (77 functions; the task-mapping tables in `ado2gh/pipelines/transform/` are data, not functions — list them as excluded in `inventory-summary.md`); callers in `core/`, `reporting/`, `api/`, `agents/`, `cli/`; verify, changelog, commit
 
 ### Increment 6 — `ado2gh/reporting/`
 
