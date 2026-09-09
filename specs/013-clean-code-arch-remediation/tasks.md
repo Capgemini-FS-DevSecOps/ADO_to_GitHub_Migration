@@ -169,8 +169,8 @@
 
 ### Increment 6 — `ado2gh/reporting/`
 
-- [ ] T053 [US2] Review-agent decisions for `--package ado2gh/reporting`; record
-- [ ] T054 [US2] Clean `ado2gh/reporting/` per protocol (39 functions); callers in `api/`, `cli/`, `services/accelerator_api/`; verify, changelog, commit
+- [X] T053 [US2] Review-agent decisions for `--package ado2gh/reporting`; record
+- [X] T054 [US2] Clean `ado2gh/reporting/` per protocol (39 functions); callers in `api/`, `cli/`, `services/accelerator_api/`; verify, changelog, commit
 
 ### Increment 7 — `ado2gh/core/`
 
