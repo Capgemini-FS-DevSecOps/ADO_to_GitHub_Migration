@@ -440,6 +440,118 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/reporting/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "The package re-exports five report and analysis classes; reporting describes them.",
+    "state_hash": "e60a7f34638d4ba31ef8ba89dc329996864c4209",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/csv_exporter.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Holds CSVExporter, which serialises migration data to CSV; the name matches.",
+    "state_hash": "32ac5cc7097c09b4d6b26a37a83f458036b98f84",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/pipeline_readiness.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Holds PipelineReadinessReport and workflow_push_readiness, both about pipeline conversion readiness.",
+    "state_hash": "0b84cb459806430ba46bab1d9f58cdb8c8eca55d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/pipeline_readiness.py::PipelineReadinessReport._assess_pipeline",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Returns assessment data for a single pipeline (conversion level, blockers, warnings, effort hours); the name states exactly that.",
+    "state_hash": "976f92fd7b045a6612d377da6921bf35ec4703d8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/pipeline_readiness.py::workflow_push_readiness",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Decides whether a live workflow push to a repo may proceed by consulting pipeline readiness; the name matches the GAP-016 push gate it serves.",
+    "state_hash": "e0feea60c5b72b7aabe56b7d077c4f30eda86642",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/post_migration_validator.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Holds PostMigrationValidator, which compares ADO source against the GitHub target after migration.",
+    "state_hash": "b739c3d9286a5d29eab1f38b99364b1088ddfe47",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Holds Reporter plus its console and HTML helpers; reporter describes them.",
+    "state_hash": "1acf59dba69886ab0f1edb589e9af7106375ed94",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_colour",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Applies Rich colour markup to a status string; the name is accurate and the British spelling is fine.",
+    "state_hash": "f920fd446fc911e82a66d7b966bc027d54364ebe",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_fmt_ts",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Formats an ISO timestamp for display; fmt and ts are conventional abbreviations here.",
+    "state_hash": "821191c844823aa7da5cf34cf3d171aed8c05d85",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_complexity_badge",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Builds the HTML badge span for a complexity level; the name describes the output.",
+    "state_hash": "3e8906946460cc85ebdcad8d5afb76d6874a89d2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_pipeline_rows",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Builds the HTML table rows for pipeline migrations; the name describes the output.",
+    "state_hash": "6f6b639231eb4b9a5f5ef87bd2b6176a2e8d946d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_repo_rows",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Builds the HTML table rows for repo migrations; the name describes the output.",
+    "state_hash": "ffb845b847328a800beea3733b1b1f79232f1ea5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_status_badge",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Builds the HTML badge span for a migration status; the name describes the output.",
+    "state_hash": "13c34a33552bf70b957d4cf852aebb9f65a3341f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/service_connection_manifest.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Holds ServiceConnectionManifest, which writes the service connection ops manifest; deprecation does not make the name wrong.",
+    "state_hash": "122459f6fd5c1a87089ccf7c31e77609038f7c17",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/",
     "tag": "module_name_review",
     "decision": "reject",
