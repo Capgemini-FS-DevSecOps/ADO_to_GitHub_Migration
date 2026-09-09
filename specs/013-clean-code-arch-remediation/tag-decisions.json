@@ -216,19 +216,227 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/phase/risk_scorer.py::RiskScorer._s",
-    "tag": "name_review",
-    "decision": "confirm",
-    "rationale": "_s gives no hint that it applies a signal scoring function and returns a RiskSignal; renamed to _score_signal in increment 4",
-    "state_hash": "edd56ed11dc425599dace3de04a29fefbefdaca4",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/phase/wave_assigner.py",
     "tag": "module_name_review",
     "decision": "reject",
     "rationale": "contains WaveAssigner: distributes scored repos into phases",
     "state_hash": "6dd2e65bf26d2ad072a9d4cc8e73dc5c440ea078",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "pipelines describes the package: it extracts, transforms, validates and pushes ADO pipelines.",
+    "state_hash": "8ce98bf352b7454b985511e9a9db37f98fed6eda",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/extractor.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes its single responsibility: extract pipeline metadata from raw ADO API responses.",
+    "state_hash": "1d7c4a4c64b08c45805cc93abf9a669416d514b8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/inventory.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes the scan that stores the ADO pipeline inventory in the state store.",
+    "state_hash": "49260aed04a64d5b1506e885ee7dd6e06448a282",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/inventory.py::PipelineInventoryBuilder._enrich_build_pipeline",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes what it does: fetch the full definition and YAML for one build pipeline and enrich the metadata.",
+    "state_hash": "1abb6e79d40ef56ad19b8894257f841f431354c0",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/inventory.py::PipelineInventoryBuilder.build_for_projects",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "include_releases is a data filter choosing which pipeline types to scan, not a mode switch.",
+    "state_hash": "76516c78c3d5cf2ee993b5fd0e474f559ba87baa",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/push_workflows.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes pushing generated workflow YAML to destination GitHub repos.",
+    "state_hash": "e7939264bee057b5fb192a1695021c9207a3043b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/push_workflows.py::remote_workflow_files",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes the return value: workflow filenames on GitHub for a given branch.",
+    "state_hash": "1b90b60729cce2c71c8066c8b7505b7f1dbd4ee2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/repo_association.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes associating ADO pipelines with source repositories.",
+    "state_hash": "124e55a038eeac6aebb4a5d042ea0914d0c5355e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/repo_association.py::pipeline_belongs_to_repo",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes the predicate: whether a pipeline row should be treated as part of a repo.",
+    "state_hash": "49c2720aaf7d003c382c057809452020ecefc43e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/resolve/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "resolve describes the subpackage: it resolves ADO pipeline template references.",
+    "state_hash": "58dcc2fc67f33819ad30909be05cc83557ca3670",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/resolve/template_resolver.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes resolving extends and inline template references.",
+    "state_hash": "434e894194920d0891cee03585b6318458d843a3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/resolve/template_resolver.py::_deep_merge",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name is accurate and widely understood: a recursive merge of two dicts.",
+    "state_hash": "63f620d3c58b049a8644e6099f82dc9606ab50c8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/resolve/template_resolver.py::_inline_template_body",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes the action: return the list items of a template to splice into the parent list.",
+    "state_hash": "929dbf664ab87f245de00d5da459bcf04ac88da9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/task_scanner.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes scanning ADO pipeline YAML for tasks and service connection references.",
+    "state_hash": "fbf07d0a72f54863b56cca88f4f3ee8d52955ca6",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/task_scanner.py::enrich_pipeline_readiness",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes the in-place population of unsupported_tasks and service_connections.",
+    "state_hash": "7f1c11a3f09469e8dc6e8cc1f337a0cdf307e473",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "transform describes the subpackage: it turns ADO pipeline constructs into GitHub Actions equivalents.",
+    "state_hash": "f61a4a490646b61f170e858dbf97684a3348dc64",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/expressions.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes rewriting ADO pipeline expression syntax for GitHub Actions.",
+    "state_hash": "5c0c0c3918f1465fa2a8b1ce97ba43dd2f67f930",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/job_graph.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes building the job graph that preserves multi-job ADO stages with dependency edges.",
+    "state_hash": "d3db89f6acb99c147de4819f7ab7edb061f921c7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/job_graph.py::_jobs_for_stage",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes the return value: the GitHub Actions jobs for one ADO stage.",
+    "state_hash": "7e4f624408ba5fd9203edf07d1fe0b1bd907b18e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/job_graph.py::_slug",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "slug is the standard term for the alphanumeric-underscore form of a name and is concise for an internal helper.",
+    "state_hash": "c2035f9dc34dd4e5250eb09e4c256a41a9892b67",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/task_registry.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes the pluggable ADO task to GitHub Actions mapping registry.",
+    "state_hash": "b8ae4bff449f39bcea013b3f0caad8a0ec6c747f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/transformer.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes orchestrating the conversion of PipelineMetadata into workflow YAML.",
+    "state_hash": "ce3ae7feaf6875bae3b72bd6b6ead4a1cbb96f2e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/triggers.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes trigger and schedule conversion for GitHub Actions workflows.",
+    "state_hash": "4c7f785357356b5dee421d14b06add7e0ebbe153",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transform/triggers.py::ado_schedule_to_cron",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "the name describes the conversion: an ADO schedule dict to a cron expression.",
+    "state_hash": "50163cd0a60fe41979a537e22f9429c4bb2aff6c",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/transformer.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name is accurate: a backward-compatible re-export of PipelineTransformer and ADO_TASK_MAP.",
+    "state_hash": "478582d3cfaab2370eaf8228ccf809187ce75b96",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/validation/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "validation describes the subpackage: it validates generated GitHub Actions workflow YAML.",
+    "state_hash": "9e8c6e187fea1bbd67342f5dbb1a61075418ba7d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/validation/workflow_validator.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "the module name describes validating workflow YAML via actionlint or the YAML fallback.",
+    "state_hash": "a91a3dc984c8db26386c4c9d18dc4ddd15866e1b",
     "decided_by": "cavecrew-reviewer"
   },
   {

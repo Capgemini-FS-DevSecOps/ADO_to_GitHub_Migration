@@ -145,7 +145,7 @@ def run_pipeline_inventory_scan(
     db = create_state_db(db_path)
     if not projects:
         projects = [p["name"] for p in ado.list_projects() if p.get("name")]
-    summary = PipelineInventoryBuilder(ado, db, parallel=parallel, dry_run=False).build_for_projects(
+    summary = PipelineInventoryBuilder(ado, db, parallel=parallel).build_for_projects(
         projects,
     )
     return {

@@ -1,3 +1,4 @@
+"""Resolution of ADO pipeline template references."""
 from ado2gh.pipelines.resolve.template_resolver import (
     apply_template_resolution_to_meta,
     extract_template_refs,

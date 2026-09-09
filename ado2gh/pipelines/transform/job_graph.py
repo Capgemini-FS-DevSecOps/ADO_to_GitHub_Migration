@@ -12,6 +12,15 @@ from ado2gh.pipelines.transform.task_registry import _POOL_RUNNER_MAP
 
 
 def resolve_runner(pool_name: str) -> str:
+    """Map an ADO agent pool to a GitHub Actions runner label.
+
+    Args:
+        pool_name: Pool or VM image name from the pipeline definition, matched
+            on any known fragment it contains.
+
+    Returns:
+        The runner label, defaulting to ``ubuntu-latest``.
+    """
     if not pool_name:
         return "ubuntu-latest"
     lower = pool_name.lower()
@@ -22,6 +31,14 @@ def resolve_runner(pool_name: str) -> str:
 
 
 def _slug(name: str) -> str:
+    """Return a name in the lower-case, underscore form GitHub job ids use.
+
+    Args:
+        name: Stage or job name from the pipeline definition.
+
+    Returns:
+        The name with every character outside ``[A-Za-z0-9_]`` replaced.
+    """
     return re.sub(r"[^a-zA-Z0-9_]", "_", name).lower()
 
 
@@ -31,7 +48,21 @@ def build_multi_stage_jobs(
     unsupported: list[str],
     map_step: Callable[[dict, list, list], Optional[dict]],
 ) -> dict[str, Any]:
-    """Build GHA jobs preserving per-ADO-job graph within each stage."""
+    """Build the workflow jobs from the extracted stages.
+
+    Each ADO job becomes one GitHub Actions job, and stages run in order: the
+    first job of a stage needs the jobs of the stage before it.
+
+    Args:
+        meta: Pipeline metadata carrying the stages.
+        warnings: List that operator-facing warnings are appended to.
+        unsupported: List that unsupported task names are appended to.
+        map_step: Converts one ADO step into a workflow step, or returns
+            ``None`` when the step is dropped.
+
+    Returns:
+        The workflow ``jobs`` mapping.
+    """
     jobs: dict[str, Any] = {}
     prior_stage_job_ids: list[str] = []
 
@@ -52,6 +83,19 @@ def _jobs_for_stage(
     unsupported: list[str],
     map_step: Callable[[dict, list, list], Optional[dict]],
 ) -> dict[str, Any]:
+    """Build the workflow jobs for one ADO stage.
+
+    Args:
+        stage: Stage to convert. A stage with no jobs becomes a single job.
+        prior_stage_job_ids: Jobs of the preceding stage, which this stage
+            needs unless its own ``dependsOn`` says otherwise.
+        warnings: List that operator-facing warnings are appended to.
+        unsupported: List that unsupported task names are appended to.
+        map_step: Converts one ADO step into a workflow step.
+
+    Returns:
+        The jobs of this stage, keyed by job id.
+    """
     jobs: dict[str, Any] = {}
     raw_jobs = stage.jobs or []
 
@@ -127,6 +171,19 @@ def _build_single_job(
     unsupported: list[str],
     map_step: Callable[[dict, list, list], Optional[dict]],
 ) -> dict[str, Any]:
+    """Build one workflow job from a stage that declares no ADO jobs.
+
+    Args:
+        stage: Stage to convert.
+        prior_needs: Jobs this one needs, unless the stage declares its own
+            dependencies.
+        warnings: List that operator-facing warnings are appended to.
+        unsupported: List that unsupported task names are appended to.
+        map_step: Converts one ADO step into a workflow step.
+
+    Returns:
+        The workflow job, with the checkout step already in place.
+    """
     job: dict[str, Any] = {
         "name": stage.display_name or stage.name,
         "runs-on": resolve_runner(stage.agent_pool),
@@ -167,7 +224,19 @@ def build_jobs_from_yaml(
     map_step: Callable[[dict, list, list], Optional[dict]],
     default_jobs_fn: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
-    """Parse jobs/stages from embedded YAML — one GHA job per ADO job."""
+    """Build the workflow jobs from the pipeline YAML rather than the stages.
+
+    Args:
+        meta: Pipeline metadata carrying the YAML.
+        warnings: List that operator-facing warnings are appended to.
+        unsupported: List that unsupported task names are appended to.
+        map_step: Converts one ADO step into a workflow step.
+        default_jobs_fn: Builds the placeholder jobs used when the YAML cannot
+            be parsed or holds nothing to convert.
+
+    Returns:
+        The workflow ``jobs`` mapping.
+    """
     jobs: dict[str, Any] = {}
     try:
         parsed = yaml.safe_load(meta.yaml_content)
@@ -230,6 +299,17 @@ def build_default_jobs(
     meta: PipelineMetadata,
     warnings: list[str],
 ) -> dict[str, Any]:
+    """Build the placeholder job used when a pipeline yields no steps.
+
+    Args:
+        meta: Pipeline metadata, used for the runner and the note naming the
+            source pipeline.
+        warnings: List that operator-facing warnings are appended to.
+
+    Returns:
+        A single ``build`` job with a checkout and a TODO step, so the
+        generated workflow is valid and obviously incomplete.
+    """
     runner = resolve_runner(meta.agent_pools[0] if meta.agent_pools else "ubuntu-latest")
     warnings.append("No stages or steps were found – a placeholder job was generated.")
     return {

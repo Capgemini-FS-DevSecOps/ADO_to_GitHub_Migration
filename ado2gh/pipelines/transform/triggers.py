@@ -10,7 +10,17 @@ _DOW_BITS = [1, 2, 4, 8, 16, 32, 64]
 
 
 def build_triggers(meta: PipelineMetadata, warnings: list[str]) -> dict:
-    """Build the ``on:`` block for a GHA workflow."""
+    """Build the ``on:`` block of a GitHub Actions workflow.
+
+    Args:
+        meta: Pipeline metadata carrying the triggers and parameters.
+        warnings: List that operator-facing warnings are appended to.
+
+    Returns:
+        A mapping with the single key ``on``. ``workflow_dispatch`` is always
+        present, so a pipeline whose triggers did not survive the conversion
+        can still be run by hand.
+    """
     on: dict[str, Any] = {}
 
     if meta.trigger_branches:
@@ -64,6 +74,18 @@ def build_triggers(meta: PipelineMetadata, warnings: list[str]) -> dict:
 
 
 def ado_schedule_to_cron(sched: dict, warnings: list[str]) -> Optional[str]:
+    """Convert one ADO schedule into a cron expression.
+
+    Args:
+        sched: Schedule entry from the pipeline definition. The days may be
+            the Azure DevOps day-of-week bitmask or a list of day names.
+        warnings: List that operator-facing warnings are appended to, for an
+            unrecognised day format and for a branch filter, which GitHub
+            Actions schedules cannot honour.
+
+    Returns:
+        The cron expression for the workflow ``schedule`` trigger.
+    """
     minute = sched.get("minute", sched.get("minutes", 0))
     hour = sched.get("hour", sched.get("hours", 0))
     days_raw = sched.get("daysToRun", sched.get("days_to_build", 0))

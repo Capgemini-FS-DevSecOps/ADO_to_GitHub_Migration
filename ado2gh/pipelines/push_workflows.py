@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import requests
 
 from ado2gh.clients.gh_client import GHClient
 from ado2gh.logging_config import console
-from ado2gh.models import RepoConfig
+from ado2gh.models import ExecutionMode, RepoConfig
 from ado2gh.reporting.pipeline_readiness import workflow_push_readiness
+
+if TYPE_CHECKING:
+    from ado2gh.state.base import StateDBBase
 
 
 def remote_workflow_files(
@@ -18,7 +21,17 @@ def remote_workflow_files(
     repo: RepoConfig,
     branch: str,
 ) -> list[str]:
-    """Return workflow filenames on GitHub for the given branch, if any."""
+    """List the workflow files already present on a branch of the target repo.
+
+    Args:
+        gh: GitHub client used to read the destination repository.
+        repo: Repository pair whose GitHub side is inspected.
+        branch: Branch to read ``.github/workflows`` from.
+
+    Returns:
+        The sorted ``.yml``/``.yaml`` filenames found on the branch, or an
+        empty list when the branch or the directory does not exist.
+    """
     try:
         gh.get_branch_sha(repo.gh_org, repo.gh_repo, branch)
     except Exception:
@@ -33,7 +46,7 @@ def remote_workflow_files(
     )
 
 
-def push_repo_workflows(
+def push_repo_workflows(  # noqa: PLR0913
     gh: GHClient,
     repo: RepoConfig,
     workflows_dir: str,
@@ -41,17 +54,35 @@ def push_repo_workflows(
     branch: str = "ado2gh/migrated-workflows",
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
-    dry_run: bool = False,
-    db: Any = None,
+    mode: ExecutionMode = ExecutionMode.LIVE,
+    db: StateDBBase | None = None,
 ) -> dict[str, Any]:
-    """Push workflow YAML for one repo. Returns structured result for UI/logging.
+    """Push the locally generated workflow YAML for one repository.
 
     A live push is gated on the pipeline readiness assessment computed from
     ``db`` (the same auto/assisted/manual grading the ``pipeline-readiness``
     command reports): any pipeline this repo owns that grades ``manual`` blocks
     the push, and the reason is reported on ``result["error"]`` (GAP-016).
-    ``dry_run=True`` is the ungated preview path — it lists what would be pushed
-    without contacting GitHub.
+    ``ExecutionMode.DRY_RUN`` is the ungated preview path — it lists what would
+    be pushed without contacting GitHub.
+
+    Args:
+        gh: GitHub client used to create the branch, files and pull request.
+        repo: Repository pair being migrated.
+        workflows_dir: Root of the generated workflow tree on disk.
+        branch: Branch the workflows are committed to.
+        base: Base branch for the pull request; the repository default when
+            omitted.
+        pr_title: Title of the pull request that carries the workflows.
+        mode: ``LIVE`` pushes to GitHub, ``DRY_RUN`` only lists what would be
+            pushed.
+        db: State store the readiness assessment is read from. A live push with
+            no store fails closed, because readiness cannot be established.
+
+    Returns:
+        A result mapping with ``pushed``, ``repo``, ``workflow_branch``,
+        ``workflow_files``, ``pr_url``, ``error``, ``local_dir`` and the
+        readiness blockers and notes, for the console and the UI to report.
     """
     wf_root = Path(workflows_dir) / repo.gh_org / repo.gh_repo / ".github" / "workflows"
     result: dict[str, Any] = {
@@ -65,8 +96,8 @@ def push_repo_workflows(
         "readiness_blockers": [],
         "readiness_notes": [],
     }
-    readiness = {"blockers": [], "notes": []}
-    if not dry_run:
+    readiness: dict[str, list[str]] = {"blockers": [], "notes": []}
+    if mode is ExecutionMode.LIVE:
         readiness = workflow_push_readiness(db, repo)
         result["readiness_blockers"] = readiness["blockers"]
         result["readiness_notes"] = readiness["notes"]
@@ -91,7 +122,7 @@ def push_repo_workflows(
     )
     for f in wf_files:
         console.print(f"  - {f.name}")
-    if dry_run:
+    if mode is ExecutionMode.DRY_RUN:
         console.print("[yellow]  [DRY RUN] not pushed[/yellow]")
         result["pushed"] = False
         result["dry_run"] = True
@@ -162,26 +193,40 @@ def push_repo_workflows(
     return result
 
 
-def push_workflows_for_repos(
+def push_workflows_for_repos(  # noqa: PLR0913
     gh: GHClient,
     repos: list[RepoConfig],
     workflows_dir: str,
     branch: str = "ado2gh/migrated-workflows",
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
-    dry_run: bool = False,
-    db: Any = None,
+    mode: ExecutionMode = ExecutionMode.LIVE,
+    db: StateDBBase | None = None,
 ) -> int:
-    """Commit local workflow YAML to destination repos. Returns count pushed.
+    """Commit the local workflow YAML to every destination repository.
 
-    ``db`` supplies the pipeline readiness assessment that gates each live push.
+    Args:
+        gh: GitHub client used for every push.
+        repos: Repository pairs to push workflows for.
+        workflows_dir: Root of the generated workflow tree on disk.
+        branch: Branch the workflows are committed to.
+        base: Base branch for each pull request; the repository default when
+            omitted.
+        pr_title: Title of the pull requests that carry the workflows.
+        mode: ``LIVE`` pushes to GitHub, ``DRY_RUN`` only lists what would be
+            pushed.
+        db: State store supplying the readiness assessment that gates each live
+            push.
+
+    Returns:
+        The number of repositories whose workflows were pushed.
     """
     pushed_repos = 0
     for r in repos:
         outcome = push_repo_workflows(
             gh, r, workflows_dir,
             branch=branch, base=base, pr_title=pr_title,
-            dry_run=dry_run, db=db,
+            mode=mode, db=db,
         )
         if outcome.get("pushed"):
             pushed_repos += 1

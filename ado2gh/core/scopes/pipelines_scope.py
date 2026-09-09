@@ -7,7 +7,13 @@ from typing import Any
 
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
-from ado2gh.models import MigrationScope, MigrationStatus, PipelineMetadata, RepoConfig
+from ado2gh.models import (
+    ExecutionMode,
+    MigrationScope,
+    MigrationStatus,
+    PipelineMetadata,
+    RepoConfig,
+)
 from ado2gh.output_dirs import output_base
 from ado2gh.pipelines.push_workflows import push_repo_workflows, remote_workflow_files
 from ado2gh.pipelines.resolve.template_resolver import make_ado_git_fetcher
@@ -32,7 +38,7 @@ def _finish_with_push(
         repo,
         str(output_base() / "workflows"),
         branch=workflow_branch,
-        dry_run=False,
+        mode=ExecutionMode.LIVE,
         db=ctx.db,
     )
     stats["workflow_branch"] = workflow_branch
@@ -190,7 +196,7 @@ class PipelinesScopeHandler:
                 repo,
                 str(output_base() / "workflows"),
                 branch=workflow_branch,
-                dry_run=False,
+                mode=ExecutionMode.LIVE,
                 db=ctx.db,
             )
             if push.get("pushed"):

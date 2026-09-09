@@ -39,6 +39,12 @@ class ValidationResult:
     secret_refs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the result as a plain mapping for storage and transport.
+
+        Returns:
+            The status, errors, mode and secret references, with the lists
+            copied so the caller cannot mutate the result.
+        """
         return {
             "validation_status": self.validation_status,
             "validation_errors": list(self.validation_errors),
@@ -51,11 +57,19 @@ class WorkflowValidator:
     """Validate workflow YAML via actionlint or a structural YAML fallback."""
 
     def __init__(self, actionlint_path: str | None = None) -> None:
+        """Resolve the validator to use.
+
+        Args:
+            actionlint_path: Path to the ``actionlint`` binary. When omitted it
+                is looked up on ``PATH``, and the YAML fallback is used if it
+                is not installed.
+        """
         # Resolve once; ``None`` means actionlint is unavailable -> fallback.
         self._actionlint = actionlint_path or shutil.which("actionlint")
 
     @property
     def has_actionlint(self) -> bool:
+        """Whether ``actionlint`` was found and will be used."""
         return bool(self._actionlint)
 
     @property
@@ -64,7 +78,15 @@ class WorkflowValidator:
         return MODE_ACTIONLINT if self.has_actionlint else MODE_YAML_FALLBACK
 
     def validate(self, file_path: str | Path) -> ValidationResult:
-        """Validate the workflow file at ``file_path``."""
+        """Validate the workflow file on disk.
+
+        Args:
+            file_path: Path to the workflow YAML.
+
+        Returns:
+            The validation result. A file that cannot be read is reported as
+            invalid rather than raising.
+        """
         path = Path(file_path)
         try:
             content = path.read_text(encoding="utf-8")
@@ -74,20 +96,37 @@ class WorkflowValidator:
                 validation_errors=[f"cannot read {path}: {exc}"],
                 validation_mode=MODE_YAML_FALLBACK,
             )
-        return self.validate_content(content, file_path=str(path))
+        return self.validate_content(content)
 
-    def validate_content(self, content: str, file_path: str = "workflow.yml") -> ValidationResult:
-        """Validate raw workflow ``content`` (file_path used for actionlint)."""
+    def validate_content(self, content: str) -> ValidationResult:
+        """Validate raw workflow content.
+
+        Args:
+            content: Workflow YAML to validate.
+
+        Returns:
+            The validation result, including the secrets the workflow refers
+            to. Only the secret names are collected, never any value.
+        """
         secret_refs = sorted(set(_SECRET_REF.findall(content)))
         if self._actionlint:
-            result = self._validate_actionlint(content, file_path)
+            result = self._validate_actionlint(content)
             result.secret_refs = secret_refs
             return result
         result = self._validate_yaml_fallback(content)
         result.secret_refs = secret_refs
         return result
 
-    def _validate_actionlint(self, content: str, file_path: str) -> ValidationResult:
+    def _validate_actionlint(self, content: str) -> ValidationResult:
+        """Validate the content by piping it through ``actionlint``.
+
+        Args:
+            content: Workflow YAML to validate.
+
+        Returns:
+            The validation result. When actionlint cannot be run the YAML
+            fallback is used instead and says so in the errors.
+        """
         try:
             proc = subprocess.run(
                 [self._actionlint, "-format", "{{json .}}", "-"],
@@ -115,6 +154,16 @@ class WorkflowValidator:
 
     @staticmethod
     def _parse_actionlint_output(stdout: str, stderr: str) -> list[str]:
+        """Turn the actionlint output into readable error lines.
+
+        Args:
+            stdout: Standard output of the actionlint run, normally JSON.
+            stderr: Standard error of the actionlint run.
+
+        Returns:
+            One line per problem, prefixed with ``line:column`` when
+            actionlint reported a position.
+        """
         stdout = (stdout or "").strip()
         errors: list[str] = []
         if stdout:
@@ -133,6 +182,15 @@ class WorkflowValidator:
         return errors
 
     def _validate_yaml_fallback(self, content: str) -> ValidationResult:
+        """Validate the content structurally when actionlint is unavailable.
+
+        Args:
+            content: Workflow YAML to validate.
+
+        Returns:
+            The validation result from parsing the YAML and checking that the
+            workflow has a trigger and that every job has a runner and steps.
+        """
         errors: list[str] = []
         try:
             doc = yaml.safe_load(content)

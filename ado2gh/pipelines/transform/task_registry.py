@@ -51,17 +51,40 @@ _extra: dict[str, str] = {}
 
 
 def register_task(ado_task: str, gha_action: str) -> None:
-    """Register an additional task mapping at runtime."""
+    """Add a task mapping at runtime.
+
+    Args:
+        ado_task: Azure DevOps task name and version, such as ``Bash@3``.
+        gha_action: GitHub Actions action to use, or ``run`` when the task
+            becomes a shell step.
+    """
     _extra[ado_task] = gha_action
 
 
 def lookup_task(ado_task: str) -> Optional[str]:
-    """Resolve ADO task name to GHA action or 'run'."""
+    """Resolve an Azure DevOps task to its GitHub Actions equivalent.
+
+    Args:
+        ado_task: Azure DevOps task name and version.
+
+    Returns:
+        The action reference, ``run`` when the task becomes a shell step, or
+        ``None`` when the task has no known equivalent. Mappings registered at
+        runtime win over the built-in table.
+    """
     if ado_task in _extra:
         return _extra[ado_task]
     return ADO_TASK_MAP.get(ado_task)
 
 
 def is_run_based(ado_task: str) -> bool:
+    """Report whether a task converts to a shell step rather than an action.
+
+    Args:
+        ado_task: Azure DevOps task name and version.
+
+    Returns:
+        ``True`` when the task maps to ``run``.
+    """
     action = lookup_task(ado_task)
     return action == "run"

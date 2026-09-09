@@ -43,6 +43,22 @@ class PipelineTransformer:
         workflow_layout: str = "modular",
         fetch_template: Optional[TemplateFetcher] = None,
     ) -> dict[str, Any]:
+        """Convert one pipeline into a workflow file and its migration notes.
+
+        Args:
+            meta: Pipeline metadata to convert.
+            output_dir: Directory the workflow and notes are written to; it is
+                created when missing.
+            workflow_layout: ``modular`` names the file after the pipeline,
+                ``consolidated`` writes every pipeline to one file.
+            fetch_template: Loads referenced ADO templates so they can be
+                inlined before conversion. Templates are left unresolved when
+                it is omitted.
+
+        Returns:
+            A mapping with ``workflow_file``, ``notes_file``, ``warnings`` and
+            ``unsupported_tasks``.
+        """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -106,6 +122,17 @@ class PipelineTransformer:
     def _build_yaml_workflow(
         self, meta: PipelineMetadata, warnings: list[str], unsupported: list[str],
     ) -> dict:
+        """Build the workflow for a YAML pipeline.
+
+        Args:
+            meta: Pipeline metadata to convert.
+            warnings: List that operator-facing warnings are appended to.
+            unsupported: List that unsupported task names are appended to.
+
+        Returns:
+            The workflow document, from the extracted stages when there are
+            any, else from the YAML, else a placeholder job.
+        """
         workflow: dict[str, Any] = {"name": meta.pipeline_name}
         workflow.update(build_triggers(meta, warnings))
         env = self._build_env_block(meta)
@@ -128,6 +155,17 @@ class PipelineTransformer:
     def _build_release_workflow(
         self, meta: PipelineMetadata, warnings: list[str], unsupported: list[str],
     ) -> dict:
+        """Build the workflow for a classic release pipeline.
+
+        Args:
+            meta: Pipeline metadata to convert.
+            warnings: List that operator-facing warnings are appended to, one
+                per stage that relies on an ADO approval gate.
+            unsupported: List that unsupported task names are appended to.
+
+        Returns:
+            The workflow document, one job per release environment.
+        """
         warnings.append(
             "Release pipelines require manual review – environment "
             "approval gates have no direct GHA equivalent."
@@ -175,6 +213,17 @@ class PipelineTransformer:
     def _build_classic_workflow(
         self, meta: PipelineMetadata, warnings: list[str], unsupported: list[str],
     ) -> dict:
+        """Build the workflow for a classic build pipeline.
+
+        Args:
+            meta: Pipeline metadata to convert.
+            warnings: List that operator-facing warnings are appended to.
+            unsupported: List that unsupported task names are appended to.
+
+        Returns:
+            The workflow document, built from the extracted stages because a
+            classic pipeline has no YAML source.
+        """
         warnings.append(
             "Classic pipelines have no YAML source – the generated workflow "
             "is a best-effort conversion from extracted metadata."
@@ -196,6 +245,19 @@ class PipelineTransformer:
     def _map_step(
         self, step: dict, warnings: list[str], unsupported: list[str],
     ) -> Optional[dict]:
+        """Convert one ADO step into a workflow step.
+
+        Args:
+            step: Step from the pipeline definition.
+            warnings: List that operator-facing warnings are appended to.
+            unsupported: List that unsupported task names are appended to.
+
+        Returns:
+            The workflow step, or ``None`` when the step is dropped because it
+            is disabled, is a checkout, or is an unresolved template
+            reference. A task with no known equivalent becomes a TODO step
+            rather than disappearing.
+        """
         task_name = step.get("task", step.get("taskName", ""))
         display = step.get("displayName", step.get("name", ""))
         inputs = step.get("inputs", {})
@@ -257,6 +319,16 @@ class PipelineTransformer:
 
     @staticmethod
     def _extract_run_command(task_name: str, inputs: dict) -> str:
+        """Build the shell command for a task that becomes a ``run`` step.
+
+        Args:
+            task_name: Azure DevOps task name and version.
+            inputs: Task inputs from the pipeline definition.
+
+        Returns:
+            The command line, or an echoed TODO when the task needs an
+            operator to translate it.
+        """
         script = inputs.get("script", "")
         if script:
             return script
@@ -293,6 +365,15 @@ class PipelineTransformer:
 
     @staticmethod
     def _extract_with_block(task_name: str, inputs: dict) -> dict:
+        """Build the ``with:`` block for a task that maps to an action.
+
+        Args:
+            task_name: Azure DevOps task name and version.
+            inputs: Task inputs from the pipeline definition.
+
+        Returns:
+            The action inputs, empty when the task needs none.
+        """
         w: dict[str, str] = {}
         if task_name == "NodeTool@0":
             version = inputs.get("versionSpec", inputs.get("version", ""))
@@ -360,6 +441,16 @@ class PipelineTransformer:
 
     @staticmethod
     def _build_env_block(meta: PipelineMetadata) -> dict[str, str]:
+        """Build the workflow ``env`` block from the pipeline variables.
+
+        Args:
+            meta: Pipeline metadata carrying the variables.
+
+        Returns:
+            The environment mapping. A variable marked secret in Azure DevOps
+            becomes a ``secrets`` reference, so no secret value is written into
+            the workflow.
+        """
         env: dict[str, str] = {}
         for v in meta.variables:
             if v.is_secret:
@@ -373,6 +464,19 @@ class PipelineTransformer:
         meta: PipelineMetadata, output_dir: Path, safe_name: str,
         warnings: list[str], unsupported: list[str],
     ) -> Path:
+        """Write the operator-facing notes that accompany a workflow.
+
+        Args:
+            meta: Pipeline metadata the notes describe.
+            output_dir: Directory the notes are written to.
+            safe_name: File-safe pipeline name shared with the workflow file.
+            warnings: Warnings raised during the conversion.
+            unsupported: Task names with no known equivalent.
+
+        Returns:
+            The path of the notes file. Service connections are listed by name
+            only; no credential is written.
+        """
         notes_file = output_dir / f"{safe_name}_migration_notes.md"
         lines: list[str] = [
             f"# Migration Notes – {meta.pipeline_name}",

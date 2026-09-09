@@ -2,13 +2,22 @@
 from __future__ import annotations
 
 import posixpath
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import yaml
 
 from ado2gh.logging_config import log
 
-TemplateFetcher = Callable[[str, Any, str], Optional[str]]
+if TYPE_CHECKING:
+    from ado2gh.clients.ado_client import ADOClient
+    from ado2gh.models import PipelineMetadata
+    from ado2gh.pipelines.extractor import PipelineMetadataExtractor
+
+#: Loads the YAML of a referenced template. Called with the template name, the
+#: reference itself (a string or the mapping that carries its parameters) and
+#: the repository path of the file that holds the reference; returns the
+#: template YAML, or ``None`` when it cannot be read.
+TemplateFetcher = Callable[[str, object, str], Optional[str]]
 
 
 def resolve_templates(
@@ -17,11 +26,20 @@ def resolve_templates(
     source_path: str = "",
     max_depth: int = 5,
 ) -> str:
-    """Inline template references into a single YAML document.
+    """Inline every template reference into a single YAML document.
 
-    ``fetch_template`` receives ``(template_name, template_ref, source_path)``
-    and returns YAML text or None if unavailable. ``source_path`` is the repo
-    path of the YAML file that contains the reference (used for relative paths).
+    Args:
+        yaml_content: Pipeline YAML to resolve. Empty or unparseable content
+            is returned unchanged.
+        fetch_template: Loads the YAML of a referenced template. Without it
+            nothing is inlined.
+        source_path: Repository path of the file holding the references, used
+            to resolve relative template paths.
+        max_depth: How deep template references are followed before the
+            remaining ones are left in place and a warning is logged.
+
+    Returns:
+        The YAML with the templates inlined.
     """
     if not (yaml_content or "").strip():
         return yaml_content
@@ -45,7 +63,16 @@ def resolve_templates(
 
 
 def extract_template_refs(yaml_content: str) -> list[str]:
-    """Return template names referenced via ``extends`` or ``- template:``."""
+    """Find the templates a pipeline YAML refers to.
+
+    Args:
+        yaml_content: Pipeline YAML to scan. Empty or unparseable content
+            yields an empty list rather than an error.
+
+    Returns:
+        The sorted unique template names referenced by ``extends`` or
+        ``- template:``.
+    """
     if not (yaml_content or "").strip():
         return []
 
@@ -60,15 +87,28 @@ def extract_template_refs(yaml_content: str) -> list[str]:
 
 
 def make_ado_git_fetcher(
-    ado: Any,
+    ado: ADOClient,
     project: str,
     repo_id: str,
     branch: str,
     yaml_path: str = "",
 ) -> TemplateFetcher:
-    """Build a fetcher that loads template YAML from an ADO Git repository."""
+    """Build a fetcher that reads templates from an Azure DevOps repository.
 
-    def fetch(template_name: str, _template_ref: Any, source_path: str) -> Optional[str]:
+    Args:
+        ado: Client used to read files from the repository.
+        project: Azure DevOps project name.
+        repo_id: Repository the templates live in.
+        branch: Branch the templates are read from.
+        yaml_path: Path of the pipeline YAML, used as the base for relative
+            template paths when a reference does not carry its own.
+
+    Returns:
+        A fetcher that returns the template YAML, or ``None`` when the file is
+        missing or empty.
+    """
+
+    def fetch(template_name: str, _template_ref: object, source_path: str) -> Optional[str]:
         if not repo_id or not template_name:
             return None
         base = source_path or yaml_path or ""
@@ -86,7 +126,16 @@ def make_ado_git_fetcher(
 
 
 def resolve_template_path(template_name: str, source_path: str) -> str:
-    """Resolve a template path relative to the referencing YAML file."""
+    """Resolve a template path against the file that references it.
+
+    Args:
+        template_name: Path as written in the reference. A leading ``/`` makes
+            it repository-absolute.
+        source_path: Repository path of the referencing file.
+
+    Returns:
+        The repository path of the template, without a leading slash.
+    """
     name = (template_name or "").strip()
     if not name:
         return ""
@@ -100,7 +149,13 @@ def resolve_template_path(template_name: str, source_path: str) -> str:
     return posixpath.normpath(posixpath.join(base_dir, name))
 
 
-def _collect_refs(obj: Any, out: list[str]) -> None:
+def _collect_refs(obj: object, out: list[str]) -> None:
+    """Collect every template reference in a parsed YAML document.
+
+    Args:
+        obj: Any node of the parsed document.
+        out: List the template names are appended to.
+    """
     if isinstance(obj, dict):
         if "extends" in obj:
             ext = obj["extends"]
@@ -128,6 +183,19 @@ def _merge_extends(
     depth: int,
     max_depth: int,
 ) -> dict:
+    """Merge a document onto the template it extends.
+
+    Args:
+        doc: Parsed document, which may carry an ``extends`` key.
+        fetch_template: Loads the YAML of the extended template.
+        source_path: Repository path of the document, for relative paths.
+        depth: How many templates deep this call already is.
+        max_depth: Depth at which resolution stops.
+
+    Returns:
+        The merged document with ``extends`` removed, or the document
+        unchanged when there is nothing to merge or the template is missing.
+    """
     if depth >= max_depth:
         log.warning("template_resolver: max depth %d reached", max_depth)
         return doc
@@ -167,12 +235,24 @@ def _merge_extends(
 
 
 def _resolve_template_lists(
-    doc: Any,
+    doc: object,
     fetch_template: TemplateFetcher,
     source_path: str,
     depth: int,
     max_depth: int,
-) -> Any:
+) -> object:
+    """Inline the templates referenced from ``steps``, ``jobs`` and ``stages``.
+
+    Args:
+        doc: Any node of the parsed document.
+        fetch_template: Loads the YAML of a referenced template.
+        source_path: Repository path of the document, for relative paths.
+        depth: How many templates deep this call already is.
+        max_depth: Depth at which resolution stops.
+
+    Returns:
+        The node with its template references replaced by their contents.
+    """
     if depth >= max_depth:
         log.warning("template_resolver: max depth %d reached", max_depth)
         return doc
@@ -205,7 +285,7 @@ def _resolve_template_lists(
     return doc
 
 
-def _expand_template_list(
+def _expand_template_list(  # noqa: PLR0913
     items: list,
     list_kind: str,
     fetch_template: TemplateFetcher,
@@ -213,6 +293,21 @@ def _expand_template_list(
     depth: int,
     max_depth: int,
 ) -> list:
+    """Replace each template entry of one list with the template's contents.
+
+    Args:
+        items: Entries of a ``steps``, ``jobs`` or ``stages`` list.
+        list_kind: Which of the three lists is being expanded.
+        fetch_template: Loads the YAML of a referenced template.
+        source_path: Repository path of the referencing file.
+        depth: How many templates deep this call already is.
+        max_depth: Depth at which resolution stops.
+
+    Returns:
+        The list with every resolvable reference expanded. A reference that
+        cannot be read or holds nothing to inline is kept as it was and a
+        warning is logged, so nothing is lost silently.
+    """
     expanded: list = []
     for item in items:
         if not isinstance(item, dict) or "template" not in item:
@@ -270,7 +365,19 @@ def _inline_template_body(
     list_kind: str,
     template_ref: dict,
 ) -> list:
-    """Return list items from a template to splice into the parent list."""
+    """Return the entries of a template to splice into the parent list.
+
+    Args:
+        template_doc: Parsed template document.
+        list_kind: Which of ``steps``, ``jobs`` or ``stages`` is being
+            expanded.
+        template_ref: The reference itself, whose parameters are not
+            substituted yet.
+
+    Returns:
+        The entries to splice in, or an empty list when the template holds
+        nothing usable for this list kind.
+    """
     if list_kind in template_doc and isinstance(template_doc[list_kind], list):
         return list(template_doc[list_kind])
 
@@ -297,12 +404,27 @@ def _inline_template_body(
 
 
 def apply_template_resolution_to_meta(
-    meta: Any,
+    meta: PipelineMetadata,
     fetch_template: Optional[TemplateFetcher],
-    extractor: Optional[Any] = None,
-    var_groups: Optional[list] = None,
+    extractor: Optional[PipelineMetadataExtractor] = None,
+    var_groups: Optional[list[dict]] = None,
 ) -> list[str]:
-    """Resolve templates in ``meta.yaml_content`` and refresh ``meta.stages``."""
+    """Resolve the templates of a pipeline and refresh its stages.
+
+    Args:
+        meta: Metadata updated in place; its YAML is replaced by the resolved
+            document.
+        fetch_template: Loads the YAML of a referenced template. Without it
+            nothing is resolved.
+        extractor: Re-reads the stages from the resolved YAML. The stages are
+            left as they were when it is omitted.
+        var_groups: Variable groups defined in the project, passed on to the
+            extractor.
+
+    Returns:
+        One warning naming the inlined templates, or an empty list when the
+        pipeline referenced none.
+    """
     refs = extract_template_refs(meta.yaml_content or "")
     if not refs or not fetch_template:
         return []
@@ -323,6 +445,18 @@ def apply_template_resolution_to_meta(
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
+    """Merge one document over another.
+
+    Args:
+        base: Document being merged onto, normally the template.
+        override: Document whose values win, normally the pipeline.
+
+    Returns:
+        A new merged document. Nested mappings are merged recursively, the
+        ``steps``, ``jobs`` and ``stages`` lists are concatenated so the
+        template keeps its own entries, any other list is replaced, and
+        ``extends`` is dropped because it has been resolved.
+    """
     result = dict(base)
     for key, val in override.items():
         if key == "extends":

@@ -16,7 +16,7 @@ from rich.progress import (
 
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import PipelineMetadata
+from ado2gh.models import ExecutionMode, PipelineMetadata
 from ado2gh.pipelines.extractor import PipelineMetadataExtractor
 from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
 from ado2gh.pipelines.resolve.template_resolver import (
@@ -29,7 +29,15 @@ from ado2gh.state.db import StateDB
 
 
 def summarize_project_inventory(summary: dict[str, dict]) -> dict[str, int]:
-    """Aggregate per-project inventory counts into org-level totals."""
+    """Aggregate per-project inventory counts into organisation-level totals.
+
+    Args:
+        summary: Per-project counts as returned by
+            :meth:`PipelineInventoryBuilder.build_for_projects`.
+
+    Returns:
+        Totals keyed ``pipelines``, ``build``, ``release`` and ``projects``.
+    """
     total = sum(int(v.get("total", 0)) for v in summary.values())
     build = sum(int(v.get("build", 0)) for v in summary.values())
     release = sum(int(v.get("release", 0)) for v in summary.values())
@@ -45,12 +53,19 @@ def _pick_best_yaml(configured_path: str, repo_name: str,
                     candidates: list[str], min_score: float = 0.4) -> str:
     """Pick the most likely intended YAML when the configured one is missing.
 
-    Strategy:
-      - Single candidate: just use it.
-      - Multiple candidates: score each by max similarity between its
-        basename and (a) the configured path's basename, (b) the repo
-        name. Highest score wins, but only if it clears ``min_score`` so
-        wildly-different files aren't auto-picked.
+    A single candidate is used as is. With several candidates each is scored by
+    the highest similarity between its basename and either the configured
+    path's basename or the repository name; the best one wins, but only when it
+    clears ``min_score``, so a wildly different file is never picked silently.
+
+    Args:
+        configured_path: Repository path the pipeline definition points at.
+        repo_name: Name of the source repository, used as a second signal.
+        candidates: YAML paths that do exist in the repository.
+        min_score: Lowest similarity that still counts as a match.
+
+    Returns:
+        The chosen path, or an empty string when nothing scores well enough.
     """
     if not candidates:
         return ""
@@ -79,18 +94,35 @@ class PipelineInventoryBuilder:
     """
 
     def __init__(self, ado: ADOClient, db: StateDB,
-                 parallel: int = 12, dry_run: bool = False):
+                 parallel: int = 12,
+                 mode: ExecutionMode = ExecutionMode.LIVE) -> None:
+        """Prepare a builder for one scan.
+
+        Args:
+            ado: Client used to read pipelines from Azure DevOps.
+            db: State store the inventory rows are written to.
+            parallel: Number of worker threads used to enrich pipelines.
+            mode: ``LIVE`` writes each pipeline to the state store,
+                ``DRY_RUN`` scans and reports without writing.
+        """
         self.ado       = ado
         self.db        = db
         self.parallel  = parallel
-        self.dry_run   = dry_run
+        self.mode      = mode
         self.extractor = PipelineMetadataExtractor()
 
-    def build_for_projects(self, projects: list[str],
-                           include_releases: bool = True) -> dict:
-        """
-        Scan all pipelines across given projects.
-        Returns summary: {project: {build: N, release: N, total: N}}
+    def build_for_projects(self, projects: list[str], *,
+                           include_releases: bool = True) -> dict[str, dict]:
+        """Scan every pipeline in the given projects.
+
+        Args:
+            projects: Azure DevOps project names to scan.
+            include_releases: Whether classic release pipelines are scanned
+                alongside build pipelines.
+
+        Returns:
+            Per-project counts keyed by project name, each holding ``build``,
+            ``release`` and ``total``.
         """
         summary: dict[str, dict] = {}
         all_var_groups: dict[str, list] = {}
@@ -147,7 +179,18 @@ class PipelineInventoryBuilder:
         *,
         project_repos: list[dict] | None = None,
     ) -> int:
-        """Enumerate + enrich all build pipelines for a project in parallel."""
+        """Enumerate and enrich every build pipeline of a project in parallel.
+
+        Args:
+            project: Azure DevOps project name.
+            var_groups: Variable groups already fetched for the project.
+            project_scs: Service connections defined in the project.
+            project_repos: Repositories in the project, used to refine the
+                pipeline-to-repository association.
+
+        Returns:
+            The number of pipelines enriched.
+        """
         # Step 1: collect pipeline stubs (fast, paginated)
         stubs = list(self.ado.list_all_pipelines(project))
         if not stubs:
@@ -183,7 +226,7 @@ class PipelineInventoryBuilder:
                 for future in as_completed(futures):
                     try:
                         meta = future.result(timeout=60)
-                        if meta and not self.dry_run:
+                        if meta and self.mode is ExecutionMode.LIVE:
                             self.db.upsert_pipeline_inventory(meta)
                         count += 1
                     except Exception as e:
@@ -201,7 +244,19 @@ class PipelineInventoryBuilder:
         project_scs: list[dict] | None = None,
         project_repos: list[dict] | None = None,
     ) -> Optional[PipelineMetadata]:
-        """Fetch full definition + YAML + runs for one build pipeline."""
+        """Fetch the definition, YAML and run history for one build pipeline.
+
+        Args:
+            project: Azure DevOps project name.
+            stub: Pipeline summary from the list endpoint.
+            var_groups: Variable groups already fetched for the project.
+            project_scs: Service connections defined in the project.
+            project_repos: Repositories in the project, used to refine the
+                pipeline-to-repository association.
+
+        Returns:
+            The enriched metadata, or ``None`` when it could not be built.
+        """
         pipe_id = stub["id"]
         config  = stub.get("configuration", {})
         is_yaml = config.get("type") == "yaml"
@@ -348,6 +403,16 @@ class PipelineInventoryBuilder:
         meta: PipelineMetadata | None,
         project_repos: list[dict],
     ) -> PipelineMetadata | None:
+        """Fill in the source repository when Azure DevOps left it incomplete.
+
+        Args:
+            meta: Metadata to refine, if any was extracted.
+            project_repos: Repositories in the project to match against.
+
+        Returns:
+            The same metadata, with ``repo_name`` refined where a better match
+            was found and a migration note recording the change.
+        """
         if not meta or not project_repos:
             return meta
         inferred = infer_pipeline_repo_name(
@@ -365,13 +430,20 @@ class PipelineInventoryBuilder:
         return meta
 
     def _scan_release_pipelines(self, project: str) -> int:
-        """Enumerate + enrich all classic release pipelines."""
+        """Enumerate and enrich every classic release pipeline of a project.
+
+        Args:
+            project: Azure DevOps project name.
+
+        Returns:
+            The number of release pipelines indexed.
+        """
         count = 0
         for rel_stub in self.ado.list_all_release_pipelines(project):
             try:
                 rel_def = self.ado.get_release_definition(project, rel_stub["id"])
                 meta    = self.extractor.extract_release_pipeline(project, rel_def or rel_stub)
-                if not self.dry_run:
+                if self.mode is ExecutionMode.LIVE:
                     self.db.upsert_pipeline_inventory(meta)
                 count += 1
             except Exception as e:
