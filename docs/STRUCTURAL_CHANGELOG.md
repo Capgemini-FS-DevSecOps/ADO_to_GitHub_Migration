@@ -524,3 +524,41 @@ annotating its `db` parameter gave the function a new one.
 - **Inventory**: `ado2gh/reporting` 39 functions (40 before the dead one went), all `disposition: clean`, none `exception`. `--pending --package ado2gh/reporting` exits 0; the T002 ruff set with `max-args=5` reports nothing for the package, and neither does a default `ruff check`; public-surface snapshot unchanged (`report`, `validate`, `pipeline-readiness`, `service-connections` keep their options — only annotations and docstrings moved); orphan guard and 800-line guard green (largest file `reporter.py` at 459 lines).
 - **Not changed, for later increments**: `reporter.py` still imports `typing.Optional` for `_fmt_ts`; the package has no other legacy typing use and modernising one alias alone would widen the diff for nothing. `ServiceConnectionManifest` stays deprecated in place — its module docstring already names `analyze_deps` as the replacement and the removal is scheduled for v2.0.0, which is not this feature's call.
 - **Concurrent work**: `ado2gh/cli/phase.py`, `ado2gh/phase/repo_scoring.py`, `ado2gh/api/migration_scan.py`, `tests/unit/test_gap_052_phase_assign_broken.py` and `gap-register.md` were being edited by other agents (GAP-052 and the deployment fixes) while this increment ran; none of them is in this commit, and this increment needed no caller change in any of them. The 909-test count includes their new tests.
+
+## 2026-09-08 — 013 Increment 8: `ado2gh/auth/`
+
+Phase 6 (US2) increment 8, run per the per-increment protocol in
+`specs/013-clean-code-arch-remediation/tasks.md`. Pre-increment inventory ref: `a780fa3`.
+
+**Run out of order.** The plan orders the fourteen increments 1 → 14 because signature
+changes ripple to callers, and increment 7 (`ado2gh/core/`) had not landed when this one
+ran. It was taken out of order at the operator's request for maximum parallelism, and it
+is safe here for one reason that was checked before any edit: `ado2gh/auth` needed no
+signature change and therefore no caller update. The package has no `dry_run` boolean, no
+other boolean flag, no function over five parameters, no unused parameter and no
+inconsistent return, and the review agent rejected every rename. Nothing in this increment
+is visible outside `ado2gh/auth/`, so it cannot collide with increment 7's work on
+`ado2gh/core/` or with increments 13 and 14.
+
+The review agent (`cavecrew-reviewer`) decided the package's fifteen proposals: zero
+CONFIRM and fifteen REJECT — the eleven `name_review` proposals (`auth_enabled`, `_db`,
+`_user_from_row`, `_user_status`, `_user_public`, `permissions_for`, `_audit_auth`,
+`needs_bootstrap`, `login`, `logout`, `approve_user`, whose names already say what they
+do, several of which are frozen by `contracts/public-contract-freeze.md` anyway) and all
+four `module_name_review` proposals (the package itself and its three modules, which
+follow the same `models.py` / `service.py` convention as the rest of the tree). No
+ESCALATE, so nothing went to the operator, no function was renamed and no module was
+moved.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `ado2gh/auth/service.py` | (same) | `Any` replaced with the concrete type | `_db() -> Any` → `_db() -> StateStore` and `AuthService.__init__(self, db: Optional[Any] = None)` → `Optional[StateStore]`, reusing the existing `StateStore` union from `ado2gh/state/factory.py` rather than adding a type (ANN401 ×2). `__init__` also gained its missing `-> None` (ANN204). The import direction stays `auth → state`, which increment 3 established; no `auth → api` edge was added (GAP-021). Every construction site already passes a `create_state_db(...)` result or `StateDB(...)` — an alias for `SQLiteStateDB`, inside the union — so the annotation is accurate at all 28 of them and none had to change. `typing.Any` is no longer imported | yes | see note below | 2026-09-08 |
+| `ado2gh/auth/*.py` | (same) | docstrings | Google-style docstrings (R3) on the twenty functions and methods that had none or only a summary line, plus class docstrings with `Attributes:` on `PlatformRole`, `PlatformUserStatus`, `PlatformUser` and `AuthSession` (D101 ×4, D102 ×9, D103 ×2, D107 ×1). Per T058 and CA-003, no session or password function gained a docstring example containing credentials: `hash_password` describes the stored format in words with no example hash or salt, `AuthSession.token` is documented as a bearer credential that must not be logged, `_audit_auth` states that callers must keep passwords, hashes and tokens out of the payload, and `_user_from_row` / `_user_public` record that the password hash is dropped. The docstrings also capture two security behaviours that were previously only comments — that an unknown username, a wrong password and a lockout all raise the same message, and that `get_session` deletes a token whose account may no longer authenticate | yes | see note below | 2026-09-08 |
+
+- **No behaviour change**: password hashing, session-token generation, the lockout counter, the permission table, the audit events and every `db_tables` / `env_vars` entry are untouched. The diff is docstrings, four annotations and one dropped import.
+- **Tests removed**: 0. **Production functions deleted**: 0 — no `dead` rows in `ado2gh/auth`, so no `inventory.json@a780fa3` pointer is needed.
+- **Test status**: this increment's own gate set is green — `tests/auth` (39 passed, including the untouched `test_gap_002_*`, `test_gap_005_*` and `test_gap_010_*` regressions), the public-surface snapshot, the orphan guard and the 800-line guard, 44 passed together. The **full** suite in the shared working tree reports 893 passed, 16 failed, 30 skipped. All sixteen failures are one half-applied change in increment 7's concurrent work: `MigrationEngine.__init__()` and `ScopeContext.__init__()` have been converted from `dry_run: bool` to `ExecutionMode` in `ado2gh/core/` but their test callers have not been updated yet, so every failure is `TypeError: … got an unexpected keyword argument 'dry_run'` in `tests/core/`, `tests/pipeline/test_pipelines_scope.py`, `tests/pipeline/test_pipeline_runs.py`, `tests/pipeline/test_gap_016_*`, `tests/unit/test_migrate_routes_core.py` and `tests/unit/test_gap_007_*`. None of them imports `ado2gh/auth`, and all sixteen pass again once increment 7 finishes its caller updates. Full output in `specs/013-clean-code-arch-remediation/run-inc8-full.txt`.
+- **Coverage ratchet**: `--cov-fail-under` stays at **59** in `.github/workflows/ci.yml`. Measured TOTAL is 58 %, one point below the gate, because the sixteen failing core tests leave their own code paths uncounted; it is not lowered (FR-027a/SC-004 forbids lowering, and the shortfall is not this package's). The true figure for this tree is the 59 % increment 6 measured — `ado2gh/auth` gained no new lines, only docstrings.
+- **Exception register**: unchanged at 14 rows of the 29-row cap. The package needed none — after the cleanup the T002 ruff set with `max-args=5` reports nothing for `ado2gh/auth`, and neither does a default `ruff check`, so there was nothing for a `# noqa` to cover.
+- **Inventory**: `ado2gh/auth` 26 functions, all `disposition: clean`, none `exception`. `--pending --package ado2gh/auth` exits 0.
+- **Concurrent work**: increments 7 (`ado2gh/core/`), 13 (`services/agent/`) and 14 (`apps/migration-ui/`) were running in the same tree. None of their files is in this commit, and this increment needed no change in any of them. One transient effect is worth recording: a first full-suite run wedged indefinitely in `tests/agent/test_agent_llm_health.py` while increment 13 was mid-write splitting `services/agent/routes/`; the same file passes in 6 s on its own once those writes settled, so it is a race against an in-flight edit, not a defect.

@@ -40,6 +40,126 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/auth/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Package name follows the established sibling convention (api, state, core, clients, phase, pipelines, reporting, audit, agents, cli); the docstring is clear.",
+    "state_hash": "705128befb1b150de89324cc526100ea16932de1",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/models.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Standard domain-model file naming; the module holds only the enums and dataclasses that belong in models.py.",
+    "state_hash": "79d9eb742956702219bb89de45325c4a0fb70eb3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/password.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Specific utility module name that matches its content (hash, verify, strength); appropriate semantic scope.",
+    "state_hash": "188b68187c920e8c92b37eea1c7c240ced565530",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Standard service-file naming; holds AuthService and its service-level helpers, in line with the rest of the codebase.",
+    "state_hash": "dce06ea0be29132eb2f99e34bf1df42b1e9b9b80",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::AuthService.approve_user",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name clearly indicates status promotion; it delegates to update_user with no ambiguity.",
+    "state_hash": "da5ad9cdbe856043201b4cd6032e28edcd3f68af",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::AuthService.login",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Standard method name; public contract frozen; the body validates credentials and issues a session.",
+    "state_hash": "3d3e47aff430a339a9142f011946b76cebbf1c03",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::AuthService.logout",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Standard method name; public contract frozen; the body is straightforward session invalidation.",
+    "state_hash": "781e8c5342d98f78655f1b59060029148ef61b09",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::AuthService.needs_bootstrap",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Standard guard-method naming; intent (zero users means the first admin is still needed) is clear from the body.",
+    "state_hash": "0690ecf78762d76f720bca95ef2390beeda19e61",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::_audit_auth",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name clearly indicates auth event auditing; consistent usage across the five call sites.",
+    "state_hash": "8d493dd48070ea2c6ed5a75b7cb27e100d9f87fb",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::_db",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Standard convention for a private database accessor; the call site self.db or _db() makes the purpose unambiguous.",
+    "state_hash": "8f9b1a1df9af7b3b3f9b8cf2d4659ae4fc49e143",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::_user_from_row",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name precisely describes the row-to-object conversion; usage in login() confirms intent.",
+    "state_hash": "4e86447c56d82bbf232600635ee1e8ee2c3550de",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::_user_public",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name indicates the public-facing dict representation; consistent usage confirms intent despite brevity.",
+    "state_hash": "b208ddd1f050e9978d4ab9e4eeb70705ab8eac57",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::_user_status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name clearly states it normalizes the status read from a row; usage is unambiguous.",
+    "state_hash": "d7e01a535014168024cfa0cca6d861e3a4c777a5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::auth_enabled",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name clearly indicates a feature-flag check for auth enablement; public contract frozen per spec.",
+    "state_hash": "681c875ce1602b2ae9ec83b9d6686ccc91fa83fa",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/auth/service.py::permissions_for",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name unambiguously returns the permission dict for a role; public contract frozen.",
+    "state_hash": "7e20243eb3b81fb45e3649d6fa4661c90fdb9305",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/clients/",
     "tag": "module_name_review",
     "decision": "reject",

@@ -179,8 +179,8 @@
 
 ### Increment 8 — `ado2gh/auth/`
 
-- [ ] T057 [US2] Review-agent decisions for `--package ado2gh/auth`; record
-- [ ] T058 [US2] Clean `ado2gh/auth/` per protocol (26 functions; session/password handling functions must not gain docstring examples containing credentials); callers in `api/`, `agents/`, `services/`; verify, changelog, commit
+- [X] T057 [US2] Review-agent decisions for `--package ado2gh/auth`; record
+- [X] T058 [US2] Clean `ado2gh/auth/` per protocol (26 functions; session/password handling functions must not gain docstring examples containing credentials); callers in `api/`, `agents/`, `services/`; verify, changelog, commit
 
 ### Increment 9 — `ado2gh/api/`
 
