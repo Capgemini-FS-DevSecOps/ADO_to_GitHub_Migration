@@ -1,0 +1,46 @@
+# excluded-paths.txt — FR-003b (data-model.md § ExcludedPaths)
+#
+# Gitignore-style patterns for generated, vendored, and data-table files. A file
+# matching an active pattern produces no FunctionInventoryEntry, but the generator
+# still counts its definitions and reports them under `excluded` in
+# inventory-history.jsonl and the summary — an exclusion is always visible against
+# the zero-tag denominator.
+#
+# One pattern per line; a `#` line is inert. Read by both the Python generator and
+# the TS walker. Every addition needs a comment naming why it is excluded.
+# Seeded by T003 on 2026-09-07.
+
+# Generated — any module emitted by a build step. None exist in the tree today
+# (measured: `find ado2gh services -name '*_generated.py'` returned 0 hits). The
+# pattern is seeded so a future generated module is excluded by default instead of
+# silently inflating the clean count.
+*_generated.py
+
+# Generated — Next.js rewrites this on every `next dev` / `next build`. Not authored
+# here, so not reviewable.
+apps/migration-ui/next-env.d.ts
+
+# Generated / ambient TypeScript declarations under the console source root. None
+# exist today (measured: 0 hits under apps/migration-ui/src). Prophylactic; this is
+# the case FR-003b names explicitly.
+apps/migration-ui/src/**/*.d.ts
+
+# ----------------------------------------------------------------------------
+# Considered and deliberately NOT excluded — kept as comments so the decision is
+# reviewable rather than silently dropped.
+#
+# ado2gh/pipelines/transform/
+#   T003 named this directory's "mapping tables" as a seed candidate. Measured
+#   2026-09-07: the mapping data (`ADO_TASK_MAP`, `RUN_BASED_TASKS`,
+#   `_POOL_RUNNER_MAP` in task_registry.py) is module-level dict/set literals, and
+#   the inventory only creates rows for *functions* (data-model § Entry
+#   granularity) — so the tables produce no rows and need no exclusion. Excluding
+#   the directory would instead hide 25 hand-written `def` statements across six
+#   modules (expressions 4, job_graph 7, task_registry 3, transformer 9,
+#   triggers 2), which is exactly the code this audit exists to review.
+#   Re-open only if a mapping module later becomes machine-generated.
+#
+# vendored stubs
+#   None found (measured 2026-09-07: no `*vendor*` or `*stub*` paths and no `.pyi`
+#   files under ado2gh/, services/, or apps/migration-ui/src/). Add a pattern here
+#   if anything is vendored in later.

@@ -1,0 +1,1085 @@
+..s..sss.......................F...FFFF..F.............................. [  8%]
+.....F.......FF...s.......ssssssssssssss...............FFFFFFFF...F..F.. [ 16%]
+..................EEEEEEEEEEEEEEEE...F.......FFF..FF.................... [ 24%]
+..................................................F............F........ [ 32%]
+.................................F........F.FFF.s....................... [ 41%]
+..FFF.F................................................................. [ 49%]
+........................................................................ [ 57%]
+........................................................................ [ 65%]
+........................................................................ [ 73%]
+...........FFFFF..........................F.............F........s...... [ 82%]
+........................................................................ [ 90%]
+......................................................................FF [ 98%]
+FFF.F........                                                            [100%]
+=================================== ERRORS ====================================
+_ ERROR at setup of TestOnDemandMigrationAPI.test_repo_migration_endpoint_exists _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestOnDemandMigrationAPI.test_repo_migration_requires_form _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestOnDemandMigrationAPI.test_repo_migration_dry_run_supported _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestOnDemandMigrationAPI.test_repo_migration_live_requires_confirmation _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestOnDemandMigrationAPI.test_concurrent_migration_rejected _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+__ ERROR at setup of TestWaveCreationAPI.test_wave_creation_endpoint_exists ___
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+___ ERROR at setup of TestWaveCreationAPI.test_wave_creation_requires_name ____
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestWaveCreationAPI.test_wave_creation_with_multiple_repos _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestWaveExecutionAPI.test_wave_execution_endpoint_exists __
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_____ ERROR at setup of TestWaveExecutionAPI.test_wave_execution_dry_run ______
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestWaveExecutionAPI.test_wave_execution_nonexistent_returns_404 _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+____ ERROR at setup of TestWaveStatusAPI.test_wave_status_endpoint_exists _____
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestWaveStatusAPI.test_wave_status_nonexistent_returns_404 _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestPreMigrationFormAPI.test_form_generation_endpoint_exists _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestPreMigrationFormAPI.test_form_submission_endpoint_exists _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+_ ERROR at setup of TestPreMigrationFormAPI.test_form_generation_requires_repository_id _
+
+>   ???
+E   sqlite3.OperationalError: no such table: migration_operations
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_migration_api_contracts.py:18: OperationalError
+================================== FAILURES ===================================
+_____________ test_approve_calls_enforce_live_gate_before_resume ______________
+
+tmp_path = WindowsPath('C:/Users/David/AppData/Local/Temp/pytest-of-David/pytest-154/test_approve_calls_enforce_liv0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001A2218D2670>
+
+>   ???
+E   TypeError: LiveApprovalStore.create_or_get_pending() got an unexpected keyword argument 'assignment_id'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\agent\test_agent_pev_live_gate.py:55: TypeError
+___________________________ test_create_assignment ____________________________
+
+client = <starlette.testclient.TestClient object at 0x000001A2218C28B0>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\agent\test_agentic_api.py:29: AssertionError
+___________________________ test_workflow_readiness ___________________________
+
+client = <starlette.testclient.TestClient object at 0x000001A2218C39B0>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\agent\test_agentic_api.py:38: AssertionError
+____________________________ test_rollback_dry_run ____________________________
+
+client = <starlette.testclient.TestClient object at 0x000001A222CD5370>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\agent\test_agentic_api.py:53: AssertionError
+_______________________ test_list_assignments_and_audit _______________________
+
+client = <starlette.testclient.TestClient object at 0x000001A222CD68B0>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\agent\test_agentic_api.py:69: AssertionError
+_____________________ test_mcp_plan_tool_accepts_dry_run ______________________
+
+>   ???
+E   AssertionError: assert 1 == 0
+E    +  where 1 = CompletedProcess(args=['D:\\GitHub\\Work\\ADO_to_GitHub_Migration\\.venv\\Scripts\\python.exe', '-m', 'services.agent....r='D:\\GitHub\\Work\\ADO_to_GitHub_Migration\\.venv\\Scripts\\python.exe: No module named services.agent.mcp_server\n').returncode
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\agent\test_local_host_parity.py:34: AssertionError
+____________________________ test_probe_aws_passed ____________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001A222DA1550>
+
+>   ???
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\cloud_credentials\test_cloud_credential_probe.py:14: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\unittest\mock.py:1487: in __enter__
+    self.target = self.getter()
+                  ^^^^^^^^^^^^^
+C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\pkgutil.py:458: in resolve_name
+    mod = importlib.import_module(modname)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\importlib\__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+<frozen importlib._bootstrap>:1398: in _gcd_import
+    ???
+<frozen importlib._bootstrap>:1371: in _find_and_load
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'boto3', import_ = <function _gcd_import at 0x000001A26F78BE20>
+
+>   ???
+E   ModuleNotFoundError: No module named 'boto3'
+
+<frozen importlib._bootstrap>:1335: ModuleNotFoundError
+____________ TestAgentInterface.test_discovery_results_accessible _____________
+
+self = <test_agent_interface_contracts.TestAgentInterface object at 0x000001A220013890>
+client = <starlette.testclient.TestClient object at 0x000001A222E6C7C0>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_agent_interface_contracts.py:29: AssertionError
+_________ TestAgentInterface.test_migration_wave_creation_accessible __________
+
+self = <test_agent_interface_contracts.TestAgentInterface object at 0x000001A2200C5480>
+client = <starlette.testclient.TestClient object at 0x000001A222E6C6B0>
+
+>   ???
+E   assert 404 == 201
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_agent_interface_contracts.py:40: AssertionError
+_______________ TestDiscoveryScanAPI.test_scan_endpoint_exists ________________
+
+self = <test_discovery_api_contracts.TestDiscoveryScanAPI object at 0x000001A2200139D0>
+client = <starlette.testclient.TestClient object at 0x000001A222E6DBF0>
+
+>   ???
+E   assert 404 == 400
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:28: AssertionError
+______________ TestDiscoveryScanAPI.test_scan_with_force_refresh ______________
+
+self = <test_discovery_api_contracts.TestDiscoveryScanAPI object at 0x000001A220105810>
+client = <starlette.testclient.TestClient object at 0x000001A222E6DE10>
+
+>   ???
+E   assert 404 == 400
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:36: AssertionError
+______ TestDiscoveryScanAPI.test_scan_returns_scan_id_when_orgs_provided ______
+
+self = <test_discovery_api_contracts.TestDiscoveryScanAPI object at 0x000001A2200C5CD0>
+client = <starlette.testclient.TestClient object at 0x000001A222E6F570>
+
+>   ???
+E   assert 404 in (202, 400, 500)
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:47: AssertionError
+__________ TestDiscoveryResultsAPI.test_results_endpoint_returns_200 __________
+
+self = <test_discovery_api_contracts.TestDiscoveryResultsAPI object at 0x000001A220105950>
+client = <starlette.testclient.TestClient object at 0x000001A222E6F240>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:56: AssertionError
+__________ TestDiscoveryResultsAPI.test_results_have_required_fields __________
+
+self = <test_discovery_api_contracts.TestDiscoveryResultsAPI object at 0x000001A220105A90>
+client = <starlette.testclient.TestClient object at 0x000001A222F686B0>
+
+>   ???
+E   AssertionError: assert 'results' in {'detail': 'Not Found'}
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:62: AssertionError
+_________ TestDiscoveryResultsAPI.test_results_filter_by_organization _________
+
+self = <test_discovery_api_contracts.TestDiscoveryResultsAPI object at 0x000001A2200C5E00>
+client = <starlette.testclient.TestClient object at 0x000001A222F69040>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:69: AssertionError
+____________ TestDiscoveryResultsAPI.test_results_filter_by_status ____________
+
+self = <test_discovery_api_contracts.TestDiscoveryResultsAPI object at 0x000001A2200C5F30>
+client = <starlette.testclient.TestClient object at 0x000001A222F68C00>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:77: AssertionError
+___________ TestDiscoveryResultsAPI.test_results_no_wave_assignment ___________
+
+self = <test_discovery_api_contracts.TestDiscoveryResultsAPI object at 0x000001A2200CDEB0>
+client = <starlette.testclient.TestClient object at 0x000001A222F69260>
+
+>   ???
+E   KeyError: 'results'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_discovery_api_contracts.py:83: KeyError
+_______________________ test_all_required_nodes_present _______________________
+
+>   ???
+E   AssertionError: assert {'executor', ..., 'validator'} == {'executor', ..., 'validator'}
+E     
+E     Extra items in the left set:
+E     'human_input'
+E     Use -v to get more diff
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_langgraph_contracts.py:42: AssertionError
+_______________________ test_agent_state_has_pev_fields _______________________
+
+>   ???
+E   AssertionError: AgentState missing required field: llm
+E   assert 'llm' in {'messages': ForwardRef('Annotated[list[BaseMessage], add_messages]', module='ado2gh.agents.migration_agent.graph.stat...ado2gh.agents.migration_agent.graph.state', owner=<class 'ado2gh.agents.migration_agent.graph.state.AgentState'>), ...}
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_langgraph_contracts.py:70: AssertionError
+___________________________ test_gate_status_shape ____________________________
+
+>   ???
+E   ImportError: cannot import name '_gate_payload' from 'ado2gh.api.agentic_routes' (D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\api\agentic_routes.py)
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_rollback_gates_contract.py:5: ImportError
+_________ TestUnifiedTabNavigation.test_discovery_api_endpoint_exists _________
+
+self = <test_unified_tabs_contracts.TestUnifiedTabNavigation object at 0x000001A220107390>
+client = <starlette.testclient.TestClient object at 0x000001A222E6D9D0>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_unified_tabs_contracts.py:25: AssertionError
+_________ TestUnifiedTabNavigation.test_migration_api_endpoint_exists _________
+
+self = <test_unified_tabs_contracts.TestUnifiedTabNavigation object at 0x000001A220107610>
+client = <starlette.testclient.TestClient object at 0x000001A222F698C0>
+
+>   ???
+E   assert 404 == 201
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_unified_tabs_contracts.py:35: AssertionError
+________ TestUnifiedTabNavigation.test_discovery_scan_endpoint_exists _________
+
+self = <test_unified_tabs_contracts.TestUnifiedTabNavigation object at 0x000001A2200C76F0>
+client = <starlette.testclient.TestClient object at 0x000001A222F6A250>
+
+>   ???
+E   assert 404 == 400
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\contract\test_unified_tabs_contracts.py:44: AssertionError
+____________________________ test_plan_repo_order _____________________________
+
+tmp_path = WindowsPath('C:/Users/David/AppData/Local/Temp/pytest-of-David/pytest-154/test_plan_repo_order0')
+
+>   ???
+E   AttributeError: 'SQLiteStateDB' object has no attribute 'upsert_dependency_edge'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\core\test_batch_executor_topo.py:10: AttributeError
+____________________________ test_sort_repos_topo _____________________________
+
+tmp_path = WindowsPath('C:/Users/David/AppData/Local/Temp/pytest-of-David/pytest-154/test_sort_repos_topo0')
+
+>   ???
+E   AttributeError: 'SQLiteStateDB' object has no attribute 'upsert_dependency_edge'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\core\test_batch_executor_topo.py:18: AttributeError
+________________________ test_enable_pipelines_dry_run ________________________
+
+tmp_path = WindowsPath('C:/Users/David/AppData/Local/Temp/pytest-of-David/pytest-154/test_enable_pipelines_dry_run0')
+
+>   ???
+E   TypeError: ADOCleanup.__init__() got multiple values for argument 'dry_run'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\core\test_rollback.py:19: TypeError
+________________ test_postgres_schema_includes_agentic_tables _________________
+
+>   ???
+E   AssertionError: assert 'migration_assignments' in '\n    CREATE TABLE IF NOT EXISTS migrations (\n        id SERIAL PRIMARY KEY,\n        wave_id INTEGER NOT NULL,\n   ...NDEX IF NOT EXISTS idx_live_approval_scope\n        ON live_execution_approvals(scope_type, scope_id, status);\n\n    '
+E    +  where '\n    CREATE TABLE IF NOT EXISTS migrations (\n        id SERIAL PRIMARY KEY,\n        wave_id INTEGER NOT NULL,\n   ...NDEX IF NOT EXISTS idx_live_approval_scope\n        ON live_execution_approvals(scope_type, scope_id, status);\n\n    ' = <class 'ado2gh.state.postgres_db.PostgresStateDB'>.SCHEMA
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\core\test_storage_config.py:54: AssertionError
+_ TestQuickstartScenario9DualAndGates.test_gate_blocks_after_platform_approval _
+
+self = <test_agent_pev_quickstart_scenarios.TestQuickstartScenario9DualAndGates object at 0x000001A220219E50>
+tmp_path = WindowsPath('C:/Users/David/AppData/Local/Temp/pytest-of-David/pytest-154/test_gate_blocks_after_platfor0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001A222F0B3F0>
+
+>   ???
+E   TypeError: LiveApprovalStore.create_or_get_pending() got an unexpected keyword argument 'assignment_id'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\feature\test_agent_pev_quickstart_scenarios.py:256: TypeError
+______________________ test_agent_health_llm_and_session ______________________
+
+agent_client = <starlette.testclient.TestClient object at 0x000001A22319C8D0>
+
+>   ???
+E   AssertionError: assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+E    +    where <Response [404 Not Found]> = get('/v1/mcp/tools')
+E    +      where get = <starlette.testclient.TestClient object at 0x000001A22319C8D0>.get
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\feature\test_services_coverage.py:96: AssertionError
+____________________ test_agent_deprecated_approvals_list _____________________
+
+agent_client = <starlette.testclient.TestClient object at 0x000001A223920380>
+
+>   ???
+E   Failed: DID NOT WARN. No warnings of type (<class 'DeprecationWarning'>,) were emitted.
+E    Emitted warnings: [].
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\feature\test_services_coverage.py:137: Failed
+_____ TestAgentConversationWorkflow.test_full_migration_workflow_via_api ______
+
+self = <test_agent_interface_integration.TestAgentConversationWorkflow object at 0x000001A22021AAD0>
+client = <starlette.testclient.TestClient object at 0x000001A223921370>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\integration\test_agent_interface_integration.py:30: AssertionError
+___ TestAgentConversationWorkflow.test_wave_execution_requires_draft_status ___
+
+self = <test_agent_interface_integration.TestAgentConversationWorkflow object at 0x000001A22021B110>
+client = <starlette.testclient.TestClient object at 0x000001A223921480>
+
+>   ???
+E   assert 404 == 201
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\integration\test_agent_interface_integration.py:62: AssertionError
+____ TestUnifiedNavigationWorkflow.test_discovery_results_empty_initially _____
+
+self = <test_unified_tabs_integration.TestUnifiedNavigationWorkflow object at 0x000001A22021AE90>
+client = <starlette.testclient.TestClient object at 0x000001A2239216A0>
+
+>   ???
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\integration\test_unified_tabs_integration.py:24: AssertionError
+_________ TestUnifiedNavigationWorkflow.test_migration_wave_lifecycle _________
+
+self = <test_unified_tabs_integration.TestUnifiedNavigationWorkflow object at 0x000001A22021AC10>
+client = <starlette.testclient.TestClient object at 0x000001A2239217B0>
+
+>   ???
+E   assert 404 == 201
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\integration\test_unified_tabs_integration.py:39: AssertionError
+___________ TestUnifiedNavigationWorkflow.test_wave_name_validation ___________
+
+self = <test_unified_tabs_integration.TestUnifiedNavigationWorkflow object at 0x000001A22022AC40>
+client = <starlette.testclient.TestClient object at 0x000001A223920490>
+
+>   ???
+E   assert 404 == 400
+E    +  where 404 = <Response [404 Not Found]>.status_code
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\integration\test_unified_tabs_integration.py:62: AssertionError
+______ TestUnifiedNavigationWorkflow.test_concurrent_migration_rejected _______
+
+self = <test_unified_tabs_integration.TestUnifiedNavigationWorkflow object at 0x000001A22026DA30>
+client = <starlette.testclient.TestClient object at 0x000001A223920270>
+
+>   ???
+E   ModuleNotFoundError: No module named 'ado2gh.api.models'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\integration\test_unified_tabs_integration.py:82: ModuleNotFoundError
+_ TestOperatorResolutionPersistence.test_set_operator_resolutions_persists_mappings _
+
+self = <unit.test_operator_resolutions.TestOperatorResolutionPersistence object at 0x000001A220571BD0>
+mock_save = <MagicMock name='save' id='1795841763248'>
+mock_load = <MagicMock name='load' id='1795841760896'>
+
+>   ???
+E   TypeError: SettingsStore.__init__() got an unexpected keyword argument 'db_path'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_operator_resolutions.py:22: TypeError
+_ TestOperatorResolutionPersistence.test_get_operator_resolutions_loads_mappings _
+
+self = <unit.test_operator_resolutions.TestOperatorResolutionPersistence object at 0x000001A220571D10>
+mock_load = <MagicMock name='load' id='1797266280800'>
+
+>   ???
+E   TypeError: SettingsStore.__init__() got an unexpected keyword argument 'db_path'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_operator_resolutions.py:47: TypeError
+_ TestOperatorResolutionPersistence.test_get_operator_resolutions_returns_empty_dict_when_none _
+
+self = <unit.test_operator_resolutions.TestOperatorResolutionPersistence object at 0x000001A2205D8180>
+mock_load = <MagicMock name='load' id='1795844237232'>
+
+>   ???
+E   TypeError: SettingsStore.__init__() got an unexpected keyword argument 'db_path'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_operator_resolutions.py:63: TypeError
+__ TestOperatorResolutionPersistence.test_resolutions_per_profile_isolation ___
+
+self = <unit.test_operator_resolutions.TestOperatorResolutionPersistence object at 0x000001A2205D82B0>
+mock_save = <MagicMock name='save' id='1795844237904'>
+mock_load = <MagicMock name='load' id='1795844237568'>
+
+>   ???
+E   TypeError: SettingsStore.__init__() got an unexpected keyword argument 'db_path'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_operator_resolutions.py:78: TypeError
+_ TestOperatorResolutionPersistence.test_set_operator_resolutions_overwrites_existing _
+
+self = <unit.test_operator_resolutions.TestOperatorResolutionPersistence object at 0x000001A220521250>
+mock_save = <MagicMock name='save' id='1795844236896'>
+mock_load = <MagicMock name='load' id='1795844236560'>
+
+>   ???
+E   TypeError: SettingsStore.__init__() got an unexpected keyword argument 'db_path'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_operator_resolutions.py:110: TypeError
+________ test_finalize_agent_migration_plan_attaches_pipeline_metadata ________
+
+>   ???
+E   AssertionError: assert 'Secret mappings' in '### Migration plan — `Proj/RepoA` (dry-run)\n- **Repositories:** 1\n\nDependencies (service connections, wiki, branch policies) are included in the plan only when discovery or analyze_deps detects them for this repository.'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_pipeline_plan.py:51: AssertionError
+_____________________ test_blockers_from_baseline_probes ______________________
+
+>   ???
+E   ModuleNotFoundError: No module named 'ado2gh.agents.migration_agent.operator_input'
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_planner_node.py:86: ModuleNotFoundError
+___________ test_validator_baseline_probe_escalates_operator_input ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001A220739470>
+
+>   ???
+E   assert True is False
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_validator_node.py:459: AssertionError
+____ TestWorkflowIntegrityCheck.test_pass_when_files_exist_and_shas_match _____
+
+self = <unit.test_workflow_integrity.TestWorkflowIntegrityCheck object at 0x000001A2206A1A90>
+mock_check_workflows = <MagicMock name='_check_workflows' id='1795859452256'>
+
+>   ???
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_workflow_integrity.py:46: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+ado2gh\reporting\post_migration_validator.py:106: in _validate_one
+    checks["branches"] = self._check_branch_count(repo)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ado2gh.reporting.post_migration_validator.PostMigrationValidator object at 0x000001A221908980>
+repo = RepoConfig(ado_project='org', ado_repo='repo', gh_org='org', gh_repo='repo', scopes=[], team_mapping={}, skip_lfs=False, archive_source=False, tags=[], pipeline_parallel=8, pipeline_filter='', risk_score=0.0, phase='')
+
+    def _check_branch_count(self, repo: RepoConfig) -> dict:
+        try:
+            ado_repo = self.ado.get_repo(repo.ado_project, repo.ado_repo)
+            ado_stats = self.ado.get_repo_stats(
+                repo.ado_project, ado_repo.get("id", ""))
+            ado_count = ado_stats.get("branch_count", 0)
+        except Exception:
+            ado_count = -1
+    
+        try:
+            gh_branches = self.gh.list_branches(repo.gh_org, repo.gh_repo)
+            gh_count = len(gh_branches)
+        except Exception:
+            gh_count = -1
+    
+>       if ado_count < 0 or gh_count < 0:
+           ^^^^^^^^^^^^^
+E       TypeError: '<' not supported between instances of 'MagicMock' and 'int'
+
+ado2gh\reporting\post_migration_validator.py:216: TypeError
+___________ TestWorkflowIntegrityCheck.test_fail_when_files_missing ___________
+
+self = <unit.test_workflow_integrity.TestWorkflowIntegrityCheck object at 0x000001A2206A1BD0>
+mock_check_workflows = <MagicMock name='_check_workflows' id='1795840678208'>
+
+>   ???
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_workflow_integrity.py:86: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+ado2gh\reporting\post_migration_validator.py:106: in _validate_one
+    checks["branches"] = self._check_branch_count(repo)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ado2gh.reporting.post_migration_validator.PostMigrationValidator object at 0x000001A2261042D0>
+repo = RepoConfig(ado_project='org', ado_repo='repo', gh_org='org', gh_repo='repo', scopes=[], team_mapping={}, skip_lfs=False, archive_source=False, tags=[], pipeline_parallel=8, pipeline_filter='', risk_score=0.0, phase='')
+
+    def _check_branch_count(self, repo: RepoConfig) -> dict:
+        try:
+            ado_repo = self.ado.get_repo(repo.ado_project, repo.ado_repo)
+            ado_stats = self.ado.get_repo_stats(
+                repo.ado_project, ado_repo.get("id", ""))
+            ado_count = ado_stats.get("branch_count", 0)
+        except Exception:
+            ado_count = -1
+    
+        try:
+            gh_branches = self.gh.list_branches(repo.gh_org, repo.gh_repo)
+            gh_count = len(gh_branches)
+        except Exception:
+            gh_count = -1
+    
+>       if ado_count < 0 or gh_count < 0:
+           ^^^^^^^^^^^^^
+E       TypeError: '<' not supported between instances of 'MagicMock' and 'int'
+
+ado2gh\reporting\post_migration_validator.py:216: TypeError
+__ TestWorkflowIntegrityCheck.test_no_integrity_check_when_no_workflow_files __
+
+self = <unit.test_workflow_integrity.TestWorkflowIntegrityCheck object at 0x000001A2205DB230>
+mock_check_workflows = <MagicMock name='_check_workflows' id='1795915869760'>
+
+>   ???
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_workflow_integrity.py:114: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+ado2gh\reporting\post_migration_validator.py:106: in _validate_one
+    checks["branches"] = self._check_branch_count(repo)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ado2gh.reporting.post_migration_validator.PostMigrationValidator object at 0x000001A2261051D0>
+repo = RepoConfig(ado_project='org', ado_repo='repo', gh_org='org', gh_repo='repo', scopes=[], team_mapping={}, skip_lfs=False, archive_source=False, tags=[], pipeline_parallel=8, pipeline_filter='', risk_score=0.0, phase='')
+
+    def _check_branch_count(self, repo: RepoConfig) -> dict:
+        try:
+            ado_repo = self.ado.get_repo(repo.ado_project, repo.ado_repo)
+            ado_stats = self.ado.get_repo_stats(
+                repo.ado_project, ado_repo.get("id", ""))
+            ado_count = ado_stats.get("branch_count", 0)
+        except Exception:
+            ado_count = -1
+    
+        try:
+            gh_branches = self.gh.list_branches(repo.gh_org, repo.gh_repo)
+            gh_count = len(gh_branches)
+        except Exception:
+            gh_count = -1
+    
+>       if ado_count < 0 or gh_count < 0:
+           ^^^^^^^^^^^^^
+E       TypeError: '<' not supported between instances of 'MagicMock' and 'int'
+
+ado2gh\reporting\post_migration_validator.py:216: TypeError
+__ TestWorkflowIntegrityCheck.test_integrity_check_uses_github_contents_api ___
+
+self = <unit.test_workflow_integrity.TestWorkflowIntegrityCheck object at 0x000001A2205DB100>
+mock_check_workflows = <MagicMock name='_check_workflows' id='1795917227616'>
+
+>   ???
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_workflow_integrity.py:155: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+ado2gh\reporting\post_migration_validator.py:106: in _validate_one
+    checks["branches"] = self._check_branch_count(repo)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <ado2gh.reporting.post_migration_validator.PostMigrationValidator object at 0x000001A224CDFE10>
+repo = RepoConfig(ado_project='org', ado_repo='repo', gh_org='org', gh_repo='repo', scopes=[], team_mapping={}, skip_lfs=False, archive_source=False, tags=[], pipeline_parallel=8, pipeline_filter='', risk_score=0.0, phase='')
+
+    def _check_branch_count(self, repo: RepoConfig) -> dict:
+        try:
+            ado_repo = self.ado.get_repo(repo.ado_project, repo.ado_repo)
+            ado_stats = self.ado.get_repo_stats(
+                repo.ado_project, ado_repo.get("id", ""))
+            ado_count = ado_stats.get("branch_count", 0)
+        except Exception:
+            ado_count = -1
+    
+        try:
+            gh_branches = self.gh.list_branches(repo.gh_org, repo.gh_repo)
+            gh_count = len(gh_branches)
+        except Exception:
+            gh_count = -1
+    
+>       if ado_count < 0 or gh_count < 0:
+           ^^^^^^^^^^^^^
+E       TypeError: '<' not supported between instances of 'MagicMock' and 'int'
+
+ado2gh\reporting\post_migration_validator.py:216: TypeError
+___ TestWorkflowValidatorWithActionlint.test_subprocess_call_to_actionlint ____
+
+self = <unit.test_workflow_validator.TestWorkflowValidatorWithActionlint object at 0x000001A2206A2850>
+mock_run = <MagicMock name='run' id='1795917422544'>
+mock_which = <MagicMock name='which' id='1795917422880'>
+
+>   ???
+E   AssertionError: assert 'actionlint' in ['/usr/bin/actionlint', '-format', '{{json .}}', '-']
+
+D:\GitHub\ADO_to_GitHub_Migration\tests\unit\test_workflow_validator.py:69: AssertionError
+============================== warnings summary ===============================
+ado2gh\core\scopes\registry.py:17
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\core\scopes\registry.py:17: DeprecationWarning: SecretsScopeHandler is deprecated. Use analyze_deps step instead. This will be removed in v2.0.0.
+    SecretsScopeHandler(),
+
+ado2gh\reporting\__init__.py:5
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\reporting\__init__.py:5: DeprecationWarning: ServiceConnectionManifest is deprecated and will be removed in v2.0.0. Use the analyze_deps pipeline step instead. See specs/009-pipeline-step-decoupling/spec.md
+    from ado2gh.reporting.service_connection_manifest import ServiceConnectionManifest as ServiceConnectionManifest
+
+services\agent\main.py:43
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\agent\main.py:43: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv\Lib\site-packages\fastapi\applications.py:4601
+.venv\Lib\site-packages\fastapi\applications.py:4601
+.venv\Lib\site-packages\fastapi\applications.py:4601
+tests/agent/test_agent_live_execution_gate.py::test_operator_live_execute_pev_blocked_without_approval
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\fastapi\applications.py:4601: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+services\agent\main.py:50
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\agent\main.py:50: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+services\agent\main.py:57
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\agent\main.py:57: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/agent/test_agent_chat_idle.py: 2 warnings
+tests/agent/test_agent_ide_sessions.py: 6 warnings
+tests/agent/test_agent_live_execution_gate.py: 1 warning
+tests/agent/test_agent_llm_health.py: 3 warnings
+tests/agent/test_agent_pev.py: 2 warnings
+tests/agent/test_agent_pev_live_gate.py: 1 warning
+tests/agent/test_agent_session_access.py: 3 warnings
+tests/agent/test_local_host_parity.py: 1 warning
+tests/contract/test_agent_pev_flow_contracts.py: 9 warnings
+tests/contract/test_agent_pev_rbac_contracts.py: 2 warnings
+tests/contract/test_ide_contracts.py: 2 warnings
+tests/feature/test_agent_pev_quickstart_scenarios.py: 2 warnings
+tests/feature/test_services_coverage.py: 2 warnings
+tests/unit/test_session_lifecycle.py: 3 warnings
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\graph\builder.py:184: UserWarning: The 'config' parameter should be typed as 'RunnableConfig' or 'RunnableConfig | None', not 'RunnableConfig | None'. 
+    graph.add_node(NODE_ORCHESTRATOR, _with_runtime_deps(orchestrator_node), retry_policy=_LLM_RETRY)
+
+tests/agent/test_agent_chat_idle.py: 2 warnings
+tests/agent/test_agent_ide_sessions.py: 6 warnings
+tests/agent/test_agent_live_execution_gate.py: 1 warning
+tests/agent/test_agent_llm_health.py: 3 warnings
+tests/agent/test_agent_pev.py: 2 warnings
+tests/agent/test_agent_pev_live_gate.py: 1 warning
+tests/agent/test_agent_session_access.py: 3 warnings
+tests/agent/test_local_host_parity.py: 1 warning
+tests/contract/test_agent_pev_flow_contracts.py: 9 warnings
+tests/contract/test_agent_pev_rbac_contracts.py: 2 warnings
+tests/contract/test_ide_contracts.py: 2 warnings
+tests/feature/test_agent_pev_quickstart_scenarios.py: 2 warnings
+tests/feature/test_services_coverage.py: 2 warnings
+tests/unit/test_session_lifecycle.py: 3 warnings
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\graph\builder.py:185: UserWarning: The 'config' parameter should be typed as 'RunnableConfig' or 'RunnableConfig | None', not 'RunnableConfig | None'. 
+    graph.add_node(NODE_PLANNER, _with_runtime_deps(planner_node), retry_policy=_LLM_RETRY)
+
+tests/agent/test_agent_chat_idle.py: 2 warnings
+tests/agent/test_agent_ide_sessions.py: 6 warnings
+tests/agent/test_agent_live_execution_gate.py: 1 warning
+tests/agent/test_agent_llm_health.py: 3 warnings
+tests/agent/test_agent_pev.py: 2 warnings
+tests/agent/test_agent_pev_live_gate.py: 1 warning
+tests/agent/test_agent_session_access.py: 3 warnings
+tests/agent/test_local_host_parity.py: 1 warning
+tests/contract/test_agent_pev_flow_contracts.py: 9 warnings
+tests/contract/test_agent_pev_rbac_contracts.py: 2 warnings
+tests/contract/test_ide_contracts.py: 2 warnings
+tests/feature/test_agent_pev_quickstart_scenarios.py: 2 warnings
+tests/feature/test_services_coverage.py: 2 warnings
+tests/unit/test_session_lifecycle.py: 3 warnings
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\graph\builder.py:186: UserWarning: The 'config' parameter should be typed as 'RunnableConfig' or 'RunnableConfig | None', not 'RunnableConfig | None'. 
+    graph.add_node(NODE_EXECUTOR, _with_runtime_deps(executor_node), retry_policy=_LLM_RETRY)
+
+tests/agent/test_agent_chat_idle.py: 2 warnings
+tests/agent/test_agent_ide_sessions.py: 6 warnings
+tests/agent/test_agent_live_execution_gate.py: 1 warning
+tests/agent/test_agent_llm_health.py: 3 warnings
+tests/agent/test_agent_pev.py: 2 warnings
+tests/agent/test_agent_pev_live_gate.py: 1 warning
+tests/agent/test_agent_session_access.py: 3 warnings
+tests/agent/test_local_host_parity.py: 1 warning
+tests/contract/test_agent_pev_flow_contracts.py: 9 warnings
+tests/contract/test_agent_pev_rbac_contracts.py: 2 warnings
+tests/contract/test_ide_contracts.py: 2 warnings
+tests/feature/test_agent_pev_quickstart_scenarios.py: 2 warnings
+tests/feature/test_services_coverage.py: 2 warnings
+tests/unit/test_session_lifecycle.py: 3 warnings
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\graph\builder.py:187: UserWarning: The 'config' parameter should be typed as 'RunnableConfig' or 'RunnableConfig | None', not 'RunnableConfig | None'. 
+    graph.add_node(NODE_VALIDATOR, _with_runtime_deps(validator_node), retry_policy=_LLM_RETRY)
+
+tests/agent/test_agent_chat_idle.py: 2 warnings
+tests/agent/test_agent_ide_sessions.py: 6 warnings
+tests/agent/test_agent_live_execution_gate.py: 1 warning
+tests/agent/test_agent_llm_health.py: 3 warnings
+tests/agent/test_agent_pev.py: 2 warnings
+tests/agent/test_agent_pev_live_gate.py: 1 warning
+tests/agent/test_agent_session_access.py: 3 warnings
+tests/agent/test_local_host_parity.py: 1 warning
+tests/contract/test_agent_pev_flow_contracts.py: 9 warnings
+tests/contract/test_agent_pev_rbac_contracts.py: 2 warnings
+tests/contract/test_ide_contracts.py: 2 warnings
+tests/feature/test_agent_pev_quickstart_scenarios.py: 2 warnings
+tests/feature/test_services_coverage.py: 2 warnings
+tests/unit/test_session_lifecycle.py: 3 warnings
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\graph\builder.py:188: UserWarning: The 'config' parameter should be typed as 'RunnableConfig' or 'RunnableConfig | None', not 'RunnableConfig | None'. 
+    graph.add_node(NODE_HUMAN_INPUT, _with_runtime_deps(human_input_node))
+
+tests/agent/test_agent_chat_idle.py: 2 warnings
+tests/agent/test_agent_ide_sessions.py: 6 warnings
+tests/agent/test_agent_live_execution_gate.py: 1 warning
+tests/agent/test_agent_llm_health.py: 3 warnings
+tests/agent/test_agent_pev.py: 2 warnings
+tests/agent/test_agent_pev_live_gate.py: 1 warning
+tests/agent/test_agent_session_access.py: 3 warnings
+tests/agent/test_local_host_parity.py: 1 warning
+tests/contract/test_agent_pev_flow_contracts.py: 9 warnings
+tests/contract/test_agent_pev_rbac_contracts.py: 2 warnings
+tests/contract/test_ide_contracts.py: 2 warnings
+tests/feature/test_agent_pev_quickstart_scenarios.py: 2 warnings
+tests/feature/test_services_coverage.py: 2 warnings
+tests/unit/test_session_lifecycle.py: 3 warnings
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\graph\builder.py:189: UserWarning: The 'config' parameter should be typed as 'RunnableConfig' or 'RunnableConfig | None', not 'RunnableConfig | None'. 
+    graph.add_node(NODE_FINALIZE, _with_runtime_deps(finalize_node))
+
+tests/agent/test_agent_ide_sessions.py::test_session_get_messages
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-7 (_connection_worker_thread)
+  
+  Traceback (most recent call last):
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 66, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_result, future, result)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1081, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1023, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 75, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_exception, future, e)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/agent/test_agent_ide_sessions.py::test_approve_session
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-14 (_connection_worker_thread)
+  
+  Traceback (most recent call last):
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 66, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_result, future, result)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1081, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1023, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 75, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_exception, future, e)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/agent/test_agent_live_execution_gate.py::test_operator_live_execute_pev_blocked_without_approval
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\accelerator_api\main.py:131: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/agent/test_agent_session_access.py::test_operator_lists_only_own_sessions
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-54 (_connection_worker_thread)
+  
+  Traceback (most recent call last):
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 66, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_result, future, result)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1081, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1023, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 75, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_exception, future, e)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/agent/test_agent_session_access.py::test_sessions_isolated_by_profile
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-60 (_connection_worker_thread)
+  
+  Traceback (most recent call last):
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 66, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_result, future, result)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1081, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\threading.py", line 1023, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\aiosqlite\core.py", line 75, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_exception, future, e)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Users\David\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/unit/test_guardrails.py::test_wrap_tool_blocks_no_plan
+tests/unit/test_guardrails.py::test_wrap_tool_allows_read_only
+tests/unit/test_guardrails.py::test_wrap_tool_deletion_requires_confirmation
+tests/unit/test_guardrails.py::test_wrap_tool_logs_decision
+tests/unit/test_tool_bindings.py::test_executor_tool_names
+tests/unit/test_tool_bindings.py::test_executor_tool_names
+tests/unit/test_tool_bindings.py::test_all_agent_tools_include_get_current_profile
+tests/unit/test_tool_bindings.py::test_all_agent_tools_include_get_current_profile
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\guardrails.py:324: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(tool_func):
+
+tests/unit/test_streaming.py::test_stream_llm_response_fallback
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\agents\migration_agent\nodes\streaming.py:46: RuntimeWarning: coroutine 'test_stream_llm_response_fallback.<locals>.FakeLLM.astream' was never awaited
+    async for chunk in llm.astream(messages):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/agent/test_agent_pev_live_gate.py::test_approve_calls_enforce_live_gate_before_resume
+FAILED tests/agent/test_agentic_api.py::test_create_assignment - assert 404 =...
+FAILED tests/agent/test_agentic_api.py::test_workflow_readiness - assert 404 ...
+FAILED tests/agent/test_agentic_api.py::test_rollback_dry_run - assert 404 ==...
+FAILED tests/agent/test_agentic_api.py::test_list_assignments_and_audit - ass...
+FAILED tests/agent/test_local_host_parity.py::test_mcp_plan_tool_accepts_dry_run
+FAILED tests/cloud_credentials/test_cloud_credential_probe.py::test_probe_aws_passed
+FAILED tests/contract/test_agent_interface_contracts.py::TestAgentInterface::test_discovery_results_accessible
+FAILED tests/contract/test_agent_interface_contracts.py::TestAgentInterface::test_migration_wave_creation_accessible
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryScanAPI::test_scan_endpoint_exists
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryScanAPI::test_scan_with_force_refresh
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryScanAPI::test_scan_returns_scan_id_when_orgs_provided
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryResultsAPI::test_results_endpoint_returns_200
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryResultsAPI::test_results_have_required_fields
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryResultsAPI::test_results_filter_by_organization
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryResultsAPI::test_results_filter_by_status
+FAILED tests/contract/test_discovery_api_contracts.py::TestDiscoveryResultsAPI::test_results_no_wave_assignment
+FAILED tests/contract/test_langgraph_contracts.py::test_all_required_nodes_present
+FAILED tests/contract/test_langgraph_contracts.py::test_agent_state_has_pev_fields
+FAILED tests/contract/test_rollback_gates_contract.py::test_gate_status_shape
+FAILED tests/contract/test_unified_tabs_contracts.py::TestUnifiedTabNavigation::test_discovery_api_endpoint_exists
+FAILED tests/contract/test_unified_tabs_contracts.py::TestUnifiedTabNavigation::test_migration_api_endpoint_exists
+FAILED tests/contract/test_unified_tabs_contracts.py::TestUnifiedTabNavigation::test_discovery_scan_endpoint_exists
+FAILED tests/core/test_batch_executor_topo.py::test_plan_repo_order - Attribu...
+FAILED tests/core/test_batch_executor_topo.py::test_sort_repos_topo - Attribu...
+FAILED tests/core/test_rollback.py::test_enable_pipelines_dry_run - TypeError...
+FAILED tests/core/test_storage_config.py::test_postgres_schema_includes_agentic_tables
+FAILED tests/feature/test_agent_pev_quickstart_scenarios.py::TestQuickstartScenario9DualAndGates::test_gate_blocks_after_platform_approval
+FAILED tests/feature/test_services_coverage.py::test_agent_health_llm_and_session
+FAILED tests/feature/test_services_coverage.py::test_agent_deprecated_approvals_list
+FAILED tests/integration/test_agent_interface_integration.py::TestAgentConversationWorkflow::test_full_migration_workflow_via_api
+FAILED tests/integration/test_agent_interface_integration.py::TestAgentConversationWorkflow::test_wave_execution_requires_draft_status
+FAILED tests/integration/test_unified_tabs_integration.py::TestUnifiedNavigationWorkflow::test_discovery_results_empty_initially
+FAILED tests/integration/test_unified_tabs_integration.py::TestUnifiedNavigationWorkflow::test_migration_wave_lifecycle
+FAILED tests/integration/test_unified_tabs_integration.py::TestUnifiedNavigationWorkflow::test_wave_name_validation
+FAILED tests/integration/test_unified_tabs_integration.py::TestUnifiedNavigationWorkflow::test_concurrent_migration_rejected
+FAILED tests/unit/test_operator_resolutions.py::TestOperatorResolutionPersistence::test_set_operator_resolutions_persists_mappings
+FAILED tests/unit/test_operator_resolutions.py::TestOperatorResolutionPersistence::test_get_operator_resolutions_loads_mappings
+FAILED tests/unit/test_operator_resolutions.py::TestOperatorResolutionPersistence::test_get_operator_resolutions_returns_empty_dict_when_none
+FAILED tests/unit/test_operator_resolutions.py::TestOperatorResolutionPersistence::test_resolutions_per_profile_isolation
+FAILED tests/unit/test_operator_resolutions.py::TestOperatorResolutionPersistence::test_set_operator_resolutions_overwrites_existing
+FAILED tests/unit/test_pipeline_plan.py::test_finalize_agent_migration_plan_attaches_pipeline_metadata
+FAILED tests/unit/test_planner_node.py::test_blockers_from_baseline_probes - ...
+FAILED tests/unit/test_validator_node.py::test_validator_baseline_probe_escalates_operator_input
+FAILED tests/unit/test_workflow_integrity.py::TestWorkflowIntegrityCheck::test_pass_when_files_exist_and_shas_match
+FAILED tests/unit/test_workflow_integrity.py::TestWorkflowIntegrityCheck::test_fail_when_files_missing
+FAILED tests/unit/test_workflow_integrity.py::TestWorkflowIntegrityCheck::test_no_integrity_check_when_no_workflow_files
+FAILED tests/unit/test_workflow_integrity.py::TestWorkflowIntegrityCheck::test_integrity_check_uses_github_contents_api
+FAILED tests/unit/test_workflow_validator.py::TestWorkflowValidatorWithActionlint::test_subprocess_call_to_actionlint
+ERROR tests/contract/test_migration_api_contracts.py::TestOnDemandMigrationAPI::test_repo_migration_endpoint_exists
+ERROR tests/contract/test_migration_api_contracts.py::TestOnDemandMigrationAPI::test_repo_migration_requires_form
+ERROR tests/contract/test_migration_api_contracts.py::TestOnDemandMigrationAPI::test_repo_migration_dry_run_supported
+ERROR tests/contract/test_migration_api_contracts.py::TestOnDemandMigrationAPI::test_repo_migration_live_requires_confirmation
+ERROR tests/contract/test_migration_api_contracts.py::TestOnDemandMigrationAPI::test_concurrent_migration_rejected
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveCreationAPI::test_wave_creation_endpoint_exists
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveCreationAPI::test_wave_creation_requires_name
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveCreationAPI::test_wave_creation_with_multiple_repos
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveExecutionAPI::test_wave_execution_endpoint_exists
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveExecutionAPI::test_wave_execution_dry_run
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveExecutionAPI::test_wave_execution_nonexistent_returns_404
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveStatusAPI::test_wave_status_endpoint_exists
+ERROR tests/contract/test_migration_api_contracts.py::TestWaveStatusAPI::test_wave_status_nonexistent_returns_404
+ERROR tests/contract/test_migration_api_contracts.py::TestPreMigrationFormAPI::test_form_generation_endpoint_exists
+ERROR tests/contract/test_migration_api_contracts.py::TestPreMigrationFormAPI::test_form_submission_endpoint_exists
+ERROR tests/contract/test_migration_api_contracts.py::TestPreMigrationFormAPI::test_form_generation_requires_repository_id
+49 failed, 791 passed, 30 skipped, 258 warnings, 16 errors in 76.99s (0:01:16)

@@ -1,0 +1,24 @@
+# protected-entry-points.manual.txt — data-model.md § ProtectedEntryPoint
+#
+# Hand-maintained additions to the generated `protected-entry-points.json`. Entries
+# here are merged in with `reason: manual` and are never overwritten by an inventory
+# run (the generated file is; this one is not).
+#
+# A protected entry point is reachable from outside the static call graph, so a zero
+# `reference_count` does not make it dead: `disposition: "delete"` requires
+# `reference_count == 0 && !protected` (data-model § Validation).
+#
+# Use this file only for entry points the generator's automatic reasons cannot see
+# (cli_command, http_route, main_guard, orphan_allowlist, langchain_tool, graph_node,
+# pytest_fixture, next_route_export) — for example, something invoked purely by
+# string name, by an external scheduler, or by a downstream consumer.
+#
+# Format: one inventory id per line, `<path>::<qualname>`, forward slashes.
+# Blank lines and `#` comments are ignored. Add a comment above each entry saying
+# what reaches it and why the generator cannot.
+#
+# Example (not active):
+#   # invoked by name from docker-compose healthcheck, never imported
+#   ado2gh/api/health.py::probe
+#
+# Seeded empty by T003 on 2026-09-07.
