@@ -18,24 +18,45 @@ from ado2gh.state.job_store import JobStoreFactory
 log = logging.getLogger("ado2gh.worker")
 
 
+def _require_config_path(payload: dict) -> str:
+    """Read the migration config path a job needs, or refuse the job.
+
+    Args:
+        payload: The job payload exactly as it was enqueued through
+            ``POST /v1/jobs``.
+
+    Returns:
+        The ``config_path`` the Accelerator resolves its Azure DevOps settings
+        from.
+
+    Raises:
+        ValueError: The payload carries no ``config_path``. No config file is
+            guessed on the operator's behalf, because the wrong one would scan
+            the wrong organisation.
+    """
+    config_path = payload.get("config_path", "")
+    if not config_path:
+        raise ValueError("Job payload is missing 'config_path'")
+    return config_path
+
+
 def execute_job(job: JobRecord) -> dict:
     """Run a single job based on its type.
 
     Args:
-        job: The claimed job. Its payload supplies the accelerator config and
-            database paths as well as the request fields for the job type.
+        job: The claimed job. Its payload supplies the state database path and
+            the request fields for the job type, including the ``config_path``
+            that the inventory job types read directly.
 
     Returns:
         The accelerator response for that job type, as a plain dictionary
         ready to be stored as the job result.
 
     Raises:
-        ValueError: If the job type has no handler.
+        ValueError: The job type has no handler, or an inventory job's payload
+            omits ``config_path``.
     """
-    accel = Accelerator(
-        config_path=job.payload.get("config_path", ""),
-        db_path=job.payload.get("db_path", "migration_state.db"),
-    )
+    accel = Accelerator(db_path=job.payload.get("db_path", "migration_state.db"))
     jt = job.job_type
     payload = job.payload
 
@@ -45,18 +66,20 @@ def execute_job(job: JobRecord) -> dict:
 
     if jt == JobType.INVENTORY_PROJECT:
         projects = payload.get("projects", [])
-        return accel.inventory(projects=projects)
+        return accel.inventory(_require_config_path(payload), projects=projects)
 
     if jt == JobType.MIGRATE_REPO:
-        results = accel.run_wave(RunWaveRequest(**payload))
-        return {"waves": [r.model_dump() for r in results]}
+        result = accel.run_wave(RunWaveRequest(**payload))
+        return {"waves": [result.model_dump()]}
 
     if jt == JobType.VALIDATE_REPO:
         from ado2gh.api.contracts import ValidateRequest
         return accel.validate(ValidateRequest(**payload)).model_dump()
 
     if jt == JobType.TRANSFORM_PIPELINE:
-        return accel.inventory(projects=[payload.get("project", "")])
+        return accel.inventory(
+            _require_config_path(payload), projects=[payload.get("project", "")],
+        )
 
     raise ValueError(f"Unsupported job type: {jt}")
 

@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-52 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, each with the next free id); the per-component placeholder each id
+53 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08 and GAP-053 on 2026-09-09, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -22,13 +22,13 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 16 |
-| high | 20 |
+| high | 21 |
 | medium | 11 |
 | low | 5 |
-| **total** | **52** |
+| **total** | **53** |
 
 All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 52 entries carries at least one path:line citation or a reproduction command
+one of the 53 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -69,6 +69,7 @@ one of the 52 entries carries at least one path:line citation or a reproduction 
 | GAP-034 (GAP-DEPLOY-04) | Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback | remediated |
 | GAP-051 (GAP-TOOL-07) | The test suite opens the developer's real agent checkpoint DB and root `migration_state.db` | remediated |
 | GAP-052 (GAP-CLI-05) | `ado2gh phase assign` crashes on every invocation; no repo can be risk-scored from the CLI | remediated |
+| GAP-053 (GAP-ENG-08) | The queue worker cannot execute any job type: every one dies at `Accelerator` construction | remediated |
 
 ## Disputes
 
@@ -1057,6 +1058,27 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: with `ado2gh/cli/phase.py` restored to its `463cc35` content (`git show HEAD:ado2gh/cli/phase.py`) and the rest of the fix in place, `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_052_phase_assign_broken.py -p no:cacheprovider -q` gives `2 failed, 2 warnings in 4.78s`, each with `AssertionError: phase assign exited 1: TypeError('RiskScorer() takes no arguments')`. With the fix restored: `2 passed, 2 warnings in 4.50s`. Taken 2026-09-08 by the implementation agent (Claude Opus 5).
 - contract_change: false — the command keeps exactly its two options (`-c/--config`, `--db`) with unchanged types, defaults and help text; `ado2gh phase assign --help` is byte-identical to `463cc35` (md5 `9dd05625b031ae9e38b8fde893ce4a6b` before and after) and `tests/contract/public_surface_snapshot.json` is unchanged.
 - closed_on: 2026-09-08
+
+### GAP-053 (GAP-ENG-08) The queue worker cannot execute any job type: every one dies at `Accelerator` construction
+
+- components: migration engine (background job worker), accelerator service, deployment artefacts
+- violates: Principle V (Enterprise Migration Safeguards — migration-appropriate patterns: the asynchronous batch-execution path of the full stack is inoperative, so no queued discover, inventory, migrate, validate or transform job can run); Principle VI (no test exercised `execute_job`, which is how three separate call-site defects survived in one 40-line function)
+- evidence (paths at `d11d25e`, the tree this entry was written against):
+  - `ado2gh/core/orchestration/worker.py:35-38` (pre-fix) — `Accelerator(config_path=..., db_path=...)`, but `ado2gh/api/accelerator.py:97` declares `def __init__(self, db_path: str = "migration_state.db") -> None` and the facade has never taken a `config_path`: increment 9 touched that line only to add the return annotation (`git show d11d25e -- ado2gh/api/accelerator.py`), so this is pre-existing, not a regression of the cleanup. Every job type raises before its handler is reached (verified, reproduction below)
+  - `ado2gh/core/orchestration/worker.py:48` and `:59` (pre-fix) — `accel.inventory(projects=...)` with no config path, against `ado2gh/api/accelerator.py:281-287`, where `config_path: str` is the first, required, positional parameter. With the constructor defect fixed and nothing else, both call sites raise `TypeError: missing a required argument: 'config_path'` (measured)
+  - `ado2gh/core/orchestration/worker.py:51-52` (pre-fix) — `results = accel.run_wave(...)` then `{"waves": [r.model_dump() for r in results]}`, but `run_wave` returns one `RunWaveResult`, not a list (`ado2gh/api/accelerator.py:131`, `:173`). Iterating a pydantic model yields `(field, value)` tuples, so the migrate job raises `AttributeError: 'tuple' object has no attribute 'model_dump'` after the wave has already executed and written its rows (measured)
+  - `services/accelerator_api/main.py:495-500` — `POST /v1/jobs` stores `req.payload` verbatim; `ado2gh/api/contracts.py:148-158` declares `payload` as a free-form dict. No code in `ado2gh/`, `services/` or `apps/migration-ui/src` builds an `inventory_project` or `transform_pipeline` payload, so there is no in-repo producer to correct — the config path can only come from the caller's payload, which is the same value the accelerator's own readiness path passes to `inventory` (`services/accelerator_api/main.py:382-386`)
+  - `docker-compose.yml:91-115` — the `worker` service runs `python -m ado2gh.core.orchestration.worker` under the `default` profile; `docker-compose.prod.yml:44-51` keeps the same service on the postgres backend. Both shipped stacks run this dispatcher
+  - why it survived: `docker-compose.yml:24` sets `ADO2GH_LIGHTWEIGHT_MODE: "true"` for the accelerator, and under that flag `enqueue_job` completes each job inline and never pushes it to Redis (`services/accelerator_api/main.py:501-504`), so in the shipped compose almost nothing reaches the worker; and `execute_job` appeared nowhere under `tests/` before this remediation
+  - reproduction: with `git show d11d25e:ado2gh/core/orchestration/worker.py` loaded as a module, `execute_job(JobRecord(id="j", job_type=JobTypeEnum.INVENTORY_PROJECT, status=JobStatus.RUNNING, payload={"config_path": "migration.yaml", "projects": ["Payments"]}))` → `TypeError: Accelerator.__init__() got an unexpected keyword argument 'config_path'`
+- severity: high (critical_test: —). Rated under US3 scenario 3, first clause: it violates a constitution principle (V) in the configuration that ships the worker, and FR-016a independently caps a gap reached through a deployment artefact at high. It meets no critical test — (a) nothing destructive runs, the dispatcher dies at construction before any Azure DevOps or GitHub call; (b) no secret is handled, the `TypeError` names the keyword, never a value, so nothing maskable reaches the job record or the log (CA-003); (c) no migration state is written before the raise, and `run_worker` catches the exception and records it with `store.fail`, so the job is left visibly failed rather than lost — the one exception is the migrate job, whose `AttributeError` fires after `BatchExecutor` has already persisted its wave rows, and even there the state is written, not corrupted: the job is marked failed while the wave rows stand, which is a recoverable disagreement, not an unresumable run; (d) the failure path is a loud uncaught exception that the worker loop records — that is the fail-safe default, not the absence of one; (e) the two sides do not silently disagree, they crash. Medium was rejected on the same ground as GAP-052 and GAP-017 (GAP-CLI-01): medium is reserved for readability, naming or documentation drift with no safety impact, and a shipped service that cannot execute a single job type is not drift.
+- blast_radius: the entire asynchronous execution path of the full stack is dead. Under `docker compose --profile default` and under `docker-compose.yml` + `docker-compose.prod.yml`, any job that reaches the worker — pushed to Redis, or claimed straight from the store by `claim_next` when the Redis push failed — fails immediately, so an operator relying on queued execution sees every job go to `failed` with a `TypeError` naming an internal keyword argument, and no discovery, inventory, migration, validation or transform work happens at all. The two inventory job types would still have been broken after the constructor was fixed, and the migrate job would have reported a failed job for a wave that had in fact run. Nothing is destroyed and nothing is silently wrong, which is why this is high rather than critical; the capability is simply absent, exactly as in GAP-052.
+- status: remediated
+- resolution: all three call sites in `ado2gh/core/orchestration/worker.py` were corrected to the signatures `ado2gh/api/accelerator.py` actually declares, and `Accelerator` was not touched — increment 9 owns that module and its signatures are unchanged. The facade is now constructed with `db_path` alone; both inventory job types pass the config path as the first positional argument; and the migrate job dumps the single `RunWaveResult` it receives, keeping the existing `{"waves": [...]}` result shape so a stored job result still deserialises the same way. The config path is read through one new module-level helper, `_require_config_path`, which raises `ValueError("Job payload is missing 'config_path'")` when the payload omits it: no default config file is guessed, because the wrong one would scan the wrong Azure DevOps organisation. `POST /v1/jobs` was left alone — it is a verbatim pass-through of a caller-supplied payload with no in-repo producer, so there was nothing to fix upstream; a payload that omits the key now fails with a message naming it instead of a `TypeError` naming an internal parameter.
+- regression_check: `tests/unit/test_gap_053_worker_inventory_job.py` — eight tests that drive `execute_job` with `worker.Accelerator` patched by an `autospec` mock, so any call that does not match the real signature raises instead of passing silently. They assert that both inventory job types pass the config path positionally, that a payload without one raises `ValueError` and never reaches `inventory`, that the facade is constructed with `db_path` only, that the discover branch forwards its request, that a single `RunWaveResult` is dumped into `{"waves": [...]}`, and that the unsupported-job-type guard still raises. No network call and no file under `data/` is touched, and no credential literal appears in the payloads (CA-003).
+- revert_proof: with `ado2gh/core/orchestration/worker.py` at its `d11d25e` content, `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_053_worker_inventory_job.py -p no:cacheprovider -q` gives `8 failed, 2 warnings in 5.98s`, every one of the eight reporting `TypeError: got an unexpected keyword argument 'config_path'` from `inspect`'s signature binding — the constructor defect masks the other two. Reverting only the two later defects (constructor fixed, `inventory` and `run_wave` call sites restored) gives `5 failed, 3 passed, 2 warnings in 4.40s`: four failures reporting `TypeError: missing a required argument: 'config_path'` and one reporting `AttributeError: 'tuple' object has no attribute 'model_dump'`, which proves each half of the check bites on its own defect. With the full fix in place: `8 passed, 2 warnings in 4.19s`. Taken 2026-09-09 by the implementation agent (Claude Opus 5).
+- contract_change: false — no route, CLI command, table or environment variable changed. `Accelerator`'s signatures are untouched, the `POST /v1/jobs` request body is unchanged, and a completed migrate job keeps its `{"waves": [...]}` result shape; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-09
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 
