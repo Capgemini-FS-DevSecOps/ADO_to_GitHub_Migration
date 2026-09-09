@@ -318,6 +318,28 @@ a lost `call_soon_threadsafe` wakeup on the Windows Proactor loop). Setting
 `-p` plugin makes the run reliable (82.71 s). CI is Linux/Python 3.11 and is unaffected;
 neither setting is committed.
 
+**Ratchet trail (T075), as of HEAD `7396829`.** The value of `--cov-fail-under` in
+`.github/workflows/ci.yml` after each step, checked against the `013 Increment N`
+sections of `docs/STRUCTURAL_CHANGELOG.md` and against
+`git log -p -- .github/workflows/ci.yml`:
+
+| Point | `--cov-fail-under` | Evidence |
+|-------|--------------------|----------|
+| pre-013 | 85, asserted over an `omit` list that hid `cli/`, `state/` and `core/` | `34f872b` |
+| T011 — honest baseline, `omit` deleted | **56** | `9c83a29` |
+| Increment 1 (`ado2gh` root + `audit/`) | 56 → **58** | `0ab1ac9`, changelog line 362 |
+| Increment 2 (`clients/`) | **58** — measured 58, so not raised | changelog line 397 |
+| Increment 3 (`state/`) | 58 → **59** | `7eba3d7`, changelog line 432 |
+| Increments 4, 5, 6, 8, 7, 13, 14, 9 | **59** at each; increment 8 measured 58 and was correctly not lowered | changelog lines 460, 492, 523, 561, 619, 703, 810 |
+| HEAD `7396829` | **59** (`ci.yml:36`) | — |
+
+The gate has never been lowered, which is the compensating control recorded against
+GAP-022 (GAP-TOOL-01). Increments 10, 11 and 12 were still in flight when this trail
+was taken and may raise the value further: coverage measured on 2026-09-09 over the
+whole package, on a working tree that carries those in-flight edits, is **60.27 %**,
+already a point above the gate. T094 and T095 re-measure and raise `--cov-fail-under`
+to the settled figure at completion.
+
 Why that decision rather than closing the gap here: 29 points on 18 k statements is roughly
 5,200 statements no test executes, a test-writing effort of a different order than
 signature cleanup, and it would dominate the feature. Signature cleanup and dead-code

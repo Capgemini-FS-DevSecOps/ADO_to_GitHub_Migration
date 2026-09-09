@@ -507,17 +507,17 @@ in this register. T037 therefore had no dispute to put to the operator.
 - components: tooling & guards, deployment & CI artefacts
 - violates: Principle VI (Comprehensive Testing & Coverage, NON-NEGOTIABLE)
 - evidence:
-  - `.github/workflows/ci.yml:36` — `pytest --cov=ado2gh --cov-fail-under=56`
+  - `.github/workflows/ci.yml:36` — `pytest --cov=ado2gh --cov-fail-under=56` (the value as found on 2026-09-07; the ratchet has been raised since — see resolution)
   - `.specify/memory/constitution.md` Quality Gates §1 — "coverage >= 85% on `ado2gh`"
   - `pyproject.toml:88-90` — `[tool.coverage.run]` carries no `omit` key, so 56% is measured over the whole package and is the honest figure
 - severity: high (critical_test: —)
 - blast_radius: 29 percentage points of the package have no regression net, which is the enabling condition for several findings in this register that shipped undetected (GAP-017 (GAP-CLI-01)'s always-raising command, GAP-013 (GAP-ENG-01)'s unreachable guard, GAP-015 (GAP-SEAM-01)'s key mismatch). Closing the gap to 85% is explicitly out of scope for this feature per FR-027a.
 - status: deferred
-- resolution: FR-027a scopes the 56% → 85% climb out of feature 013. The ratchet is honest (no omit list) and may never be lowered; each subsequent increment raises it to the measured figure.
-- regression_check: `.github/workflows/ci.yml:36` — `--cov-fail-under` is monotonically non-decreasing
-- revert_proof: —
+- resolution: exclusions removed and honest ratchet active since T011 (starting value 56 %, current value 60 %); 85 % outstanding, follow-up owner `operator`. FR-027a and the operator decision of 2026-09-07 (`plan.md` § Coverage measurement) scope the climb to 85 % out of feature 013, so this entry stays deferred rather than remediated. The compensating control is the ratchet itself: `--cov-fail-under` is measured over the whole package with no `omit` list and has never been lowered — 56 at T011 (`9c83a29`) → 58 at increment 1 (`0ab1ac9`) → 59 at increment 3 (`7eba3d7`) → 59 at HEAD `7396829`, with increment 8 measuring 58 and correctly left at 59. The full trail is copied into `plan.md` § Coverage measurement. Measured coverage on 2026-09-09 is 60.27 %, one point above the gate, because increments 10–12 were still in flight; T094/T095 re-measure and raise the gate at completion. No individual is named as follow-up owner anywhere in `plan.md` (it says only "a time-boxed follow-up owner"), so the owner is recorded here as `operator`.
+- regression_check: `.github/workflows/ci.yml:36` — `pytest --cov=ado2gh --cov-fail-under=59`, monotonically non-decreasing and measured over the whole package, since `pyproject.toml:88-90` `[tool.coverage.run]` carries no `omit` key
+- revert_proof: raise the gate above the measured figure, on the command line only, and the CI check fails: `.venv\Scripts\python.exe -m pytest -q --cov=ado2gh --cov-fail-under=99 -p no:cacheprovider` ends `FAIL Required test coverage of 99% not reached. Total coverage: 60.27%` with `ERROR: Coverage failure: total of 60 is less than fail-under=99`; the real gate `.venv\Scripts\python.exe -m pytest -q --cov=ado2gh --cov-fail-under=59 -p no:cacheprovider` passes on the same tree with `Required test coverage of 59% reached. Total coverage: 60.27%`. Both runs were 937 passed / 30 skipped and both carried the same one unrelated failure, `tests/auth/test_gap_002_auth_disabled_bypasses_live_approval.py::test_anonymous_caller_cannot_switch_agent_session_to_live`, which is GAP-002's own revert proof being taken concurrently in the same tree; the coverage verdict is therefore the only difference between the two runs. Taken 2026-09-09 by the T075/T076 implementation agent (Claude Opus 5). Neither `.github/workflows/ci.yml` nor `pyproject.toml` was edited for the proof — the command-line form is the alternative T076 allows, and restoring an `omit` block would have contradicted FR-027a.
 - contract_change: false
-- closed_on: —
+- closed_on: — (deferred; carried to the follow-up owner with the ratchet as its control)
 
 ### GAP-023 (GAP-TOOL-02) mypy is configured so that it cannot fail, and never reaches most of the package
 
