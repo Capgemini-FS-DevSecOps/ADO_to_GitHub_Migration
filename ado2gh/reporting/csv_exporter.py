@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import csv
-import json
 from pathlib import Path
-from typing import Optional
 
 from ado2gh.logging_config import log
 from ado2gh.state.db import StateDB
@@ -17,7 +15,7 @@ class CSVExporter:
 
     @staticmethod
     def export_migrations(db: StateDB, output_path: str,
-                          wave_id: int = None) -> str:
+                          wave_id: int | None = None) -> str:
         """Export repo migration status to CSV.
 
         Args:
@@ -58,7 +56,7 @@ class CSVExporter:
 
     @staticmethod
     def export_failed_repos(db: StateDB, output_path: str,
-                            phase: str = None) -> str:
+                            phase: str | None = None) -> str:
         """Generate a focused retry list of failed repos.
 
         Writes a plain-text file (one repo per line) suitable for feeding
@@ -108,14 +106,3 @@ def _ensure_path(path: str) -> Path:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
-
-
-def _count_json(raw: Optional[str]) -> int:
-    """Count elements in a JSON-encoded list string."""
-    if not raw:
-        return 0
-    try:
-        data = json.loads(raw)
-        return len(data) if isinstance(data, list) else 0
-    except (json.JSONDecodeError, TypeError):
-        return 0

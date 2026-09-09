@@ -35,15 +35,39 @@ class PostMigrationValidator:
     6. Branch protection rules applied
     """
 
-    def __init__(self, ado: ADOClient, gh: GHClient, db: StateDB):
+    def __init__(self, ado: ADOClient, gh: GHClient, db: StateDB) -> None:
+        """Store the clients and state store the validation reads from.
+
+        Args:
+            ado: Client for the Azure DevOps source organisation.
+            gh: Client for the GitHub destination organisation.
+            db: State store holding the recorded migration results.
+        """
         self.ado = ado
         self.gh = gh
         self.db = db
 
     def validate(self, repos: list[RepoConfig],
-                 output_path: str = None,
+                 output_path: str | None = None,
                  max_workers: int = 6,
-                 workflow_files: list[dict] = None) -> list[dict]:
+                 workflow_files: list[dict] | None = None) -> list[dict]:
+        """Validate migrated repos by comparing source and destination content.
+
+        Runs the per-repo checks in a thread pool and sorts the results by
+        project and repo name so successive runs are comparable.
+
+        Args:
+            repos: Repos to validate.
+            output_path: If given, write the CSV and JSON reports there.
+            max_workers: Number of repos to validate at once.
+            workflow_files: Workflow files expected on the destination repo,
+                used by the workflow presence check.
+
+        Returns:
+            One result dict per repo, each with an ``overall`` verdict and a
+            ``checks`` mapping. A repo whose validation raised carries the
+            error text instead of checks.
+        """
         results: list[dict] = []
 
         console.print(f"[bold]Validating {len(repos)} repos...[/bold]")
@@ -77,7 +101,7 @@ class PostMigrationValidator:
 
         return results
 
-    def _validate_one(self, repo: RepoConfig, workflow_files: list[dict] = None) -> dict:
+    def _validate_one(self, repo: RepoConfig, workflow_files: list[dict] | None = None) -> dict:
         result: dict[str, Any] = {
             "ado_project": repo.ado_project,
             "ado_repo": repo.ado_repo,
@@ -289,7 +313,14 @@ class PostMigrationValidator:
             return {"verdict": WARN,
                     "detail": "No branch protection on default branch (may be intentional)"}
 
-    def _write_report(self, results: list[dict], output_path: str):
+    def _write_report(self, results: list[dict], output_path: str) -> None:
+        """Write the validation results as a CSV summary plus a JSON detail file.
+
+        Args:
+            results: Result dicts as returned by :meth:`validate`.
+            output_path: Destination path; its suffix is normalised to
+                ``.csv``, and the JSON detail file sits beside it.
+        """
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -331,7 +362,12 @@ class PostMigrationValidator:
 
         log.info("Validation report: %s + %s", csv_path, json_path)
 
-    def print_summary(self, results: list[dict]):
+    def print_summary(self, results: list[dict]) -> None:
+        """Print the validation results as a console table with pass counts.
+
+        Args:
+            results: Result dicts as returned by :meth:`validate`.
+        """
         from rich import box
         from rich.table import Table
 

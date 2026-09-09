@@ -36,7 +36,12 @@ def _colour(status: str, palette: dict) -> str:
 class Reporter:
     """Console and HTML reporting for the migration tool."""
 
-    def __init__(self, db: StateDB):
+    def __init__(self, db: StateDB) -> None:
+        """Store the state store every report reads from.
+
+        Args:
+            db: State store holding migrations, waves and pipeline rows.
+        """
         self.db = db
 
     # ── Console: repo migrations ─────────────────────────────────────────

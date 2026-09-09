@@ -15,22 +15,31 @@ from ado2gh.models import (
     RepoConfig,
 )
 from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
+from ado2gh.state.base import StateDBBase
 from ado2gh.state.db import StateDB
 
 
-def workflow_push_readiness(db, repo: RepoConfig) -> dict[str, list[str]]:
+def workflow_push_readiness(db: StateDBBase | None, repo: RepoConfig) -> dict[str, list[str]]:
     """Readiness verdict for a live workflow push to one repo (GAP-016).
 
     Consults the same auto/assisted/manual assessment the ``pipeline-readiness``
     command reports, so the push path and the report agree by construction
     instead of the push being gated on a caller-supplied literal.
 
-    Returns ``{"blockers": [...], "notes": [...]}``. A non-empty ``blockers``
-    means the live push must not proceed: a pipeline graded ``manual`` has hard
-    conversion blockers and its generated YAML needs a human before it lands on
-    the destination repo. ``notes`` are reviewer-facing caveats for pipelines
-    graded ``assisted`` — they do not block. Fails closed: if readiness cannot
-    be established at all, that is a blocker, not an approval.
+    Fails closed: if readiness cannot be established at all, that is a blocker,
+    not an approval.
+
+    Args:
+        db: State store holding the pipeline inventory, or ``None`` when the
+            caller has no state store at all.
+        repo: The repo the workflows would be pushed to.
+
+    Returns:
+        ``{"blockers": [...], "notes": [...]}``. A non-empty ``blockers`` means
+        the live push must not proceed: a pipeline graded ``manual`` has hard
+        conversion blockers and its generated YAML needs a human before it
+        lands on the destination repo. ``notes`` are reviewer-facing caveats
+        for pipelines graded ``assisted`` — they do not block.
     """
     if db is None:
         return {"blockers": ["pipeline readiness unavailable (no state store)"], "notes": []}
@@ -91,16 +100,32 @@ class PipelineReadinessReport:
         "PackerBuild@1",
     }
 
-    def __init__(self, db: StateDB):
+    def __init__(self, db: StateDB) -> None:
+        """Store the state store the pipeline inventory is read from.
+
+        Args:
+            db: State store holding the ``pipeline_inventory`` rows.
+        """
         self.db = db
 
-    def generate(self, repos: list[RepoConfig] = None,
-                 output_path: str = None,
+    def generate(self, repos: list[RepoConfig] | None = None,
+                 output_path: str | None = None,
                  migration_lookup: dict[str, dict] | None = None,
                  repo_migration_lookup: dict[str, dict] | None = None) -> dict:
-        """Generate readiness report for all pipelines in inventory.
+        """Generate a readiness report for the pipelines in the inventory.
 
-        Returns summary dict and optionally writes CSV + JSON reports.
+        Args:
+            repos: If given, restrict the scan to these repos; otherwise every
+                inventoried pipeline is assessed.
+            output_path: If given, also write the CSV and JSON reports there.
+            migration_lookup: Pipeline migration rows keyed by pipeline, used
+                to report what has already been converted.
+            repo_migration_lookup: Repo migration rows keyed by repo, used to
+                tell whether a pipeline's repo has landed on GitHub.
+
+        Returns:
+            A summary dict with the counts and effort estimate, plus the
+            per-pipeline assessments under ``pipelines``.
         """
         migration_lookup = migration_lookup or {}
         repo_migration_lookup = repo_migration_lookup or {}
@@ -297,7 +322,13 @@ class PipelineReadinessReport:
             "total_effort_days": round(total_effort / 8, 1),
         }
 
-    def _write_csv(self, assessments: list[dict], output_path: str):
+    def _write_csv(self, assessments: list[dict], output_path: str) -> None:
+        """Write one CSV row per assessed pipeline.
+
+        Args:
+            assessments: Per-pipeline assessment dicts.
+            output_path: Destination CSV path; parent directories are created.
+        """
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
@@ -313,8 +344,12 @@ class PipelineReadinessReport:
                 row["warnings"] = "; ".join(row["warnings"])
                 writer.writerow({k: row[k] for k in writer.fieldnames})
 
-    def print_summary(self, summary: dict):
-        """Print readiness summary to console."""
+    def print_summary(self, summary: dict) -> None:
+        """Print the readiness summary as a console table.
+
+        Args:
+            summary: Summary dict as returned by :meth:`generate`.
+        """
         from rich import box
         from rich.table import Table
 

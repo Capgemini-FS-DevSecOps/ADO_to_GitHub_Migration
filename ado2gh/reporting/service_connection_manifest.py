@@ -96,15 +96,35 @@ class ServiceConnectionManifest:
         },
     }
 
-    def __init__(self, ado: ADOClient):
+    def __init__(self, ado: ADOClient) -> None:
+        """Store the client the service connections are read from.
+
+        Args:
+            ado: Client for the Azure DevOps source organisation.
+        """
         self.ado = ado
 
     def generate(self, projects: list[str],
-                 output_path: str = None) -> dict:
+                 output_path: str | None = None) -> dict:
+        """Scan the given projects for service connections and write a manifest.
+
+        Service connection secrets cannot be read back from Azure DevOps, so
+        the manifest carries names and setup guidance only — never values
+        (CA-003).
+
+        Args:
+            projects: Azure DevOps project names to scan. A project that
+                cannot be read is logged and skipped.
+            output_path: Destination JSON path; defaults to
+                ``service_connection_manifest.json`` in the output directory.
+
+        Returns:
+            The manifest dict: generation time, summary counts, connections
+            grouped by project, and the flat connection list.
+        """
         if output_path is None:
             from ado2gh.output_dirs import output_str
             output_path = output_str("service_connection_manifest.json")
-        """Scan all projects for service connections and generate migration manifest."""
         all_connections: list[dict] = []
         by_project: dict[str, list] = {}
 
@@ -193,7 +213,13 @@ class ServiceConnectionManifest:
             }),
         }
 
-    def _write_csv(self, connections: list[dict], output_path: str):
+    def _write_csv(self, connections: list[dict], output_path: str) -> None:
+        """Write one CSV row per service connection beside the JSON manifest.
+
+        Args:
+            connections: Mapped connection dicts.
+            output_path: Destination CSV path; parent directories are created.
+        """
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
@@ -206,7 +232,13 @@ class ServiceConnectionManifest:
                 row["gh_secret_names"] = ", ".join(row.get("gh_secret_names", []))
                 writer.writerow({k: row.get(k, "") for k in writer.fieldnames})
 
-    def print_summary(self, summary: dict):
+    def print_summary(self, summary: dict) -> None:
+        """Print the manifest summary as a console table.
+
+        Args:
+            summary: Summary dict from the manifest returned by
+                :meth:`generate`.
+        """
         from rich import box
         from rich.table import Table
 
