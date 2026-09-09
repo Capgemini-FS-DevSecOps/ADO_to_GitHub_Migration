@@ -24,7 +24,7 @@ from ado2gh.clients.gh_token_manager import TokenManager
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.discovery import DiscoveryScanner
 from ado2gh.core.migration_engine import MigrationEngine
-from ado2gh.models import PhaseType
+from ado2gh.models import ExecutionMode, PhaseType
 from ado2gh.phase.batch_executor import BatchExecutor
 from ado2gh.phase.gate_checker import PhaseGateChecker
 from ado2gh.phase.progress_tracker import ProgressTracker
@@ -94,7 +94,9 @@ class Accelerator:
             raise ConfigurationError(f"Wave {request.wave_id} not found")
         summary = {"completed": 0, "failed": 0, "total": 0, "wave_id": 0, "status": "completed"}
         for w in targets:
-            s = executor.execute_wave(w, dry_run=request.dry_run)
+            s = executor.execute_wave(
+                w, mode=ExecutionMode.from_dry_run(dry_run=request.dry_run),
+            )
             summary = s
         return RunWaveResult(**summary)
 
@@ -130,7 +132,9 @@ class Accelerator:
             ProgressTracker(total_repos=max(1, len(phase_scores)),
                             total_pipelines=max(1, total_pipes)),
         )
-        summary = executor.execute_phase(phase_t, waves, dry_run=request.dry_run)
+        summary = executor.execute_phase(
+            phase_t, waves, mode=ExecutionMode.from_dry_run(dry_run=request.dry_run),
+        )
         return PhaseRunResult(**summary)
 
     def validate(self, request: ValidateRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None, gh_org: str | None = None) -> ValidateResult:

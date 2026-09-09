@@ -7,7 +7,7 @@ import pytest
 
 from ado2gh.core.migration_engine import MigrationEngine
 from ado2gh.core.wave_runner import WaveRunner
-from ado2gh.models import RepoConfig, WaveConfig
+from ado2gh.models import ExecutionMode, RepoConfig, WaveConfig
 from ado2gh.phase.batch_executor import BatchExecutor
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.db import StateDB
@@ -46,7 +46,7 @@ def test_wave_runner_accepts_engine_and_db(wave_config, tmp_path):
         runner = WaveRunner(engine, db)
         summary = runner.run_wave(wave_config, dry_run=True)
 
-    mock_exec.assert_called_once_with(wave_config, dry_run=True)
+    mock_exec.assert_called_once_with(wave_config, mode=ExecutionMode.DRY_RUN)
     assert summary["completed"] == 1
     assert summary["failed"] == 0
 
@@ -57,7 +57,7 @@ def test_batch_executor_execute_wave(wave_config, tmp_path):
     engine.migrate_repo.return_value = {"status": "completed", "scopes": {}, "errors": []}
     executor = BatchExecutor(engine, db, ProgressTracker(1, 1))
 
-    summary = executor.execute_wave(wave_config, dry_run=True)
+    summary = executor.execute_wave(wave_config, mode=ExecutionMode.DRY_RUN)
     assert summary["wave_id"] == 1
     assert summary["completed"] == 1
     assert summary["failed"] == 0

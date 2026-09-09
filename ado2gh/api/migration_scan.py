@@ -15,7 +15,7 @@ from ado2gh.api.phase_definitions import (
 from ado2gh.api.scan_diagnostics import build_empty_scan_warnings
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.ado_token_manager import ADOTokenManager
-from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType
+from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RiskScore
 from ado2gh.phase.risk_scorer import RiskScorer
 
 
@@ -333,8 +333,14 @@ class MigrationScanner:
                     commits = []
 
                 score = self.scorer.score(
-                    proj_name, repo, repo_pipes, stats, commits,
-                    var_groups, svc_conns, gh_org=self.gh_org,
+                    RiskScore(
+                        project=proj_name, repo_name=repo_name, gh_org=self.gh_org,
+                        size_kb=repo.get("size", 0),
+                        branch_count=stats.get("branch_count", 0),
+                        variable_group_count=len(var_groups),
+                        service_connection_count=len(svc_conns),
+                    ),
+                    repo_pipes, commits,
                 )
                 all_scores.append(score)
                 repos_scanned += 1

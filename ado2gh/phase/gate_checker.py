@@ -7,6 +7,7 @@ from ado2gh.logging_config import log
 from ado2gh.models import (
     DEFAULT_PHASES,
     GateStatus,
+    PhaseConfig,
     PhaseGateResult,
     PhaseType,
 )
@@ -14,11 +15,35 @@ from ado2gh.state.db import StateDB
 
 
 class PhaseGateChecker:
-    def __init__(self, db: StateDB, phase_configs: dict = None):
+    """Evaluate a phase's success gate and record the result, or an operator override.
+
+    ``check`` is the pure evaluation; ``override`` is the only path that
+    persists an ``OVERRIDE`` status, and it always carries the operator's
+    reason so the audit trail names why the gate was forced (CA-002).
+    """
+
+    def __init__(self, db: StateDB, phase_configs: dict[PhaseType, PhaseConfig] | None = None) -> None:
+        """Bind the state DB and the per-phase thresholds.
+
+        Args:
+            db: State store holding risk scores, migrations and gate results.
+            phase_configs: Thresholds per phase; defaults to ``DEFAULT_PHASES``.
+        """
         self.db = db
         self.phases = phase_configs or DEFAULT_PHASES
 
     def check(self, phase: PhaseType) -> PhaseGateResult:
+        """Measure the phase's repo and pipeline success against its thresholds.
+
+        The result is persisted with ``PASS`` or ``FAIL``; a phase with no
+        assigned repos fails with a hint to run ``phase assign``.
+
+        Args:
+            phase: The phase whose gate is evaluated.
+
+        Returns:
+            The gate result, including the failure reasons when it did not pass.
+        """
         cfg = self.phases[phase]
         scores = self.db.get_risk_scores_for_phase(phase)
         if not scores:
@@ -93,6 +118,16 @@ class PhaseGateChecker:
         return result
 
     def override(self, phase: PhaseType, reason: str) -> PhaseGateResult:
+        """Evaluate the gate, then persist it as ``OVERRIDE`` with the operator's reason.
+
+        Args:
+            phase: The phase whose gate is being forced.
+            reason: Why the operator accepts the failures. Mandatory and stored
+                on the gate record for the audit trail (CA-002).
+
+        Returns:
+            The persisted gate result with status ``OVERRIDE``.
+        """
         result = self.check(phase)
         result.status = GateStatus.OVERRIDE
         result.override_reason = reason
@@ -101,6 +136,14 @@ class PhaseGateChecker:
         return result
 
     def can_advance(self, phase: PhaseType) -> bool:
+        """Report whether the phase's recorded gate is ``PASS`` or ``OVERRIDE``.
+
+        Args:
+            phase: The phase whose stored gate result is consulted.
+
+        Returns:
+            True when a gate result exists and lets the next phase start.
+        """
         gate = self.db.get_phase_gate(phase)
         return gate is not None and gate["status"] in (
             GateStatus.PASS.value, GateStatus.OVERRIDE.value)

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ado2gh.core.migration_engine import MigrationEngine
 from ado2gh.logging_config import log
-from ado2gh.models import WaveConfig
+from ado2gh.models import ExecutionMode, WaveConfig
 from ado2gh.phase.batch_executor import BatchExecutor
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.db import StateDB
@@ -24,4 +24,6 @@ class WaveRunner:
             "WaveRunner delegating wave %d (%d repos) to BatchExecutor",
             wave.wave_id, len(wave.repos),
         )
-        return self._executor.execute_wave(wave, dry_run=dry_run)
+        return self._executor.execute_wave(
+            wave, mode=ExecutionMode.from_dry_run(dry_run=dry_run),
+        )

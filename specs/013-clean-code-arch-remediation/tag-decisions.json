@@ -144,6 +144,94 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/phase/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "package contains phase-execution logic: batch sequencing, gate validation, progress tracking, risk assignment, wave distribution",
+    "state_hash": "2333daf87b1da5f4281b7ca27fbd5441ce10c111",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/batch_executor.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "contains BatchExecutor: repos batched, executed, checkpointed",
+    "state_hash": "9dde0a57a3d75d4659db4dcd81a5d669af01d035",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/batch_executor.py::BatchExecutor._run_batch",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "dry_run selects between two behaviours: LIVE marks the wave run started/completed in the state DB, DRY_RUN records nothing; replace bool with ExecutionMode",
+    "state_hash": "d03e784cec0c4082dc3c3546897215953e14f8d9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/batch_executor.py::BatchExecutor.execute_phase",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "dry_run controls checkpoint writes and display; replace bool with ExecutionMode",
+    "state_hash": "fac89b1aef9b6cf6caaf56e47407ad067a9eca4c",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/batch_executor.py::BatchExecutor.execute_wave",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "dry_run is a behaviour switch passed to _run_batch and displayed as mode indicator; replace bool with ExecutionMode",
+    "state_hash": "3d607cbb68eb81b8dfc8de66acee5d832fd39876",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/gate_checker.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "contains PhaseGateChecker: validates success thresholds",
+    "state_hash": "5d208a98ad7f12c2855d14f575d59f824d8512d1",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/progress_tracker.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "contains ProgressTracker: velocity and ETA calculation",
+    "state_hash": "08d1160c64819c9ad0e98432b8510e7a8b2fd2d5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/progress_tracker.py::ProgressTracker.snapshot",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "snapshot() accurately captures point-in-time progress metrics (velocity, ETA, counts, percentages); standard terminology",
+    "state_hash": "598907c1e0264b7309f360dae851ac0f94176d80",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/risk_scorer.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "contains RiskScorer: 9-signal risk scoring",
+    "state_hash": "7e618b465bd9d06bd7e9716bfa68be95f28f1bf2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/risk_scorer.py::RiskScorer._s",
+    "tag": "name_review",
+    "decision": "confirm",
+    "rationale": "_s gives no hint that it applies a signal scoring function and returns a RiskSignal; renamed to _score_signal in increment 4",
+    "state_hash": "edd56ed11dc425599dace3de04a29fefbefdaca4",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/wave_assigner.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "contains WaveAssigner: distributes scored repos into phases",
+    "state_hash": "6dd2e65bf26d2ad072a9d4cc8e73dc5c440ea078",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/",
     "tag": "module_name_review",
     "decision": "reject",

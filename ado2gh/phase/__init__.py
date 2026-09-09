@@ -1,3 +1,4 @@
+"""Risk-based phase orchestration: scoring, wave assignment, batched execution, gates and progress."""
 from ado2gh.phase.batch_executor import BatchExecutor as BatchExecutor
 from ado2gh.phase.gate_checker import PhaseGateChecker as PhaseGateChecker
 from ado2gh.phase.progress_tracker import ProgressTracker as ProgressTracker

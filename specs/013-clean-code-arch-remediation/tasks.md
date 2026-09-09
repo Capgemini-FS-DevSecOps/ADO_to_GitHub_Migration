@@ -159,8 +159,8 @@
 
 ### Increment 4 — `ado2gh/phase/`
 
-- [ ] T049 [US2] Review-agent decisions for `--package ado2gh/phase`; record
-- [ ] T050 [US2] Clean `ado2gh/phase/` per protocol (15 functions; 3 `dry_run` booleans → `ExecutionMode`; gate-override signatures keep `reason` mandatory — CA-002); callers in `core/`, `api/`, `cli/`; verify, changelog, commit
+- [X] T049 [US2] Review-agent decisions for `--package ado2gh/phase`; record
+- [X] T050 [US2] Clean `ado2gh/phase/` per protocol (15 functions; 3 `dry_run` booleans → `ExecutionMode`; gate-override signatures keep `reason` mandatory — CA-002); callers in `core/`, `api/`, `cli/`; verify, changelog, commit
 
 ### Increment 5 — `ado2gh/pipelines/`
 

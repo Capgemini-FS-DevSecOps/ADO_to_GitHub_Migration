@@ -6,17 +6,37 @@ import re
 from ado2gh.models import (
     DEFAULT_PHASES,
     PHASE_ORDER,
+    PhaseConfig,
     PhaseType,
     RiskScore,
 )
 
 
 class WaveAssigner:
-    def __init__(self, phase_configs: dict = None):
+    """Place scored repos into the first phase whose risk band and cap admit them."""
+
+    def __init__(self, phase_configs: dict[PhaseType, PhaseConfig] | None = None) -> None:
+        """Bind the per-phase risk ceilings and repo caps.
+
+        Args:
+            phase_configs: Phase definitions; defaults to ``DEFAULT_PHASES``.
+        """
         self.phases = phase_configs or DEFAULT_PHASES
 
     def assign(self, scores: list[RiskScore],
                gh_org: str = "your-github-org") -> dict[PhaseType, list[RiskScore]]:
+        """Assign each score to a phase, lowest risk first, and fill in blank GitHub targets.
+
+        Repos that fit no earlier phase land in ``WAVE3``, which has no cap.
+        Each score's ``assigned_phase`` is set in place.
+
+        Args:
+            scores: The repos to distribute.
+            gh_org: Default GitHub org for scores that have none set.
+
+        Returns:
+            Scores grouped by phase value, in every phase of ``PHASE_ORDER``.
+        """
         sorted_scores = sorted(scores, key=lambda s: s.total_score)
         result = {p.value: [] for p in PHASE_ORDER}
         for score in sorted_scores:
@@ -41,4 +61,3 @@ class WaveAssigner:
                 score.assigned_phase = PhaseType.WAVE3.value
                 result[PhaseType.WAVE3.value].append(score)
         return result
-

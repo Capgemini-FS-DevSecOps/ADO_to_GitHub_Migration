@@ -568,7 +568,7 @@ class PipelineStepsMixin:
         from ado2gh.audit import redact_payload
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
-        from ado2gh.models import MigrationScope
+        from ado2gh.models import ExecutionMode, MigrationScope
         from ado2gh.phase.batch_executor import BatchExecutor
         from ado2gh.phase.progress_tracker import ProgressTracker
         from ado2gh.state.factory import create_state_db
@@ -800,7 +800,7 @@ class PipelineStepsMixin:
                 try:
                     result = executor.execute_wave(
                         wave,
-                        dry_run=run.dry_run,
+                        mode=ExecutionMode.from_dry_run(dry_run=run.dry_run),
                         cancel_event=cancel_event,
                         on_repo_done=on_repo_done,
                     )

@@ -1,9 +1,11 @@
 """Sub-batch execution with SQLite checkpointing and resume."""
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from rich.panel import Panel
 from rich.progress import (
@@ -26,21 +28,56 @@ from ado2gh.models import (
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.db import StateDB
 
+if TYPE_CHECKING:
+    from ado2gh.core.migration_engine import MigrationEngine
+
 
 class BatchExecutor:
-    def __init__(self, engine, db: StateDB, tracker: ProgressTracker):
+    """Run the repositories of a wave or phase through the migration engine in batches.
+
+    A phase is split into fixed-size batches; each batch is checkpointed in the
+    state DB so an interrupted run resumes after the last completed batch.
+    Nothing is checkpointed or recorded as a wave run in ``DRY_RUN`` mode, so a
+    dry run never makes a later live run skip work.
+    """
+
+    def __init__(self, engine: MigrationEngine, db: StateDB, tracker: ProgressTracker) -> None:
+        """Bind the engine that migrates one repo, the state DB and the velocity tracker.
+
+        Args:
+            engine: Performs the per-repository migration (``migrate_repo``).
+            db: State store for wave runs and batch checkpoints.
+            tracker: Records completed repos for the velocity and ETA readout.
+        """
         self.engine = engine
         self.db = db
         self.tracker = tracker
 
-    def execute_phase(self, phase: PhaseType, waves: list[WaveConfig],
-                      dry_run: bool = False) -> dict:
+    def execute_phase(
+        self,
+        phase: PhaseType,
+        waves: list[WaveConfig],
+        mode: ExecutionMode = ExecutionMode.LIVE,
+    ) -> dict:
+        """Migrate every repo assigned to ``phase``, batch by batch, resuming from checkpoints.
+
+        Args:
+            phase: The phase whose waves are executed.
+            waves: All configured waves; only those whose ``phase`` matches are run.
+            mode: ``DRY_RUN`` previews without checkpointing; ``LIVE`` migrates
+                and checkpoints each batch.
+
+        Returns:
+            Summary with ``phase``, ``completed``, ``failed``, ``batches_run`` and
+            ``batches_skipped`` counts.
+        """
         phase_waves = [w for w in waves if w.phase == phase.value]
         if not phase_waves:
             console.print(f"[yellow]No waves for phase {phase.value}[/yellow]")
             return {"phase": phase.value, "completed": 0, "failed": 0,
                     "batches_run": 0, "batches_skipped": 0}
 
+        dry_run = mode is ExecutionMode.DRY_RUN
         cfg = DEFAULT_PHASES[phase]
         all_repos = [r for w in phase_waves for r in w.repos]
         batches = [all_repos[i:i + cfg.batch_size]
@@ -87,7 +124,7 @@ class BatchExecutor:
             console.print(
                 f"\n[cyan]Batch {batch_num + 1}/{total_b}[/cyan] "
                 f"({len(batch_repos)} repos)")
-            b = self._run_batch(wave_cfg, dry_run)
+            b = self._run_batch(wave_cfg, mode)
             summary["completed"] += b["completed"]
             summary["failed"] += b["failed"]
             summary["batches_run"] += 1
@@ -114,18 +151,33 @@ class BatchExecutor:
     def execute_wave(
         self,
         wave: WaveConfig,
-        dry_run: bool = False,
-        cancel_event=None,
+        mode: ExecutionMode = ExecutionMode.LIVE,
+        cancel_event: threading.Event | None = None,
         on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
     ) -> dict:
-        """Execute a single wave (used by ``ado2gh run``)."""
+        """Execute a single wave (used by ``ado2gh run``).
+
+        Args:
+            wave: The wave to run.
+            mode: ``DRY_RUN`` previews; ``LIVE`` migrates and records the wave run.
+            cancel_event: When set, no further repos are submitted and pending
+                ones are cancelled.
+            on_repo_done: Called with ``"project/repo"``, the repo's result dict
+                and its ``RepoConfig`` as each repo finishes.
+
+        Returns:
+            Wave summary: ``wave_id``, ``name``, ``status`` (``completed``,
+            ``partial`` or ``failed``), ``dry_run``, per-repo ``repos`` results
+            and the ``completed`` / ``failed`` / ``partial`` / ``total`` counts.
+        """
+        dry_run = mode is ExecutionMode.DRY_RUN
         log.info(
             "=== Starting wave %d: %s (%d repos)%s ===",
             wave.wave_id, wave.name, len(wave.repos),
             " [DRY RUN]" if dry_run else "",
         )
         batch = self._run_batch(
-            wave, dry_run, cancel_event=cancel_event, on_repo_done=on_repo_done,
+            wave, mode, cancel_event=cancel_event, on_repo_done=on_repo_done,
         )
         statuses = batch.get("repo_statuses", {})
         completed = batch["completed"]
@@ -149,15 +201,28 @@ class BatchExecutor:
     def _run_batch(
         self,
         wave: WaveConfig,
-        dry_run: bool,
+        mode: ExecutionMode,
         scopes_filter: list[str] | None = None,
-        cancel_event=None,
+        cancel_event: threading.Event | None = None,
         on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
     ) -> dict:
-        if not dry_run:
-            self.db.mark_wave_run(
-                wave.wave_id, "started", ExecutionMode.from_dry_run(dry_run=dry_run),
-            )
+        """Migrate the repos of one wave in parallel and record the wave run.
+
+        Args:
+            wave: The wave whose repos are submitted to the engine.
+            mode: In ``LIVE`` mode the wave run is marked started and
+                completed/partial in the state DB; ``DRY_RUN`` records nothing.
+            scopes_filter: When given, every repo runs with exactly these scopes.
+            cancel_event: When set, stops submitting and cancels pending repos.
+            on_repo_done: Per-repo completion callback (see ``execute_wave``).
+
+        Returns:
+            ``completed`` and ``failed`` counts plus ``repo_statuses`` keyed by
+            ``"project/repo"``.
+        """
+        live = mode is ExecutionMode.LIVE
+        if live:
+            self.db.mark_wave_run(wave.wave_id, "started", mode)
         result = {"completed": 0, "failed": 0, "repo_statuses": {}}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
@@ -200,7 +265,7 @@ class BatchExecutor:
                         }
                         if on_repo_done:
                             on_repo_done(key, result["repo_statuses"][key], repo)
-        if not dry_run:
+        if live:
             self.db.mark_wave_run(
                 wave.wave_id,
                 "completed" if result["failed"] == 0 else "partial",
