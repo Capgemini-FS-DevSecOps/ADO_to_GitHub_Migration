@@ -174,8 +174,8 @@
 
 ### Increment 7 — `ado2gh/core/`
 
-- [ ] T055 [US2] Review-agent decisions for `--package ado2gh/core`; record
-- [ ] T056 [US2] Clean `ado2gh/core/` per protocol (77 functions; 10 `dry_run` booleans → `ExecutionMode` with `DRY_RUN` defaults preserved — CA-001; scope handlers in `core/scopes/` share one signature — FR-011; keep any masking consolidation from T039); callers in `api/`, `agents/`, `cli/`, `services/`; verify, changelog, commit
+- [X] T055 [US2] Review-agent decisions for `--package ado2gh/core`; record
+- [X] T056 [US2] Clean `ado2gh/core/` per protocol (77 functions; 10 `dry_run` booleans → `ExecutionMode` with `DRY_RUN` defaults preserved — CA-001; scope handlers in `core/scopes/` share one signature — FR-011; keep any masking consolidation from T039); callers in `api/`, `agents/`, `cli/`, `services/`; verify, changelog, commit
 
 ### Increment 8 — `ado2gh/auth/`
 
