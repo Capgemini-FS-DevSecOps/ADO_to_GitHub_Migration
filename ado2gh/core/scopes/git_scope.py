@@ -79,6 +79,39 @@ def _clean_clone_url(clone_url: str) -> str:
     return f"{scheme}://{'/'.join(host_and_path)}"
 
 
+def _build_git_auth_env(secret: str, *, username: str = "", url: str = "") -> dict[str, str]:
+    """Build a git subprocess environment carrying HTTP basic credentials.
+
+    The credential travels in `GIT_CONFIG_*` environment variables rather than
+    inside a remote URL, so it never reaches subprocess argv and never appears
+    in the process table (GAP-030).
+
+    Args:
+        secret: Credential value to authenticate with. It is only encoded into
+            the returned environment; it is never logged, and `_redact` strips
+            it from any subprocess output that quotes it back.
+        username: Userinfo half of the basic credential. Azure DevOps accepts
+            an empty user; GitHub expects `x-access-token`.
+        url: Remote the header applies to. When set, the git config key is
+            scoped to that URL so the header is only sent there; when empty the
+            header is sent on every request git makes.
+
+    Returns:
+        A copy of the current process environment with interactive credential
+        prompts disabled and a single git config override that supplies the
+        authorization header.
+    """
+    encoded = base64.b64encode(f"{username}:{secret}".encode()).decode()
+    key = f"http.{url}.extraHeader" if url else "http.extraHeader"
+    return {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": key,
+        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {encoded}",
+    }
+
+
 def _build_ado_git_env(pat: str) -> dict[str, str]:
     """Build the git subprocess environment that authenticates against Azure DevOps.
 
@@ -86,23 +119,14 @@ def _build_ado_git_env(pat: str) -> dict[str, str]:
     form Azure DevOps accepts reliably for personal access tokens.
 
     Args:
-        pat: Azure DevOps personal access token. The value is only encoded into
-            the returned environment; it is never logged, and `_redact` strips
-            it from any subprocess output that quotes it back.
+        pat: Azure DevOps personal access token.
 
     Returns:
-        A copy of the current process environment with interactive credential
-        prompts disabled and a single git config override that supplies the
-        authorization header on every request git makes.
+        The environment described by `_build_git_auth_env`, with the header
+        unscoped because the Azure DevOps host varies with the organisation
+        and every remote this environment is used against is that host.
     """
-    token = base64.b64encode(f":{pat}".encode()).decode()
-    return {
-        **os.environ,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": "http.extraHeader",
-        "GIT_CONFIG_VALUE_0": f"Authorization: Basic {token}",
-    }
+    return _build_git_auth_env(pat)
 
 
 class GitScopeHandler:
@@ -374,9 +398,11 @@ class GitScopeHandler:
             clone_url: Azure DevOps remote URL; any embedded userinfo is
                 stripped before git sees it.
             ctx: Scope context supplying the Azure DevOps personal access token
-                and the GitHub token that authenticates the push. Neither value
-                is logged, and both are masked out of any error raised from the
-                captured subprocess output.
+                and the GitHub token that authenticates the push. Both reach git
+                through its subprocess environment only, never through a remote
+                URL or any other argument, so neither is visible in the process
+                table. Neither value is logged, and both are masked out of any
+                error raised from the captured subprocess output.
 
         Returns:
             Stats marking the mirror as successful, merged with the LFS
@@ -390,10 +416,8 @@ class GitScopeHandler:
         clone_url = _clean_clone_url(clone_url)
         git_env = _build_ado_git_env(ctx.ado.pat)
         gh_token = ctx.gh.token_manager.get_token()
-        target_url = (
-            f"https://x-access-token:{gh_token}@github.com/"
-            f"{repo.gh_org}/{repo.gh_repo}.git"
-        )
+        target_url = f"https://github.com/{repo.gh_org}/{repo.gh_repo}.git"
+        gh_env = _build_git_auth_env(gh_token, username="x-access-token", url=target_url)
 
         tmpdir = tempfile.mkdtemp(prefix="ado2gh_mirror_")
         mirror_path = os.path.join(tmpdir, f"{repo.ado_repo}.git")
@@ -410,7 +434,9 @@ class GitScopeHandler:
                 env=git_env,
             )
             if result.returncode != 0:
-                raise RuntimeError(f"git clone --mirror failed: {result.stderr[:500]}")
+                raise RuntimeError(
+                    f"git clone --mirror failed: {_redact(result.stderr[:500], ctx.ado.pat)}"
+                )
 
             result = subprocess.run(
                 [git_exe, "remote", "set-url", "origin", target_url],
@@ -427,14 +453,14 @@ class GitScopeHandler:
                 [git_exe, "push", "--force", "origin",
                  "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"],
                 capture_output=True, text=True, cwd=mirror_path, timeout=3600,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                env=gh_env,
             )
             if result.returncode != 0:
                 raise RuntimeError(f"git push (heads+tags) failed: {_redact(result.stderr[:500], gh_token)}")
 
             lfs_stats = {}
             if not repo.skip_lfs:
-                lfs_stats = self._push_lfs(mirror_path, target_url, gh_token)
+                lfs_stats = self._push_lfs(mirror_path, target_url, gh_token, gh_env)
 
             try:
                 source_default = self._get_source_default_branch(mirror_path)
@@ -471,16 +497,17 @@ class GitScopeHandler:
         return result.stdout.strip() if result.returncode == 0 else ""
 
     @staticmethod
-    def _push_lfs(mirror_path: str, target_url: str, token: str) -> dict:
+    def _push_lfs(mirror_path: str, target_url: str, token: str, env: dict[str, str]) -> dict:
         """Push Git LFS objects from a mirror clone up to the GitHub remote.
 
         Args:
             mirror_path: Path to the bare mirror clone.
-            target_url: GitHub push URL that carries an access token inside it.
-                The value is never logged and is masked out of any error text
-                this function reports.
-            token: The GitHub token embedded in `target_url`, passed separately
+            target_url: GitHub push URL. It carries no credential, so it is
+                safe to pass as a subprocess argument (GAP-030).
+            token: The GitHub token `env` authenticates with, passed separately
                 so it can be stripped from an exception message.
+            env: Subprocess environment from `_build_git_auth_env` that supplies
+                the authorization header for `target_url`.
 
         Returns:
             Counters describing the transfer: how many LFS objects the clone
@@ -499,7 +526,7 @@ class GitScopeHandler:
             result = subprocess.run(
                 ["git", "lfs", "push", "--all", target_url],
                 capture_output=True, text=True, cwd=mirror_path, timeout=3600,
-                env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+                env=env,
             )
             if result.returncode != 0:
                 return {"lfs_objects": lfs_count, "lfs_push": "partial"}
