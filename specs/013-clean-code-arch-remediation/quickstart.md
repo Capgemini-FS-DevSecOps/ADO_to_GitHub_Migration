@@ -128,7 +128,7 @@ python specs/013-clean-code-arch-remediation/scripts/function_inventory.py
 node   specs/013-clean-code-arch-remediation/scripts/function_inventory_ts.mjs
 python - <<'EOF'
 import json; rows=json.load(open("specs/013-clean-code-arch-remediation/inventory.json"))
-tagged=[r for r in rows if r["tags"] and r["disposition"]!="exception"]
+tagged=[r for r in rows if set(r["tags"])-{"bool_data"} and r["disposition"]!="exception"]  # bool_data is a resolution, not an open tag (data-model.md)
 exc=[r for r in rows if r["disposition"]=="exception"]
 print("tagged-not-excepted:",len(tagged),"exceptions:",len(exc),"cap:",int(0.02*len(rows)))
 EOF
