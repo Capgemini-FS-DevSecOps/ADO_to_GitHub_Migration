@@ -29,6 +29,7 @@ from ado2gh.api.profile_governance import (
     ProfileGovernanceError,
     assert_profile_active_for_run,
 )
+from ado2gh.models import ExecutionMode
 from ado2gh.state.factory import create_state_db
 from services.accelerator_api.routes._shared import (
     _execute_approved_migrate,
@@ -103,7 +104,10 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
     step_ids = req.steps or default_step_ids
     user = _platform_user(request)
     run = PipelineRunStore.create(
-        req.name, dry, req.phase, req.wave_id,
+        req.name,
+        dry_run=dry,
+        phase=req.phase,
+        wave_id=req.wave_id,
         step_defs=resolve_pipeline_step_defs(step_ids),
         started_by_user_id=getattr(user, "id", None) if user else None,
         started_by_username=getattr(user, "username", None) if user else "admin",
@@ -118,15 +122,17 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
     # here, or an approved LiveApprovalStore row on the /start route. The request body
     # cannot influence it: PipelineRunStartRequest declares no live-approval field and
     # forbids extras, so the old self-certifying agent_live_approved is a 422 (GAP-004).
-    if operator_requires_live_approval(user, dry):
+    if operator_requires_live_approval(user, ExecutionMode.from_dry_run(dry_run=dry)):
         store = _live_store()
         store.create_or_get_pending(
             user,
-            "pipeline_run",
-            run.id,
-            profile_id=active.id,
-            reason_request=f"Pipeline live run: {req.name}",
-            context={"run_id": run.id, "steps": step_ids},
+            LiveApprovalCreateRequest(
+                scope_type="pipeline_run",
+                scope_id=run.id,
+                profile_id=active.id,
+                reason_request=f"Pipeline live run: {req.name}",
+                context={"run_id": run.id, "steps": step_ids},
+            ),
         )
         run.live_approval_status = "pending"
         run.status = "awaiting_approval"
@@ -163,7 +169,9 @@ def start_existing_pipeline_run(run_id: str, request: Request):
         # the handler reads no body, a caller posting its own approval claim (the old
         # agent_live_approved, GAP-004) changes nothing here.
         approved = _live_store().has_approved("pipeline_run", run_id)
-        if not approved and operator_requires_live_approval(user, run.dry_run):
+        if not approved and operator_requires_live_approval(
+            user, ExecutionMode.from_dry_run(dry_run=run.dry_run),
+        ):
             raise HTTPException(status_code=409, detail="awaiting_approval")
         if not approved:
             run.live_approval_status = "auto_approved"
@@ -198,14 +206,7 @@ def get_live_approval(approval_id: str, request: Request):
 def create_live_approval(req: LiveApprovalCreateRequest, request: Request):
     user = require_operate(request)
     store = _live_store()
-    row = store.create_or_get_pending(
-        user,
-        req.scope_type,
-        req.scope_id,
-        profile_id=req.profile_id,
-        reason_request=req.reason_request,
-        context=req.context,
-    )
+    row = store.create_or_get_pending(user, req)
     return LiveApprovalItem(**row)
 
 

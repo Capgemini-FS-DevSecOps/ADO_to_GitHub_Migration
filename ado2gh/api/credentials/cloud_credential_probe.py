@@ -8,6 +8,28 @@ from ado2gh.api.credentials.cloud_credentials_store import CloudCredentialSource
 
 
 def probe_provider(provider: str, source: CloudCredentialSource) -> dict[str, Any]:
+    """Check that a provider's ambient credentials actually work.
+
+    Dispatches to the probe for the given provider, which issues one minimal
+    request to that provider's inference API using the host's ambient
+    credentials. This is a live network call and it is the step that
+    distinguishes a working credential source from a merely present one. The
+    model to probe with and any provider endpoint are read from the
+    environment and from ``source``; no credential value is logged or returned.
+
+    Args:
+        provider: Provider key to probe. Anything outside the supported set
+            yields a failed result rather than an exception.
+        source: The detected credential source, consulted for the region,
+            project and endpoint to probe against.
+
+    Returns:
+        A mapping with ``status`` of ``passed`` or ``failed``; ``category``,
+        which is None on success and otherwise one of ``credentials``,
+        ``model_not_found``, ``timeout`` or ``network``; and a ``message``
+        safe to show an operator. Failures are reported through this mapping,
+        never raised.
+    """
     if provider == "aws":
         return _probe_aws(source)
     if provider == "foundry":
@@ -163,6 +185,21 @@ def _probe_gcp(source: CloudCredentialSource) -> dict[str, Any]:
 
 
 def _classify_probe_error(exc: Exception) -> dict[str, Any]:
+    """Turn a probe exception into an operator-safe failure result.
+
+    The exception text is only matched against, never returned: a provider SDK
+    error can quote request headers or configuration, so every branch returns a
+    fixed message instead of the original string.
+
+    Args:
+        exc: The exception raised while probing.
+
+    Returns:
+        A failed probe result whose ``category`` is ``timeout``,
+        ``model_not_found`` or ``credentials`` when the exception text matches
+        that class of failure, and ``network`` otherwise, together with a
+        generic ``message`` describing the category.
+    """
     message = str(exc) or exc.__class__.__name__
     lowered = message.lower()
     if "timeout" in lowered:

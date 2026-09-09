@@ -184,8 +184,8 @@
 
 ### Increment 9 — `ado2gh/api/`
 
-- [ ] T059 [US2] Review-agent decisions for `--package ado2gh/api`; record
-- [ ] T060 [US2] Clean `ado2gh/api/` per protocol (331 functions; 264 without docstrings; `pipeline_steps.py` (48 KB) step functions share one signature — FR-011; `agentic_routes.py` handlers follow FR-010a; `llm/` provider functions must keep API keys out of docstrings and defaults); callers in `agents/`, `cli/`, `services/`, `tests/`; verify, changelog, commit
+- [X] T059 [US2] Review-agent decisions for `--package ado2gh/api`; record
+- [X] T060 [US2] Clean `ado2gh/api/` per protocol (331 functions; 264 without docstrings; `pipeline_steps.py` (48 KB) step functions share one signature — FR-011; `agentic_routes.py` handlers follow FR-010a; `llm/` provider functions must keep API keys out of docstrings and defaults); callers in `agents/`, `cli/`, `services/`, `tests/`; verify, changelog, commit
 
 ### Increment 10 — `ado2gh/agents/`
 

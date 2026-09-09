@@ -118,7 +118,7 @@ def test_approve_and_revoke_invalidate_ambient(tmp_path, monkeypatch):
         validated_at="2026-06-16T00:00:00Z",
     )
     model_store.upsert({"enabled": True}, model_id=model.id)
-    store.revoke("aws", actor="admin")
+    store.revoke("aws")
     refreshed = model_store.get(model.id)
     assert refreshed.enabled is False
     assert refreshed.validation_status == "never_validated"

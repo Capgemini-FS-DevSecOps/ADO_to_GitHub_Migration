@@ -22,6 +22,13 @@ STABLE_MODEL_IDS = {
 
 @dataclass
 class PlatformSuppliedModelConfig:
+    """An LLM model the deployment supplies, rather than an operator.
+
+    Describes a model wired up at deploy time against a managed cloud provider:
+    which provider and model to call, where it lives, and which ambient
+    credential source authorises the calls. Holds no credential of its own.
+    """
+
     provider: str
     model_id: str
     region: str = ""
@@ -31,6 +38,18 @@ class PlatformSuppliedModelConfig:
 
 
 def read_platform_config() -> PlatformSuppliedModelConfig | None:
+    """Read the platform-supplied model, if the deployment configured one.
+
+    Inspects the deployment environment for a managed Bedrock, Foundry or Vertex
+    model, in that order, and takes the first one configured.
+
+    Returns:
+        PlatformSuppliedModelConfig | None: The configured provider, model
+        identifier, region and endpoint together with the ambient credential
+        source that authorises it and the stable identifier it is stored under,
+        or None when the deployment supplies no model and operators must
+        configure their own.
+    """
     bedrock_model = os.environ.get("ADO2GH_BEDROCK_MODEL_ID", "").strip()
     if bedrock_model:
         return PlatformSuppliedModelConfig(
@@ -67,6 +86,18 @@ def read_platform_config() -> PlatformSuppliedModelConfig | None:
 
 
 def sync_on_startup() -> PlatformSuppliedModelConfig | None:
+    """Reconcile the deployment's platform-supplied model into the model store.
+
+    Runs at service startup. The model is written under a stable identifier so
+    repeated startups update the same record rather than accumulating
+    duplicates, and the operator's enable and default choices are preserved
+    across restarts. The record is marked read-only and ambient-credentialed,
+    so no credential is stored for it.
+
+    Returns:
+        PlatformSuppliedModelConfig | None: The configuration that was synced,
+        or None when the deployment supplies no model and nothing was written.
+    """
     cfg = read_platform_config()
     if not cfg:
         return None
@@ -102,6 +133,16 @@ def sync_on_startup() -> PlatformSuppliedModelConfig | None:
 
 
 def platform_model_payload() -> dict[str, Any] | None:
+    """Describe the platform-supplied model for the settings screen.
+
+    Returns:
+        dict[str, Any] | None: The provider, model identifier, region and
+        endpoint (each None when not configured), the stable identifier the
+        model is stored under, a read-only marker so the UI blocks edits, and an
+        ``available`` flag that is true only when the credential source is
+        approved, the model is enabled and it has passed validation. None when
+        the deployment supplies no model.
+    """
     cfg = read_platform_config()
     if not cfg:
         return None
@@ -124,6 +165,16 @@ def platform_model_payload() -> dict[str, Any] | None:
 
 
 def platform_model_status() -> dict[str, Any] | None:
+    """Report the readiness of the platform-supplied model.
+
+    Returns:
+        dict[str, Any] | None: The provider, model identifier and region, the
+        stable identifier the model is stored under, its current validation
+        status, whether an operator has enabled it, and whether its ambient
+        credential source has been approved — the three conditions an operator
+        must satisfy before the agent can use it. None when the deployment
+        supplies no model.
+    """
     cfg = read_platform_config()
     if not cfg:
         return None

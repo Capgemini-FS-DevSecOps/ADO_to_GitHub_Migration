@@ -3,10 +3,19 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ado2gh.state.factory import StateStore
 
 
 class StepStatus(str, Enum):
+    """Lifecycle status of a single pipeline step.
+
+    A ``str`` enum so members compare equal to the plain strings that reach the
+    API and the console, and so they serialise without conversion.
+    """
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -79,6 +88,15 @@ def resolve_pipeline_step_defs(step_ids: list[str] | None) -> list[dict[str, str
 
 @dataclass
 class PipelineStep:
+    """One step of a pipeline run, with its status and outcome.
+
+    Carries the step's identity and console-facing description alongside the
+    mutable execution record: current status, the last message shown against it,
+    start and completion timestamps, and a free-form result dictionary that
+    later steps read (for example the dependency map and migration order that
+    ``analyze_deps`` leaves behind).
+    """
+
     id: str
     label: str
     description: str
@@ -91,6 +109,17 @@ class PipelineStep:
 
 @dataclass
 class PipelineRun:
+    """A single execution of the migration pipeline.
+
+    Holds what the run targets (phase, wave, optional single repository and
+    whether its dependencies come with it), whether it is a dry run, who started
+    it and who approved live execution, the ordered steps with their individual
+    results, and the accumulated log lines the console tails.
+
+    Mutated in place while the run executes: the registry hands out the live
+    object, so a caller that holds a run sees its progress.
+    """
+
     id: str
     name: str
     status: str = "pending"
@@ -115,6 +144,16 @@ class PipelineRun:
     live_approval_status: Optional[str] = None
 
     def current_step_label(self) -> str:
+        """Return the label of the step the run is on, for the progress banner.
+
+        Prefers the step that is actually running; when none is, falls back to
+        the first step still pending, so a run between steps still shows where
+        it is headed.
+
+        Returns:
+            str: The running step's label, else the next pending step's label,
+            else an empty string once every step has finished or been skipped.
+        """
         for step in self.steps:
             if step.status == "running":
                 return step.label
@@ -124,6 +163,20 @@ class PipelineRun:
         return ""
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialise the run for the API and the console.
+
+        Deliberately omits ``override_reason``: the operator's free-text
+        escalation justification is persisted in redacted form and must never
+        ride back out in a response.
+
+        Returns:
+            dict[str, Any]: The run's identity and status fields, its
+            configuration (``dry_run``, ``phase``, ``wave_id``,
+            ``repository_id``, ``migrate_deps_only``), every step as a plain
+            dictionary, the most recent 500 log lines, the operator who started
+            it and — when applicable — the approver and live approval status,
+            plus a ``current_step`` label for the progress banner.
+        """
         return {
             "id": self.id,
             "name": self.name,
@@ -148,8 +201,32 @@ class PipelineRun:
         }
 
 
-def enrich_pipeline_run_dict(run_dict: dict[str, Any], db: Any | None = None) -> dict[str, Any]:
-    """Attach display-friendly started/approved labels for the migration monitor."""
+def enrich_pipeline_run_dict(
+    run_dict: dict[str, Any], db: "StateStore | None" = None,
+) -> dict[str, Any]:
+    """Attach display-friendly started and approval labels to a serialised run.
+
+    Resolves the run's live-execution approval state, preferring the value
+    already on the run and falling back to the persisted approval row when a
+    database is supplied. A dry run needs no approval, a run awaiting one is
+    pending, and anything else that reached execution was approved implicitly by
+    the operator's own authority.
+
+    Args:
+        run_dict: A run as produced by :meth:`PipelineRun.to_dict`. Mutated in
+            place and also returned.
+        db: State database used to look up a persisted live-execution approval
+            for this run. When omitted, the approval state is inferred from the
+            run alone.
+
+    Returns:
+        dict[str, Any]: The same dictionary, with ``started_by_label`` naming
+        the operator who started the run, ``live_approval_status`` set to one of
+        ``not_required``, ``pending``, ``approved``, ``denied`` or
+        ``auto_approved``, and ``approved_by_label`` carrying the matching
+        human-readable phrase. Approver names are also filled in from the
+        persisted row when they were not already present.
+    """
     started = (
         run_dict.get("started_by_display_name")
         or run_dict.get("started_by_username")

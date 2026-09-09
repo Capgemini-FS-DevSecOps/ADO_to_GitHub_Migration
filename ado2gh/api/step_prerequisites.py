@@ -43,6 +43,14 @@ class StepPrerequisiteChecker:
     """Validates that a step's prerequisites are satisfied within a run."""
 
     def __init__(self, prerequisites: dict[str, list[str]] | None = None) -> None:
+        """Bind the checker to a prerequisite map.
+
+        Args:
+            prerequisites: Maps each step id to the ids that must finish before
+                it may run. Defaults to :data:`STEP_PREREQUISITES`; pass an
+                explicit map (including an empty one, which disables all
+                checks) to override it.
+        """
         self.prerequisites = prerequisites if prerequisites is not None else STEP_PREREQUISITES
 
     def check(self, run: "PipelineRun", step_id: str) -> tuple[bool, list[str]]:
@@ -70,7 +78,20 @@ class StepPrerequisiteChecker:
 
     @staticmethod
     def _label(step_id: str, run: "PipelineRun") -> str:
-        """Resolve a display label for ``step_id`` (run step first, then index)."""
+        """Resolve a human-readable label for a step id.
+
+        Prefers the label carried by the step on this run, falls back to the
+        canonical accelerator step index, and finally derives one from the id
+        itself, so a message is always readable even for an unknown step.
+
+        Args:
+            step_id: Identifier of the step to label.
+            run: Run whose own steps are consulted first.
+
+        Returns:
+            str: The step's display label, or a title-cased form of the id when
+            the step is unknown to both the run and the step index.
+        """
         for s in run.steps:
             if s.id == step_id:
                 return s.label
@@ -82,6 +103,17 @@ class StepPrerequisiteChecker:
         return step_id.replace("_", " ").title()
 
     def failure_message(self, missing_labels: list[str], step_label: str) -> str:
-        """Build the standard prerequisite failure message."""
+        """Build the message shown when a step is blocked by its prerequisites.
+
+        Args:
+            missing_labels: Display labels of the prerequisites that have not
+                finished acceptably, as returned by :meth:`check`.
+            step_label: Display label of the step that is being blocked.
+
+        Returns:
+            str: A single sentence naming the outstanding prerequisites and the
+            step they block, suitable for the run log and the step's failure
+            message.
+        """
         prereqs = ", ".join(missing_labels)
         return f"{prereqs} must be completed before {step_label} can proceed."

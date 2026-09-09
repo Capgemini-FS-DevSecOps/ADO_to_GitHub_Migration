@@ -59,7 +59,7 @@ def test_scenario1_catalog_validate_enable(client, monkeypatch):
     mock_validate_client.__exit__ = MagicMock(return_value=False)
     mock_validate_client.post.return_value = mock_validate_response
 
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_catalog_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_catalog_client):
         catalog = client.post(
             "/v1/settings/llm-models/catalog",
             json={"provider": "anthropic", "api_key": "sk-ant-test"},
@@ -67,7 +67,7 @@ def test_scenario1_catalog_validate_enable(client, monkeypatch):
     assert catalog.status_code == 200
     entry = catalog.json()["entries"][0]
 
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client", return_value=mock_validate_client):
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client", return_value=mock_validate_client):
         validated = client.post(
             "/v1/settings/llm-models/validate",
             json={
@@ -102,7 +102,7 @@ def test_scenario2_openai_preset_fallback(client, monkeypatch):
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.side_effect = RuntimeError("network blocked")
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_client):
         catalog = client.post(
             "/v1/settings/llm-models/catalog",
             json={"provider": "openai", "api_key": "sk-test"},
@@ -159,7 +159,7 @@ def test_scenario8_connectivity_and_validation_audit_redaction(client, tmp_path,
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.post.return_value = mock_response
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client", return_value=mock_client):
         validated = client.post(
             "/v1/settings/llm-models/validate",
             json={"provider": "stub", "model_id": "stub"},

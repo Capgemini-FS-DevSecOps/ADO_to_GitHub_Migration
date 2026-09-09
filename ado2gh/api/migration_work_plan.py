@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, RepoConfig
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
+
+if TYPE_CHECKING:
+    from ado2gh.api.settings_store import SettingsStore
+    from ado2gh.state.factory import StateStore
 
 
 def sync_work_item_wire_keys(work_item: dict[str, Any]) -> dict[str, Any]:
@@ -72,7 +76,7 @@ CATEGORY_LABELS = {
 def apply_operator_secret_mappings(
     work_items: list[dict[str, Any]],
     mappings_or_profile: str | dict[str, str],
-    settings_store: Any | None = None,
+    settings_store: SettingsStore | None = None,
 ) -> list[dict[str, Any]]:
     """Mark secrets work items ready when operator supplied GitHub secret names."""
     if isinstance(mappings_or_profile, dict):
@@ -152,11 +156,37 @@ def collect_secret_gap_fields(
 
 
 def _work_item_id(repo_key: str, scope: str) -> str:
+    """Build the stable work item id for one repo and scope.
+
+    Args:
+        repo_key: ``"<project>/<repo>"`` identifier for the repo.
+        scope: Migration scope value the item covers.
+
+    Returns:
+        The id in ``"<project>__<repo>:<scope>"`` form, with the slash replaced
+        so the id is safe to use as a plain key.
+    """
     safe = repo_key.replace("/", "__")
     return f"{safe}:{scope}"
 
 
-def _pipeline_blockers_for_repo(db, project: str, repo_name: str) -> list[str]:
+def _pipeline_blockers_for_repo(
+    db: StateStore,
+    project: str,
+    repo_name: str,
+) -> list[str]:
+    """Collect readiness blockers for every inventoried pipeline of one repo.
+
+    Args:
+        db: State store holding the pipeline inventory.
+        project: ADO project the repo belongs to.
+        repo_name: ADO repo name.
+
+    Returns:
+        Up to eight ``"<pipeline name>: <reason>"`` strings covering the
+        readiness blockers plus any variable-group warning, or an empty list
+        when the repo has no inventoried pipelines or the lookup fails.
+    """
     blockers: list[str] = []
     try:
         pipelines = db.get_pipelines_for_repo(project, repo_name)
@@ -175,7 +205,24 @@ def _pipeline_blockers_for_repo(db, project: str, repo_name: str) -> list[str]:
     return blockers[:8]
 
 
-def _secrets_blockers(db, project: str, repo_name: str) -> list[str]:
+def _secrets_blockers(
+    db: StateStore,
+    project: str,
+    repo_name: str,
+) -> list[str]:
+    """Describe the secret setup a repo needs before its pipelines can run.
+
+    Args:
+        db: State store holding the pipeline inventory.
+        project: ADO project the repo belongs to.
+        repo_name: ADO repo name.
+
+    Returns:
+        One line per distinct service connection (capped at five) and per
+        distinct variable group (capped at five) telling the operator what to
+        create on the GitHub side, or a single line asking for a pipeline
+        inventory run when the repo has no inventoried pipelines at all.
+    """
     blockers: list[str] = []
     try:
         pipelines = db.get_pipelines_for_repo(project, repo_name)
@@ -236,7 +283,7 @@ def build_work_items_for_repos(
     *,
     enabled_scopes: list[str] | None = None,
     enabled_scopes_per_repo: dict[str, list[str]] | None = None,
-    db=None,
+    db: StateStore | None = None,
     repo_pipeline_counts: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     """One work item per repo × scope with human labels and blocker hints."""
@@ -294,6 +341,16 @@ def build_work_items_for_repos(
 
 
 def work_items_summary(work_items: list[dict[str, Any]]) -> dict[str, int]:
+    """Count work items by status for the plan summary.
+
+    Args:
+        work_items: Work items produced by :func:`build_work_items_for_repos`.
+
+    Returns:
+        A count per status. ``ready``, ``blocked``, ``skipped``, ``completed``
+        and ``failed`` are always present (zero when unused); any other status
+        found on an item is added as a further key.
+    """
     counts = {"ready": 0, "blocked": 0, "skipped": 0, "completed": 0, "failed": 0}
     for wi in work_items:
         st = wi.get("status", "ready")
@@ -408,8 +465,18 @@ def filter_work_items_for_scopes(
     return [wi for wi in work_items if wi.get("scope") in allowed]
 
 
-def executable_work_items(work_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Work items the executor should run now (ready only)."""
+def filter_executable_work_items(
+    work_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Select the work items the executor should run now.
+
+    Args:
+        work_items: Work items from the plan; non-dict entries are ignored.
+
+    Returns:
+        The items whose status is ``ready``, in plan order. An item with no
+        status at all counts as ready.
+    """
     result: list[dict[str, Any]] = []
     for wi in work_items:
         if not isinstance(wi, dict):
@@ -441,20 +508,38 @@ def plan_narrative_from_work_items(
     phase: str | None,
     work_items: list[dict[str, Any]],
     *,
-    dry_run: bool,
+    mode: ExecutionMode,
     repository_id: str | None = None,
     include_blocked: bool = True,
 ) -> str:
+    """Render the operator-facing markdown summary of a migration plan.
+
+    Args:
+        phase: Migration phase the plan covers, used in the heading when no
+            single repository is named. ``None`` or empty drops it.
+        work_items: Work items from :func:`build_work_items_for_repos`.
+        mode: Whether the plan will be previewed or executed for real; shown in
+            the heading so the operator cannot mistake one for the other.
+        repository_id: Single repo the plan is scoped to. Takes precedence over
+            ``phase`` in the heading.
+        include_blocked: When false, blocked items are left out of both the
+            blocked callout and the per-category listing.
+
+    Returns:
+        A markdown block with a heading naming the target and the mode, repo
+        and work item counts, an optional list of up to eight blocked items,
+        and up to six items per work category.
+    """
     summary = work_items_summary(work_items)
-    mode = "dry-run" if dry_run else "live"
+    mode_label = "dry-run" if mode is ExecutionMode.DRY_RUN else "live"
     repos = sorted({wi["repo"] for wi in work_items if wi.get("status") != "skipped"})
     blocked = [wi for wi in work_items if wi.get("status") == "blocked"]
     if repository_id:
-        header = f"### Migration plan — `{repository_id}` ({mode})"
+        header = f"### Migration plan — `{repository_id}` ({mode_label})"
     elif phase:
-        header = f"### Migration plan — phase **{phase}** ({mode})"
+        header = f"### Migration plan — phase **{phase}** ({mode_label})"
     else:
-        header = f"### Migration plan ({mode})"
+        header = f"### Migration plan ({mode_label})"
     lines = [
         header,
         "",

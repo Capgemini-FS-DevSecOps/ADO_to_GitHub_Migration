@@ -10,12 +10,30 @@ from typing import Any
 
 
 def _path() -> Path:
+    """Return the default on-disk location of the connectivity profile.
+
+    Returns:
+        The connectivity profile JSON file inside the directory named by
+        ``ADO2GH_DATA_DIR``, or inside the current directory when that variable
+        is unset.
+    """
     base = os.environ.get("ADO2GH_DATA_DIR", ".")
     return Path(base) / "connectivity_profile.json"
 
 
 @dataclass
 class ConnectivityProfile:
+    """Environment connectivity settings applied to outbound calls.
+
+    Holds the outbound proxy configuration, an optional custom CA bundle in PEM
+    form for environments that terminate TLS internally, and whether operators
+    may type a model id that is not in the provider catalogue. The proxy
+    password and the CA bundle are the profile's two sensitive fields: they are
+    stored in a separate ``_secrets`` object on disk and are never included in
+    the public representation returned by :meth:`to_public`. The ``updated_at``
+    and ``updated_by`` fields record the last save.
+    """
+
     proxy_enabled: bool = False
     proxy_host: str = ""
     proxy_port: int = 8080
@@ -28,9 +46,25 @@ class ConnectivityProfile:
 
     @property
     def custom_ca_configured(self) -> bool:
+        """Report whether a custom CA bundle has been supplied.
+
+        Returns:
+            True when the profile carries a non-blank PEM bundle. Exposed so
+            callers can show that a bundle is present without reading it.
+        """
         return bool(self.custom_ca_pem.strip())
 
     def to_public(self) -> dict[str, Any]:
+        """Render the profile for API responses, with secrets withheld.
+
+        Returns:
+            A mapping of the proxy toggle, host, port and username, the custom
+            CA presence flag, the custom-model-id toggle, and the last update
+            timestamp and actor. The proxy password is replaced by a fixed mask
+            when one is set and is an empty string otherwise, and the CA bundle
+            is reduced to the boolean ``custom_ca_configured`` — neither secret
+            is ever returned.
+        """
         return {
             "proxy_enabled": self.proxy_enabled,
             "proxy_host": self.proxy_host,
@@ -47,10 +81,27 @@ class ConnectivityProfile:
 class ConnectivityStore:
     """Load and save environment connectivity profile with secret sidecar."""
 
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Path | None = None) -> None:
+        """Bind the store to a profile file.
+
+        Args:
+            path: Profile file to read and write. Defaults to the location
+                derived from ``ADO2GH_DATA_DIR``.
+        """
         self.path = path or _path()
 
     def load(self) -> ConnectivityProfile:
+        """Read the stored connectivity profile.
+
+        Returns:
+            The persisted profile, with the proxy password and custom CA bundle
+            restored from the secret sidecar so callers get usable values. A
+            profile of defaults — proxy disabled, no CA bundle — when no file
+            has been written yet.
+
+        Raises:
+            json.JSONDecodeError: The profile file exists but is not valid JSON.
+        """
         if not self.path.exists():
             return ConnectivityProfile()
         data = json.loads(self.path.read_text(encoding="utf-8"))
@@ -116,6 +167,18 @@ def _connectivity_sensitive_changed(
     previous: ConnectivityProfile,
     updated: ConnectivityProfile,
 ) -> bool:
+    """Report whether a save changed anything that could affect model reachability.
+
+    Args:
+        previous: The profile as it was before the save.
+        updated: The profile about to be written.
+
+    Returns:
+        True when any proxy setting, the custom CA bundle, or the custom-model-id
+        toggle differs between the two. A True result makes the caller
+        invalidate every cached model validation, because a validation recorded
+        under the old connectivity settings no longer proves anything.
+    """
     return (
         previous.proxy_enabled != updated.proxy_enabled
         or previous.proxy_host != updated.proxy_host

@@ -10,7 +10,9 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
+from ado2gh.api.contracts import LiveApprovalCreateRequest
 from ado2gh.api.platform_rbac import operator_requires_live_approval, platform_user
+from ado2gh.models import ExecutionMode
 from services.accelerator_api.routes._shared import _settings
 
 # The identity fields the nine request models use to name their target. An
@@ -78,7 +80,9 @@ async def guard_live_migration(request: Request) -> None:
     path = request.url.path
 
     # Raises 401 for a live request that carries no identity at all.
-    if not operator_requires_live_approval(user, dry_run):
+    if not operator_requires_live_approval(
+        user, ExecutionMode.from_dry_run(dry_run=dry_run),
+    ):
         if not dry_run:
             audit_live_migration(path, user, body)
         return
@@ -92,11 +96,13 @@ async def guard_live_migration(request: Request) -> None:
         return
     approval = store.create_or_get_pending(
         user,
-        "migrate_job",
-        scope_id,
-        profile_id=active_profile_id(),
-        reason_request=f"Live {path}",
-        context={"route": path, "scope_id": scope_id},
+        LiveApprovalCreateRequest(
+            scope_type="migrate_job",
+            scope_id=scope_id,
+            profile_id=active_profile_id(),
+            reason_request=f"Live {path}",
+            context={"route": path, "scope_id": scope_id},
+        ),
     )
     raise HTTPException(
         status_code=403,

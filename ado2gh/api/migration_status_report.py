@@ -1,11 +1,23 @@
 """Migration progress report from StateDB and recent pipeline runs."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ado2gh.state.factory import StateStore
 
 
-def _collect_repo_scope_rows(db) -> dict[str, dict[str, Any]]:
-    """Latest migration row per ADO repo + scope."""
+def _collect_repo_scope_rows(db: StateStore) -> dict[str, dict[str, Any]]:
+    """Reduce the migration table to the latest row per repo and scope.
+
+    Args:
+        db: State store to read the migration rows from.
+
+    Returns:
+        One entry per ``"<project>/<repo>"`` carrying the ADO and GitHub
+        names, a ``scopes`` map of scope to its latest status, completion
+        time and error, and an ``errors`` list of the failure messages.
+    """
     latest: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in db.get_all_migrations():
         key = (row["ado_project"], row["ado_repo"], row["scope"])
@@ -38,6 +50,18 @@ def _collect_repo_scope_rows(db) -> dict[str, dict[str, Any]]:
 
 
 def _rollup_repo_status(scopes: dict[str, dict]) -> str:
+    """Reduce a repo's per-scope statuses to one overall status.
+
+    Args:
+        scopes: The ``scopes`` map from :func:`_collect_repo_scope_rows`.
+
+    Returns:
+        ``failed`` if any scope failed, ``completed`` when the git scope and
+        every other scope completed, ``partial`` when the git scope completed
+        but others have not or when only some scopes completed,
+        ``in_progress`` when a scope is still running, and ``not_started``
+        otherwise.
+    """
     if not scopes:
         return "not_started"
     statuses = {s.get("status") for s in scopes.values()}
@@ -55,7 +79,22 @@ def _rollup_repo_status(scopes: dict[str, dict]) -> str:
     return "not_started"
 
 
-def _pipeline_run_repo_outcomes(runs: list[Any]) -> list[dict[str, Any]]:
+def extract_outcomes_from_pipeline_runs(runs: list[Any]) -> list[dict[str, Any]]:
+    """Flatten pipeline runs into one row per repo touched by a migration step.
+
+    Only the ``migrate_repos``, ``convert_pipelines`` and ``validate`` steps
+    are considered; both the ``repo_details`` and the ``work_items`` shapes of
+    a step result are read.
+
+    Args:
+        runs: Pipeline runs, either run objects exposing ``to_dict()`` or the
+            already-serialised dicts.
+
+    Returns:
+        One row per repo outcome carrying the run id, name, status, dry-run
+        flag and phase, the step id, the repo, its status, a summary line and
+        the list of errors.
+    """
     outcomes: list[dict[str, Any]] = []
     for run in runs:
         run_dict = run.to_dict() if hasattr(run, "to_dict") else run
@@ -96,10 +135,25 @@ def _pipeline_run_repo_outcomes(runs: list[Any]) -> list[dict[str, Any]]:
 
 
 def build_migration_status_report(
-    db,
+    db: StateStore,
     *,
     pipeline_runs: list[Any] | None = None,
 ) -> dict[str, Any]:
+    """Build the migration progress report shown on the status dashboard.
+
+    Args:
+        db: State store holding the migration rows and repo counts.
+        pipeline_runs: Recent pipeline runs to derive per-repo run outcomes
+            from. Omitted or empty means no run outcomes are reported.
+
+    Returns:
+        A report with a ``summary`` of tracked, git-migrated, failed and
+        partial repo counts alongside the store's own completed and failed
+        totals, the ``migrated_repos``, ``failed_repos``, ``partial_repos`` and
+        ``all_repos`` lists (each repo carrying its per-scope statuses, roll-up
+        status and git completion time), and the 30 most recent
+        ``recent_run_outcomes``.
+    """
     repos_map = _collect_repo_scope_rows(db)
     counts = db.get_migration_repo_counts()
     repos = []
@@ -116,7 +170,7 @@ def build_migration_status_report(
     migrated = [r for r in repos if r["git_migrated"]]
     failed = [r for r in repos if r["rollup_status"] == "failed"]
     partial = [r for r in repos if r["rollup_status"] == "partial"]
-    run_outcomes = _pipeline_run_repo_outcomes(pipeline_runs or [])
+    run_outcomes = extract_outcomes_from_pipeline_runs(pipeline_runs or [])
 
     return {
         "summary": {

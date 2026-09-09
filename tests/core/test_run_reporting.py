@@ -1,7 +1,7 @@
 """Tests for pipeline run result formatting."""
 from ado2gh.api.run_reporting import (
+    build_validation_message,
     migrate_repo_detail,
-    validation_message,
     validation_repo_detail,
 )
 
@@ -60,6 +60,6 @@ def test_validation_message_lists_failures():
         {"ado_project": "A", "ado_repo": "r1", "overall": "PASS"},
         {"ado_project": "B", "ado_repo": "r2", "overall": "FAIL"},
     ]
-    msg = validation_message(results)
+    msg = build_validation_message(results)
     assert "1/2 passed" in msg
     assert "B/r2" in msg

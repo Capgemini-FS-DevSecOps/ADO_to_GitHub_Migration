@@ -15,6 +15,13 @@ class RepoLockedException(RuntimeError):
     """Raised when a repo is already locked by a different run."""
 
     def __init__(self, repo_id: str, holder_run_id: str) -> None:
+        """Record which repository was contended and which run already holds it.
+
+        Args:
+            repo_id: The repository whose lock could not be acquired.
+            holder_run_id: The pipeline run currently holding that lock. Kept as
+                an attribute so callers can report the blocking run.
+        """
         self.repo_id = repo_id
         self.holder_run_id = holder_run_id
         super().__init__(f"migration in progress for {repo_id}")
@@ -33,6 +40,7 @@ class RepoLockManager:
     """Thread-safe, process-local manager for per-repo migration locks."""
 
     def __init__(self) -> None:
+        """Create an empty lock table guarded by its own mutex."""
         self._locks: dict[str, RepoLock] = {}
         self._lock = threading.Lock()
 

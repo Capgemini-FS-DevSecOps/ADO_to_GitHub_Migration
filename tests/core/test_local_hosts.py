@@ -32,7 +32,7 @@ def test_ollama_catalog_returns_discovery_error_on_connect_failure(monkeypatch):
     def _raise_connect_error(*args, **kwargs):
         raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr("ado2gh.api.llm.model_catalog.build_llm_http_client", lambda **kwargs: _FakeClient(_raise_connect_error))
+    monkeypatch.setattr("ado2gh.api.llm.model_catalog.build_local_llm_http_client", lambda **kwargs: _FakeClient(_raise_connect_error))
 
     result = list_catalog(provider="ollama", base_url="http://localhost:11434")
     assert result["entries"] == []

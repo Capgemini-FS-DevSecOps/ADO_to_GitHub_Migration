@@ -69,7 +69,6 @@ def _get_clients():
     gh = _build_gh_client(
         global_cfg,
         gh_token=active.github_tokens[0].token if active.github_tokens else None,
-        gh_org=active.gh_org,
     )
     gh_org = active.gh_org or global_cfg.get("gh_org", "")
     return ado, gh, gh_org, active

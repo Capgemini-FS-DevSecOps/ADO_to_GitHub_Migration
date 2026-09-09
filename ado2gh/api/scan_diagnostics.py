@@ -9,6 +9,23 @@ def build_empty_scan_warnings(
     repos_scanned: int,
     project_details: list[dict[str, Any]],
 ) -> list[str]:
+    """Explain why an ADO organization scan returned no repositories.
+
+    Args:
+        projects_scanned: Number of ADO projects the scan enumerated.
+        repos_scanned: Number of Git repositories found across those projects.
+        project_details: Per-project scan results. Each entry may carry a
+            ``project`` name and an ``error`` string describing why that
+            project's repository listing failed.
+
+    Returns:
+        Operator-facing warning lines, most specific first: a single line when
+        no projects came back at all; otherwise, when projects were found but
+        no repositories were, a count of failed project listings followed by up
+        to three of the underlying errors, a summary naming up to six of the
+        projects scanned, and a line listing the common causes. Empty when the
+        scan found repositories and needs no explanation.
+    """
     warnings: list[str] = []
     if projects_scanned == 0:
         warnings.append("No ADO projects were returned for this organization.")

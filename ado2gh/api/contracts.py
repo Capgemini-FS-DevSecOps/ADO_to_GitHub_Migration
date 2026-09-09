@@ -8,16 +8,27 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DiscoverRequest(BaseModel):
+    """Scan an ADO organization for migratable repositories and pipelines; body of ``POST /v1/discover``."""
+
     config_path: str
     output_dir: str = "output/discovery"
 
 
 class DiscoverResult(BaseModel):
+    """Report where ``Accelerator.discover`` wrote its artifacts and how many projects it scanned."""
+
     output_dir: str
     projects_scanned: int = 0
 
 
 class RunWaveRequest(BaseModel):
+    """Migrate one wave, or every wave in the config; body of ``POST /v1/migrate``.
+
+    ``dry_run`` defaults to false, so a body that omits it migrates for real and pushes into GitHub.
+    An operator without live-execution rights is refused with ``awaiting_approval``;
+    ``live_approval_id`` then replays the request against the approval that was granted.
+    """
+
     config_path: str
     wave_id: Optional[int] = None
     dry_run: bool = False
@@ -26,6 +37,8 @@ class RunWaveRequest(BaseModel):
 
 
 class RunWaveResult(BaseModel):
+    """Summarise one executed wave; a ``completed`` count under ``dry_run`` means nothing reached GitHub."""
+
     wave_id: int
     status: str
     completed: int
@@ -35,6 +48,13 @@ class RunWaveResult(BaseModel):
 
 
 class PhaseRunRequest(BaseModel):
+    """Execute one risk-based migration phase with its gates enforced, behind ``ado2gh phase run``.
+
+    ``dry_run`` defaults to false, so a request that omits it migrates for real. ``force`` bypasses
+    a blocking prior-phase gate and belongs with ``override_reason``, which is persisted on the
+    OVERRIDE record as the audit trail for the escalation.
+    """
+
     config_path: str
     phase: Literal["poc", "pilot", "wave1", "wave2", "wave3"]
     dry_run: bool = False
@@ -48,6 +68,8 @@ class PhaseRunRequest(BaseModel):
 
 
 class PhaseRunResult(BaseModel):
+    """Summarise a phase run; a non-zero ``batches_skipped`` means a gate stopped work that never ran."""
+
     phase: str
     completed: int
     failed: int
@@ -56,6 +78,12 @@ class PhaseRunResult(BaseModel):
 
 
 class ValidateRequest(BaseModel):
+    """Verify migrated repositories against ADO at commit-SHA level; body of ``POST /v1/validate``.
+
+    The repository set comes from the first source that yields anything, later ones then ignored:
+    ``input_text``, ``input_path``, the ``phase`` of the active profile, then the wave config.
+    """
+
     config_path: Optional[str] = None
     config_yaml: Optional[str] = None
     input_path: Optional[str] = None
@@ -67,6 +95,8 @@ class ValidateRequest(BaseModel):
 
 
 class ValidateResult(BaseModel):
+    """Report how many repositories matched their ADO source at HEAD commit SHA."""
+
     total: int
     passed: int
     failed: int
@@ -75,6 +105,8 @@ class ValidateResult(BaseModel):
 
 
 class StatusSnapshot(BaseModel):
+    """Report the migration state recorded in the state database, contacting neither ADO nor GitHub."""
+
     migrations: list[dict[str, Any]] = Field(default_factory=list)
     pipeline_inventory_count: int = 0
 
@@ -83,11 +115,18 @@ class StatusSnapshot(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    """Report that the Accelerator API is up; ``GET /health`` checks no dependencies of its own."""
+
     status: str = "ok"
     version: str = "5.1.0"
 
 
 class JobTypeEnum(str, Enum):
+    """Name the kind of work a queued job performs, as dispatched by the background worker.
+
+    Migration and workflow-push jobs write to GitHub unless their payload asks for a dry run.
+    """
+
     DISCOVER = "discover"
     INVENTORY_PROJECT = "inventory_project"
     MIGRATE_REPO = "migrate_repo"
@@ -97,6 +136,8 @@ class JobTypeEnum(str, Enum):
 
 
 class JobStatus(str, Enum):
+    """Track a queued job from ``pending`` through ``running`` to a terminal status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -105,12 +146,21 @@ class JobStatus(str, Enum):
 
 
 class JobEnqueueRequest(BaseModel):
+    """Queue a background migration job; body of ``POST /v1/jobs``.
+
+    ``payload`` carries the job-type arguments, including the ``dry_run`` flag that decides whether
+    the job rehearses or writes for real. ``idempotency_key`` makes a retry return the job already
+    queued instead of enqueuing a second one.
+    """
+
     job_type: JobTypeEnum
     payload: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: Optional[str] = None
 
 
 class JobRecord(BaseModel):
+    """Describe a queued job; ``result`` is set only when it completed and ``error`` only when it failed."""
+
     id: str
     job_type: JobTypeEnum
     status: JobStatus
@@ -121,20 +171,28 @@ class JobRecord(BaseModel):
 
 
 class JobStatusResponse(BaseModel):
+    """Wrap one job record for ``POST /v1/jobs`` and ``GET /v1/jobs/{job_id}``."""
+
     job: JobRecord
 
 
 class PlanRequest(BaseModel):
+    """Preview the waves a config would run without running them; body of the deprecated ``POST /v1/plan``."""
+
     config_path: str
     wave_id: Optional[int] = None
     db_path: str = "migration_state.db"
 
 
 class PlanResponse(BaseModel):
+    """List the waves a plan preview resolved; nothing is migrated and no run is recorded."""
+
     waves: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DiscoverResponse(BaseModel):
+    """Report the project, repository and pipeline totals of ``POST /v1/discover`` and where they landed."""
+
     projects: int = 0
     repos: int = 0
     pipelines: int = 0
@@ -142,6 +200,8 @@ class DiscoverResponse(BaseModel):
 
 
 class RunWaveResponse(BaseModel):
+    """Report a wave's outcome over HTTP; ``partial`` counts repos migrated with some scopes failing."""
+
     wave_id: int
     status: str
     completed: int = 0
@@ -152,6 +212,8 @@ class RunWaveResponse(BaseModel):
 
 
 class ValidateResponse(BaseModel):
+    """Report commit-level validation over HTTP; ``matched`` is the evidence that code actually transferred."""
+
     total: int = 0
     matched: int = 0
     failed: int = 0
@@ -159,12 +221,16 @@ class ValidateResponse(BaseModel):
 
 
 class ReadinessRequest(BaseModel):
+    """Assess pipeline conversion effort; ``refresh_inventory`` re-scans ADO first, as an empty inventory does."""
+
     config_path: str = "migration.yaml"
     db_path: str = "migration_state.db"
     refresh_inventory: bool = False
 
 
 class ReadinessResponse(BaseModel):
+    """Split inventoried pipelines into automatic, assisted and manual work with an effort estimate."""
+
     auto: int = 0
     assisted: int = 0
     manual: int = 0
@@ -175,6 +241,8 @@ class ReadinessResponse(BaseModel):
 
 
 class DashboardSnapshot(BaseModel):
+    """Give ``GET /v1/dashboard`` its repository and pipeline totals, phase gates and in-flight runs."""
+
     total_repos: int = 0
     completed_repos: int = 0
     failed_repos: int = 0
@@ -185,6 +253,12 @@ class DashboardSnapshot(BaseModel):
 
 
 class ActiveMigrationItem(BaseModel):
+    """Describe one migration run currently in flight for the dashboard.
+
+    ``dry_run`` separates a rehearsal from a run that is really writing to GitHub, and the
+    ``started_by_*`` fields attribute it to the operator who launched it.
+    """
+
     id: str
     name: str
     status: str
@@ -200,6 +274,8 @@ class ActiveMigrationItem(BaseModel):
 
 
 class FreshnessRequest(BaseModel):
+    """Check one migrated repository against its ADO source; body of ``POST /v1/validate/freshness``."""
+
     config_path: str
     project: str
     repo: str
@@ -207,6 +283,8 @@ class FreshnessRequest(BaseModel):
 
 
 class FreshnessResponse(BaseModel):
+    """Compare ADO and GitHub HEAD commits; ``fresh`` is true only when both were read and match."""
+
     project: str
     repo: str
     ado_head_sha: str = ""
@@ -215,12 +293,24 @@ class FreshnessResponse(BaseModel):
 
 
 class GitHubTokenRequest(BaseModel):
+    """Add or replace a GitHub token on a migration profile; requires the manage-settings permission.
+
+    ``token`` carries a secret credential: it is stored for migrations to use and never echoed back,
+    appearing as a fixed mask in responses and logs.
+    """
+
     name: str
     token: str = ""
     note: str = ""
 
 
 class GitHubTokenResponse(BaseModel):
+    """Describe a stored GitHub token for the profile token routes.
+
+    ``token`` is always the mask marker, never the stored credential. ``last_validation`` holds the
+    scopes, rate-limit headroom and org access seen at ``last_validated_at``.
+    """
+
     id: str
     name: str
     token: str = ""
@@ -232,6 +322,12 @@ class GitHubTokenResponse(BaseModel):
 
 
 class MigrationProfileRequest(BaseModel):
+    """Create or update an ADO-to-GitHub migration profile; requires the manage-settings permission.
+
+    ``ado_pat`` carries a secret credential, stored for migrations to use and returned masked in
+    every response and log. GitHub tokens are attached through the separate token routes.
+    """
+
     name: str
     ado_org_url: str = ""
     ado_pat: str = ""
@@ -239,6 +335,13 @@ class MigrationProfileRequest(BaseModel):
 
 
 class MigrationProfileResponse(BaseModel):
+    """Describe a migration profile for the profile routes.
+
+    ``ado_pat`` and the token on every entry of ``github_tokens`` are always masked, never the
+    stored credential. ``status`` and ``approval`` carry the governance state: a profile that is not
+    active cannot start a run.
+    """
+
     id: str
     name: str
     ado_org_url: str = ""
@@ -256,6 +359,8 @@ class MigrationProfileResponse(BaseModel):
 
 
 class OnboardingStatusResponse(BaseModel):
+    """Tell the console where a signed-in user must go next; response of ``GET /v1/onboarding/status``."""
+
     needs_profile_setup: bool = False
     active_profile_count: int = 0
     default_profile_id: Optional[str] = None
@@ -267,20 +372,40 @@ class OnboardingStatusResponse(BaseModel):
 
 
 class DeleteProfileRequest(BaseModel):
+    """Nominate the profile inheriting the default when one is deleted or deactivated; admin only.
+
+    ``new_default_profile_id`` is required only when the profile being removed is the current
+    default and ignored otherwise; removing the last active profile is refused outright.
+    """
+
     new_default_profile_id: Optional[str] = None
 
 
 class DenyProfileRequest(BaseModel):
+    """Record why an admin rejected a submitted profile; the reason is audited and shown to the submitter."""
+
     reason: str = ""
 
 
 class RegisterBody(BaseModel):
+    """Register a platform account that cannot sign in until an administrator approves it.
+
+    ``password`` is a secret: a minimum length is enforced here and it is never returned in a
+    response or written to a log.
+    """
+
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=12)
     display_name: str = ""
 
 
 class ProfileSetupRequest(BaseModel):
+    """Set up the first migration profile in one guided onboarding step.
+
+    ``ado_pat`` and ``github_token`` carry secrets, stored for migrations to use and masked in every
+    response and log; both are checked against ADO and GitHub before anything is stored.
+    """
+
     name: str
     ado_org_url: str
     ado_pat: str
@@ -290,6 +415,12 @@ class ProfileSetupRequest(BaseModel):
 
 
 class MigrationScanRequest(BaseModel):
+    """Scan an ADO organization inline, before any profile exists; body of ``POST /v1/migration/scan``.
+
+    ``ado_pat`` carries a secret used only for this scan: it is not stored and never echoed back.
+    ``max_repos`` caps the scan for a quick look at a large organization.
+    """
+
     ado_org_url: str = ""
     ado_pat: str = ""
     gh_org: str = ""
@@ -297,6 +428,8 @@ class MigrationScanRequest(BaseModel):
 
 
 class PhaseRecommendation(BaseModel):
+    """Recommend the repositories for one phase; advice only, the binding assignment is made elsewhere."""
+
     phase: str
     repo_count: int = 0
     risk_min: float = 0.0
@@ -306,6 +439,12 @@ class PhaseRecommendation(BaseModel):
 
 
 class MigrationScanResponse(BaseModel):
+    """Report an organization scan and its per-phase recommendations.
+
+    ``inventory_gaps`` and ``warnings`` list what the scan could not read, so a plan built on this
+    data can be judged against its own coverage.
+    """
+
     scanned_at: str = ""
     projects_scanned: int = 0
     repos_scanned: int = 0
@@ -326,11 +465,19 @@ ConnectionProfileResponse = MigrationProfileResponse
 
 
 class ValidateGitHubTokenRequest(BaseModel):
+    """Check a GitHub token before a migration is made to depend on it.
+
+    ``token`` carries a secret used only for this check: it is not stored by this call and appears
+    in neither the response nor the logs.
+    """
+
     token: str = ""
     gh_org: str = ""
 
 
 class ValidateGitHubTokenResponse(BaseModel):
+    """Report whether a GitHub token can drive a migration; no credential value is ever returned."""
+
     valid: bool
     message: str = ""
     login: str = ""
@@ -342,23 +489,40 @@ class ValidateGitHubTokenResponse(BaseModel):
 
 
 class ValidateAdoPatRequest(BaseModel):
+    """Check an ADO personal access token before a migration depends on it.
+
+    ``ado_pat`` carries a secret used only for this check, never returned and never logged. On the
+    profile-scoped route a blank value, or the mask marker the console sends back, falls through to
+    the PAT already stored on the profile.
+    """
+
     ado_org_url: str = ""
     ado_pat: str = ""
 
 
 class ValidateAdoPatResponse(BaseModel):
+    """Report whether an ADO PAT can read the source org; ``ado_projects`` is the proof that it works."""
+
     valid: bool
     message: str = ""
     ado_projects: int = 0
 
 
 class SettingsResponse(BaseModel):
+    """Give ``GET /v1/settings`` every migration profile with secrets masked, the active one, and the defaults."""
+
     active_profile_id: Optional[str] = None
     migration_profiles: list[MigrationProfileResponse] = Field(default_factory=list)
     advanced: dict[str, Any] = Field(default_factory=dict)
 
 
 class AdvancedSettingsRequest(BaseModel):
+    """Change the platform-wide execution defaults; only the fields actually sent are applied.
+
+    ``dry_run_default`` decides whether a console run that states no mode rehearses or migrates for
+    real.
+    """
+
     config_path: Optional[str] = None
     db_path: Optional[str] = None
     dry_run_default: Optional[bool] = None
@@ -370,6 +534,8 @@ class AdvancedSettingsRequest(BaseModel):
 
 
 class PhaseDefinitionItem(BaseModel):
+    """Define one migration phase, its risk ceiling, its repository cap and its place in the sequence."""
+
     id: str
     name: str
     risk_max: float
@@ -378,11 +544,23 @@ class PhaseDefinitionItem(BaseModel):
 
 
 class PhaseRemovalItem(BaseModel):
+    """Delete a migration phase and reassign the repositories it held.
+
+    ``move_repos_to`` must name a phase that survives the update, so removing a phase never silently
+    drops a repository from the plan.
+    """
+
     phase_id: str
     move_repos_to: str
 
 
 class PhasesUpdateRequest(BaseModel):
+    """Replace the phase definitions for the platform or one profile; ``phases`` is the whole new set.
+
+    ``span_to_scan`` also re-spreads the repositories of the latest scan across the new risk bands
+    instead of only rewriting the definitions.
+    """
+
     phases: list[PhaseDefinitionItem]
     removals: list[PhaseRemovalItem] = Field(default_factory=list)
     span_to_scan: bool = False
@@ -390,6 +568,8 @@ class PhasesUpdateRequest(BaseModel):
 
 
 class ValidateConnectionResponse(BaseModel):
+    """Report whether a profile reaches both ADO and GitHub; the checks stop at the first failure."""
+
     valid: bool
     ado_projects: int = 0
     gh_token_remaining: int = 0
@@ -423,26 +603,40 @@ class PipelineRunStartRequest(BaseModel):
 
 
 class PipelineRunResponse(BaseModel):
+    """Wrap one console pipeline run with its per-step state.
+
+    A run returned with status ``awaiting_approval`` has not started; it stays parked until an
+    approver releases it.
+    """
+
     run: dict[str, Any]
 
 
 class PipelineStepDefinition(BaseModel):
+    """Describe one selectable console pipeline step; ``id`` is what a run request lists in ``steps``."""
+
     id: str
     label: str
     description: str
 
 
 class PhaseAssignmentItem(BaseModel):
+    """Move one scanned repository into a migration phase, overriding the phase the scan recommended."""
+
     project: str
     repo_name: str
     assigned_phase: str
 
 
 class PhaseAssignmentRequest(BaseModel):
+    """Reassign already-scanned repositories to migration phases; requires the manage-settings permission."""
+
     assignments: list[PhaseAssignmentItem] = Field(default_factory=list)
 
 
 class DiscoveryRepoItem(BaseModel):
+    """Describe one discovered repository, its risk score and its recommended or chosen phase."""
+
     project: str
     repo_name: str
     total_score: float = 0
@@ -454,6 +648,12 @@ class DiscoveryRepoItem(BaseModel):
 
 
 class DiscoveryResponse(BaseModel):
+    """Serve the console the last persisted scan for a profile, without contacting ADO.
+
+    ``status`` is ``empty`` when the profile has never been scanned, and ``inventory_gaps`` with
+    ``warnings`` record what that scan could not read.
+    """
+
     profile_id: str
     scanned_at: str = ""
     gh_org: str = ""
@@ -470,6 +670,13 @@ class DiscoveryResponse(BaseModel):
 
 
 class LiveApprovalCreateRequest(BaseModel):
+    """Ask an approver to authorise a live, non-dry-run execution.
+
+    ``scope_type`` and ``scope_id`` pin the request to exactly one agent session, migrate job or
+    pipeline run, so an approval never generalises to other work; a pending row for that scope is
+    reused rather than duplicated.
+    """
+
     scope_type: Literal["agent_session", "migrate_job", "pipeline_run"]
     scope_id: str
     profile_id: Optional[str] = None
@@ -478,10 +685,18 @@ class LiveApprovalCreateRequest(BaseModel):
 
 
 class LiveApprovalDecisionRequest(BaseModel):
+    """Record an approver's justification for releasing or refusing a live run.
+
+    A non-empty ``reason`` is mandatory: approving here is what lets real, irreversible writes to
+    GitHub proceed, and it is kept on the approval record as the audit trail.
+    """
+
     reason: str = Field(min_length=1)
 
 
 class LiveApprovalItem(BaseModel):
+    """Describe one live-execution approval; the decision fields are filled in only once an approver rules."""
+
     id: str
     requester_username: str
     scope_type: str
@@ -496,4 +711,6 @@ class LiveApprovalItem(BaseModel):
 
 
 class LiveApprovalListResponse(BaseModel):
+    """List live-execution approvals by status: the approver's queue of runs that cannot proceed yet."""
+
     approvals: list[LiveApprovalItem] = Field(default_factory=list)

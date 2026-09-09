@@ -47,7 +47,31 @@ def _build_ado_client(global_cfg: dict, ado_url: str | None = None, ado_pat: str
     return ADOClient(ado_url, token_manager=tm)
 
 
-def _build_gh_client(global_cfg: dict, gh_token: str | None = None, gh_org: str | None = None) -> GHClient:
+def _build_gh_client(global_cfg: dict, gh_token: str | None = None) -> GHClient:
+    """Build a GitHub client from whichever credential source is configured.
+
+    Sources are tried in a fixed order so that the strongest configuration wins:
+    a multi-token JSON config file, then numbered ``GH_TOKEN_1..19`` environment
+    variables, then a single token from the caller, the environment or the
+    config. GitHub App authentication is layered on top when the app id,
+    installation id and private key path are all present.
+
+    Args:
+        global_cfg: The parsed ``global`` block of the migration config. Read for
+            ``gh_token_config`` and, as a last resort, ``gh_token``.
+        gh_token: A single token supplied by the caller, used only when neither
+            the token-config file nor the numbered environment variables are
+            available.
+
+    Returns:
+        A ``GHClient`` bound to a token manager that rotates across whichever
+        credentials were found and, where configured, mints GitHub App
+        installation tokens. No credential value is logged or returned.
+
+    Raises:
+        ConfigurationError: No token config file, no ``GH_TOKEN_n`` variables and
+            no single token, so there is nothing to authenticate with.
+    """
     token_config = global_cfg.get("gh_token_config", "")
     gh_token_vars = [f"GH_TOKEN_{i}" for i in range(1, 20) if os.environ.get(f"GH_TOKEN_{i}")]
     if token_config and Path(token_config).exists():
@@ -70,20 +94,65 @@ def _build_gh_client(global_cfg: dict, gh_token: str | None = None, gh_org: str 
 class Accelerator:
     """Deterministic migration engine facade."""
 
-    def __init__(self, db_path: str = "migration_state.db"):
+    def __init__(self, db_path: str = "migration_state.db") -> None:
+        """Bind the facade to the state database every call on it reads and writes.
+
+        Args:
+            db_path: Location of the migration state database. It is interpreted by
+                the configured storage backend, so a filesystem path for SQLite.
+        """
         self.db_path = db_path
 
     def discover(self, request: DiscoverRequest, ado_url: str | None = None, ado_pat: str | None = None) -> DiscoverResult:
+        """Scan the Azure DevOps organisation and write a discovered-repo config.
+
+        Args:
+            request: Carries the migration config to load and the directory the
+                discovery output is written to.
+            ado_url: Azure DevOps organisation URL. Falls back to ``ADO_ORG_URL``
+                and then to the config file when omitted.
+            ado_pat: Azure DevOps credential. Falls back to the environment and then
+                to the config file when omitted.
+
+        Returns:
+            A ``DiscoverResult`` naming the directory that now holds the generated
+            repository and wave configuration.
+
+        Raises:
+            ConfigurationError: No organisation URL or no Azure DevOps credential
+                could be resolved.
+        """
         global_cfg, _ = ConfigLoader.load(request.config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
         scanner = DiscoveryScanner(ado)
         scanner.scan(request.output_dir)
         return DiscoverResult(output_dir=request.output_dir)
 
-    def run_wave(self, request: RunWaveRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None, gh_org: str | None = None) -> RunWaveResult:
+    def run_wave(self, request: RunWaveRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None) -> RunWaveResult:
+        """Execute one migration wave, or every wave in the config in order.
+
+        ``request.dry_run`` is converted to an ``ExecutionMode`` here: this is the
+        boundary between the boolean external shape and the internal mode (CA-001).
+
+        Args:
+            request: Config path, state database path, the optional ``wave_id`` to
+                run — all waves when it is ``None`` — and the ``dry_run`` flag.
+            ado_url: Azure DevOps organisation URL override.
+            ado_pat: Azure DevOps credential override.
+            gh_token: GitHub credential override, used only when no multi-token or
+                token-config source is present.
+
+        Returns:
+            A ``RunWaveResult`` for the last wave executed: its wave id, final
+            status, and the completed, failed and total repository counts.
+
+        Raises:
+            ConfigurationError: The requested wave is not in the config, or Azure
+                DevOps or GitHub credentials could not be resolved.
+        """
         global_cfg, waves = ConfigLoader.load(request.config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
-        gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
+        gh = _build_gh_client(global_cfg, gh_token=gh_token)
         db = create_state_db(request.db_path)
         engine = MigrationEngine(
             global_cfg, ado, gh, db,
@@ -103,10 +172,35 @@ class Accelerator:
             summary = s
         return RunWaveResult(**summary)
 
-    def run_phase(self, request: PhaseRunRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None, gh_org: str | None = None) -> PhaseRunResult:
+    def run_phase(self, request: PhaseRunRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None) -> PhaseRunResult:
+        """Execute every repository assigned to a migration phase, in batches.
+
+        The gate on the preceding phase is always evaluated. ``request.force`` only
+        escalates a blocking gate, it never skips it: forcing past one requires a
+        non-empty ``request.override_reason``, and the override is recorded against
+        the prior phase so the escalation stays auditable (GAP-009).
+
+        Args:
+            request: Config path, state database path, the phase to run, the
+                ``dry_run`` flag, and ``force`` plus ``override_reason`` for a
+                deliberate escalation past a blocking gate.
+            ado_url: Azure DevOps organisation URL override.
+            ado_pat: Azure DevOps credential override.
+            gh_token: GitHub credential override, used only when no multi-token or
+                token-config source is present.
+
+        Returns:
+            A ``PhaseRunResult`` with the phase name, the completed and failed
+            repository counts, and how many batches ran versus were skipped.
+
+        Raises:
+            ConfigurationError: The prior phase gate blocks and ``force`` is unset;
+                ``force`` is set without an ``override_reason``; or Azure DevOps or
+                GitHub credentials could not be resolved.
+        """
         global_cfg, waves = ConfigLoader.load(request.config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
-        gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
+        gh = _build_gh_client(global_cfg, gh_token=gh_token)
         db = create_state_db(request.db_path)
         phase_t = PhaseType(request.phase)
         from ado2gh.models import PHASE_ORDER
@@ -143,13 +237,41 @@ class Accelerator:
         )
         return PhaseRunResult(**summary)
 
-    def validate(self, request: ValidateRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None, gh_org: str | None = None) -> ValidateResult:
+    def validate(self, request: ValidateRequest) -> ValidateResult:
+        """Compare migrated repositories against their Azure DevOps sources.
+
+        Verification is commit-level: the HEAD commit of each target repository is
+        compared with its source, so a repository that exists but is empty fails.
+        Unlike the other run methods this one takes no credential overrides: it
+        resolves both clients from the stored settings.
+
+        Args:
+            request: Where to read the repositories to check from — config path,
+                inline config, input file or inline text — and where to write the
+                report.
+
+        Returns:
+            A ``ValidateResult`` with the number of repositories checked, how many
+            passed and failed, the report path when one was written, and a per-repo
+            detail row for each comparison.
+        """
         from ado2gh.api.settings_store import SettingsStore
         from ado2gh.api.validation_run import run_validation
 
         return run_validation(request, SettingsStore())
 
     def status(self, db_path: Optional[str] = None) -> StatusSnapshot:
+        """Read the current migration state out of the state database.
+
+        Args:
+            db_path: State database to read. Defaults to the one this facade was
+                constructed with.
+
+        Returns:
+            A ``StatusSnapshot`` holding every recorded migration row — repository,
+            phase, status and timestamps — and the number of pipelines currently in
+            the inventory.
+        """
         db = create_state_db(db_path or self.db_path)
         return StatusSnapshot(
             migrations=db.get_all_migrations(),
@@ -164,6 +286,25 @@ class Accelerator:
         ado_url: str | None = None,
         ado_pat: str | None = None,
     ) -> dict:
+        """Scan Azure DevOps pipelines into the state database and summarise them.
+
+        Args:
+            config_path: Migration config to resolve Azure DevOps settings from.
+            projects: Projects to scan. Every project in the organisation is scanned
+                when omitted.
+            parallel: Number of worker threads used to scan projects concurrently.
+            ado_url: Azure DevOps organisation URL override.
+            ado_pat: Azure DevOps credential override.
+
+        Returns:
+            A dict with ``projects`` mapping each project name to its own counts,
+            plus the organisation totals ``pipelines``, ``build``, ``release`` and
+            ``projects``.
+
+        Raises:
+            ConfigurationError: No organisation URL or no Azure DevOps credential
+                could be resolved.
+        """
         from ado2gh.pipelines.inventory import PipelineInventoryBuilder, summarize_project_inventory
         global_cfg, _ = ConfigLoader.load(config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)

@@ -16,6 +16,16 @@ PROVIDERS = ("aws", "foundry", "gcp")
 
 
 def _imds_reachable() -> bool:
+    """Report whether the EC2 instance metadata service answers on this host.
+
+    Used as evidence that an instance role is available. Only the metadata
+    root is requested and no credential material is read.
+
+    Returns:
+        True when the metadata endpoint responds below HTTP 500 within a one
+        second timeout. False on any error, including a timeout, which is the
+        normal outcome off AWS.
+    """
     try:
         req = Request(
             "http://169.254.169.254/latest/meta-data/",
@@ -29,6 +39,16 @@ def _imds_reachable() -> bool:
 
 
 def _gce_metadata_reachable() -> bool:
+    """Report whether the GCE metadata server answers on this host.
+
+    Used as evidence that a Compute Engine service account is available. Only
+    the metadata root is requested and no credential material is read.
+
+    Returns:
+        True when the metadata endpoint responds below HTTP 500 within a one
+        second timeout. False on any error, including a timeout, which is the
+        normal outcome off Google Cloud.
+    """
     try:
         req = Request(
             "http://metadata.google.internal/computeMetadata/v1/",
@@ -162,4 +182,20 @@ def _detect_gcp() -> dict[str, Any]:
 
 
 def scan_all_presence() -> list[dict[str, Any]]:
+    """Detect which ambient cloud credentials are present on this host.
+
+    Inspects environment variables and, for AWS and GCP, whether the instance
+    metadata service answers. No credential value is read, dereferenced or sent
+    anywhere, and no provider API is called — this only establishes what is
+    configured, never whether it works. Use ``probe_provider`` for that.
+
+    Returns:
+        One detection per supported provider, in AWS, Foundry, GCP order. Each
+        carries the provider key; ``completeness`` of ``complete``,
+        ``incomplete`` or ``absent``; the ``primary_method`` chosen for that
+        provider and any ``alternate_methods`` also available; the region,
+        project and endpoint where the provider uses them; and
+        ``missing_fields``, naming the settings that still need to be supplied
+        before the source can be approved.
+    """
     return [_detect_aws(), _detect_foundry(), _detect_gcp()]

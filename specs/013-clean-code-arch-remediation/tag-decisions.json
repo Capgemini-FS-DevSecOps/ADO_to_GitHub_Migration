@@ -16,6 +16,1142 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/api/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Operator override 2026-09-08 of the reviewer's CONFIRM: T078 (layering) and T079 (route code out of api/) restructure this package in Phase 8; a rename now would collide with both; the name is load-bearing in every doc; deferred to a follow-up spec.",
+    "state_hash": "5f1b6abff9257d2d5ea9c638b3119841a4b7e35e",
+    "decided_by": "operator"
+  },
+  {
+    "id": "ado2gh/api/accelerator.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes SDK facade responsibility.",
+    "state_hash": "474c2720262bef45a947d0e14a1d284fc36a12c0",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/accelerator.py::Accelerator.inventory",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "public facade method deliberately named for the `pipelines inventory` CLI command it fronts, matching the sibling `discover`/`validate`/`status` surface.",
+    "state_hash": "0d65de7f8caee5b04808cc01a354186d18bd860a",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/accelerator.py::Accelerator.status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "noun-phrase accessor on a pure read-only query returning a StatusSnapshot, and it mirrors the frozen `ado2gh status` CLI/SDK surface.",
+    "state_hash": "7c3171e17d90eb2c894ee20fe85bf4c9db3035d4",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/agent_models.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Describes agent-facing LLM model listings.",
+    "state_hash": "9c012eb8ec324fd2f59403a07c6a94fd40aad781",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/agent_models.py::_provider_label",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private pure lookup whose name reads as the value it returns, the documented false-positive shape.",
+    "state_hash": "a1c874690413e32aaf9720722102fdce16c7ce68",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/agentic_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes FastAPI agentic subsystem routes.",
+    "state_hash": "d5f89391afa8d6fc37ce91d2d63bda1975e20750",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/agentic_routes.py::_db_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor returning a path, no side effects.",
+    "state_hash": "fc452b8d481841897e95cb74e98bbdbdf62d932b",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/agentic_routes.py::history_event_types",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "FastAPI handler bound to `GET /v1/history/event-types`, same frozen-surface reasoning.",
+    "state_hash": "8989e3af0da54e6aee30b33b32adf965eda83fad",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/agentic_routes.py::history_sessions",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "FastAPI handler bound to `GET /v1/history/sessions`, rename is invisible to callers on a frozen HTTP surface.",
+    "state_hash": "a527b2bfe7942df06d0aa586177db7aba59dca85",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/audit_access.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes audit access control logic.",
+    "state_hash": "493c4e9997a66cd8501cc2ad32e1bbdb2e08040e",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (connectivity profiles).",
+    "state_hash": "12ff6ac54a5ce701206893966a0e0c5bf88b9aff",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::_connectivity_sensitive_changed",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "predicate returning `bool`, reads correctly at the `if` site.",
+    "state_hash": "242f071f6ad8cefb564f0bdac5d1e06da3dea3f7",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor returning a `Path`, name is the thing it returns.",
+    "state_hash": "385f69914308880b1c056ad8d6e2d473ac52af67",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/contracts.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes data contracts and schemas.",
+    "state_hash": "f028c3c2fbe74d02031ba23a809d3536006e491b",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/credentials/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Package name \"credentials\" describes the responsibility of managing ambient cloud credential detection, storage, and validation.",
+    "state_hash": "9cc87701d73d9a21e93edd89200fe84512a66e32",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credential_detector.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes detection of ambient cloud credentials without live API calls.",
+    "state_hash": "e44ff89a33bb5050f39ad836ad5a9bcdb8c25a7a",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credential_detector.py::_gce_metadata_reachable",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "adjective predicate returning `bool`, normal Python.",
+    "state_hash": "3f3e7700de87a879ced8446652835a82f66ed5a8",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credential_detector.py::_imds_reachable",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "adjective predicate returning `bool`, normal Python.",
+    "state_hash": "e51a914cd1bb37782fbe068a9335bde981f524cb",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credential_probe.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes live probing and validation of cloud credentials.",
+    "state_hash": "ded2fb4202da91c6a859fb96b46ef460363bfde5",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credential_probe.py::_classify_probe_error",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "already starts with the verb `classify`, pure heuristic verb-list miss.",
+    "state_hash": "af5053f6e8a04ba45c9c740d68e0e5b4da6d30c9",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes storage and state management of approved cloud credential sources.",
+    "state_hash": "d05593f9e499dba7df0f8f0df690ecc58cfa7f0d",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.approve",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`approve` is a verb and the domain term paired with `reject`/`revoke`.",
+    "state_hash": "1cb082498b2d02d74a1d0ecb5620e7a1901e64fc",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.revoke",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`revoke` is a verb and the domain term paired with `approve`/`reject`.",
+    "state_hash": "1598ca2d0de84090a47822b0b9e77fbf87fc3288",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_now_iso",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "idiomatic timestamp accessor, name is the value returned.",
+    "state_hash": "4ce7c98468cdddd5e925fb941f826161c212bbd8",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor returning a `Path`.",
+    "state_hash": "a5988e79560464f7925942c71d59f416b448ff8a",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_snapshot",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure function whose name is the dict it returns.",
+    "state_hash": "ddb56cf9685fa2e823d72d32d8b4a8935efd5acf",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/credentials/credential_validation.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes validation of platform credentials (GitHub PAT and ADO PAT) for settings UI.",
+    "state_hash": "25aef3964a237f43728a5731a192af7c14d95d8d",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/errors.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes custom error definitions.",
+    "state_hash": "9009518b3df4159f91d8ebd61518846c21845269",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (live execution approvals).",
+    "state_hash": "cf8212948282380944f2c65bb883d72347e5d447",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::LiveApprovalStore._context",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor decoding and returning the stored context dict.",
+    "state_hash": "39c7b41391405f33b149257ba36733c38f4de86e",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::LiveApprovalStore._stamp_pipeline_approval",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "already starts with the verb `stamp`, verb-list miss.",
+    "state_hash": "b1d84b9f19e9aa7ff701e66c06e88f364563579f",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::LiveApprovalStore.approve",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`approve` is a verb and the domain term paired with `deny`.",
+    "state_hash": "072f41408963a4acc750eafdd10c6cbe81e6c76e",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::_db_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor returning a path.",
+    "state_hash": "cb8c0ed6128f5ce8a768f39bb0236c1f6b3aa30d",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::_internal_headers",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Factory function correctly named as a resource constructor.",
+    "state_hash": "59485e9ad20f24cc5d515b75b345cc22534fe0b4",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::_public_row",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure projection whose name is the row it returns.",
+    "state_hash": "3521041a1ec80d087c6f2f8053c9ede6aa53df92",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Package name \"llm\" describes management of LLM provider registry, model storage, catalog discovery, and validation.",
+    "state_hash": "34c2bf8790af0e688e9951e3009dd33b393443cc",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/http_llm.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes httpx client factory for cloud LLM API calls with proxy and CA configuration.",
+    "state_hash": "67b4bda65df565a1210ed05233329b3af0ab9e07",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/http_llm.py::_proxy_url",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure builder whose name is the URL it returns.",
+    "state_hash": "8876085611e4c74461f1b4b60cd41450aca95f20",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes storage and state management of LLM model configurations with secret separation.",
+    "state_hash": "f0d2584f9d8c460da745c160b8f0ee0f29b95db5",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_ambient_approved",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "adjective predicate returning `bool`.",
+    "state_hash": "adad865d7ca2de873c0aef6969d92bc31cf68ba9",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor returning a `Path`.",
+    "state_hash": "7132fa517e7e1a269e1b7e9a87f129b9f4d4c6c0",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_sensitive_fields_changed",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "predicate returning `bool`, reads correctly at its call site in `_assert_enable_gate`.",
+    "state_hash": "0cf2223da24c06cae8cf4fe5f55ef1b027252942",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_provider_registry.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes registry of supported LLM provider specifications and metadata.",
+    "state_hash": "443c163c5c4ea4b638d45adc1471356d3f8691b0",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_provider_registry.py::LLMProviderSpec.runtime_headers",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure dataclass accessor returning the headers it names, sibling of `to_public`.",
+    "state_hash": "e5f3f5ff6d72652e3bcd52659e43feceda4ba102",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes live and preset LLM model catalog discovery with provider-specific fetchers.",
+    "state_hash": "f4c3f4c575dde34b6976643fcbb62601b17e11d1",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_catalog_key",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure derivation whose name is the key it returns.",
+    "state_hash": "9f80076cf1159942ed790bb96861ffa11c7ee803",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_catalog_result",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private dispatcher returning the catalog result it is named for, no side effects to hide.",
+    "state_hash": "a3bd6bbd1d8c60667307129f2485cef8b1c3b68a",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_live_with_preset_fallback",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private helper whose noun-phrase name states exactly the payload and fallback policy it returns.",
+    "state_hash": "ca3e9253e98fda179712e2dde4430d32c8451fb8",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_ollama_catalog",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure query returning a catalog dict, named for its result; heuristic false positive.",
+    "state_hash": "8947e684a0ec190ed84291efaafdc2ef42a11fa5",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_ollama_error_payload",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private helper named for the payload it returns; standard Python noun-phrase builder, no defect.",
+    "state_hash": "93b33269e4a02f8808d277da9b27eb4005b40936",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_ollama_headers",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure builder whose name is the headers dict it returns.",
+    "state_hash": "70c2cae11a9c4b8e731d44b03397e0a16ed4bcd1",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_catalog.py::_preset_entries",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private pure read whose name is the list it returns.",
+    "state_hash": "503f5119999df7c94f64064671775822570e44e5",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes LLM model connectivity validation with categorized failure analysis and capability probing.",
+    "state_hash": "88bf1efc2ab153df06be050dc4170a0fed95c7ba",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_anthropic_error_category",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure classifier returning the category or None, noun-phrase name matches the return.",
+    "state_hash": "1ddb58859076c216ca935fe41cdb34f8adc13289",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_anthropic_payload_has_tool_use",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same `has_` predicate convention, correct as written.",
+    "state_hash": "0b8abda1bb2f5fabeeaf0d4b5eeb6a73bba15813",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_classify_error",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "already verb-initial (`classify`); heuristic simply does not know the verb.",
+    "state_hash": "5e37e09722ff5e6deedd601c123d4e2a05c97102",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_draft_key",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure key-derivation helper named for the key it returns.",
+    "state_hash": "e9891bd7e147a1d9f8e117bfc5ff7b2eed9d7dee",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_gemini_payload_has_function_call",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same `has_` predicate convention, correct as written.",
+    "state_hash": "afb0991d321ad3ef3e0e0b2a928e2f5b8e1a32d4",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_now_iso",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "idiomatic timestamp accessor whose name is exactly its return value.",
+    "state_hash": "3e14d1f304757d7a4d1323d5c3c42f0c1dde41f0",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_openai_payload_has_tool_calls",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`has_` predicate returning bool, the conventional Python shape for a query.",
+    "state_hash": "a1f36047799092e677894faf33d92bbcb723021e",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_platform_agent_capabilities",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "constant-returning private helper named for the flags it yields.",
+    "state_hash": "7c364748553ba1d7c6e645fe294d5bb3644da3d0",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_result",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private constructor for the verdict dict, named for the thing it builds; verb-list heuristic false positive.",
+    "state_hash": "18ecc8aa04d790241b8886389ee844271b19680d",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_single_flight_validate",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "contains the verb `validate` qualified by its coalescing strategy; name describes the action accurately.",
+    "state_hash": "1e78f22f29440f31edce69512c21ce4a28da2478",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::_stub_agent_capabilities",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "constant-returning private helper named for the flags it yields.",
+    "state_hash": "4e71416cda649baf9e2b3d990079b016c41bbf2b",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/model_validation.py::ssl_error_type",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "lazy accessor returning a type object, named for exactly what it returns.",
+    "state_hash": "3cc7e151f677bd9fbe14f150739d13afec59d8fc",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/platform_managed_model.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes sync of platform-supplied LLM model SKUs into the admin model store.",
+    "state_hash": "fb8e6381b6b15749a825bd8451744811c8b8056c",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/llm/platform_managed_model.py::platform_model_payload",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "read-only query returning the payload dict, noun-phrase accessor is correct.",
+    "state_hash": "a8ad582b7b7afd453edc3f61e1a3acca28973638",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/llm/platform_managed_model.py::platform_model_status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "read-only query returning the status dict, noun-phrase accessor is correct.",
+    "state_hash": "95618c2b7bc802225f538c4f7fb08481e86754c1",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/local_hosts.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name describes localhost URL resolution responsibility.",
+    "state_hash": "f5f38eae12d4c8aa58203b19d75c6e36449c69a2",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/local_hosts.py::ollama_discovery_hint",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Noun correctly describing what is returned (hint).",
+    "state_hash": "a6914423b736e0239d226971bb64cfd3b99c3510",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_scan.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes ADO org scan and discovery.",
+    "state_hash": "c8078f83aa44760161de0ebd66559b2c9f684ce1",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_scan.py::_stub_pipeline",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "\"stub\" is a verb describing the action of creating a stub object.",
+    "state_hash": "f55626e64cd7a905ce640d39b6ec85097dbe67d4",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_scan.py::pack_scan_summary_json",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "\"pack\" is a verb describing the action of transforming scan data.",
+    "state_hash": "9f3615b756cb39e583c1d3e47008cf6fb2ed5ab9",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_status_report.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes migration progress reporting.",
+    "state_hash": "f4271b44466b92742c6367b3dc48b561ec4b775d",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_status_report.py::_rollup_repo_status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`rollup` reads as the reduction it performs on a pure input-to-string mapping.",
+    "state_hash": "0a1542af3600008facfc788c0cf27c4c16c3a32d",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes work item and plan building.",
+    "state_hash": "4d88f85b9d87dda73142968a1ed1c8a08aca1fbd",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::_pipeline_blockers_for_repo",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure query returning the blocker list, `_for_repo` already scopes it unambiguously.",
+    "state_hash": "fc59b68fcce9790dcb95b0c076468f4d3ada4ee1",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::_scope_status",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "Operator decision 2026-09-08: rejected with resolution bool_data. `enabled` is a data input describing whether the scope is switched on in configuration, not a behaviour-mode toggle on this function; splitting it into two intent-named functions would encode configuration state in the function name. No code change.",
+    "state_hash": "e7f3c46f713211357e3c52d7010fe89b9213c368",
+    "decided_by": "operator"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::_scope_status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Returns tuple describing scope status; noun-based name acceptable for return-value functions.",
+    "state_hash": "e7f3c46f713211357e3c52d7010fe89b9213c368",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::_secrets_blockers",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure query returning the blocker list it is named for.",
+    "state_hash": "ec1d53b9ae1275ccdd883b18bf9f7966951e643c",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::_work_item_id",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure id-formatting helper named for the id it returns.",
+    "state_hash": "5a8965ce9e717e5e3a3461a74af6faa8a379ecd1",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::plan_narrative_from_work_items",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "`include_blocked` is a rendering filter over the same output shape, not a switch between two behaviours; splitting would duplicate the whole markdown builder.",
+    "state_hash": "594ce0021214ff3495bf75ec4cfe55cc20257b72",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/migration_work_plan.py::work_items_summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure aggregation returning the summary counts, noun-phrase accessor is normal.",
+    "state_hash": "0b8449739516f01458ccb67a97b5545cce7cf8a0",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/phase_definitions.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (phase definitions).",
+    "state_hash": "1155b8512ce9e23bc6634406057f763874edf585",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/phase_definitions.py::default_phase_definitions",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "constant-factory named for the defaults it returns, no hidden effects.",
+    "state_hash": "86547da402b62c88d04b93a52c8e1c3975811b2c",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/phase_definitions.py::phase_risk_bands",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure computation returning the bands, noun-phrase accessor is correct.",
+    "state_hash": "f945dc1d3996d1966c2743c642b33ff0011ac781",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/phase_definitions.py::span_phases_to_scan",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`span` is the verb of the transformation and the function returns new unmutated phases, name matches behaviour.",
+    "state_hash": "1460568edf48bb382c38276e3ee8e216cb3660a6",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_models.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (pipeline data models).",
+    "state_hash": "a8ac664d675a0503025599b330c2f53089e6beca",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/pipeline_models.py::PipelineRun.current_step_label",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "property-style accessor on a dataclass returning the label, conventional Python.",
+    "state_hash": "6d87d0958a0fb34e50648948788ef35964060658",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_models.py::enrich_pipeline_run_dict",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "verb-initial (`enrich`) and the in-place mutation it names is real; heuristic false positive.",
+    "state_hash": "487d628e77d7fa5024d98edc07064275e4e242ba",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_runner.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (pipeline orchestration).",
+    "state_hash": "d422a1fe8f6caa8a3820f3681b3a9d1ab82624d5",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/pipeline_runner.py::PipelineRunner._cancelled",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "adjective-form bool predicate on a state check, standard for a private is-state query.",
+    "state_hash": "f9426999b4f0d7212f16aac91e80150ff0e6dbc5",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (step implementations).",
+    "state_hash": "3605d55382e00e4fd7c1e2dc500e24ae8cedc413",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._dep_note",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private pure query returning the dependency note string it is named for.",
+    "state_hash": "44dd0957f4deb7008a4226fa561ea037e3a4adb0",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._pipeline_conversion_dry_run_warnings",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same shape as its sibling collector; renaming would break the deliberate naming pair.",
+    "state_hash": "9cb68ceb0a4f0a3da456c27ada94f87e13082c7f",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._repo_migration_dry_run_warnings",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private pure collector whose noun-phrase name is exactly the `list[str]` it returns.",
+    "state_hash": "e149100995ed5db57dd312b18a9287294a30a0f1",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_analyze_deps",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`_step_` is the run-step dispatch prefix and `analyze` is a verb, so the heuristic only tripped on the prefix.",
+    "state_hash": "ea7fea3dab84e3a0f5878887f044f62c401a4a30",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_assign",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`_step_` prefix plus verb `assign`, matching the `assign` step id.",
+    "state_hash": "e163f6522ac4f6e8983aaf9f94e2e36ababdd4ef",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_connect",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "follows the mixin's `_step_<id>` dispatch-table convention keyed to the step id, and renaming would desync it from the handler table.",
+    "state_hash": "fb8d249cacb59af35f36d74c5b6b2e81b84c16ac",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_discover",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same `_step_<verb>` dispatch convention, `discover` is already the verb.",
+    "state_hash": "4cbaf72c620e2e0f4592fc4db31799edc3138a71",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_inventory",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "name mirrors the `inventory` step id it advances, which is the point of the naming scheme.",
+    "state_hash": "66d69df0ff5c004e3324d55db3d475604937929a",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_readiness",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "name mirrors the `readiness` step id it sets, consistent with every sibling.",
+    "state_hash": "975c2831815b883a12bde4c8e318231cfcc06f45",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_validate",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`_step_` prefix with verb `validate` matching the `validate` step id.",
+    "state_hash": "5c148e9d2411ec48dc1dfdda2dfe6dd449984022",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_steps.py::_phase_config_exists",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "standard `<thing>_exists` predicate returning `bool`.",
+    "state_hash": "c93c272cbe2e2e24fb3251432fa9492948b9b70e",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (pipeline run registry).",
+    "state_hash": "fcaa27764d7d650ae8a3c3d8f87c29d114df7807",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/pipeline_store.py::PipelineRunStore.create",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "`dry_run` and `migrate_deps_only` are stored verbatim as `PipelineRun` fields, so they are data on the record, not a mode switch inside `create`.",
+    "state_hash": "2607574940d68913354fe0f9fa8812f5fede678a",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/pipeline_store.py::PipelineRunStore.summary",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "noun-named pure accessor returning the summary dict, normal Python for a query.",
+    "state_hash": "44dcf00e68fa33782c58729dff481136f9bcee1d",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/platform_rbac.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (RBAC guards).",
+    "state_hash": "64bbba032df853c9ea78c51afb34d436b3b7b45c",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/platform_rbac.py::operator_requires_live_approval",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`requires` is a verb and the name reads as the boolean question it answers.",
+    "state_hash": "a7543755f5a3d43a7098639ca639df5a7a95f612",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/platform_rbac.py::platform_user",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "accessor returning `request.state.platform_user`; it is also a FastAPI dependency whose name is the injected value.",
+    "state_hash": "51c55c025839dbc0883795c68a700780fac848fb",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/profile_discovery.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (discovery and risk scores).",
+    "state_hash": "df06113469573c50f93b20a14dfb3f8ddbf53fd5",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/profile_discovery.py::manual_phase_overrides",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Noun correctly describing what is returned (overrides).",
+    "state_hash": "e9ac71d0b888a50ff872162da660cdb4d8097864",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/profile_discovery.py::repo_configs_for_phase",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`<result>_for_<key>` pure lookup query returning the named list.",
+    "state_hash": "d276fbaf2b74f76c2c804e544f98b325e0530227",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/profile_discovery.py::risk_score_from_repo_dict",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`<result>_from_<input>` is the conventional Python converter name for a pure mapping.",
+    "state_hash": "d34c34bf501bb196e54cd3c51b88658c8ee32efc",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/profile_governance.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (governance rules).",
+    "state_hash": "5020e0352a07b05c8b287f9b59e9ff6ebcb2b810",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/profile_governance.py::needs_profile_setup",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`needs` is a verb and the name states the predicate it returns.",
+    "state_hash": "3dee863da5a1f093e14659bb526d4ae31e17f1a9",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/profile_governance.py::onboarding_status_payload",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Noun correctly describing what is returned (payload).",
+    "state_hash": "44ce49a6d80ce0b5d7a60a18dbae71d97b6dd236",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/repo_lock.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (per-repo locking).",
+    "state_hash": "048243e8268487e0ac4365765a749ac8d87f727e",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/repo_lock.py::RepoLockManager.acquire",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Verb correctly describing the action.",
+    "state_hash": "56ae0407b62fdbd0ff17fb1eb75be9ab39fc3df9",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/repo_lock.py::RepoLockManager.holder",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Noun correctly describing what is returned (holder).",
+    "state_hash": "0d68c74bf57b1636579ec8864d26b1171477c4f6",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/run_reporting.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes migration and validation run formatting.",
+    "state_hash": "2d705b9acc49419bf2fc89651ad6a76685db9750",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/run_reporting.py::_stringify",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`stringify` is a verb; the heuristic's verb list simply lacks it.",
+    "state_hash": "9b58c638ef31c36197d7478ee74eebec813060d1",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/run_reporting.py::validation_repo_detail",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure row-normaliser named for the dict it returns.",
+    "state_hash": "5f6e9d73e267d5756251d01497ec0e3a1fa54993",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/scan_diagnostics.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes scan diagnostic utilities.",
+    "state_hash": "cbd3d02c2d77dde45668acd20f9b200e70e19179",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/settings_models.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (settings data models).",
+    "state_hash": "a566c9445747c5989cf1c01d0c3b241024bbae80",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/settings_models.py::_settings_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private zero-arg accessor returning the `Path` it names, the canonical false-positive shape.",
+    "state_hash": "41c5572093427e987ac11ce145e70dc673d44012",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/settings_profiles.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (profile management).",
+    "state_hash": "738ae066ae9a5980351b0cc429d8616166717d47",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/settings_profiles.py::ProfileMixin.appeal_profile",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`appeal` is a verb here and names the domain transition denied to pending_approval.",
+    "state_hash": "3797d5a438f312fc3faa67426a7d75a3b04e7846",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/settings_profiles.py::ProfileMixin.approve_profile",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`approve` is already an imperative verb matching the state transition it performs.",
+    "state_hash": "e6c4d3e224510636395f0baed4b5e24034d6e30f",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/settings_profiles.py::ProfileMixin.deactivate_profile",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`deactivate` is already an imperative verb on a mutating method.",
+    "state_hash": "102d335f38613c40b687b001e230c166f9030e29",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/settings_scan.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (scan management).",
+    "state_hash": "ad5ceebe098f8837095fdf1aee70710c4c751f9b",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/settings_scan.py::ScanMixin._rescan_profile_after_phase_change",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`rescan` is a verb and the suffix names the trigger condition accurately.",
+    "state_hash": "04fe052a8a64a8d98d814666126fb79b6d84819e",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/settings_scan.py::ScanMixin.profile_rescan_status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "read-only status query under a lock, named for the status dict it returns.",
+    "state_hash": "5e742a84b35b92fa77f466a9461eab39cf24e02e",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/settings_store.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (settings persistence).",
+    "state_hash": "c0ce55abb8eaf89494c60101712dcca9e79f2fc8",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/settings_store.py::SettingsStore.phases_payload",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure query assembling and returning the named payload dict.",
+    "state_hash": "17f260e056a6297d1c6b8374eef733f1e713d489",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/state_db.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes state database access layer.",
+    "state_hash": "2db4b288afcefbaa04cd52f921fd1c7e15fbf709",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/step_prerequisites.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name clearly describes responsibility (prerequisite checking).",
+    "state_hash": "137d86be567441731591805eeb677f2c66248b65",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/step_prerequisites.py::StepPrerequisiteChecker._label",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private static pure resolver returning the label string it is named for.",
+    "state_hash": "6b6ca65c9074a704694b908925d29d61eaead356",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/step_prerequisites.py::StepPrerequisiteChecker.failure_message",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pure string builder named for the message it returns, no side effects.",
+    "state_hash": "f5bb53e2190dd362784066624429b3b4de3588a5",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/validation_run.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Clearly describes validation run management.",
+    "state_hash": "79b91aeb9b8ded641de8f3e949b53fea6228e99d",
+    "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/validation_run.py::_global_cfg_from_profile",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private `<result>_from_<input>` pure converter, the standard Python converter idiom.",
+    "state_hash": "3a5519d679caebb506e9c446666754b6231fb5f2",
+    "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/audit/",
     "tag": "module_name_review",
     "decision": "reject",
@@ -1264,6 +2400,94 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "apps/migration-ui/src/components/CredentialActions.tsx::IconButton",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "disabled is passed straight through to the DOM button element attribute, not a behavior switch within the function.",
+    "state_hash": "cb0976f61c22ba6df8507e428efa6af67f3063eb",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/components/CredentialActions.tsx::ValidationResult",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "valid boolean is rendered as part of the className, not controlling multiple code paths inside the function.",
+    "state_hash": "e6531ab4efe93b4db8c7585edf76c871ad6777e2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/components/PipelineProgress.tsx::StepPipelineBar",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "compact controls iconSize calculation and conditional rendering of the labels row (line 109); it is a behavior switch. Recorded by hand with the pre-increment state_hash: the split into StepPipelineBar and CompactStepPipelineBar was already applied, so the reviewed form no longer exists in the regenerated inventory (increment 4 precedent).",
+    "state_hash": "c9558e1d57c95b803c852e9f68f8ea3e81f7575e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/components/ScanRecommendations.tsx::ScanRecommendations",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "compact controls className and conditional rendering of repo list (line 63); it is a behavior switch. Recorded by hand with the pre-increment state_hash: the prop and both its branches were dead at the only call site and were deleted, so the reviewed form no longer exists (increment 4 precedent).",
+    "state_hash": "cacb63e5958699d000f63280d5158e98be2ce9dc",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/agent.ts::approveAgentSession",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "approved is passed straight through to the HTTP request body as data.",
+    "state_hash": "103d40ec398a6b01abcd9c3a47187499c596f642",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/agent.ts::createAgentSession",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "dry_run is passed straight through to the HTTP request body as data.",
+    "state_hash": "e49a1e9a4f7320371b1667044476b2c849935cba",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/agentChat.ts::isAgentInterruptible",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08.",
+    "state_hash": "8d3662bd97b705a671225884aebd31d73f6eb32b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/api.ts::fetchReadiness",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "refreshInventory is passed straight through to the HTTP request body as data.",
+    "state_hash": "a4b907b7d9953b35b913d15f345d5488d2347866",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/api.ts::startPipelineRun",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "dry_run is passed straight through to the HTTP request body as data.",
+    "state_hash": "e2eab4cd965b56d4d6e6672a5da46673769374d1",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/cloudCredentials.ts::fetchCloudCredentials",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "scan is passed to the query string as data (line 72), not controlling code paths inside the function.",
+    "state_hash": "2304ffe96b2bed6df1cb8052bf5d2f64ac05341e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::gateOverrideReason",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "dryRun selects between two processing paths: discard the reason parameter (when true) vs trim and return it (when false). Reviewed separately from the review-precheck run - the function was added by GAP-009 later in the same session, so it is a post-precheck row. Recorded by hand with the pre-split state_hash: it is now liveRunOverrideReason and dryRunOverrideReason.",
+    "state_hash": "9e385f725fe78976cdcc0b173af8b5ec6efd31de",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "services/agent/main.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -1430,93 +2654,5 @@
     "rationale": "Operator decision 2026-09-08, overriding both the review agent's ESCALATE and the REJECT recorded in review-precheck.md: the 1439-line module spanned six domains and was split into session_routes (session lifecycle CRUD, provision, remediate), message_routes, form_routes, plan_routes, execution_routes and model_routes. Decided by the operator, not the reviewer. Split executed in increment 13; HTTP surface unchanged.",
     "state_hash": "e3c704108dace4ce4c66fa74d136cd088e654234",
     "decided_by": "operator"
-  },
-  {
-    "id": "apps/migration-ui/src/components/CredentialActions.tsx::IconButton",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "disabled is passed straight through to the DOM button element attribute, not a behavior switch within the function.",
-    "state_hash": "cb0976f61c22ba6df8507e428efa6af67f3063eb",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/components/CredentialActions.tsx::ValidationResult",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "valid boolean is rendered as part of the className, not controlling multiple code paths inside the function.",
-    "state_hash": "e6531ab4efe93b4db8c7585edf76c871ad6777e2",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/agent.ts::approveAgentSession",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "approved is passed straight through to the HTTP request body as data.",
-    "state_hash": "103d40ec398a6b01abcd9c3a47187499c596f642",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/agent.ts::createAgentSession",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "dry_run is passed straight through to the HTTP request body as data.",
-    "state_hash": "e49a1e9a4f7320371b1667044476b2c849935cba",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/api.ts::fetchReadiness",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "refreshInventory is passed straight through to the HTTP request body as data.",
-    "state_hash": "a4b907b7d9953b35b913d15f345d5488d2347866",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/api.ts::startPipelineRun",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "dry_run is passed straight through to the HTTP request body as data.",
-    "state_hash": "e2eab4cd965b56d4d6e6672a5da46673769374d1",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/cloudCredentials.ts::fetchCloudCredentials",
-    "tag": "bool_flag",
-    "decision": "reject",
-    "rationale": "scan is passed to the query string as data (line 72), not controlling code paths inside the function.",
-    "state_hash": "2304ffe96b2bed6df1cb8052bf5d2f64ac05341e",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/agentChat.ts::isAgentInterruptible",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08.",
-    "state_hash": "8d3662bd97b705a671225884aebd31d73f6eb32b",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/components/PipelineProgress.tsx::StepPipelineBar",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "compact controls iconSize calculation and conditional rendering of the labels row (line 109); it is a behavior switch. Recorded by hand with the pre-increment state_hash: the split into StepPipelineBar and CompactStepPipelineBar was already applied, so the reviewed form no longer exists in the regenerated inventory (increment 4 precedent).",
-    "state_hash": "c9558e1d57c95b803c852e9f68f8ea3e81f7575e",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/components/ScanRecommendations.tsx::ScanRecommendations",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "compact controls className and conditional rendering of repo list (line 63); it is a behavior switch. Recorded by hand with the pre-increment state_hash: the prop and both its branches were dead at the only call site and were deleted, so the reviewed form no longer exists (increment 4 precedent).",
-    "state_hash": "cacb63e5958699d000f63280d5158e98be2ce9dc",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::gateOverrideReason",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "dryRun selects between two processing paths: discard the reason parameter (when true) vs trim and return it (when false). Reviewed separately from the review-precheck run - the function was added by GAP-009 later in the same session, so it is a post-precheck row. Recorded by hand with the pre-split state_hash: it is now liveRunOverrideReason and dryRunOverrideReason.",
-    "state_hash": "9e385f725fe78976cdcc0b173af8b5ec6efd31de",
-    "decided_by": "cavecrew-reviewer"
   }
 ]

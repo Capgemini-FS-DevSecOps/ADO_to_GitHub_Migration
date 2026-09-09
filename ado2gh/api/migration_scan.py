@@ -5,7 +5,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ado2gh.api.phase_definitions import (
     ConfigurableWaveAssigner,
@@ -18,6 +18,9 @@ from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RiskScore
 from ado2gh.phase.repo_scoring import score_repo
 from ado2gh.phase.risk_scorer import RiskScorer
+
+if TYPE_CHECKING:
+    from ado2gh.state.factory import StateStore
 
 
 def _scan_results_path(profile_id: str | None = None) -> Path:
@@ -74,6 +77,19 @@ def merge_scan_payload(
     base: dict[str, Any] | None,
     extra: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
+    """Fill the discovery fields missing from one scan payload using another.
+
+    Args:
+        base: The primary payload, typically the state-DB copy. ``None`` when
+            the database holds no scan for the profile yet.
+        extra: The fallback payload, typically the on-disk JSON backup. Only
+            its discovery fields are consulted.
+
+    Returns:
+        ``base`` enriched with every discovery field it was missing, or
+        whichever payload was supplied when the other is empty, or ``None``
+        when neither holds anything.
+    """
     if not base:
         return extra
     if not extra:
@@ -189,7 +205,16 @@ class MigrationScanner:
         ado: ADOClient,
         gh_org: str = "",
         phase_definitions: list[PhaseDefinition] | list[dict[str, Any]] | None = None,
-    ):
+    ) -> None:
+        """Bind a scanner to one ADO org and the phases its repos fall into.
+
+        Args:
+            ado: Client used to enumerate projects, repos and pipelines.
+            gh_org: Target GitHub organisation recorded on every risk score.
+            phase_definitions: Phase definitions as ``PhaseDefinition`` objects
+                or in their dict form. The built-in defaults are used when this
+                is omitted or empty.
+        """
         self.ado = ado
         self.gh_org = gh_org
         self.scorer = RiskScorer()
@@ -200,6 +225,25 @@ class MigrationScanner:
         self.assigner = ConfigurableWaveAssigner(self.phase_defs)
 
     def scan(self, max_repos: int | None = None) -> dict[str, Any]:
+        """Walk every project in the org and risk-score its enabled repos.
+
+        A project whose repo listing fails is still reported: the failure is
+        recorded on its ``project_details`` row rather than raised.
+
+        Args:
+            max_repos: Stop once this many enabled repos have been scored.
+                ``None`` scans the whole organisation.
+
+        Returns:
+            A scan payload holding the scan timestamp, the project and repo
+            counts, the target GitHub org, the per-phase ``recommendations``
+            buckets, one ``project_details`` row per project (repo, pipeline,
+            service connection, variable group, environment, artifact feed,
+            team, iteration, work item and test plan inventory), an
+            ``org_inventory`` roll-up of those totals, ``inventory_gaps``
+            naming the assets that still need operator input, diagnostic
+            ``warnings``, and a ``status`` of ``ok``, ``empty`` or ``error``.
+        """
         projects = self.ado.list_projects()
         all_scores = []
         repos_scanned = 0
@@ -393,57 +437,139 @@ def scan_with_credentials(
     ado_pat: str,
     gh_org: str = "",
     max_repos: int | None = None,
-    phase_definitions: list | None = None,
-    *,
-    db_path: str | None = None,
-    run_inventory: bool = True,
-    pipeline_parallel: int = 12,
+    phase_definitions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Scan an ADO organisation with one-off credentials and bucket its repos.
+
+    Args:
+        ado_org_url: Base URL of the Azure DevOps organisation to scan.
+        ado_pat: Credential authorising the scan. It is used for the outbound
+            HTTP calls only and never reaches the payload, the log or the DB.
+        gh_org: Target GitHub organisation recorded on every risk score.
+        max_repos: Stop once this many repos have been scored; ``None`` scans
+            the whole organisation.
+        phase_definitions: Phase definitions in dict form. The built-in
+            defaults are used when omitted.
+
+    Returns:
+        The scan payload described by :meth:`MigrationScanner.scan`. It carries
+        no pipeline inventory — call :func:`attach_pipeline_inventory` on the
+        result when the deep inventory is wanted as well.
+    """
     ado = _build_ado_client(ado_org_url, ado_pat)
-    raw = MigrationScanner(ado, gh_org=gh_org, phase_definitions=phase_definitions).scan(
+    return MigrationScanner(ado, gh_org=gh_org, phase_definitions=phase_definitions).scan(
         max_repos=max_repos,
     )
-    if run_inventory and db_path:
-        try:
-            inventory = run_pipeline_inventory_scan(
-                ado_org_url,
-                ado_pat,
-                db_path,
-                parallel=pipeline_parallel,
-            )
-            raw["pipeline_inventory"] = inventory
-            org = raw.setdefault("org_inventory", {})
-            org["pipeline_inventory_count"] = inventory.get("inventory_count", 0)
-            org["total_pipelines_indexed"] = inventory.get("total_pipelines", 0)
-        except Exception as exc:
-            raw.setdefault("warnings", []).append(
-                f"Pipeline inventory scan failed: {exc}"
-            )
+
+
+def attach_pipeline_inventory(
+    raw: dict[str, Any],
+    ado_org_url: str,
+    ado_pat: str,
+    db_path: str,
+    *,
+    pipeline_parallel: int = 12,
+) -> dict[str, Any]:
+    """Run the deep pipeline inventory and record its totals on a scan payload.
+
+    A failed inventory is not fatal to the scan: the reason is appended to the
+    payload's ``warnings`` list and the rest of the payload is left untouched.
+
+    Args:
+        raw: Scan payload from :func:`scan_with_credentials`, updated in place.
+        ado_org_url: Base URL of the Azure DevOps organisation to inventory.
+        ado_pat: Credential authorising the inventory calls.
+        db_path: State database that receives the pipeline inventory rows.
+        pipeline_parallel: Number of worker threads for the inventory scan.
+
+    Returns:
+        The same payload. On success it gains a ``pipeline_inventory`` block
+        plus ``pipeline_inventory_count`` and ``total_pipelines_indexed`` under
+        ``org_inventory``; on failure it gains one ``warnings`` entry instead.
+    """
+    try:
+        inventory = run_pipeline_inventory_scan(
+            ado_org_url,
+            ado_pat,
+            db_path,
+            parallel=pipeline_parallel,
+        )
+    except Exception as exc:
+        raw.setdefault("warnings", []).append(
+            f"Pipeline inventory scan failed: {exc}"
+        )
+        return raw
+    raw["pipeline_inventory"] = inventory
+    org = raw.setdefault("org_inventory", {})
+    org["pipeline_inventory_count"] = inventory.get("inventory_count", 0)
+    org["total_pipelines_indexed"] = inventory.get("total_pipelines", 0)
     return raw
 
 
-def persist_scan_results(
-    profile_id: str,
-    results: dict[str, Any],
-    *,
-    preserve_manual_assignments: bool = True,
-) -> Path:
-    """Persist scan to SQLite/state DB and keep JSON backup for portability."""
+def persist_scan_results(profile_id: str, results: dict[str, Any]) -> Path:
+    """Persist a scan to the state DB, keeping manual phase assignments.
+
+    This is the routine-rescan path: a repo an operator has already moved into
+    a phase by hand keeps that phase.
+
+    Args:
+        profile_id: Migration profile the scan belongs to.
+        results: Scan payload as returned by :func:`scan_with_credentials`.
+
+    Returns:
+        The path of the portable JSON copy written beside the state DB.
+    """
     from ado2gh.api.state_db import get_state_db
 
     db = get_state_db()
     if hasattr(db, "save_profile_scan"):
-        if preserve_manual_assignments:
-            db.save_profile_scan(profile_id, results)
-        else:
-            db.replace_profile_scan(profile_id, results)
+        db.save_profile_scan(profile_id, results)
+    return _write_scan_backup(db, profile_id, results)
 
+
+def replace_scan_results(profile_id: str, results: dict[str, Any]) -> Path:
+    """Persist a scan to the state DB, discarding manual phase assignments.
+
+    Use this when the phase definitions themselves changed, so every repo has
+    to be re-bucketed from the new definitions instead of keeping an assignment
+    made against the old ones.
+
+    Args:
+        profile_id: Migration profile the scan belongs to.
+        results: Scan payload as returned by :func:`scan_with_credentials`.
+
+    Returns:
+        The path of the portable JSON copy written beside the state DB.
+    """
+    from ado2gh.api.state_db import get_state_db
+
+    db = get_state_db()
+    if hasattr(db, "replace_profile_scan"):
+        db.replace_profile_scan(profile_id, results)
+    return _write_scan_backup(db, profile_id, results)
+
+
+def _write_scan_backup(
+    db: StateStore,
+    profile_id: str,
+    results: dict[str, Any],
+) -> Path:
+    """Write the portable JSON copy of a profile scan next to the state DB.
+
+    Args:
+        db: State store that already holds the persisted scan. It is asked to
+            rebuild the payload so the file matches what the DB will serve.
+        profile_id: Migration profile the scan belongs to.
+        results: Scan payload, used verbatim when the store cannot rebuild one.
+
+    Returns:
+        The path of the JSON file that was written.
+    """
     path = _scan_results_path(profile_id)
     path.parent.mkdir(parents=True, exist_ok=True)
+    payload = results
     if hasattr(db, "build_profile_scan_payload"):
         payload = db.build_profile_scan_payload(profile_id) or results
-    else:
-        payload = results
     path.write_text(
         json.dumps({"profile_id": profile_id, **payload}, indent=2),
         encoding="utf-8",
@@ -452,6 +578,17 @@ def persist_scan_results(
 
 
 def load_scan_results(profile_id: str) -> dict[str, Any] | None:
+    """Load a profile's stored scan from the state DB and the JSON backup.
+
+    Args:
+        profile_id: Migration profile whose scan should be loaded.
+
+    Returns:
+        The merged scan payload — the state DB copy topped up with any
+        discovery fields that only survive in the on-disk backup — or the
+        backup alone when the DB holds nothing, or ``None`` when neither source
+        has a usable scan.
+    """
     from ado2gh.api.state_db import get_state_db
 
     db = get_state_db()

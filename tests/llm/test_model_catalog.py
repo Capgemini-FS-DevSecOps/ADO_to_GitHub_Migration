@@ -28,7 +28,7 @@ def test_anthropic_live_success():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_response
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_client):
         result = list_catalog(provider="anthropic", api_key="sk-ant-test")
     assert result["source"] == "live"
     assert result["stale"] is False
@@ -40,7 +40,7 @@ def test_anthropic_fallback_preset_on_live_failure():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.side_effect = RuntimeError("network down")
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_client):
         result = list_catalog(provider="anthropic", api_key="sk-ant-test")
     assert result["source"] == "preset"
     assert result["stale"] is True
@@ -56,7 +56,7 @@ def test_openai_live_success():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_response
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_client):
         result = list_catalog(provider="openai", api_key="sk-test")
     assert result["source"] == "live"
     assert result["stale"] is False
@@ -68,7 +68,7 @@ def test_openai_fallback_preset_on_live_failure():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.side_effect = RuntimeError("network down")
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_client):
         result = list_catalog(provider="openai", api_key="sk-test")
     assert result["source"] == "preset"
     assert result["stale"] is True
@@ -89,7 +89,7 @@ def test_catalog_single_flight_concurrent_requests():
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.side_effect = _slow_fetch
 
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client", return_value=mock_client):
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [
                 pool.submit(list_catalog, provider="openai", api_key="sk-shared-key")
@@ -108,10 +108,10 @@ def test_ollama_discovery():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_response
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client") as mock_factory:
+    with patch("ado2gh.api.llm.model_catalog.build_local_llm_http_client") as mock_factory:
         mock_factory.return_value = mock_client
         result = list_catalog(provider="ollama", base_url="http://localhost:11434")
-        mock_factory.assert_called_with(for_cloud=False)
+        mock_factory.assert_called_with()
     assert result["source"] == "live"
     assert result["entries"][0]["id"] == "qwen2.5:latest"
     mock_client.get.assert_called_with("http://localhost:11434/api/tags", headers=None)
@@ -125,10 +125,10 @@ def test_openai_catalog_uses_cloud_http_client():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_response
-    with patch("ado2gh.api.llm.model_catalog.build_llm_http_client") as mock_factory:
+    with patch("ado2gh.api.llm.model_catalog.build_cloud_llm_http_client") as mock_factory:
         mock_factory.return_value = mock_client
         list_catalog(provider="openai", api_key="sk-test")
-        mock_factory.assert_called_with(for_cloud=True)
+        mock_factory.assert_called_with()
 
 
 def test_ollama_requires_base_url():

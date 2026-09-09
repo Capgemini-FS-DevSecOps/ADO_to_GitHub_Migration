@@ -2,17 +2,55 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ado2gh.api.pipeline_models import PipelineRun, StepStatus
 from ado2gh.api.pipeline_store import PipelineRunStore
 from ado2gh.api.repo_lock import REPO_LOCK_MANAGER, RepoLockedException
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ado2gh.clients.ado_client import ADOClient
+    from ado2gh.models import RepoConfig
+    from ado2gh.state.factory import StateStore
+
 
 class PipelineStepsMixin:
-    """Step methods extracted from PipelineRunner for decomposition."""
+    """Step implementations mixed into :class:`~ado2gh.api.pipeline_runner.PipelineRunner`.
+
+    Every step handler deliberately shares one signature —
+    ``def _step_<name>(self, run: PipelineRun) -> None`` (FR-011). The
+    uniformity is intentional and must be preserved: ``PipelineRunner._execute``
+    dispatches through a single ``dict[str, Callable[[PipelineRun], None]]``
+    handler table, so a step that took extra parameters or returned a value
+    could not be dispatched. Steps therefore read everything they need from the
+    run and the runner's settings, and report their outcome by calling
+    ``_set_step`` and ``_log`` rather than by returning it.
+
+    Scoped migration steps (``migrate``, ``migrate_repos``, ``convert_pipelines``,
+    ``convert_metadata``) are the one exception in spirit: they are bound in the
+    handler table as lambdas over :meth:`_migrate_scoped`, which keeps the
+    dispatched callable itself conformant.
+    """
 
     def _step_connect(self, run: PipelineRun) -> None:
+        """Verify credentials and load discovery data for the run's phase.
+
+        Builds ADO and GitHub clients from the merged configuration, proves both
+        credentials work by listing ADO projects and reading GitHub rate limits,
+        and confirms a GitHub target organisation is resolvable. When a profile
+        is active, reuses its cached discovery scan if one exists (running a
+        read-only ADO scan otherwise), syncs the scan into risk scores, and logs
+        the repos queued for the run's phase.
+
+        Args:
+            run: The run to advance. Its ``connect`` step is marked completed
+                with the project count and active profile id.
+
+        Raises:
+            Exception: Propagated from the ADO or GitHub client when a
+                credential is missing or rejected, or when no GitHub
+                organisation can be resolved, which fails the step.
+        """
         from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
         from ado2gh.api.profile_discovery import (
             ensure_profile_scan,
@@ -77,6 +115,22 @@ class PipelineStepsMixin:
         )
 
     def _step_analyze_deps(self, run: PipelineRun) -> None:
+        """Resolve every dependency the run's repos carry and order them.
+
+        Scans the in-scope ADO projects for service connections, variable
+        groups, repo-to-repo references, environments, self-hosted agent pools
+        and task inputs, then derives the order in which repos must be migrated
+        so that upstream repos go first. Also folds in pipeline conversion
+        readiness so the console can show blockers before anything is migrated.
+
+        Args:
+            run: The run to advance. A bare repo name in ``repository_id`` is
+                expanded to ``"project/repo"`` here if the phase's repos allow
+                it. The ``analyze_deps`` step is marked completed, or warned
+                when dependencies need operator attention, and carries the
+                dependency map, migration order and readiness summary in its
+                result.
+        """
         import os
 
         from ado2gh.api.accelerator import Accelerator
@@ -282,6 +336,16 @@ class PipelineStepsMixin:
             self._set_step(run, "analyze_deps", StepStatus.WARN if all_warnings else StepStatus.COMPLETED, summary, result_data)
 
     def _step_discover(self, run: PipelineRun) -> None:
+        """Scan the ADO organisation and write a discovery file to disk.
+
+        Delegates to the accelerator's discovery pass, which enumerates projects
+        and repositories and writes the result under the configured output
+        directory for later phases to consume.
+
+        Args:
+            run: The run to advance. Its ``discover`` step is marked completed
+                with the output directory that was written.
+        """
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.contracts import DiscoverRequest
 
@@ -293,6 +357,17 @@ class PipelineStepsMixin:
                        {"output_dir": result.output_dir})
 
     def _step_inventory(self, run: PipelineRun) -> None:
+        """Deep-scan ADO pipeline definitions into the state database.
+
+        Inventories YAML, classic and release pipeline definitions across every
+        project, then, when a profile is active, reports how many of the
+        inventoried pipelines belong to repos in the run's phase so the operator
+        can see the phase-relevant subset rather than the org-wide total.
+
+        Args:
+            run: The run to advance. Its ``inventory`` step is marked completed
+                with the pipeline totals as its result.
+        """
         import os
 
         from ado2gh.api.accelerator import Accelerator
@@ -337,6 +412,16 @@ class PipelineStepsMixin:
         self._set_step(run, "inventory", StepStatus.COMPLETED, message, stats)
 
     def _step_readiness(self, run: PipelineRun) -> None:
+        """Classify inventoried pipelines by how much manual work conversion needs.
+
+        Runs the readiness report over the inventory already in the state
+        database, taking prior pipeline and repo migration results into account
+        so pipelines that have already moved are not re-flagged.
+
+        Args:
+            run: The run to advance. Its ``readiness`` step is marked completed
+                with the auto, assisted and manual counts as its result.
+        """
         from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
         from ado2gh.state.factory import create_state_db
 
@@ -352,6 +437,18 @@ class PipelineStepsMixin:
                        {"auto": report.get("auto"), "assisted": report.get("assisted"), "manual": report.get("manual")})
 
     def _step_assign(self, run: PipelineRun) -> None:
+        """Confirm a phase or wave assignment exists for the run to execute.
+
+        Prefers an existing ``*_phase.yaml`` next to the configured migration
+        config; failing that, accepts waves declared in the config itself. This
+        step never generates an assignment — that is the CLI's ``phase assign``
+        command — so when neither source is present it is skipped with guidance
+        rather than failed.
+
+        Args:
+            run: The run to advance. Its ``assign`` step is marked completed
+                with the assignment source, or skipped when none exists.
+        """
         from pathlib import Path
 
         from ado2gh.core.config_loader import ConfigLoader
@@ -373,34 +470,60 @@ class PipelineStepsMixin:
                            "No waves in config — run ado2gh phase assign or edit migration.yaml",
                            {})
 
-    def _dep_note(self, run: PipelineRun, repos: list) -> str:
+    def _dep_note(self, run: PipelineRun, repos: "list[RepoConfig]") -> str:
+        """Summarise how many extra repos a single-repo run pulled in.
+
+        Args:
+            run: The run being reported on. Multi-repo runs produce no note,
+                since the dependency count is only meaningful relative to one
+                named target repo.
+            repos: The repos the run will actually migrate, including the target
+                itself.
+
+        Returns:
+            str: A short parenthesised fragment to append to a step message —
+            the number of dependencies dragged in alongside the target, or a
+            note that it has none. Empty for a run that is not scoped to a
+            single repo.
+        """
         if not run.repository_id:
             return ""
         dep_count = max(0, len(repos) - 1)
         return f" ({dep_count} dependencies)" if dep_count else " (no repo dependencies)"
 
-    def _sc_note(self, run: PipelineRun) -> str:
-        analyze_step = next((s for s in run.steps if s.id == "analyze_deps"), None)
-        if not analyze_step or not analyze_step.result:
-            return ""
-        dependencies = analyze_step.result.get("dependencies") or {}
-        if not dependencies:
-            return ""
-        # Count service connections across all repos in dependencies
-        sc_count = sum(len(deps.get("service_connections", [])) for deps in dependencies.values())
-        if sc_count == 0:
-            return ""
-        return f" — {sc_count} service connection(s)"
-
     def _repo_migration_dry_run_warnings(
         self,
         run: PipelineRun,
-        repos: list,
+        repos: "list[RepoConfig]",
         *,
-        ado: Any | None = None,
-        db: Any | None = None,
+        ado: "ADOClient | None" = None,
+        db: "StateStore | None" = None,
     ) -> list[str]:
-        """Repo-content migration notes — not pipeline secret mapping."""
+        """Collect the dry-run notes that apply to moving repository content.
+
+        Covers only what affects the git transfer itself: upstream repos that
+        must migrate first, repository size and the strategy it implies (mirror,
+        GEI or manual), branch counts that will stretch the run, branch policies
+        that need their own scope, and per-project metadata such as wikis and
+        work items. Pipeline secret mapping is deliberately not reported here —
+        that belongs to :meth:`_pipeline_conversion_dry_run_warnings`.
+
+        Args:
+            run: The run being previewed. Its ``analyze_deps`` result supplies
+                the migration order used for the upstream-dependency note.
+            repos: The repos the run would migrate.
+            ado: ADO client used to read repository size, statistics, branch
+                policies and project metadata. When omitted, the size and
+                policy notes are skipped rather than failing.
+            db: State database consulted for pipelines already inventoried
+                against each repo. When omitted, those notes are skipped.
+
+        Returns:
+            list[str]: Human-readable notes, one per finding, in the order they
+            were discovered. Empty when nothing needs the operator's attention.
+            Each entry is prefixed with the ``"project/repo"`` it concerns
+            except the leading migration-order note.
+        """
         warnings: list[str] = []
         target = str(run.repository_id or "").strip()
         analyze_step = next((s for s in run.steps if s.id == "analyze_deps"), None)
@@ -516,9 +639,30 @@ class PipelineStepsMixin:
     def _pipeline_conversion_dry_run_warnings(
         self,
         run: PipelineRun,
-        repos: list,
+        repos: "list[RepoConfig]",
     ) -> list[str]:
-        """Pipeline conversion notes — service connections belong here, not on migrate_repos."""
+        """Collect the dry-run notes that apply to converting pipelines.
+
+        Reports the credential-bearing dependencies that a converted workflow
+        will need on the GitHub side: each service connection the repo's
+        pipelines use, which must become a GitHub secret or an OIDC login, and
+        each variable group, which must become Actions secrets or variables.
+        These belong to pipeline conversion rather than to the repo content
+        migration step, so they are reported separately.
+
+        Args:
+            run: The run being previewed. Its ``analyze_deps`` result supplies
+                the dependency map; without one there is nothing to report.
+                A run scoped to a single repo reports only that repo.
+            repos: The repos the run would convert, used when the run is not
+                scoped to a single repository.
+
+        Returns:
+            list[str]: One note per service connection and variable group,
+            grouped by ``"project/repo"`` in sorted order, naming the dependency
+            and what must be created for it on GitHub. Never contains a
+            credential value, only the dependency's name.
+        """
         warnings: list[str] = []
         analyze_step = next((s for s in run.steps if s.id == "analyze_deps"), None)
         if not analyze_step or not analyze_step.result:
@@ -556,6 +700,33 @@ class PipelineStepsMixin:
     def _migrate_scoped(
         self, run: PipelineRun, step_id: str, scope_filter: list[str] | None,
     ) -> None:
+        """Execute one migration step over a restricted set of migration scopes.
+
+        Backs every scoped step in the pipeline — the full ``migrate`` run as
+        well as the narrower ``migrate_repos``, ``convert_pipelines`` and
+        ``convert_metadata`` steps — by building a wave for the run's phase (or
+        a single-repo wave when the run names one), then executing it through
+        the batch executor with each repo's scopes temporarily narrowed to
+        ``scope_filter``. Repos are locked for the duration so two runs cannot
+        migrate the same repo concurrently, and the original scopes are restored
+        afterwards.
+
+        In dry-run mode no migration is performed: the step reports the notes
+        gathered by the per-step dry-run warning helpers instead. In live mode
+        the operator's escalation justification is redacted before the phase
+        request is built, so it is never persisted or logged verbatim.
+
+        Args:
+            run: The run to advance.
+            step_id: Id of the step being executed, used to select the dry-run
+                warnings to report and to mark the right step on the run.
+            scope_filter: Migration scopes this step is allowed to touch, or
+                ``None`` to allow every scope.
+
+        Raises:
+            RuntimeError: If the underlying migration reports a failure the step
+                cannot continue past.
+        """
         from ado2gh.api.accelerator import Accelerator, _build_ado_client, _build_gh_client
         from ado2gh.api.contracts import PhaseRunRequest, RunWaveRequest
         from ado2gh.api.migration_work_plan import (
@@ -607,10 +778,11 @@ class PipelineStepsMixin:
                 profile,
                 wave_id=run.wave_id or 9000,
                 db_path=adv.db_path,
-                parallel=adv.repo_parallel,
-                pipeline_parallel=adv.pipeline_parallel,
                 config_path=adv.config_path,
             )
+            if wave:
+                wave.parallel = adv.repo_parallel
+                wave.pipeline_parallel = adv.pipeline_parallel
             self._log(run, f"{step_label}: Profile active, wave has {len(wave.repos) if wave else 0} repo(s)")
         else:
             wave = None
@@ -793,7 +965,23 @@ class PipelineStepsMixin:
                     if scope_filter is not None:
                         repo.scopes = list(scope_filter)
 
-                def on_repo_done(key: str, res: dict, repo_cfg) -> None:
+                def on_repo_done(
+                    key: str, res: dict[str, Any], _repo_cfg: "RepoConfig",
+                ) -> None:
+                    """Log a one-line summary as each repo finishes.
+
+                    Signature is fixed by ``BatchExecutor.execute_wave``, which
+                    calls it positionally as ``Callable[[str, dict, RepoConfig],
+                    None]``, so the third argument cannot be dropped. It carries
+                    the leading underscore of the standard dummy-argument
+                    convention because this callback reads nothing from it.
+
+                    Args:
+                        key: ``"project/repo"`` of the repo that finished.
+                        res: That repo's result dictionary from the executor.
+                        _repo_cfg: The repo's configuration, accepted to match
+                            the executor's callback signature and not read here.
+                    """
                     detail = migrate_repo_detail(key, res)
                     self._log(run, detail["summary"])
 
@@ -918,9 +1106,25 @@ class PipelineStepsMixin:
             self._set_step(run, step_id, migrate_status, msg, result.__dict__)
 
     def _step_validate(self, run: PipelineRun) -> None:
+        """Verify that migrated repos on GitHub match their ADO sources.
+
+        Compares each repo at commit-SHA and branch level against its ADO
+        source, and checks that any workflows committed by the conversion step
+        are intact. A dry run is skipped rather than validated, because nothing
+        was pushed to GitHub for it to check.
+
+        Args:
+            run: The run to advance. Its ``validate`` step is marked completed,
+                warned or skipped and carries per-repo validation details.
+
+        Raises:
+            RuntimeError: If one or more repos fail validation; the message
+                names the failing repos and the primary reason for each, capped
+                at fifteen with a count of the remainder.
+        """
         from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
         from ado2gh.api.profile_discovery import repo_configs_for_phase, resolve_gh_org
-        from ado2gh.api.run_reporting import validation_message, validation_repo_detail
+        from ado2gh.api.run_reporting import build_validation_message, validation_repo_detail
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.post_migration_validator import PostMigrationValidator
         from ado2gh.state.factory import create_state_db
@@ -1015,7 +1219,7 @@ class PipelineStepsMixin:
         failed_rows = [r for r in results if r.get("overall") == "FAIL"]
         failed = len(failed_rows)
         status = StepStatus.COMPLETED if failed == 0 else StepStatus.FAILED
-        msg = validation_message(results)
+        msg = build_validation_message(results)
         self._set_step(
             run, "validate", status, msg,
             {
@@ -1037,5 +1241,17 @@ class PipelineStepsMixin:
 
 
 def _phase_config_exists(config_path: str) -> bool:
+    """Report whether a phase assignment file sits beside a migration config.
+
+    The phase file is found by convention rather than configuration: it is the
+    migration config path with ``.yaml`` replaced by ``_phase.yaml``.
+
+    Args:
+        config_path: Path to the migration config, normally ``migration.yaml``.
+
+    Returns:
+        bool: ``True`` when the matching ``*_phase.yaml`` exists on disk, so
+        phase-scoped execution can read repo assignments from it.
+    """
     from pathlib import Path
     return Path(config_path.replace(".yaml", "_phase.yaml")).exists()

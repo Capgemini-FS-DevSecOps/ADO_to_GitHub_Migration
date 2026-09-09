@@ -97,7 +97,7 @@ def test_validate_anthropic_success():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.post.return_value = mock_response
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client", return_value=mock_client):
         result = validate_draft(
             {
                 "provider": "anthropic",
@@ -111,7 +111,7 @@ def test_validate_anthropic_success():
 
 def test_validate_ollama_success():
     with patch(
-        "ado2gh.api.llm.model_validation.build_llm_http_client",
+        "ado2gh.api.llm.model_validation.build_local_llm_http_client",
         return_value=_mock_http_client(),
     ):
         result = validate_draft(
@@ -127,7 +127,7 @@ def test_validate_ollama_success():
 def test_validate_agent_incapable():
     payload = {"choices": [{"message": {"content": "pong"}}]}
     with patch(
-        "ado2gh.api.llm.model_validation.build_llm_http_client",
+        "ado2gh.api.llm.model_validation.build_cloud_llm_http_client",
         return_value=_mock_http_client(payload),
     ):
         result = validate_draft(
@@ -146,7 +146,7 @@ def test_validate_timeout_category():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.post.side_effect = httpx.TimeoutException("slow")
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client", return_value=mock_client):
         result = validate_draft(
             {
                 "provider": "openai",
@@ -159,7 +159,7 @@ def test_validate_timeout_category():
 
 def test_validate_openai_uses_cloud_http_client():
     mock_client = _mock_http_client()
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client") as mock_factory:
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client") as mock_factory:
         mock_factory.return_value = mock_client
         validate_draft(
             {
@@ -168,7 +168,7 @@ def test_validate_openai_uses_cloud_http_client():
                 "api_key": "sk-test",
             }
         )
-        mock_factory.assert_called_with(for_cloud=True)
+        mock_factory.assert_called_with()
 
 
 def test_audit_payloads_contain_no_raw_secrets(tmp_path, monkeypatch):
@@ -190,7 +190,7 @@ def test_audit_payloads_contain_no_raw_secrets(tmp_path, monkeypatch):
     )
     secret = "sk-super-secret-key-value"
     with patch(
-        "ado2gh.api.llm.model_validation.build_llm_http_client",
+        "ado2gh.api.llm.model_validation.build_cloud_llm_http_client",
         return_value=_mock_http_client(),
     ):
         response = client.post(
@@ -229,7 +229,7 @@ def test_validate_anthropic_model_not_found_category():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.post.return_value = mock_response
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client", return_value=mock_client):
         result = validate_draft(
             {
                 "provider": "anthropic",
@@ -242,7 +242,7 @@ def test_validate_anthropic_model_not_found_category():
 
 def test_validate_openai_success():
     with patch(
-        "ado2gh.api.llm.model_validation.build_llm_http_client",
+        "ado2gh.api.llm.model_validation.build_cloud_llm_http_client",
         return_value=_mock_http_client(),
     ):
         result = validate_draft(
@@ -268,7 +268,7 @@ def test_validate_credentials_failure_category():
     mock_client.__enter__ = MagicMock(return_value=mock_client)
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.post.return_value = mock_response
-    with patch("ado2gh.api.llm.model_validation.build_llm_http_client", return_value=mock_client):
+    with patch("ado2gh.api.llm.model_validation.build_cloud_llm_http_client", return_value=mock_client):
         result = validate_draft(
             {
                 "provider": "openai",
@@ -287,7 +287,7 @@ def test_concurrent_duplicate_validate_completes_without_hang():
         "api_key": "sk-concurrent",
     }
     with patch(
-        "ado2gh.api.llm.model_validation.build_llm_http_client",
+        "ado2gh.api.llm.model_validation.build_cloud_llm_http_client",
         return_value=_mock_http_client(),
     ):
         with ThreadPoolExecutor(max_workers=2) as pool:

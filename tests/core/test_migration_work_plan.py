@@ -15,7 +15,7 @@ from ado2gh.api.pipeline_runner import (
     MIGRATE_UI_PIPELINE_STEPS,
     resolve_pipeline_step_defs,
 )
-from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, RepoConfig
 
 
 def _repo(project: str = "Proj", name: str = "app") -> RepoConfig:
@@ -86,7 +86,9 @@ def test_plan_narrative_lists_blocked_items():
         enabled_scopes=[MigrationScope.REPO.value, MigrationScope.SECRETS.value],
         db=None,
     )
-    text = plan_narrative_from_work_items("poc", items, dry_run=True)
+    text = plan_narrative_from_work_items(
+        "poc", items, mode=ExecutionMode.DRY_RUN,
+    )
     assert "poc" in text
     assert "dry-run" in text or "dry run" in text.lower()
 

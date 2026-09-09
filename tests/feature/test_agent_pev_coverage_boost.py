@@ -2,10 +2,12 @@
 import pytest
 from fastapi import HTTPException
 
+from ado2gh.api.contracts import LiveApprovalCreateRequest
 from ado2gh.api.live_approval_store import LiveApprovalStore, migrate_scope_id
 from ado2gh.api.platform_rbac import operator_requires_live_approval
 from ado2gh.auth.models import PlatformRole, PlatformUser
 from ado2gh.auth.service import AuthService, permissions_for
+from ado2gh.models import ExecutionMode
 
 
 def test_migrate_scope_id_format():
@@ -18,9 +20,9 @@ def test_operator_requires_live_approval_matrix(monkeypatch):
     monkeypatch.setenv("ADO2GH_AUTH_ENABLED", "true")
     op = PlatformUser("1", "op", PlatformRole.OPERATOR, "Op")
     admin = PlatformUser("2", "a", PlatformRole.ADMIN, "A")
-    assert operator_requires_live_approval(op, False) is True
-    assert operator_requires_live_approval(op, True) is False
-    assert operator_requires_live_approval(admin, False) is False
+    assert operator_requires_live_approval(op, ExecutionMode.LIVE) is True
+    assert operator_requires_live_approval(op, ExecutionMode.DRY_RUN) is False
+    assert operator_requires_live_approval(admin, ExecutionMode.LIVE) is False
 
 
 def test_permissions_all_roles():
@@ -36,7 +38,10 @@ def test_live_store_deny_pipeline_run(tmp_path, monkeypatch):
     admin = PlatformUser("a", "admin", PlatformRole.ADMIN, "Admin")
     op = PlatformUser("o", "op", PlatformRole.OPERATOR, "Op")
     row = store.create_or_get_pending(
-        op, "pipeline_run", "run-1", reason_request="live pipeline",
+        op,
+        LiveApprovalCreateRequest(
+            scope_type="pipeline_run", scope_id="run-1", reason_request="live pipeline",
+        ),
     )
     denied = store.deny(row["id"], admin, "not yet")
     assert denied["status"] == "denied"
@@ -47,7 +52,9 @@ def test_live_store_get_forbidden_for_other_operator(tmp_path, monkeypatch):
     store = LiveApprovalStore(str(tmp_path / "g.db"))
     op1 = PlatformUser("1", "op1", PlatformRole.OPERATOR, "Op1")
     op2 = PlatformUser("2", "op2", PlatformRole.OPERATOR, "Op2")
-    row = store.create_or_get_pending(op1, "agent_session", "sess_x")
+    row = store.create_or_get_pending(
+        op1, LiveApprovalCreateRequest(scope_type="agent_session", scope_id="sess_x"),
+    )
     with pytest.raises(HTTPException) as exc:
         store.get_approval(row["id"], requester=op2)
     assert exc.value.status_code == 403

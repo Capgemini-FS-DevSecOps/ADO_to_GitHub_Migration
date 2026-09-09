@@ -9,9 +9,13 @@ from typing import Any, Callable, Optional
 
 import httpx
 
-from ado2gh.api.llm.http_llm import DEFAULT_TIMEOUT, build_llm_http_client
+from ado2gh.api.llm.http_llm import (
+    DEFAULT_TIMEOUT,
+    build_cloud_llm_http_client,
+    build_local_llm_http_client,
+)
 from ado2gh.api.llm.llm_model_store import LLMModelStore
-from ado2gh.api.llm.llm_provider_registry import get_provider_spec
+from ado2gh.api.llm.llm_provider_registry import LLMProviderSpec, get_provider_spec
 from ado2gh.api.local_hosts import resolve_local_service_url
 
 _validate_lock = threading.Lock()
@@ -58,6 +62,7 @@ class AgentCapabilityProbeError(Exception):
 
 
 def _now_iso() -> str:
+    """Return the current UTC time as an ISO 8601 timestamp string."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -68,6 +73,17 @@ def _result(
     message: str = "",
     capabilities: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Assemble a validation verdict in the shape the settings API returns.
+
+    Args:
+        status: Verdict for the check, one of the supported validation statuses.
+        category: Machine-readable failure reason, or None when the check passed.
+        message: Operator-facing explanation, safe to display verbatim.
+        capabilities: Agent capability flags to attach when the check passed.
+
+    Returns:
+        The status, category, message and completion time, plus the capability flags when any were determined.
+    """
     out = {
         "status": status,
         "category": category,
@@ -80,6 +96,14 @@ def _result(
 
 
 def _draft_key(body: dict[str, Any]) -> str:
+    """Derive the single-flight key for validating an unsaved model.
+
+    Args:
+        body: Draft model payload from the settings screen.
+
+    Returns:
+        An opaque key over provider, model id, endpoint and a truncated credential fragment; duplicates coalesce.
+    """
     return "|".join(
         [
             body.get("provider", ""),
@@ -91,6 +115,15 @@ def _draft_key(body: dict[str, Any]) -> str:
 
 
 def _anthropic_error_category(response: httpx.Response) -> tuple[str, str] | None:
+    """Recognise an Anthropic error body that really means "no such model".
+
+    Args:
+        response: The failed HTTP response from the provider.
+
+    Returns:
+        The ``model_not_found`` category and an operator-facing message when the body names a missing model, or None
+        to let the generic classifier decide; Anthropic reports an unknown model as a plain client error.
+    """
     try:
         body = response.json()
     except Exception:
@@ -106,6 +139,15 @@ def _anthropic_error_category(response: httpx.Response) -> tuple[str, str] | Non
 
 
 def _classify_error(exc: Exception) -> tuple[str, str]:
+    """Turn a transport or protocol failure into an operator-facing diagnosis.
+
+    Args:
+        exc: The exception raised while contacting the provider.
+
+    Returns:
+        A failure category (timeout, proxy, network, tls, credentials or model_not_found) and a message telling the
+        operator what to check; unrecognised failures fall back to network. The message never echoes the credential.
+    """
     if isinstance(exc, httpx.TimeoutException):
         return "timeout", "Validation timed out. Try again or check network latency."
     if isinstance(exc, httpx.ProxyError):
@@ -138,7 +180,8 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
     return "network", "Validation failed due to a network error."
 
 
-def ssl_error_type():
+def ssl_error_type() -> type[Exception]:
+    """Return ``ssl.SSLError``, the class signalling a TLS trust failure, imported lazily on first classification."""
     import ssl
 
     return ssl.SSLError
@@ -192,6 +235,7 @@ def _extract_openai_message_text(payload: dict[str, Any]) -> str:
 
 
 def _openai_payload_has_tool_calls(payload: dict[str, Any]) -> bool:
+    """Return True when an OpenAI-shaped ``payload`` carries tool calls, in either the choices or message shape."""
     choices = payload.get("choices") or []
     if choices:
         tool_calls = (choices[0].get("message") or {}).get("tool_calls") or []
@@ -202,6 +246,7 @@ def _openai_payload_has_tool_calls(payload: dict[str, Any]) -> bool:
 
 
 def _anthropic_payload_has_tool_use(payload: dict[str, Any]) -> bool:
+    """Return True when any content block of an Anthropic messages ``payload`` is a tool-use block."""
     for block in payload.get("content") or []:
         if isinstance(block, dict) and block.get("type") == "tool_use":
             return True
@@ -209,6 +254,7 @@ def _anthropic_payload_has_tool_use(payload: dict[str, Any]) -> bool:
 
 
 def _gemini_payload_has_function_call(payload: dict[str, Any]) -> bool:
+    """Return True when any candidate part of a Gemini generateContent ``payload`` is a function call."""
     for candidate in payload.get("candidates") or []:
         content = candidate.get("content") or {}
         for part in content.get("parts") or []:
@@ -275,6 +321,7 @@ def _require_agent_capabilities(provider: str, payload: dict[str, Any]) -> dict[
 
 
 def _stub_agent_capabilities() -> dict[str, Any]:
+    """Return the offline stub's capability flags: tool calling supported so the agent accepts it, no streaming or thinking."""
     return {
         "supports_tool_calling": True,
         "supports_streaming": False,
@@ -283,6 +330,7 @@ def _stub_agent_capabilities() -> dict[str, Any]:
 
 
 def _platform_agent_capabilities() -> dict[str, Any]:
+    """Return the flags assumed (not probed) for platform-supplied cloud models: tool calling and streaming, no thinking."""
     return {
         "supports_tool_calling": True,
         "supports_streaming": True,
@@ -290,76 +338,126 @@ def _platform_agent_capabilities() -> dict[str, Any]:
     }
 
 
-def _validate_openai_compatible(
-    api_key: str,
+def _probe_openai_chat(
+    client: httpx.Client,
+    url: str,
+    headers: dict[str, str],
     model_id: str,
-    *,
-    base_url: str,
-    extra_headers: dict[str, str] | None = None,
-    auth_style: str = "bearer",
-    completions_path: str = "/chat/completions",
-    azure_api_version: str = "2024-06-01",
-    for_cloud: bool = True,
 ) -> dict[str, Any]:
-    path = completions_path.replace("{model_id}", model_id)
-    if not path.startswith("/"):
-        path = f"/{path}"
-    url = f"{base_url.rstrip('/')}{path}"
-    headers = (
-        {"api-key": api_key}
-        if auth_style == "azure-api-key"
-        else {"Authorization": f"Bearer {api_key}"}
+    """Probe an OpenAI-shaped chat endpoint for agent tool-calling support.
+
+    Asks the model to call a probe tool, then retries for the same call as structured JSON, as smaller models emit it.
+
+    Args:
+        client: Open httpx client to issue both requests on.
+        url: Fully assembled chat completions URL, including any query string the provider requires.
+        headers: Request headers, including whichever authentication header the provider's auth style calls for.
+        model_id: Model identifier to send in the request body.
+
+    Returns:
+        Capability flags inferred from the reply: whether the model can call tools, stream, and expose thinking.
+
+    Raises:
+        AgentCapabilityProbeError: If neither attempt produced a tool call.
+        httpx.HTTPStatusError: If the provider rejected either request.
+    """
+    response = client.post(
+        url,
+        headers=headers,
+        json={
+            "model": model_id,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Call agent_capability_probe with ready=true.",
+                }
+            ],
+            "tools": [_PROBE_TOOL_OPENAI],
+            "tool_choice": "auto",
+            "max_tokens": 128,
+        },
     )
-    if extra_headers:
-        headers.update(extra_headers)
-    if auth_style == "azure-api-key":
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}api-version={azure_api_version}"
-    with build_llm_http_client(for_cloud=for_cloud) as client:
+    response.raise_for_status()
+    try:
+        return _require_agent_capabilities("openai", response.json())
+    except AgentCapabilityProbeError:
         response = client.post(
             url,
             headers=headers,
             json={
                 "model": model_id,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "Call agent_capability_probe with ready=true.",
-                    }
-                ],
-                "tools": [_PROBE_TOOL_OPENAI],
-                "tool_choice": "auto",
-                "max_tokens": 128,
+                "messages": [{"role": "user", "content": _AGENT_JSON_PROBE_USER}],
+                "max_tokens": 256,
             },
         )
         response.raise_for_status()
-        payload = response.json()
-        try:
-            return _require_agent_capabilities("openai", payload)
-        except AgentCapabilityProbeError:
-            response = client.post(
-                url,
-                headers=headers,
-                json={
-                    "model": model_id,
-                    "messages": [{"role": "user", "content": _AGENT_JSON_PROBE_USER}],
-                    "max_tokens": 256,
-                },
-            )
-            response.raise_for_status()
-            return _require_agent_capabilities("openai", response.json())
+        return _require_agent_capabilities("openai", response.json())
 
 
-def _validate_openai(api_key: str, model_id: str) -> dict[str, Any]:
-    return _validate_openai_compatible(
-        api_key,
-        model_id,
-        base_url="https://api.openai.com/v1",
-    )
+def _validate_cloud_openai_compatible(
+    api_key: str,
+    model_id: str,
+    *,
+    spec: LLMProviderSpec,
+    base_url: str = "",
+) -> dict[str, Any]:
+    """Validate a model hosted by an OpenAI-compatible cloud provider.
+
+    Calls out via the platform egress proxy and trust store; path, auth style and headers come from the registry.
+
+    Args:
+        api_key: Credential for the provider, presented in whichever header its auth style requires.
+        model_id: Model or deployment identifier to validate.
+        spec: Registry entry for the provider being validated.
+        base_url: Operator-supplied endpoint for providers with no fixed one; falls back to the provider default.
+
+    Returns:
+        Capability flags inferred from the model's reply, as probed by `_probe_openai_chat`.
+    """
+    path = spec.completions_path.replace("{model_id}", model_id)
+    if not path.startswith("/"):
+        path = f"/{path}"
+    url = f"{(base_url or spec.default_base_url).rstrip('/')}{path}"
+    if spec.auth_style == "azure-api-key":
+        headers = {"api-key": api_key}
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}api-version={spec.azure_api_version}"
+    else:
+        headers = {"Authorization": f"Bearer {api_key}"}
+    headers.update(spec.runtime_headers())
+    with build_cloud_llm_http_client() as client:
+        return _probe_openai_chat(client, url, headers, model_id)
+
+
+def _validate_local_openai_compatible(
+    api_key: str,
+    model_id: str,
+    *,
+    base_url: str,
+) -> dict[str, Any]:
+    """Validate a model on a self-hosted runtime's OpenAI-compatible endpoint.
+
+    Dials the runtime directly: the egress proxy and custom trust store are internet-only and break loopback hosts.
+
+    Args:
+        api_key: Bearer token for runtimes with authentication enabled; others accept any placeholder.
+        model_id: Model identifier as the runtime knows it.
+        base_url: Root of the runtime's OpenAI-compatible API.
+
+    Returns:
+        Capability flags inferred from the model's reply, as probed by `_probe_openai_chat`.
+    """
+    with build_local_llm_http_client() as client:
+        return _probe_openai_chat(
+            client,
+            f"{base_url.rstrip('/')}/chat/completions",
+            {"Authorization": f"Bearer {api_key}"},
+            model_id,
+        )
 
 
 def _validate_anthropic(api_key: str, model_id: str) -> dict[str, Any]:
-    with build_llm_http_client(for_cloud=True) as client:
+    with build_cloud_llm_http_client() as client:
         response = client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -408,17 +506,16 @@ def _validate_ollama(base_url: str, model_id: str, api_key: str = "") -> dict[st
         headers = {"Authorization": f"Bearer {api_key}"}
     fallback_error: Exception | None = None
     try:
-        return _validate_openai_compatible(
+        return _validate_local_openai_compatible(
             api_key or "ollama",
             model_id,
             base_url=f"{resolved}/v1",
-            for_cloud=False,
         )
     except AgentCapabilityProbeError as exc:
         fallback_error = exc
     except Exception as exc:
         fallback_error = exc
-    with build_llm_http_client(for_cloud=False) as client:
+    with build_local_llm_http_client() as client:
         response = client.post(
             f"{resolved}/api/chat",
             headers=headers,
@@ -442,7 +539,7 @@ def _validate_ollama(base_url: str, model_id: str, api_key: str = "") -> dict[st
 def _validate_gemini(api_key: str, model_id: str, base_url: str = "") -> dict[str, Any]:
     spec = get_provider_spec("google_gemini")
     root = (base_url or (spec.default_base_url if spec else "")).rstrip("/")
-    with build_llm_http_client(for_cloud=True) as client:
+    with build_cloud_llm_http_client() as client:
         response = client.post(
             f"{root}/models/{model_id}:generateContent",
             params={"key": api_key},
@@ -518,7 +615,9 @@ def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
         if provider == "openai":
             if not api_key:
                 return _result("failed", category="credentials", message="API key is required.")
-            capabilities = _validate_openai(api_key, model_id)
+            if not spec:
+                return _result("failed", category="model_not_found", message="Unknown provider.")
+            capabilities = _validate_cloud_openai_compatible(api_key, model_id, spec=spec)
         elif provider == "anthropic":
             if not api_key:
                 return _result("failed", category="credentials", message="API key is required.")
@@ -532,22 +631,16 @@ def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
                 )
             if not spec:
                 return _result("failed", category="model_not_found", message="Unknown provider.")
-            capabilities = _validate_openai_compatible(
-                api_key,
-                model_id,
-                base_url=base_url or spec.default_base_url,
-                extra_headers=spec.runtime_headers(),
+            capabilities = _validate_cloud_openai_compatible(
+                api_key, model_id, spec=spec, base_url=base_url,
             )
         elif provider == "openrouter":
             if not api_key:
                 return _result("failed", category="credentials", message="API key is required.")
             if not spec:
                 return _result("failed", category="model_not_found", message="Unknown provider.")
-            capabilities = _validate_openai_compatible(
-                api_key,
-                model_id,
-                base_url=base_url or spec.default_base_url,
-                extra_headers=spec.runtime_headers(),
+            capabilities = _validate_cloud_openai_compatible(
+                api_key, model_id, spec=spec, base_url=base_url,
             )
         elif provider == "azure_openai":
             if not api_key:
@@ -560,13 +653,8 @@ def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
                 )
             if not spec:
                 return _result("failed", category="model_not_found", message="Unknown provider.")
-            capabilities = _validate_openai_compatible(
-                api_key,
-                model_id,
-                base_url=base_url,
-                auth_style=spec.auth_style,
-                completions_path=spec.completions_path,
-                azure_api_version=spec.azure_api_version,
+            capabilities = _validate_cloud_openai_compatible(
+                api_key, model_id, spec=spec, base_url=base_url,
             )
         elif provider == "google_gemini":
             if not api_key:
@@ -599,6 +687,16 @@ def _run_provider_check(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _single_flight_validate(key: str, runner: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Run one validation per key, sharing the result with concurrent callers.
+
+    Args:
+        key: Identity of the check; two calls with the same key are the same work, and wait on one network probe.
+        runner: Callable performing the actual provider check.
+
+    Returns:
+        The verdict from the runner, the verdict recorded by the call already in flight, or a failed verdict
+        categorised as a timeout when that call did not finish. A runner failure is classified, not propagated.
+    """
     with _validate_lock:
         if key in _validate_inflight:
             waiter = _validate_inflight[key]
@@ -630,8 +728,18 @@ def _single_flight_validate(key: str, runner: Callable[[], dict[str, Any]]) -> d
         return _result("failed", category=category, message=message)
 
 
-def validate_draft(body: dict[str, Any], *, store: Optional[LLMModelStore] = None) -> dict[str, Any]:
-    """Validate an unsaved model configuration."""
+def validate_draft(body: dict[str, Any]) -> dict[str, Any]:
+    """Validate an unsaved model configuration against its provider.
+
+    Nothing is persisted: the pre-save check the settings screen runs before an operator commits a configuration.
+
+    Args:
+        body: Draft payload carrying at least provider and model id, plus the credential and endpoint it needs.
+
+    Returns:
+        A verdict with the status, a failure category when it failed, an operator-facing message that never echoes
+        the credential, the time of the check, and the model's agent capability flags when it passed.
+    """
     key = _draft_key(body)
     return _single_flight_validate(key, lambda: _run_provider_check(body))
 

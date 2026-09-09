@@ -15,6 +15,19 @@ class ScanMixin:
     _scan_jobs: dict[str, dict[str, Any]] = {}
 
     def profile_rescan_status(self, profile_id: str) -> dict[str, Any]:
+        """Report where a profile's background scan has got to.
+
+        Args:
+            profile_id: Identifier of the profile to report on.
+
+        Returns:
+            dict[str, Any]: The profile identifier, whether a scan thread
+            is running right now, the state of the most recent scan
+            (idle, running, completed or failed), its error message if it
+            failed, and — once it has completed — when it finished and how
+            many projects, repositories and service connections it saw.
+
+        """
         with self._rescan_lock:
             running = profile_id in self._rescan_running
             job = dict(self._scan_jobs.get(profile_id) or {})
@@ -35,6 +48,24 @@ class ScanMixin:
         *,
         max_repos: int | None = None,
     ) -> dict[str, Any]:
+        """Start a discovery scan of a profile's ADO organization in the background.
+
+        Returns as soon as the worker thread is running; poll
+        :meth:`profile_rescan_status` for progress. At most one scan runs
+        per profile at a time.
+
+        Args:
+            profile_id: Identifier of the profile to scan.
+            max_repos: Stop after this many repositories, for a quick
+                sample. Defaults to scanning the whole organization.
+
+        Returns:
+            dict[str, Any]: The profile identifier and a status of
+            ``started`` when a scan was launched, ``already_running`` when
+            one was already in flight, or ``error`` with a reason when the
+            profile does not exist or has no ADO credentials configured.
+
+        """
         profile = self.get_profile(profile_id)
         if not profile:
             return {"status": "error", "profile_id": profile_id, "error": "profile not found"}
@@ -97,7 +128,40 @@ class ScanMixin:
         max_repos: int | None = None,
         phases: list[PhaseDefinition] | None = None,
     ) -> dict[str, Any]:
-        from ado2gh.api.migration_scan import persist_scan_results, scan_with_credentials
+        """Run one discovery scan to completion and persist everything it found.
+
+        Scans the profile's ADO organization, saves the results, updates
+        the profile's scan summary and copies the discovered repositories
+        into the risk-score table used by migration runs. Runs on the
+        calling thread.
+
+        Args:
+            profile_id: Identifier of the profile to scan.
+            max_repos: Stop after this many repositories. Defaults to
+                scanning the whole organization.
+            phases: Phase definitions to classify repositories against.
+                Defaults to the configured phases, in which case manual
+                phase assignments made by operators are preserved; passing
+                phases explicitly means the phases just changed, so
+                assignments are recomputed from scratch.
+
+        Returns:
+            dict[str, Any]: The raw scan result — when it ran, how many
+            projects and repositories were seen, the per-phase
+            recommendations, the organization inventory and the resolved
+            target GitHub organization.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+            ValueError: If the profile has no ADO credentials configured.
+
+        """
+        from ado2gh.api.migration_scan import (
+            attach_pipeline_inventory,
+            persist_scan_results,
+            replace_scan_results,
+            scan_with_credentials,
+        )
         from ado2gh.api.profile_discovery import resolve_gh_org, sync_profile_scan_to_risk_scores
 
         profile = self.get_profile(profile_id)
@@ -115,18 +179,21 @@ class ScanMixin:
             gh_org=gh_org,
             max_repos=max_repos,
             phase_definitions=[p.to_dict() for p in phase_defs],
-            db_path=adv.db_path,
-            run_inventory=True,
-            pipeline_parallel=int(adv.pipeline_parallel or 12),
         )
+        if adv.db_path:
+            attach_pipeline_inventory(
+                raw,
+                profile.ado_org_url,
+                profile.ado_pat,
+                adv.db_path,
+                pipeline_parallel=int(adv.pipeline_parallel or 12),
+            )
         if gh_org and not raw.get("gh_org"):
             raw["gh_org"] = gh_org
-        preserve = phases is None
-        persist_scan_results(
-            profile_id,
-            raw,
-            preserve_manual_assignments=preserve,
-        )
+        if phases is None:
+            persist_scan_results(profile_id, raw)
+        else:
+            replace_scan_results(profile_id, raw)
         self.record_scan_summary(profile_id, raw)
         sync_profile_scan_to_risk_scores(profile_id, config_path=adv.config_path)
         return raw
@@ -136,6 +203,20 @@ class ScanMixin:
         profile_id: str,
         phases: list[PhaseDefinition],
     ) -> dict[str, Any]:
+        """Kick off a rescan in the background after the phases were edited.
+
+        Args:
+            profile_id: Identifier of the profile to rescan.
+            phases: The newly saved phase definitions to reclassify the
+                profile's repositories against.
+
+        Returns:
+            dict[str, Any]: The profile identifier with a status of
+            ``started``, or ``already_running`` when a scan is already in
+            flight; or a skipped marker and the reason when the profile
+            does not exist or has no ADO credentials configured.
+
+        """
         profile = self.get_profile(profile_id)
         if not profile:
             return {"skipped": True, "reason": "profile not found"}
@@ -162,6 +243,21 @@ class ScanMixin:
         profile_id: str,
         phases: list[PhaseDefinition],
     ) -> dict[str, Any]:
+        """Rescan a profile against edited phases, absorbing expected failures.
+
+        Args:
+            profile_id: Identifier of the profile to rescan.
+            phases: The newly saved phase definitions to reclassify the
+                profile's repositories against.
+
+        Returns:
+            dict[str, Any]: The profile identifier, how many projects and
+            repositories were rescanned, when the scan finished, and a
+            flag confirming the risk scores were synced; or a skipped
+            marker and the reason when the profile has gone away or has no
+            ADO credentials configured.
+
+        """
         try:
             raw = self._execute_profile_scan(profile_id, phases=phases)
         except KeyError:

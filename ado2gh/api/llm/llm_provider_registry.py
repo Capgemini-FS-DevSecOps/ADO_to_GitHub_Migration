@@ -10,6 +10,13 @@ OPENROUTER_APP_TITLE = "ADO2GH Migration Agent"
 
 @dataclass(frozen=True)
 class LLMProviderSpec:
+    """Static description of one supported LLM provider.
+
+    Carries everything the catalog, validation and runtime layers need to talk
+    to a provider: its endpoints, how credentials are presented on the wire, and
+    which extra headers the provider expects. Instances hold no credentials.
+    """
+
     id: str
     label: str
     kind: str
@@ -26,6 +33,15 @@ class LLMProviderSpec:
     azure_api_version: str = "2024-06-01"
 
     def to_public(self) -> dict[str, Any]:
+        """Render the provider as the shape the settings UI consumes.
+
+        Returns:
+            dict[str, Any]: The provider identifier, human label, description and
+            integration kind, the suggested default base URL (None when the
+            provider has no fixed endpoint), whether an API key and an operator
+            supplied base URL are required, and the preset catalog key to look
+            up bundled model presets under.
+        """
         return {
             "id": self.id,
             "label": self.label,
@@ -38,6 +54,14 @@ class LLMProviderSpec:
         }
 
     def runtime_headers(self) -> dict[str, str]:
+        """Build the non-authentication headers this provider expects on requests.
+
+        Returns:
+            dict[str, str]: A copy of the provider's static extra headers, plus
+            the attribution headers OpenRouter uses to identify the calling
+            application. Never contains credentials; callers add authentication
+            headers separately.
+        """
         headers = dict(self.extra_headers)
         if self.id == "openrouter":
             headers.setdefault("HTTP-Referer", "https://github.com/ado2gh/migration")
@@ -162,17 +186,42 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
 
 
 def get_provider_spec(provider_id: str) -> LLMProviderSpec | None:
+    """Look up the registered spec for a provider identifier.
+
+    Args:
+        provider_id: Provider identifier as stored on a model configuration.
+
+    Returns:
+        LLMProviderSpec | None: The matching provider spec, or None when the
+        identifier is not registered.
+    """
     return PROVIDER_SPECS.get(provider_id)
 
 
-def list_provider_specs(*, include_internal: bool = False) -> list[dict[str, Any]]:
-    skip = {"offline"} if not include_internal else set()
+def list_provider_specs() -> list[dict[str, Any]]:
+    """List the providers an operator may choose when configuring a model.
+
+    Returns:
+        list[dict[str, Any]]: One public provider description per selectable
+        provider, in registration order. The ``offline`` entry is omitted
+        because it is an internal alias of the stub provider and would appear
+        as a duplicate choice.
+    """
     return [
         spec.to_public()
         for key, spec in PROVIDER_SPECS.items()
-        if key not in skip
+        if key != "offline"
     ]
 
 
 def is_known_provider(provider_id: str) -> bool:
+    """Report whether a provider identifier is registered.
+
+    Args:
+        provider_id: Provider identifier to check.
+
+    Returns:
+        bool: True when the registry holds a spec for the identifier, including
+        internal aliases that ``list_provider_specs`` hides.
+    """
     return provider_id in PROVIDER_SPECS

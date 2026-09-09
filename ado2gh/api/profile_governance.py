@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from ado2gh.audit import AuditWriter
 from ado2gh.auth.models import PlatformRole
 from ado2gh.state.factory import create_state_db
 
+if TYPE_CHECKING:
+    from ado2gh.api.settings_models import MigrationProfile
+
 
 class ProfileStatus(str, Enum):
+    """Lifecycle states a deployment profile can be in."""
+
     ACTIVE = "active"
     PENDING_APPROVAL = "pending_approval"
     DENIED = "denied"
@@ -19,7 +24,15 @@ class ProfileStatus(str, Enum):
 class ProfileGovernanceError(Exception):
     """Profile invariant or lifecycle violation."""
 
-    def __init__(self, message: str, code: str = "profile_governance_error"):
+    def __init__(self, message: str, code: str = "profile_governance_error") -> None:
+        """Build the error with a human message and a stable machine code.
+
+        Args:
+            message: Human-readable explanation of the violation.
+            code: Stable identifier for the violation, used by API routes
+                to map the failure onto a response body.
+
+        """
         super().__init__(message)
         self.code = code
 
@@ -30,12 +43,31 @@ def count_active_profiles(profiles: list[Any]) -> int:
 
 
 def needs_profile_setup(profiles: list[Any]) -> bool:
-    """True when no active deployment profile exists."""
+    """Report whether the deployment still has to be onboarded.
+
+    Args:
+        profiles: All known profiles, whatever their status.
+
+    Returns:
+        bool: ``True`` when not one profile is active, meaning an admin
+        must create one before the platform can be used.
+
+    """
     return count_active_profiles(profiles) == 0
 
 
-def get_default_profile(profiles: list[Any]) -> Optional[Any]:
-    """Return the profile marked default among active profiles, else first active."""
+def get_default_profile(profiles: list[Any]) -> Optional[MigrationProfile]:
+    """Pick the profile to fall back on when none has been selected.
+
+    Args:
+        profiles: All known profiles, whatever their status.
+
+    Returns:
+        Optional[MigrationProfile]: The active profile flagged as the
+        default, or the first active profile when no flag is set, or
+        ``None`` when no profile is active.
+
+    """
     active = [p for p in profiles if getattr(p, "status", ProfileStatus.ACTIVE.value) == ProfileStatus.ACTIVE.value]
     if not active:
         return None
@@ -45,8 +77,19 @@ def get_default_profile(profiles: list[Any]) -> Optional[Any]:
     return active[0]
 
 
-def assert_profile_active_for_run(profile: Any) -> None:
-    """Raise if profile cannot be used for migrations, discovery, or agent sessions."""
+def assert_profile_active_for_run(profile: object) -> None:
+    """Check that a profile may be used to run work against.
+
+    Args:
+        profile: Profile to check; anything exposing a ``status``
+            attribute, which is assumed active when absent.
+
+    Raises:
+        ProfileGovernanceError: With code ``profile_not_active`` when the
+            profile is pending approval, denied or retired, so migrations,
+            discovery and agent sessions must not use it.
+
+    """
     status = getattr(profile, "status", ProfileStatus.ACTIVE.value)
     if status != ProfileStatus.ACTIVE.value:
         raise ProfileGovernanceError(

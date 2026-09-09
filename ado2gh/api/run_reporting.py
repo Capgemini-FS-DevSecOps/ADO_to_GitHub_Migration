@@ -18,7 +18,7 @@ def migrate_repo_detail(key: str, res: dict[str, Any]) -> dict[str, Any]:
             "category": meta.get("category", "convert_metadata"),
             "status": detail.get("status", "?"),
             "error": detail.get("error"),
-            "detail": _scope_detail_message(scope, detail),
+            "detail": build_scope_detail_message(scope, detail),
         })
     errors = list(res.get("errors") or [])
     for row in scope_rows:
@@ -37,7 +37,26 @@ def migrate_repo_detail(key: str, res: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _migrate_summary(key: str, res: dict, scope_rows: list, errors: list) -> str:
+def _migrate_summary(
+    key: str,
+    res: dict[str, Any],
+    scope_rows: list[dict[str, Any]],
+    errors: list[str],
+) -> str:
+    """Compose the one-line summary of a repo's migration result.
+
+    Args:
+        key: ``"<project>/<repo>"`` identifier for the repo.
+        res: Raw migration result for that repo.
+        scope_rows: Normalised per-scope rows built by
+            :func:`migrate_repo_detail`.
+        errors: Errors already collected for the repo.
+
+    Returns:
+        ``"<repo>: completed"`` on a clean run, otherwise the repo, its status
+        and a semicolon-joined list of the failing scopes with their reasons,
+        falling back to the plain error list when no scope rows exist.
+    """
     status = res.get("status", "?")
     if status == "completed" and not errors:
         return f"{key}: completed"
@@ -55,6 +74,19 @@ def _migrate_summary(key: str, res: dict, scope_rows: list, errors: list) -> str
 
 
 def validation_repo_detail(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalise one repo's validation result for the API and the UI.
+
+    Args:
+        row: Raw validation row for a single repo, holding its ADO and GitHub
+            names, its overall verdict and its per-check results.
+
+    Returns:
+        A row with the ADO project and repo, the GitHub target, the overall
+        verdict, the flattened ``checks`` list, and a human reason repeated as
+        ``primary_reason``, ``message`` and ``detail`` — the recorded error if
+        there is one, else the first failure, else the first warning, else a
+        digest of the passing checks.
+    """
     checks = row.get("checks") or {}
     check_rows = []
     for name, check in checks.items():
@@ -90,7 +122,18 @@ def validation_repo_detail(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validation_message(results: list[dict[str, Any]]) -> str:
+def build_validation_message(results: list[dict[str, Any]]) -> str:
+    """Summarise a validation run in one line for logs and the run timeline.
+
+    Args:
+        results: Validation rows, each carrying an ``overall`` verdict of
+            ``PASS``, ``FAIL`` or ``WARN``.
+
+    Returns:
+        A line of the form ``"Validated: <n>/<total> passed"``, extended with
+        the count and names of up to five failing repos (and a ``+N more``
+        suffix beyond that) and with the number of warnings.
+    """
     passed = sum(1 for r in results if r.get("overall") == "PASS")
     failed = [r for r in results if r.get("overall") == "FAIL"]
     warned = [r for r in results if r.get("overall") == "WARN"]
@@ -104,7 +147,20 @@ def validation_message(results: list[dict[str, Any]]) -> str:
     return "Validated: " + "; ".join(parts)
 
 
-def _scope_detail_message(scope: str, detail: dict[str, Any]) -> str:
+def build_scope_detail_message(scope: str, detail: dict[str, Any]) -> str:
+    """Pick the most useful human detail line for one migrated scope.
+
+    Args:
+        scope: Migration scope the detail belongs to.
+        detail: Raw per-scope result, whose own ``detail`` may be a message
+            dict, a stats dict or a plain value.
+
+    Returns:
+        The explicit message when the scope reported one, else the workflow
+        branch and pull request URL (or the push error) for the pipelines
+        scope, else the recorded error, else a short rendering of whatever the
+        scope reported.
+    """
     stats = detail.get("detail")
     if isinstance(stats, dict):
         if stats.get("message"):
@@ -119,7 +175,17 @@ def _scope_detail_message(scope: str, detail: dict[str, Any]) -> str:
     return _stringify(detail.get("detail"))
 
 
-def _stringify(val: Any) -> str:
+def _stringify(val: object) -> str:
+    """Render an arbitrary scope detail value as a short display string.
+
+    Args:
+        val: The value to render; commonly ``None``, a stats dict or a string.
+
+    Returns:
+        An empty string for ``None``, a ``"failed=<n> total=<n>"`` line for a
+        dict reporting failures, otherwise the value's string form truncated to
+        200 characters.
+    """
     if val is None:
         return ""
     if isinstance(val, dict):

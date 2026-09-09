@@ -38,9 +38,40 @@ def resolve_gh_org(
 
 def require_gh_org(
     profile: MigrationProfile | None = None,
-    **kwargs: Any,
+    *,
+    global_cfg: dict[str, Any] | None = None,
+    config_path: str | None = None,
+    scan: dict[str, Any] | None = None,
+    profile_id: str | None = None,
 ) -> str:
-    org = resolve_gh_org(profile, **kwargs)
+    """Resolve the GitHub target org, refusing to continue without one.
+
+    Args:
+        profile: Profile whose configured GitHub organization wins if set.
+        global_cfg: Already-loaded migration config to read the fallback
+            organization from.
+        config_path: Migration config file to load the fallback
+            organization from when one was not passed in.
+        scan: Scan result to read the organization recorded at scan time
+            from.
+        profile_id: Profile whose persisted scan is consulted as the last
+            fallback. Defaults to the given profile's identifier.
+
+    Returns:
+        str: The resolved GitHub organization name, never empty.
+
+    Raises:
+        ValueError: If no source names a target organization, with a
+            message telling the operator where to configure one.
+
+    """
+    org = resolve_gh_org(
+        profile,
+        global_cfg=global_cfg,
+        config_path=config_path,
+        scan=scan,
+        profile_id=profile_id,
+    )
     if not org:
         raise ValueError(
             "GitHub target organization (gh_org) is not configured. "
@@ -51,6 +82,21 @@ def require_gh_org(
 
 
 def risk_score_from_repo_dict(repo: dict[str, Any], gh_org: str = "") -> RiskScore:
+    """Convert one scanned repository record into a risk score row.
+
+    Args:
+        repo: Scanned repository record holding its ADO project and name,
+            total risk score, target GitHub names and the pipeline, branch
+            and staleness counts the score was derived from.
+        gh_org: Target GitHub organization to use when the record does not
+            name one of its own.
+
+    Returns:
+        RiskScore: The repository's score ready to persist, with no phase
+        assigned yet and its target GitHub repository defaulting to the
+        ADO repository name. Missing counts become zero.
+
+    """
     return RiskScore(
         project=repo.get("project", ""),
         repo_name=repo.get("repo_name", ""),
@@ -76,6 +122,18 @@ def manual_phase_overrides(repos: list[dict[str, Any]]) -> dict[tuple[str, str],
 
 
 def iter_scan_repos(scan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten every repository out of a scan's per-phase recommendations.
+
+    Args:
+        scan: Scan result whose recommendations are grouped by phase.
+
+    Returns:
+        list[dict[str, Any]]: A copy of each scanned repository record
+        across all phases, with the assigned and suggested phase fields
+        stripped so callers cannot mistake a recommendation for a
+        decision.
+
+    """
     repos: list[dict[str, Any]] = []
     for bucket in scan.get("recommendations", {}).values():
         for repo in bucket.get("repos", []):
@@ -149,14 +207,31 @@ def build_wave_from_profile_phase(
     *,
     wave_id: int = 9000,
     db_path: str | None = None,
-    parallel: int = 4,
-    pipeline_parallel: int = 8,
     config_path: str | None = None,
 ) -> WaveConfig | None:
-    """Build a migration wave from all profile discovery repos.
+    """Build a migration wave from a profile's discovered repositories.
 
-    The phase parameter is kept for API compatibility but is ignored; waves are now
-    created from user-selected repo groups in the Discovery UI.
+    Args:
+        phase: Phase to keep; repositories explicitly assigned to a
+            different phase are left out. An empty value keeps everything.
+        profile: Profile whose discovery results the wave is built from.
+        wave_id: Identifier to stamp on the wave.
+        db_path: State database to read the discovery results from.
+            Defaults to the configured database.
+        config_path: Migration config file used to resolve the target
+            GitHub organization for repositories that do not name one.
+
+    Returns:
+        WaveConfig | None: A wave holding one repository entry per
+        discovered repository, scoped to the repository itself and
+        carrying its risk score, with the default concurrency limits for
+        the caller to override. ``None`` when the profile has no
+        discovered repositories and no risk scores to fall back on.
+
+    Raises:
+        ValueError: With the governance error code as its message when the
+            profile is not active.
+
     """
     try:
         assert_profile_active_for_run(profile)
@@ -202,8 +277,6 @@ def build_wave_from_profile_phase(
         name=f"profile-{phase}",
         description=f"Repos from profile discovery (phase {phase} ignored)",
         repos=repos,
-        parallel=parallel,
-        pipeline_parallel=pipeline_parallel,
         phase="",
     )
 
@@ -214,7 +287,27 @@ def repo_configs_for_phase(
     db_path: str | None = None,
     config_path: str | None = None,
 ) -> list[RepoConfig]:
-    """Return all discovery repos; phase is no longer used for filtering."""
+    """Select the repositories a phase should migrate.
+
+    Args:
+        phase: Phase to select for; repositories explicitly assigned to a
+            different phase are left out.
+        profile: Profile whose discovery results are used.
+        db_path: State database to read the discovery results from.
+            Defaults to the configured database.
+        config_path: Migration config file used to resolve the target
+            GitHub organization for repositories that do not name one.
+
+    Returns:
+        list[RepoConfig]: One entry per selected repository, each scoped to
+        the repository itself and carrying its target GitHub names and
+        risk score. Empty when nothing was discovered for the profile.
+
+    Raises:
+        ValueError: With the governance error code as its message when the
+            profile is not active.
+
+    """
     wave = build_wave_from_profile_phase(
         phase, profile, db_path=db_path, config_path=config_path,
     )

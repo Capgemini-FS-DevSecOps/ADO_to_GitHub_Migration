@@ -2,7 +2,12 @@
 
 Consolidated from scattered modules in ado2gh/api/ per FR-027.
 """
-from ado2gh.api.llm.http_llm import build_llm_http_client as build_llm_http_client
+from ado2gh.api.llm.http_llm import (
+    build_cloud_llm_http_client as build_cloud_llm_http_client,
+)
+from ado2gh.api.llm.http_llm import (
+    build_local_llm_http_client as build_local_llm_http_client,
+)
 from ado2gh.api.llm.llm_model_store import (
     LLMModelConfig as LLMModelConfig,
 )
@@ -62,7 +67,8 @@ __all__ = [
     "list_catalog",
     "validate_draft",
     "validate_saved",
-    "build_llm_http_client",
+    "build_cloud_llm_http_client",
+    "build_local_llm_http_client",
     "PlatformSuppliedModelConfig",
     "read_platform_config",
     "sync_on_startup",

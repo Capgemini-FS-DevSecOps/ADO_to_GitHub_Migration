@@ -46,6 +46,19 @@ def _global_cfg_from_profile(
     profile: MigrationProfile,
     advanced: AdvancedSettings,
 ) -> dict[str, Any]:
+    """Derive a migration config from a profile when no migration.yaml exists.
+
+    Args:
+        profile: Active migration profile supplying the ADO org, its
+            credential, the GitHub org and the first GitHub credential.
+        advanced: Advanced settings supplying the migration strategy and the
+            repo and pipeline parallelism.
+
+    Returns:
+        A global config dict with the ADO and GitHub connection settings, the
+        migration strategy, both parallelism knobs, and a default scope list of
+        just the repo scope.
+    """
     gh_token = profile.github_tokens[0].token if profile.github_tokens else ""
     return {
         "ado_org_url": profile.ado_org_url,
@@ -90,6 +103,26 @@ def resolve_validation_repos(
     global_cfg: dict[str, Any],
     waves: list[WaveConfig],
 ) -> list[RepoConfig]:
+    """Work out which repositories a validation request should cover.
+
+    The first source that yields repos wins: inline text on the request, then
+    an on-disk repo list it points at, then the phase of the active profile,
+    and finally the wave configuration.
+
+    Args:
+        request: Validation request, optionally naming inline repo text, a repo
+            list path or a phase.
+        profile: Active migration profile, or ``None`` when none is selected.
+        advanced: Advanced settings supplying the config path and the default
+            phase.
+        global_cfg: Resolved migration config, read for the GitHub org and the
+            default scopes.
+        waves: Wave configuration used as the last resort.
+
+    Returns:
+        The repository configurations to validate, empty when no source names
+        any repository.
+    """
     gh_org = str(global_cfg.get("gh_org", ""))
     default_scopes = global_cfg.get("default_scopes", ["repo"])
 
@@ -118,6 +151,27 @@ def run_validation(
     request: ValidateRequest,
     settings_store: SettingsStore,
 ) -> ValidateResult:
+    """Validate migrated repositories against their ADO sources.
+
+    Resolves the migration config and credentials from the request and the
+    stored profile, works out the repositories in scope, then compares each one
+    to its ADO source at commit-SHA level.
+
+    Args:
+        request: Validation request naming the profile, config, repositories
+            and optional report output path.
+        settings_store: Store the profile and advanced settings are read from.
+
+    Returns:
+        A result with the number of repositories validated, how many passed and
+        failed, the report output path when one was requested, and the
+        per-repository check details. Counts are zero and details empty when no
+        repository was in scope.
+
+    Raises:
+        FileNotFoundError: No migration configuration could be resolved from
+            the request, the environment or an active profile.
+    """
     settings = settings_store.load()
     advanced = settings.advanced
     profile = (
@@ -135,7 +189,6 @@ def run_validation(
 
     ado_url = profile.ado_org_url if profile else None
     ado_pat = profile.ado_pat if profile else None
-    gh_org = global_cfg.get("gh_org") or (profile.gh_org if profile else None)
     gh_token = global_cfg.get("gh_token") or (
         profile.github_tokens[0].token if profile and profile.github_tokens else None
     )
@@ -151,7 +204,7 @@ def run_validation(
         return ValidateResult(total=0, passed=0, failed=0, details=[])
 
     ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
-    gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
+    gh = _build_gh_client(global_cfg, gh_token=gh_token)
     db = create_state_db(request.db_path or advanced.db_path)
 
     results = PostMigrationValidator(ado, gh, db).validate(

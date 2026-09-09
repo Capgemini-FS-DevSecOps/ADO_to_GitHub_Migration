@@ -9,7 +9,7 @@ from typing import Any
 
 from ado2gh.api.migration_work_plan import plan_narrative_from_work_items
 from ado2gh.api.pipeline_models import AGENT_MIGRATION_PIPELINE_STEPS, resolve_pipeline_step_defs
-from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, RepoConfig
 
 AGENT_PIPELINE_STEP_IDS: list[str] = [s["id"] for s in AGENT_MIGRATION_PIPELINE_STEPS]
 SCOPE_TO_PIPELINE_STEP: dict[str, str] = {
@@ -266,7 +266,7 @@ def finalize_agent_migration_plan(
         plan["narrative"] = plan_narrative_from_work_items(
             narrative_phase,
             work_items,
-            dry_run=dry_run,
+            mode=ExecutionMode.from_dry_run(dry_run=dry_run),
             repository_id=repository_id,
             include_blocked=False,
         )

@@ -65,5 +65,5 @@ def test_ambient_hidden_when_not_approved(tmp_path, monkeypatch):
     listed = list_agent_models()
     assert len(listed["models"]) == 1
     assert listed["models"][0]["credential_mode"] == "ambient"
-    creds.revoke("aws", actor="admin")
+    creds.revoke("aws")
     assert list_agent_models()["models"] == []

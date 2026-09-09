@@ -12,16 +12,40 @@ class ProfileMixin:
     """Profile CRUD, approval workflow, and query methods."""
 
     def get_profile(self, profile_id: str) -> Optional[MigrationProfile]:
+        """Look up a single migration profile by identifier.
+
+        Args:
+            profile_id: Identifier of the profile to fetch.
+
+        Returns:
+            Optional[MigrationProfile]: The stored profile with that
+            identifier regardless of its lifecycle status, or ``None`` when
+            no profile matches.
+
+        """
         return next((p for p in self.load().migration_profiles if p.id == profile_id), None)
 
-    def get_active_profiles(self) -> list[MigrationProfile]:
-        return [p for p in self.load().migration_profiles if p.status == "active"]
-
     def get_default_profile(self) -> Optional[MigrationProfile]:
+        """Resolve the profile used when none has been explicitly selected.
+
+        Returns:
+            Optional[MigrationProfile]: The active profile flagged as the
+            default, falling back to the first active profile when no flag
+            is set, or ``None`` when no profile is active.
+
+        """
         from ado2gh.api.profile_governance import get_default_profile
         return get_default_profile(self.load().migration_profiles)
 
     def get_active_profile(self) -> Optional[MigrationProfile]:
+        """Resolve the profile that migrations and scans should run against.
+
+        Returns:
+            Optional[MigrationProfile]: The currently selected profile when
+            it still exists and is active, otherwise the default profile,
+            or ``None`` when no profile is active.
+
+        """
         s = self.load()
         if not s.active_profile_id:
             return self.get_default_profile()
@@ -37,6 +61,31 @@ class ProfileMixin:
         role: str = "admin",
         submitted_by: str = "",
     ) -> MigrationProfile:
+        """Create the first or an additional profile during onboarding.
+
+        An admin submission is stored as active immediately and becomes the
+        default and the selected profile when it is the first active one.
+        An operator submission is stored as pending approval instead.
+
+        Args:
+            data: Profile fields as supplied by the onboarding form: name,
+                ADO organization URL, ADO credential, GitHub organization,
+                and optionally a first GitHub credential and its label.
+            role: Platform role of the submitter; anything other than the
+                admin role is treated as an operator submission.
+            submitted_by: Identity recorded as the submitter, kept only for
+                operator submissions so the approval workflow knows who may
+                appeal a denial.
+
+        Returns:
+            MigrationProfile: The newly created and persisted profile,
+            carrying its generated identifier and its resulting status.
+
+        Raises:
+            ValueError: If an operator submits while no active profile
+                exists yet, which an admin must create first.
+
+        """
         from ado2gh.auth.models import PlatformRole
 
         settings = self.load()
@@ -78,6 +127,24 @@ class ProfileMixin:
         return prof
 
     def record_scan_summary(self, profile_id: str, scan: dict[str, Any]) -> MigrationProfile:
+        """Store the headline results of a discovery scan on a profile.
+
+        Args:
+            profile_id: Identifier of the profile that was scanned.
+            scan: Raw scan result to summarise; its scan timestamp, project
+                and repository counts and per-phase recommendations are
+                read, and everything else is discarded.
+
+        Returns:
+            MigrationProfile: The updated profile, with its last scan
+            timestamp and a trimmed summary holding the counts and, for
+            each recommended phase, the repository count, risk range and
+            rationale.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+
+        """
         settings = self.load()
         prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
         if not prof:
@@ -101,6 +168,27 @@ class ProfileMixin:
         return prof
 
     def upsert_profile(self, data: dict[str, Any], profile_id: str | None = None) -> MigrationProfile:
+        """Create a profile or edit an existing one.
+
+        Args:
+            data: Profile fields to apply: name, ADO organization URL, ADO
+                credential and GitHub organization. On an edit, omitted
+                fields keep their current value and the stored ADO
+                credential is left untouched when the submitted value is
+                the mask marker returned by the public representation.
+            profile_id: Identifier of the profile to edit; when omitted a
+                new profile is created with a generated identifier.
+
+        Returns:
+            MigrationProfile: The created or updated profile after it has
+            been persisted. It becomes the selected profile when no profile
+            was selected before.
+
+        Raises:
+            KeyError: If a profile identifier is given but no profile
+                has it.
+
+        """
         settings = self.load()
         now = datetime.now(timezone.utc).isoformat()
         if profile_id:
@@ -132,6 +220,24 @@ class ProfileMixin:
         return prof
 
     def delete_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> None:
+        """Permanently remove a profile from the store.
+
+        Another active profile is selected when the deleted one was the
+        selected profile, and the default flag is moved to the replacement
+        when the deleted one was the default.
+
+        Args:
+            profile_id: Identifier of the profile to remove.
+            new_default_profile_id: Identifier of the active profile that
+                takes over the default flag; required when deleting the
+                default profile while other active profiles remain.
+
+        Raises:
+            ValueError: With the governance error code as its message when
+                the deletion would leave no active profile, or when the
+                replacement default is missing or not an active profile.
+
+        """
         from ado2gh.api.profile_governance import ProfileGovernanceError, assert_can_delete
 
         settings = self.load()
@@ -158,6 +264,26 @@ class ProfileMixin:
         self.save(settings)
 
     def deactivate_profile(self, profile_id: str, new_default_profile_id: str | None = None) -> MigrationProfile:
+        """Retire a profile without deleting it or its history.
+
+        Args:
+            profile_id: Identifier of the profile to retire.
+            new_default_profile_id: Identifier of the active profile that
+                takes over the default flag; required when retiring the
+                default profile while other active profiles remain.
+
+        Returns:
+            MigrationProfile: The profile with its status set to inactive,
+            returned unchanged when it was already not active.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+            ValueError: With the governance error code as its message when
+                retiring the profile would leave no active profile, or when
+                the replacement default is missing or not an active
+                profile.
+
+        """
         from ado2gh.api.profile_governance import ProfileGovernanceError, assert_can_delete
 
         settings = self.load()
@@ -187,6 +313,20 @@ class ProfileMixin:
         return prof
 
     def set_default_profile(self, profile_id: str) -> MigrationProfile:
+        """Make one profile the default and clear the flag on the others.
+
+        Args:
+            profile_id: Identifier of the profile to make default.
+
+        Returns:
+            MigrationProfile: The profile that is now the default; it is
+            also made the selected profile.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+            ValueError: If the profile is not active.
+
+        """
         settings = self.load()
         prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
         if not prof:
@@ -201,6 +341,22 @@ class ProfileMixin:
         return prof
 
     def approve_profile(self, profile_id: str) -> MigrationProfile:
+        """Admit an operator-submitted profile into service.
+
+        Args:
+            profile_id: Identifier of the pending profile to admit.
+
+        Returns:
+            MigrationProfile: The profile with its status set to active and
+            its approval record stamped with the approval time and any
+            earlier denial cleared. It also becomes the default and the
+            selected profile when it is the first active one.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+            ValueError: If the profile is not awaiting approval.
+
+        """
         settings = self.load()
         prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
         if not prof:
@@ -225,6 +381,23 @@ class ProfileMixin:
         return prof
 
     def deny_profile(self, profile_id: str, reason: str = "") -> MigrationProfile:
+        """Reject an operator-submitted profile.
+
+        Args:
+            profile_id: Identifier of the pending profile to reject.
+            reason: Explanation shown to the submitter, stored on the
+                approval record.
+
+        Returns:
+            MigrationProfile: The profile with its status set to denied,
+            its default flag cleared, and its approval record stamped with
+            the denial time and reason.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+            ValueError: If the profile is not awaiting approval.
+
+        """
         settings = self.load()
         prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
         if not prof:
@@ -247,6 +420,24 @@ class ProfileMixin:
         return prof
 
     def appeal_profile(self, profile_id: str, actor: str) -> MigrationProfile:
+        """Send a denied profile back to the approval queue for its submitter.
+
+        Args:
+            profile_id: Identifier of the denied profile to resubmit.
+            actor: Identity making the appeal; it must match the recorded
+                submitter when one was recorded.
+
+        Returns:
+            MigrationProfile: The profile with its status set back to
+            pending approval and its approval record stamped with the
+            appeal time and an incremented appeal count.
+
+        Raises:
+            KeyError: If no profile has that identifier.
+            ValueError: If the profile has not been denied.
+            PermissionError: If the actor is not the recorded submitter.
+
+        """
         settings = self.load()
         prof = next((p for p in settings.migration_profiles if p.id == profile_id), None)
         if not prof:

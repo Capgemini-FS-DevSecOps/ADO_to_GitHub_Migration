@@ -22,6 +22,7 @@ from ado2gh.api.contracts import (
     HealthResponse,
     JobEnqueueRequest,
     JobStatusResponse,
+    LiveApprovalCreateRequest,
     OnboardingStatusResponse,
     PlanRequest,
     PlanResponse,
@@ -57,6 +58,7 @@ from ado2gh.api.settings_store import SettingsStore
 from ado2gh.auth.models import PlatformRole
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.redis_queue import RedisJobQueue
+from ado2gh.models import ExecutionMode
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
 from ado2gh.state.factory import create_state_db
 from ado2gh.state.job_store import JobStoreFactory
@@ -271,7 +273,9 @@ def migrate(req: RunWaveRequest, request: Request):
         user = _platform_user(request)
         profile_id = active.id if active else None
         scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)
-        if operator_requires_live_approval(user, req.dry_run):
+        if operator_requires_live_approval(
+            user, ExecutionMode.from_dry_run(dry_run=req.dry_run),
+        ):
             store = _live_store()
             approved = False
             if req.live_approval_id:
@@ -282,11 +286,13 @@ def migrate(req: RunWaveRequest, request: Request):
             if not approved:
                 approval = store.create_or_get_pending(
                     user,
-                    "migrate_job",
-                    scope_id,
-                    profile_id=profile_id,
-                    reason_request="Dashboard live migrate",
-                    context=req.model_dump(exclude={"live_approval_id"}),
+                    LiveApprovalCreateRequest(
+                        scope_type="migrate_job",
+                        scope_id=scope_id,
+                        profile_id=profile_id,
+                        reason_request="Dashboard live migrate",
+                        context=req.model_dump(exclude={"live_approval_id"}),
+                    ),
                 )
                 raise HTTPException(
                     status_code=403,
@@ -305,9 +311,8 @@ def migrate(req: RunWaveRequest, request: Request):
         accel = _accel(req.db_path)
         ado_url = active.ado_org_url if active else None
         ado_pat = active.ado_pat if active else None
-        gh_org = active.gh_org if active else None
         gh_token = active.github_tokens[0].token if active and active.github_tokens else None
-        result = accel.run_wave(req, ado_url=ado_url, ado_pat=ado_pat, gh_token=gh_token, gh_org=gh_org)
+        result = accel.run_wave(req, ado_url=ado_url, ado_pat=ado_pat, gh_token=gh_token)
         return [RunWaveResponse(
             wave_id=result.wave_id,
             status=result.status,
@@ -468,7 +473,7 @@ def freshness(req: FreshnessRequest):
     gh_org = active.gh_org if active else global_cfg.get("gh_org", "")
     gh_token = active.github_tokens[0].token if active and active.github_tokens else None
     ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
-    gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
+    gh = _build_gh_client(global_cfg, gh_token=gh_token)
     source = ado.get_repo(req.project, req.repo)
     repo_id = source.get("id", "")
     branch = source.get("defaultBranch", "refs/heads/main").replace("refs/heads/", "")

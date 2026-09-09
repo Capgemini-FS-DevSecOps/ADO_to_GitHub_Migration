@@ -237,6 +237,7 @@ async def submit_session_form(
 
     if outcome["status"] == "inventory_gaps":
         from ado2gh.api.migration_work_plan import apply_operator_secret_mappings, plan_narrative_from_work_items
+        from ado2gh.models import ExecutionMode
 
         mappings = {
             str(k): str(v).strip()
@@ -254,7 +255,9 @@ async def submit_session_form(
         plan["narrative"] = plan_narrative_from_work_items(
             plan_phase or "",
             plan["work_items"],
-            dry_run=session.get("dry_run", True),
+            mode=ExecutionMode.from_dry_run(
+                dry_run=bool(session.get("dry_run", True)),
+            ),
             repository_id=plan.get("repository_id"),
         )
         session["migration_plan"] = plan
@@ -550,6 +553,7 @@ async def submit_session_form_stream(
         from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
         from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
         from ado2gh.api.migration_work_plan import apply_operator_secret_mappings, plan_narrative_from_work_items
+        from ado2gh.models import ExecutionMode
 
         mappings = {
             str(k): str(v).strip()
@@ -567,7 +571,9 @@ async def submit_session_form_stream(
         plan["narrative"] = plan_narrative_from_work_items(
             plan_phase or "",
             plan["work_items"],
-            dry_run=session.get("dry_run", True),
+            mode=ExecutionMode.from_dry_run(
+                dry_run=bool(session.get("dry_run", True)),
+            ),
             repository_id=plan.get("repository_id"),
         )
         session["migration_plan"] = plan

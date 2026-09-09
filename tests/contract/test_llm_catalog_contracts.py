@@ -67,7 +67,7 @@ def test_catalog_anthropic_live_contract(accel_client, monkeypatch):
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_response
     monkeypatch.setattr(
-        "ado2gh.api.llm.model_catalog.build_llm_http_client",
+        "ado2gh.api.llm.model_catalog.build_cloud_llm_http_client",
         lambda **kwargs: mock_client,
     )
     # GAP-012: the key travels in the POST body, never in the URL (CWE-598).
@@ -152,7 +152,7 @@ def test_connectivity_test_contract(accel_client, monkeypatch):
     mock_client.__exit__ = MagicMock(return_value=False)
     mock_client.get.return_value = mock_response
     monkeypatch.setattr(
-        "ado2gh.api.llm.http_llm.build_llm_http_client",
+        "ado2gh.api.llm.http_llm.build_cloud_llm_http_client",
         lambda **kwargs: mock_client,
     )
     r = accel_client.post("/v1/settings/connectivity/test")

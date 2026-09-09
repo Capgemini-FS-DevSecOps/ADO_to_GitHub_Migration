@@ -57,11 +57,11 @@ def put_connectivity(request: Request, body: dict):
 @router.post("/v1/settings/connectivity/test")
 def test_connectivity_route(request: Request):
     require_manage_models(request)
-    from ado2gh.api.llm.http_llm import build_llm_http_client
+    from ado2gh.api.llm.http_llm import build_cloud_llm_http_client
     from ado2gh.api.llm.model_validation import _classify_error
 
     try:
-        with build_llm_http_client(for_cloud=True) as client:
+        with build_cloud_llm_http_client() as client:
             response = client.get("https://api.openai.com/v1/models")
             response.raise_for_status()
         return {
@@ -306,7 +306,7 @@ def revoke_cloud_credentials(provider: str, request: Request):
     user = _platform_user(request)
     actor = user.username if user else "admin"
     try:
-        _cloud_credentials.revoke(provider, actor=actor)
+        _cloud_credentials.revoke(provider)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Credential not found") from exc
     write_profile_audit(
@@ -349,11 +349,15 @@ def get_phases(profile_id: str | None = None):
 
 @router.put("/v1/settings/phases")
 def update_phases(req: PhasesUpdateRequest):
+    update = (
+        _settings.update_phases_spanning_scan
+        if req.span_to_scan
+        else _settings.update_phases
+    )
     try:
-        return _settings.update_phases(
+        return update(
             [p.model_dump() for p in req.phases],
             removals=[r.model_dump() for r in req.removals],
-            span_to_scan=req.span_to_scan,
             profile_id=req.profile_id,
         )
     except ValueError as exc:

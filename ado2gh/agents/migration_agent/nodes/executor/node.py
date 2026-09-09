@@ -230,7 +230,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
             skipped = []
             rollback_records = []
 
-            from ado2gh.api.migration_work_plan import executable_work_items
+            from ado2gh.api.migration_work_plan import filter_executable_work_items
 
             for wi in item_work_items:
                 if wi.get("status") == "blocked":
@@ -240,7 +240,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                         "details": [wi.get("blocker") or "Work item status: blocked"],
                     })
 
-            ready_items = executable_work_items(item_work_items)
+            ready_items = filter_executable_work_items(item_work_items)
             session_id = session.get("session_id", "")
             if ready_items:
                 lock_acquired = False
@@ -352,7 +352,10 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
             }
 
     # Fallback: process all work items (non-queue mode)
-    from ado2gh.api.migration_work_plan import executable_work_items, group_work_items_by_repo
+    from ado2gh.api.migration_work_plan import (
+        filter_executable_work_items,
+        group_work_items_by_repo,
+    )
 
     per_repo_results = []
     failures = []
@@ -368,7 +371,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
             })
 
     for repo_id, repo_ready_items in group_work_items_by_repo(
-        executable_work_items(work_items)
+        filter_executable_work_items(work_items)
     ).items():
         session_id = session.get("session_id", "")
         lock_acquired = False
