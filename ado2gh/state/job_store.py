@@ -6,6 +6,7 @@ factory picks one from ``ADO2GH_STORAGE_BACKEND``.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import uuid
@@ -19,6 +20,10 @@ from ado2gh.api.contracts import JobTypeEnum as JobType
 if TYPE_CHECKING:
     from boto3.resources.base import ServiceResource
     from psycopg2.extensions import connection as PgConnection
+
+    from ado2gh.audit import AuditWriter
+
+logger = logging.getLogger(__name__)
 
 
 class JobStore(ABC):
@@ -340,19 +345,23 @@ class PostgresJobStore(JobStore):
 class DynamoDBJobStore(JobStore):
     """Job store backed by one DynamoDB table keyed by job id."""
 
-    def __init__(self, table_name: str, region: str = "us-east-1", endpoint_url: str | None = None) -> None:
+    def __init__(self, table_name: str, region: str = "us-east-1", endpoint_url: str | None = None,
+                 audit_writer: AuditWriter | None = None) -> None:
         """Connect with ``boto3`` and create the table if it does not exist.
 
         Args:
             table_name: DynamoDB table holding the jobs.
             region: AWS region of the table.
             endpoint_url: Override for a local DynamoDB endpoint.
+            audit_writer: Where claim conflicts are audited; the default writer
+                is built from the configured state store on first conflict.
         """
         import boto3
 
         kwargs: dict = {"region_name": region}
         if endpoint_url:
             kwargs["endpoint_url"] = endpoint_url
+        self._audit_writer = audit_writer
         self._table_name = table_name
         self._dynamodb = boto3.resource("dynamodb", **kwargs)
         self._client = boto3.client("dynamodb", **kwargs)
@@ -432,9 +441,17 @@ class DynamoDBJobStore(JobStore):
         return self._save(record)
 
     def get_by_idempotency(self, key: str) -> JobRecord | None:
-        """Return the job created with this idempotency key, or ``None`` (table scan)."""
+        """Return the job created with this idempotency key, or ``None`` (table scan).
+
+        The scan is strongly consistent so a job written by another worker is
+        never missed, which is what makes the ``enqueue()`` de-duplication hold.
+        """
         from boto3.dynamodb.conditions import Attr
-        resp = self._table().scan(FilterExpression=Attr("idempotency_key").eq(key), Limit=1)
+        resp = self._table().scan(
+            FilterExpression=Attr("idempotency_key").eq(key),
+            Limit=1,
+            ConsistentRead=True,
+        )
         items = resp.get("Items", [])
         if not items:
             return None
@@ -452,9 +469,12 @@ class DynamoDBJobStore(JobStore):
             job is pending.
         """
         from boto3.dynamodb.conditions import Attr
+        from botocore.exceptions import ClientError
+
         resp = self._table().scan(
             FilterExpression=Attr("status").eq(JobStatus.PENDING.value),
             Limit=1,
+            ConsistentRead=True,
         )
         items = resp.get("Items", [])
         if not items:
@@ -462,9 +482,57 @@ class DynamoDBJobStore(JobStore):
         rec = self._load(items[0]["id"])
         if not rec:
             return None
+        try:
+            self._table().update_item(
+                Key={"id": rec.id},
+                UpdateExpression="SET #status = :running, updated_at = :now",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":running": JobStatus.RUNNING.value,
+                    ":now": datetime.now(timezone.utc).isoformat(),
+                },
+                ConditionExpression=Attr("status").eq(JobStatus.PENDING.value),
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+            self._record_claim_conflict(rec)
+            return None
         rec.status = JobStatus.RUNNING
-        rec.updated_at = datetime.now(timezone.utc)
-        return self._save(rec)
+        return rec
+
+    def _record_claim_conflict(self, record: JobRecord) -> None:
+        """Log and audit a job another worker claimed first (CA-004).
+
+        The audit payload names the job only — never its payload or any
+        credential inside it (CA-003).
+        """
+        logger.warning(
+            "DynamoDB job claim conflict: job %s was already claimed by another worker",
+            record.id,
+        )
+        try:
+            self._audit().write(
+                event_type="job.claim_conflict",
+                profile_id="",
+                actor="job-worker",
+                payload={
+                    "job_id": record.id,
+                    "job_type": record.job_type.value,
+                    "backend": "dynamodb",
+                },
+            )
+        except Exception:  # a lost audit must not fail the worker; the warning above stands
+            logger.exception("Could not audit the job claim conflict for %s", record.id)
+
+    def _audit(self) -> AuditWriter:
+        """Return the audit writer, building the default one on first use."""
+        if self._audit_writer is None:
+            from ado2gh.audit import AuditWriter as _AuditWriter
+            from ado2gh.state.factory import create_state_db
+
+            self._audit_writer = _AuditWriter(create_state_db())
+        return self._audit_writer
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
         """Mark a job ``completed`` and store its result; unknown ids are ignored."""
