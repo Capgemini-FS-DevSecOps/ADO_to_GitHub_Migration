@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 import os
+from collections.abc import Awaitable, Callable
 
 import httpx  # noqa: F401 -- re-exported; tests patch services.agent.main.httpx.AsyncClient
 
@@ -12,7 +13,7 @@ from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 
 ensure_gei_dotnet_env()
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from ado2gh.agents.migration_agent.route_helpers import (
@@ -30,6 +31,11 @@ from ado2gh.agents.migration_agent.route_helpers import (
     _accel_post_impl as _accel_post,  # noqa: F401
 )
 from ado2gh.auth.service import SESSION_COOKIE, AuthService, auth_enabled, permissions_for
+from services.agent.routes.execution_routes import router as execution_router
+from services.agent.routes.form_routes import router as form_router
+from services.agent.routes.message_routes import router as message_router
+from services.agent.routes.model_routes import router as model_router
+from services.agent.routes.plan_routes import router as plan_router
 from services.agent.routes.run_routes import router as run_router
 from services.agent.routes.session_routes import router as session_router
 
@@ -38,6 +44,11 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="ADO2GH Agent API", version="5.1.0")
 app.include_router(run_router)
 app.include_router(session_router)
+app.include_router(message_router)
+app.include_router(form_router)
+app.include_router(plan_router)
+app.include_router(execution_router)
+app.include_router(model_router)
 
 
 @app.on_event("startup")
@@ -96,7 +107,25 @@ if not _INTERNAL_TOKEN:
 
 
 @app.middleware("http")
-async def agent_auth_middleware(request: Request, call_next):
+async def agent_auth_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Authenticate every /v1/ request before it reaches a route handler.
+
+    Health, metrics and LLM-status paths are exempt. Service-to-service calls
+    under /v1/internal/ must carry the shared secret in the
+    ``x-ado2gh-internal-token`` header; every other /v1/ path needs a valid
+    operator session cookie. A request that fails either check gets a 401 and
+    never reaches its handler.
+
+    Args:
+        request: The incoming HTTP request.
+        call_next: The next handler in the middleware chain.
+
+    Returns:
+        The handler response, or a 401 JSON response when authentication fails.
+    """
     if not auth_enabled():
         return await call_next(request)
     path = request.url.path

@@ -1,6 +1,6 @@
 """GAP-003 (GAP-AUTH-02) — agent internal resume-live/deny-live routes are unauthorized.
 
-``resume_live_internal`` (``services/agent/routes/session_routes.py:475-476``) takes no
+``resume_live_internal`` (``services/agent/routes/execution_routes.py``) takes no
 ``Request`` parameter at all: it sets ``dry_run=False`` and
 ``live_approval_status="approved"`` with no in-handler authorization check and no audit
 record, in contrast to ``approve_session`` on the same module which does call
@@ -107,7 +107,7 @@ def test_resume_live_writes_an_audit_record(tmp_path, monkeypatch):
     try:
         client = TestClient(agent_main.app)
         with patch(
-            "services.agent.routes.session_routes._audit", new=MagicMock(),
+            "services.agent.routes.execution_routes._audit", new=MagicMock(),
         ) as audit:
             resp = client.post(
                 f"/v1/internal/sessions/{SESSION_ID}/resume-live",

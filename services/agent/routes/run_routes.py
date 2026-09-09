@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter
+from fastapi.responses import PlainTextResponse
 
 from ado2gh.agents.migration_agent.route_helpers import (
     ACCEL_URL,
@@ -18,7 +19,14 @@ router = APIRouter()
 
 
 @router.get("/health")
-async def health():
+async def health() -> dict[str, Any]:
+    """Report agent health, accelerator reachability, and LLM readiness.
+
+    Returns:
+        A status document naming the selected model, the active deployment
+        profile, session and storage health, and — when a dependency is
+        unreachable or unconfigured — the steps needed to restore it.
+    """
     reachable, err = await _check_accelerator()
     selected_model_id, llm_degraded, llm_unconfigured = _resolve_model_id(None)
     from ado2gh.api.llm.llm_model_store import LLMModelStore
@@ -93,10 +101,8 @@ async def health():
 
 
 @router.get("/metrics")
-async def metrics():
-    """T077: Prometheus-compatible metrics endpoint (FR-069, FR-102)."""
-    from fastapi.responses import PlainTextResponse
-
+async def metrics() -> PlainTextResponse:
+    """Expose agent counters and live session gauges in Prometheus text format."""
     from ado2gh.agents.metrics import get_metrics_collector
     from ado2gh.agents.migration_agent.route_helpers import _sessions
 

@@ -621,3 +621,101 @@ functions, not a stale row.
 - **Not changed, for later increments**: `ado2gh/core/scopes/pipelines_scope.py` still imports `typing.Any` for two `dict[str, Any]` stats dicts, which are genuinely heterogeneous; `ado2gh/core/scopes/git_scope.py` does the same. `tests/pipeline/test_pipelines_scope.py` carries a pre-existing unused `pathlib.Path` import that this increment did not introduce and did not remove.
 - **Concurrent work**: increments 13 (`services/agent/`) and 14 (`apps/migration-ui/`) were editing the same tree while this increment ran, and increment 8 (`ado2gh/auth/`) committed part-way through. None of their files is in this commit. The 909-test count includes their work.
 
+## 2026-09-09 — 013 Increment 13: `services/agent/`
+
+Phase 6 (US2) increment 13, run per the per-increment protocol in
+`specs/013-clean-code-arch-remediation/tasks.md`. Pre-increment inventory ref: `7fd1c86`.
+
+**Run out of order.** The plan orders the fourteen increments 1 → 14 because Python
+signature changes ripple to callers, and increments 9 through 12 had not landed when this
+one ran. It was taken out of order at the operator's request for maximum parallelism, and
+is safe for one reason checked before any edit: `services/agent/` is a leaf — nothing in
+the tree imports it — so cleaning it cannot break a later increment. The reverse ripple,
+increment 10 changing `ado2gh/agents/` signatures that these route modules call, is
+handled there by FR-007's all-callers rule.
+
+The review agent (`cavecrew-reviewer`) decided the package's twelve function-level
+proposals: zero CONFIRM, twelve REJECT — eleven `name_review` proposals (the FastAPI
+route handlers, whose names are fixed by their endpoints and the frozen HTTP surface,
+plus `_recover_sessions_on_restart`, `agent_auth_middleware`, `capability_matrix` and
+`_continue_graph_after_form`, whose names already say what they do) and the
+`unused_param` proposal on `agent_models`, where `request: Request` is framework-injected
+and must not be dropped. Those eleven `name_review` verdicts match the ones recorded
+independently in `review-precheck.md` batch B13 by `state_hash`. No function was renamed
+and no parameter dropped.
+
+The reviewer returned one **ESCALATE** on `services/agent/routes/session_routes.py`'s
+`module_name_review` — it judged that the 1439-line module spanned six domains and would
+benefit from a split, but that module granularity was a team preference it could not
+settle from code alone. **The operator decided it on 2026-09-08: CONFIRM, split it.**
+That decision overrides both the reviewer's ESCALATE and the REJECT that
+`review-precheck.md` had recorded for the same module, and `tag-decisions.json` records
+it as `--decided-by operator`, not by the reviewer. The other nine `module_name_review`
+proposals in the package were rejected.
+
+The package had no `dry_run` boolean parameter, no other boolean flag, no function over
+five parameters, no mutable default and no inconsistent return, so no `ExecutionMode`
+conversion happens here. Every `dry_run` in `services/agent` is a Pydantic field read, a
+session-dict key, or a keyword passed into `ado2gh/`; the models and
+`new_isolated_agent_session` that own those booleans live in
+`ado2gh/agents/migration_agent/`, so their boundary conversion belongs to increment 10.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `services/agent/routes/session_routes.py` | (same) | module split — source retained | Operator-confirmed `module_name_review`. The 1439-line module was cut into six by domain. This file survives rather than being recreated so `git blame` stays useful, and keeps the session lifecycle handlers: `create_session` (was lines 138-235), `list_sessions` (237-297), `get_session` (299-305), `delete_session` (307-330), `provision_session` (1279-1290), `remediate_session` (1292-1304). Now 270 lines | yes | pass | 2026-09-09 |
+| `services/agent/routes/session_routes.py` | `services/agent/routes/message_routes.py` | module split — created | Chat message domain: `_reject_if_session_busy` (was lines 79-85), `session_message` (546-597), `session_message_stream` (599-673). The helper moved with its only two call sites. 173 lines | yes | pass | 2026-09-09 |
+| `services/agent/routes/session_routes.py` | `services/agent/routes/form_routes.py` | module split — created | Human-in-the-loop form domain: `_resolve_pending_form` (was lines 87-103), `_continue_graph_after_form` (105-124), `_ensure_repo_valid_for_migration` (126-136), `submit_session_form` (675-937), `submit_session_form_stream` (939-1222), `cancel_session_form` (1259-1277). All three helpers are used only by these handlers. 665 lines, the largest of the six | yes | pass | 2026-09-09 |
+| `services/agent/routes/session_routes.py` | `services/agent/routes/plan_routes.py` | module split — created | Migration plan domain: `create_migration_plan` (was lines 332-379) and `get_plan_summary` (1343-1389). The three plural `scopes` / `blocked_reasons` reads that `sync_work_item_wire_keys` keeps in step (GAP-015, formerly `session_routes.py:1301,1315,1317`) moved intact with `get_plan_summary` and are now `plan_routes.py:98,112,114`. 123 lines | yes | pass | 2026-09-09 |
+| `services/agent/routes/session_routes.py` | `services/agent/routes/execution_routes.py` | module split — created | Execution and live-approval domain: `run_pev` (was lines 381-417), `request_live` (419-427), `approve_session` (429-486), `confirm_live_execution` (1391-1415), `update_execution_mode` (1224-1257), `cancel_session` (1417-1439), `resume_live_internal` (488-523), `deny_live_internal` (525-544). `approve_session` was moved here rather than to `plan_routes` as first sketched, because it is part of the live-approval handshake, not a plan operation — it calls `_require_approve_live`, forwards to the platform approval queue and sets `live_approval_status`. The GAP-002/GAP-006 wiring (`enforce_live_mode_request` after `_require_operate`, the gate on `confirm_live_execution`, the `session.confirm_live` and `session.resume_live` audit events) moved unchanged. 294 lines | yes | pass | 2026-09-09 |
+| `services/agent/routes/session_routes.py` | `services/agent/routes/model_routes.py` | module split — created | LLM and model catalogue domain: `agent_models` (was lines 1306-1312) and `llm_status` (1314-1338). 46 lines | yes | pass | 2026-09-09 |
+| `services/agent/main.py` | (same) | router wiring + signature cleanup | The two router imports and two `include_router` calls became seven of each, one per route module; paths are disjoint so registration order does not affect matching. Separately, `agent_auth_middleware` gained `call_next: Callable[[Request], Awaitable[Response]]`, `-> Response` and a Google-style docstring. Per CA-003 that docstring names the `x-ado2gh-internal-token` header and never a value, and it describes the GAP-003 fail-closed behaviour without quoting the secret | yes | pass | 2026-09-09 |
+| `services/agent/routes/run_routes.py` | (same) | docstrings + annotations | `health` gained a docstring and `-> dict[str, Any]`; `metrics` gained `-> PlainTextResponse`, which required hoisting its function-local `PlainTextResponse` import to module level, and its `T077:` docstring was rewritten as an OpenAPI-facing description per FR-010a | yes | pass | 2026-09-09 |
+| `services/agent/**` | (same) | docstrings + annotations | Google-style docstrings (R3, FR-010a for route handlers) on the fifteen functions that had none, and return annotations on the thirty-seven that had none — twenty-three route handlers, nine nested SSE generator functions now `-> AsyncIterator[str]`, and the middleware. `agent_models`'s unused but framework-injected `request` was renamed `_request`, which satisfies ARG001 by the standard dummy-argument convention instead of spending an exception-register row. Two route docstrings that opened with task ids (`get_plan_summary`, `confirm_live_execution` — "T063: …") were rewritten as consumer-facing OpenAPI descriptions, keeping the CA-001 warning that `confirm-live` is the last gate; no test greps for those markers | yes | pass | 2026-09-09 |
+| `tests/unit/test_file_size_limit.py` | (same) | allowlist entry removed | `services/agent/routes/session_routes.py` dropped from `US2_ADDRESSED`. All six route modules now pass the 800-line cap on their own merit, the largest being `form_routes.py` at 665 lines | yes | pass | 2026-09-09 |
+
+- **Caller updates (FR-007)**: the split moved handlers out from under the module paths that
+  tests patch, so five patch-target strings were repointed —
+  `tests/agent/test_agent_live_execution_gate.py` (`_try_start_pev_run` → `execution_routes`),
+  `tests/agent/test_agent_admin_live_gate.py` (`_try_start_pev_run` → `form_routes`, where its
+  `assert_called_once` fires; that test is `@pytest.mark.skip` pending a LangGraph rewrite, so
+  the mapping is unverified), and `tests/agent/test_gap_003_internal_live_routes_unauthenticated.py`
+  (`_audit` → `execution_routes`, plus the file reference in its module docstring). **That
+  GAP-003 regression test's assertions, fixtures and body were not touched** — only the patch
+  target string, which a module move requires. Two doc comments in
+  `tests/contract/test_gap_015_work_item_field_contract.py` citing `session_routes.py:1301`
+  and `:1298` now cite `plan_routes.py::get_plan_summary`. `CLAUDE.md` lists all seven route
+  modules. `tests/agent/test_agent_chat_idle.py`, `test_agent_pev_live_gate.py` and the two
+  `tests/feature/` files needed no change: every one of their patch targets drives
+  `create_session`, which stayed in `session_routes.py`.
+- **Tests removed**: 0. **Production functions deleted**: 0 — no `dead` rows in
+  `services/agent`, so no `inventory.json@7fd1c86` pointer is needed.
+- **Exception register**: unchanged at 14 of 29 rows. This increment added no `# noqa` and
+  needed no exception row.
+- **Frozen seams**: `tests/contract/test_public_surface_snapshot.py` passes unchanged — no
+  route added, removed or re-verbed by the split. The SSE seams are byte-identical: the
+  twenty-eight `yield f"data: …"` lines at `7fd1c86` diff clean against the twenty-eight now
+  spread across the six modules, so event names, JSON keys and ordering are untouched.
+- **Verification**: `ruff check services/agent --select D1,ANN,FBT001,FBT002,PLR0913,B006,ARG,RET501,RET502,RET503 --config "lint.pylint.max-args=5"` reports zero, down from fifty-two at
+  baseline, and `services/` is clean under the default `ruff check` too.
+  `--pending --package services/agent` exits 0. All forty rows are `clean` with zero tags.
+  The orphan guard and the 800-line guard pass; the five new modules are statically imported
+  by `main.py`, so no orphan allowlist entry was needed.
+- **Coverage**: TOTAL 59 %, equal to the `--cov-fail-under=59` already in
+  `.github/workflows/ci.yml`, so the ratchet stays where it is and the file is not touched
+  (FR-027a/SC-004 — never lowered).
+- **Test status**: full suite green in the shared working tree — 909 passed, 30 skipped,
+  0 failed, coverage TOTAL 59 %. This increment's own gate set (`tests/agent`,
+  `tests/contract`, the public-surface snapshot, the orphan guard and the 800-line guard)
+  is green on its own at 126 passed, 21 skipped. Full output in
+  `specs/013-clean-code-arch-remediation/run-inc13-full.txt`; the gate-set output is in
+  `run-inc13-phaseA.txt` and `run-inc13-phaseA2.txt`.
+- **Concurrent work**: increment 8 measured sixteen `TypeError: … got unexpected keyword
+  argument 'dry_run'` failures earlier the same day, from increment 7's half-applied
+  `ado2gh/core/` conversion of `MigrationEngine.__init__` and `ScopeContext.__init__` to
+  `ExecutionMode`. Those had cleared by the time this increment measured, so none are
+  recorded here. Increment 7's staged
+  `git mv ado2gh/core/migration_fr036.py → conflict_detection.py` sat in the index
+  throughout and was left untouched by using a path-limited commit. An earlier full run of
+  this increment wedged in `tests/contract/test_agent_pev_flow_contracts.py` under
+  contention from other agents' concurrent test runs; killing and re-running it completed
+  normally in 87 s.

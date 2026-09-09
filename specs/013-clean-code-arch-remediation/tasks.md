@@ -204,8 +204,8 @@
 
 ### Increment 13 — `services/agent/`
 
-- [ ] T067 [US2] Review-agent decisions for `--package services/agent`; record
-- [ ] T068 [US2] Clean `services/agent/` per protocol (52 functions, 35 untyped; SSE route handlers keep event shapes — frozen seam); verify incl. `tests/agent tests/contract`, changelog, commit
+- [X] T067 [US2] Review-agent decisions for `--package services/agent`; record
+- [X] T068 [US2] Clean `services/agent/` per protocol (52 functions, 35 untyped; SSE route handlers keep event shapes — frozen seam); verify incl. `tests/agent tests/contract`, changelog, commit
 
 ### Increment 14 — `apps/migration-ui/src/`
 

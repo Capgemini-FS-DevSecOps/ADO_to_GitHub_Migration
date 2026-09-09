@@ -48,7 +48,7 @@ def test_admin_live_execute_pev_starts_without_approval(authed_admin_client):
                 "narrative": "Plan ready",
                 "pipeline_steps": ["connect", "migrate_repos", "validate"],
             }
-            with patch("services.agent.routes.session_routes._try_start_pev_run", new_callable=AsyncMock) as start_pev:
+            with patch("services.agent.routes.form_routes._try_start_pev_run", new_callable=AsyncMock) as start_pev:
                 created = client.post(
                     "/v1/sessions",
                     json={

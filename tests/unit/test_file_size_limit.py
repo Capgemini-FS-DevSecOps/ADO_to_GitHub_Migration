@@ -26,7 +26,6 @@ US2_ADDRESSED = {
     "ado2gh/state/base.py",
     "ado2gh/api/pipeline_steps.py",
     "ado2gh/agents/migration_agent/nodes.py",
-    "services/agent/routes/session_routes.py",
 }
 
 

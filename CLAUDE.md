@@ -189,7 +189,7 @@ Four-agent LangGraph graph (Orchestrator → Planner → Executor → Validator)
 - Batch migration queue for 50+ repos with sequential processing and per-repo validation
 - Inter-agent communication via structured JSON messages (instruction, clarification_request, feedback, result)
 
-**Endpoints (`services/agent`, :8090)** — routes live in `routes/session_routes.py` and `routes/run_routes.py`:
+**Endpoints (`services/agent`, :8090)** — routes live in `routes/session_routes.py`, `message_routes.py`, `form_routes.py`, `plan_routes.py`, `execution_routes.py`, `model_routes.py` and `run_routes.py`:
 
 ```
 GET    /health · /metrics · /v1/llm/status · /v1/agent/models

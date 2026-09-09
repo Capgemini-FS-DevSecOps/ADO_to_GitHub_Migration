@@ -5,7 +5,7 @@ The sole work-item producer -- ``build_work_items_for_repos`` in
 (line 265) and ``blocker`` (line 271) onto every work item. All three consumers
 read the *plural* keys ``scopes`` and ``blocked_reasons``, which are never set:
 
-* ``services/agent/routes/session_routes.py:1301`` builds ``destructive_operations``
+* ``services/agent/routes/plan_routes.py`` builds ``destructive_operations``
   with ``for scope in wi.get("scopes", [])``. The loop body never executes, so the
   list is unconditionally empty and CA-002's individual confirmation of
   ``repo_delete`` / ``workflow_delete`` / ``secret_delete`` / ``pipeline_disable``
@@ -46,7 +46,7 @@ from ado2gh.api.migration_work_plan import build_work_items_for_repos
 from ado2gh.models import MigrationScope, RepoConfig
 from services.agent.main import app as agent_app
 
-# One of the DESTRUCTIVE_SCOPES declared at session_routes.py:1298.
+# One of the DESTRUCTIVE_SCOPES declared in plan_routes.py::get_plan_summary.
 DESTRUCTIVE_SCOPE = "repo_delete"
 
 READY_REPO = "Payments/payments-api"
