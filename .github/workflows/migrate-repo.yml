@@ -17,6 +17,11 @@ on:
 jobs:
   transfer_main_branch:
     runs-on: ubuntu-latest
+    # Every run of this job pushes to the destination organisation, including the
+    # unattended scheduled ones. Naming an environment gives that push a place to
+    # hang a required-reviewer protection rule, so the run waits for a human
+    # before its first step instead of writing to another org on a timer.
+    environment: migration-target
 
     steps:
       - name: Checkout source with full history

@@ -65,8 +65,8 @@ one of the 52 entries carries at least one path:line citation or a reproduction 
 | GAP-030 (GAP-TOKEN-02) | GitHub token is passed in subprocess argv for the mirror strategy | open |
 | GAP-031 (GAP-PIPE-01) | ADO variable-group variables are captured as metadata and never reach the generated workflow or its notes | open |
 | GAP-032 (GAP-PIPE-02) | The branch that keeps secret values out of generated YAML has no test | open |
-| GAP-033 (GAP-DEPLOY-02) | Scheduled migration workflow pushes to GitHub on a cron with no environment approval gate | open |
-| GAP-034 (GAP-DEPLOY-04) | Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback | open |
+| GAP-033 (GAP-DEPLOY-02) | Scheduled migration workflow pushes to GitHub on a cron with no environment approval gate | remediated |
+| GAP-034 (GAP-DEPLOY-04) | Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback | remediated |
 | GAP-051 (GAP-TOOL-07) | The test suite opens the developer's real agent checkpoint DB and root `migration_state.db` | remediated |
 | GAP-052 (GAP-CLI-05) | `ado2gh phase assign` crashes on every invocation; no repo can be risk-scored from the CLI | remediated |
 
@@ -718,12 +718,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - `.github/workflows/migrate-repo.yml:58-65` — the job performs pushes
 - severity: high (critical_test: —)
 - blast_radius: a migration push runs unattended twice a month with no GitHub Environment approval gate, so no reviewer is interposed between the schedule and a write to the target org. Capped at high per FR-016a.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: the `transfer_main_branch` job in `.github/workflows/migrate-repo.yml` now declares `environment: migration-target`. The gate sits on the job rather than on individual steps because every path into the job ends in a push to the destination organisation, and both triggers reach it — the cron and `workflow_dispatch` alike. With a required-reviewer protection rule configured on the `migration-target` environment, the scheduled run waits for a named approver before its first step instead of writing to another org unattended. The schedule, the dispatch inputs and the job body are unchanged. Operator action outside this tree: create the `migration-target` environment in repository settings and add required reviewers to it — the environment name is the hook the protection rule attaches to, and no file in the repository can carry the rule itself.
+- regression_check: `tests/unit/test_gap_033_ci_artifacts.py` — `test_every_migration_job_runs_under_a_protected_environment` (every job in the workflow names an environment) and `test_migration_workflow_still_carries_the_unattended_trigger` (the gate stays meaningful only while the cron path exists), both loading the workflow with `yaml.safe_load`
+- revert_proof: `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_033_ci_artifacts.py` run against the unmodified artefacts, before the first edit: `5 failed, 4 passed in 4.81s` — `test_every_migration_job_runs_under_a_protected_environment` among the failures, reporting `jobs ['transfer_main_branch'] push to the destination repository with no environment: key, so no required-reviewer rule can gate them`. No `git stash` proof was taken: a concurrent Phase 6 cleanup increment held this working tree, and stashing would have reverted its files alongside the artefacts under test. After the fix the same command reports `9 passed in 4.32s`. Taken 2026-09-08 by the T080 implementation agent (Claude Opus 5).
+- contract_change: false — a workflow-file change only; no CLI command, HTTP route, database table or environment variable was added or removed, so `tests/contract/public_surface_snapshot.json` is unchanged (verified: `tests/contract/test_public_surface_snapshot.py`, 3 passed).
+- closed_on: 2026-09-08
 
 ### GAP-034 (GAP-DEPLOY-04) Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback
 
@@ -736,12 +736,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - no committed secret *value* was found anywhere in the repository (searched across compose files, workflows, `deploy/`, and `.env.example`), so the FR-016a critical exception does not apply
 - severity: high (critical_test: —)
 - blast_radius: the file named as the production topology starts with a guessable database credential reachable from the host network, and silently substitutes a placeholder secret rather than refusing to start. Capped at high per FR-016a since no secret value is committed.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: four changes to `docker-compose.prod.yml`, all of them fail-closed. (1) `POSTGRES_PASSWORD` is now `${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a strong value}` — the required interpolation form T039 established for `ADO2GH_INTERNAL_TOKEN` — so an unset value stops the stack instead of bringing up a database whose password is printed in the repository. (2) The `5432:5432` host publication is gone: accelerator, agent and worker reach the database as `postgres:5432` over the compose network, which is the only access any service in the file needs, so the database is no longer exposed to whatever else can reach the host. (3) All three `ADO2GH_DATABASE_URL` values interpolate that same required variable rather than embedding `ado2gh:ado2gh`, leaving the credential a single source that cannot drift from the one Postgres actually starts with. (4) The `SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}` line was removed rather than converted to the required form: nothing under `ado2gh/`, `services/` or `apps/migration-ui/src` reads a session secret (sessions are random tokens persisted in the state DB), so requiring the operator to supply one would be ceremony around a value no code consumes, while the `:-` fallback it replaces was the shipped placeholder the evidence names. `POSTGRES_USER` deliberately stays `ado2gh`: a username is not the credential, and `deploy/kubernetes/postgres.yaml` already keys its `secretKeyRef` on the same `POSTGRES_PASSWORD` name, so the two topologies now agree. `.env.example` documents the variable as required for this compose file and no longer shows a runnable `ado2gh:ado2gh` connection string.
+- regression_check: `tests/unit/test_gap_033_ci_artifacts.py` — one module covers both open deployment gaps and is named for the lower id. Four of its tests carry this gap: `test_prod_postgres_password_has_no_shipped_default`, `test_prod_compose_does_not_publish_the_database_port`, `test_prod_database_urls_carry_no_literal_password`, and `test_no_compose_secret_falls_back_to_a_placeholder`, the last parametrised over both compose files so the `${SECRET:-default}` shape cannot return to either. `test_no_secret_is_passed_as_a_docker_build_arg` is a standing shape guard rather than a reproduction — no service passes a secret through `build.args` today (the only build args are `NEXT_PUBLIC_*`), and the guard keeps it that way, since a build arg is baked into image history.
+- revert_proof: `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_033_ci_artifacts.py` run against the unmodified artefacts, before the first edit: `5 failed, 4 passed in 4.81s` — the four failures named above, among them `POSTGRES_PASSWORD is 'ado2gh'; expected the required form ${POSTGRES_PASSWORD:?...}` and `secret-shaped variables with a shipped default: ["accelerator.SESSION_SECRET -> 'change-me-in-production'"]`. No `git stash` proof was taken: a concurrent Phase 6 cleanup increment held this working tree, and stashing would have reverted its files alongside the artefacts under test. After the fix the same command reports `9 passed in 4.32s`. Taken 2026-09-08 by the T080 implementation agent (Claude Opus 5).
+- contract_change: false — `POSTGRES_PASSWORD` is a deployment variable consumed by the Postgres image and already named in `deploy/kubernetes/secret.yaml.example`; it is not read by `ado2gh/`, `services/` or `apps/migration-ui/src`, which is the surface `env_vars` in `tests/contract/public_surface_snapshot.json` enumerates, and the removed `SESSION_SECRET` is likewise absent from that snapshot. No CLI command, HTTP route or database table changed. Verified unchanged: `tests/contract/test_public_surface_snapshot.py`, 3 passed. Migration note for operators of the prod compose file: set `POSTGRES_PASSWORD` in `.env` before `docker compose -f docker-compose.yml -f docker-compose.prod.yml up`; an existing `pgdata` volume still holds the old `ado2gh` password, so rotate it (`ALTER ROLE ado2gh WITH PASSWORD ...`) or recreate the volume.
+- closed_on: 2026-09-08
 
 ### GAP-035 (GAP-CLI-04) Public command handlers are missing docstrings
 
