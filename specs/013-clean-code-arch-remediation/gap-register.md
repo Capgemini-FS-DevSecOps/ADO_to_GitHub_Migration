@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-51 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 was appended on 2026-09-08 with the next free id); the per-component placeholder each id
+52 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -22,13 +22,13 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 16 |
-| high | 19 |
+| high | 20 |
 | medium | 11 |
 | low | 5 |
-| **total** | **51** |
+| **total** | **52** |
 
 All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 51 entries carries at least one path:line citation or a reproduction command
+one of the 52 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -68,6 +68,7 @@ one of the 51 entries carries at least one path:line citation or a reproduction 
 | GAP-033 (GAP-DEPLOY-02) | Scheduled migration workflow pushes to GitHub on a cron with no environment approval gate | open |
 | GAP-034 (GAP-DEPLOY-04) | Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback | open |
 | GAP-051 (GAP-TOOL-07) | The test suite opens the developer's real agent checkpoint DB and root `migration_state.db` | remediated |
+| GAP-052 (GAP-CLI-05) | `ado2gh phase assign` crashes on every invocation; no repo can be risk-scored from the CLI | remediated |
 
 ## Disputes
 
@@ -1033,6 +1034,28 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: `tests/agent/test_gap_051_checkpointer_isolation.py` — builds the real checkpointer, asks its aiosqlite connection `PRAGMA database_list` for the file it holds, and asserts the file is neither under the repository's `data/` directory nor named `agent_checkpoints.db`
 - revert_proof: `git stash push -- tests/conftest.py`, then, from a temporary working directory so the reverted default cannot touch the real file, `.venv\Scripts\python.exe -m pytest d:\GitHub\Work\ADO_to_GitHub_Migration\tests\agent\test_gap_051_checkpointer_isolation.py --rootdir d:\GitHub\Work\ADO_to_GitHub_Migration`, then `git stash pop`. With the fix reverted: `1 failed in 4.16s` — `AssertionError: WindowsPath('.../gap051-revert-t86ifzdw/data/agent_checkpoints.db')`, and a fresh `data/agent_checkpoints.db` appeared under the temporary directory. Taken 2026-09-08 by the implementation agent (Claude Opus 5). With the fix in place the full suite in the shared working tree gives `898 passed, 30 skipped, 0 failed in 83.30s` (`run-isolation-fix.txt`; 886 baseline + this test + the 11 tests of the untracked `tests/unit/test_function_inventory_script.py` present in the tree), and the mtimes of `data/agent_checkpoints.db`, its `-wal`/`-shm`, and the root `migration_state.db` are byte-for-byte unchanged before and after (`run-isolation-fix.mtimes-before.txt`).
 - contract_change: false — no route, CLI command, table or environment variable changed; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-08
+
+### GAP-052 (GAP-CLI-05) `ado2gh phase assign` crashes on every invocation; no repo can be risk-scored from the CLI
+
+- components: CLI, phase orchestration
+- violates: Principle V (Enterprise Migration Safeguards — risk-based phasing: the phase a repo runs in can never be established from the CLI); Principle VI (no test exercises the command)
+- evidence (paths at `463cc35`, the tree this entry was written against):
+  - `ado2gh/cli/phase.py:113` — `scores = RiskScorer(ado, state).score_all()` (verified)
+  - `ado2gh/phase/risk_scorer.py:17-32` — `class RiskScorer` declares no `__init__` and no `score_all`; the call raises `TypeError: RiskScorer() takes no arguments` before any ADO request is made (verified, reproduction below)
+  - `ado2gh/cli/phase.py:114` — `WaveAssigner(state).assign_and_write(scores, config)`; `ado2gh/phase/wave_assigner.py:18-26` takes `phase_configs` and exposes only `assign`, so the second call would raise `AttributeError` had the first survived (verified by reading)
+  - `ado2gh/api/accelerator.py:125` — `phase_scores = db.get_risk_scores_for_phase(phase_t)`: `phase run` migrates exactly the `repo_risk_scores` rows that `phase assign` was the only CLI path to write
+  - `ado2gh/phase/gate_checker.py:35-40` — a phase with no assigned repos fails its gate with a hint to run `phase assign`, the command that cannot run
+  - the same scoring already worked on the API path, which is why the breakage was invisible in the UI: `ado2gh/api/migration_scan.py:324-345` (pre-fix line numbers) scored every repo with `RiskScorer.score` and assigned with a wave assigner
+  - no test named the command: `phase assign` appeared nowhere under `tests/` before this remediation, which is how a hard crash survived on a documented entry point (CLAUDE.md, Execution Workflow step 5)
+  - reproduction: `.venv\Scripts\python.exe -m ado2gh phase assign -c migration.yaml --db migration_state.db` → `TypeError: RiskScorer() takes no arguments`
+- severity: high (critical_test: —). Rated under US3 scenario 3, first clause: it violates a constitution principle (V) in the default configuration. It meets no critical test — (a) nothing destructive runs, the command dies before its first ADO call; (b) no secret is handled; (c) no state is written, so none can be corrupted — the process aborts before `upsert_risk_score`; (d) the failure path is a loud uncaught `TypeError`, which is the fail-safe default, not the absence of one; (e) the two sides do not silently disagree, they crash. Medium was rejected: medium is reserved for readability, naming or documentation drift with no safety impact, and a documented workflow step that cannot execute is not drift. Same reasoning, and the same rating, as GAP-017 (GAP-CLI-01).
+- blast_radius: step 5 of the documented execution workflow cannot run at all, so no `repo_risk_scores` row and no `migration_phase.yaml` is ever produced through the CLI. `phase run --phase <name>` then finds no repos for any phase and migrates nothing, and `phase gate-check` (itself GAP-017 (GAP-CLI-01)) has nothing to measure. A CLI-only operator has no risk-based phasing at all: the safeguard is not weakened, it is absent, and the only route to it is the accelerator UI. Nothing is destroyed by the crash, which is why this is high rather than critical.
+- status: remediated
+- resolution: the per-repository half of the scoring that `ado2gh/api/migration_scan.py` already exercised was lifted into a new module, `ado2gh/phase/repo_scoring.py`, so both callers run the same code and neither imports the other (`phase/` still imports nothing from `api/`, so GAP-021 (GAP-ARCH-01) is not deepened). `score_repo` fetches a repository's branch stats and last commit, best-effort, and hands them to `RiskScorer.score`; `MigrationScanner.scan` now calls it in place of its inline block. `score_org_repos` walks the organisation and scores every enabled repository, taking each repo's pipelines from the state database's inventory (`get_pipelines_for_repo`, populated by workflow step 2) rather than a second ADO crawl — which is what the `--db` option on this command was always for. `phase_assign` now calls `score_org_repos`, assigns with the existing `WaveAssigner().assign`, persists every score with `upsert_risk_score`, prunes rows for repositories that no longer exist, and writes `migration_phase.yaml` next to the settings config: one wave per non-empty phase, in phase order, in the shape `ConfigLoader` parses and `BatchExecutor.execute_phase` filters on. The `global` block is copied into that file minus `ado_pat` and `gh_token`, so a planning artefact never carries a credential (CA-003). No option, flag or help text changed.
+- regression_check: `tests/unit/test_gap_052_phase_assign_broken.py` — invokes `phase assign` through Click's `CliRunner` against a stub ADO client (one live repo, one disabled) and a temp state DB, and asserts a zero exit, a `migration_phase.yaml` holding the scored repo with a non-zero risk score and a named phase, and a persisted risk score that `get_risk_scores_for_phase` returns.
+- revert_proof: with `ado2gh/cli/phase.py` restored to its `463cc35` content (`git show HEAD:ado2gh/cli/phase.py`) and the rest of the fix in place, `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_052_phase_assign_broken.py -p no:cacheprovider -q` gives `2 failed, 2 warnings in 4.78s`, each with `AssertionError: phase assign exited 1: TypeError('RiskScorer() takes no arguments')`. With the fix restored: `2 passed, 2 warnings in 4.50s`. Taken 2026-09-08 by the implementation agent (Claude Opus 5).
+- contract_change: false — the command keeps exactly its two options (`-c/--config`, `--db`) with unchanged types, defaults and help text; `ado2gh phase assign --help` is byte-identical to `463cc35` (md5 `9dd05625b031ae9e38b8fde893ce4a6b` before and after) and `tests/contract/public_surface_snapshot.json` is unchanged.
 - closed_on: 2026-09-08
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)

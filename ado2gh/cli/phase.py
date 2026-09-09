@@ -1,11 +1,65 @@
 """Phase orchestration commands."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
+import yaml
 
 from ado2gh.cli.helpers import load_clients, print_gate_result
 from ado2gh.logging_config import console
 from ado2gh.models import PHASE_ORDER, PhaseType
+
+# Credentials may be set in the settings config; they are never copied into the
+# generated phase config, which is a planning artefact meant to be shared (CA-003).
+_SECRET_CONFIG_KEYS = frozenset({"ado_pat", "gh_token"})
+
+
+def _write_phase_config(config_path: str, global_cfg: dict, assigned: dict) -> Path:
+    """Write the risk-scored phase config beside the settings config.
+
+    One wave is emitted per non-empty phase, in phase order, so that
+    ``phase run --phase <name>`` finds its repos and ``phase plan`` can
+    summarise them. The settings config's ``global`` block is copied over,
+    minus any credential, so the generated file is runnable on its own.
+
+    Args:
+        config_path: Settings config the command was given.
+        global_cfg: Its ``global`` block.
+        assigned: Scores grouped by phase value, from ``WaveAssigner.assign``.
+
+    Returns:
+        The path written: ``migration_phase.yaml`` in the config's directory.
+    """
+    waves = []
+    for phase in PHASE_ORDER:
+        scores = assigned.get(phase.value, [])
+        if not scores:
+            continue
+        waves.append({
+            "wave_id": len(waves) + 1,
+            "name": f"{phase.value}-wave",
+            "description": f"{len(scores)} repo(s) risk-scored into {phase.value}",
+            "phase": phase.value,
+            "repos": [
+                {
+                    "ado_project": s.project,
+                    "ado_repo": s.repo_name,
+                    "gh_org": s.gh_org,
+                    "gh_repo": s.gh_repo,
+                    "risk_score": round(s.total_score, 2),
+                    "phase": phase.value,
+                }
+                for s in scores
+            ],
+        })
+    out_path = Path(config_path).parent / "migration_phase.yaml"
+    settings = {k: v for k, v in global_cfg.items() if k not in _SECRET_CONFIG_KEYS}
+    out_path.write_text(
+        yaml.safe_dump({"global": settings, "waves": waves}, sort_keys=False),
+        encoding="utf-8",
+    )
+    return out_path
 
 
 def register(cli):
@@ -104,14 +158,22 @@ def register(cli):
     @click.option("--db", default="migration_state.db", show_default=True)
     def phase_assign(config, db):
         from ado2gh.core.config_loader import ConfigLoader
-        from ado2gh.phase.risk_scorer import RiskScorer
+        from ado2gh.phase.repo_scoring import score_org_repos
         from ado2gh.phase.wave_assigner import WaveAssigner
         from ado2gh.state.factory import create_state_db
         global_cfg, _ = ConfigLoader.load(config)
         ado, _ = load_clients(global_cfg)
         state = create_state_db(db)
-        scores = RiskScorer(ado, state).score_all()
-        WaveAssigner(state).assign_and_write(scores, config)
+        gh_org = global_cfg.get("gh_org", "")
+        scores = score_org_repos(ado, state, gh_org=gh_org)
+        assigned = WaveAssigner().assign(scores, gh_org=gh_org)
+        for score in scores:
+            state.upsert_risk_score(score)
+        state.prune_risk_scores_not_in({(s.project, s.repo_name) for s in scores})
+        out_path = _write_phase_config(config, global_cfg, assigned)
+        console.print(f"Scored {len(scores)} repo(s) -> {out_path}")
+        for phase in PHASE_ORDER:
+            console.print(f"  {phase.value}: {len(assigned.get(phase.value, []))} repo(s)")
 
     @phase_group.command("plan")
     @click.option("--config", "-c", required=True)

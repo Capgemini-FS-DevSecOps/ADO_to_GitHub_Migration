@@ -16,6 +16,7 @@ from ado2gh.api.scan_diagnostics import build_empty_scan_warnings
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RiskScore
+from ado2gh.phase.repo_scoring import score_repo
 from ado2gh.phase.risk_scorer import RiskScorer
 
 
@@ -322,25 +323,15 @@ class MigrationScanner:
                     if p.repo_name == repo_name or p.repo_id == repo_id
                 ]
 
-                try:
-                    stats = self.ado.get_repo_stats(proj_name, repo_id)
-                except Exception:
-                    stats = {"branch_count": 0}
-
-                try:
-                    commits = self.ado.get_repo_commits(proj_name, repo_id, top=1)
-                except Exception:
-                    commits = []
-
-                score = self.scorer.score(
+                score = score_repo(
+                    self.ado, repo_id,
                     RiskScore(
                         project=proj_name, repo_name=repo_name, gh_org=self.gh_org,
                         size_kb=repo.get("size", 0),
-                        branch_count=stats.get("branch_count", 0),
                         variable_group_count=len(var_groups),
                         service_connection_count=len(svc_conns),
                     ),
-                    repo_pipes, commits,
+                    repo_pipes, self.scorer,
                 )
                 all_scores.append(score)
                 repos_scanned += 1
