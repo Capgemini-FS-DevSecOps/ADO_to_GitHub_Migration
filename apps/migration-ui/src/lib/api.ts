@@ -17,13 +17,8 @@ import type {
   UISettings,
 } from './types';
 
+/** Base URL of the accelerator API, from NEXT_PUBLIC_ACCELERATOR_URL or localhost:8080. */
 export const ACCEL = process.env.NEXT_PUBLIC_ACCELERATOR_URL || 'http://localhost:8080';
-
-export async function fetchHealth(): Promise<{ status: string; version?: string }> {
-  const r = await fetch(`${ACCEL}/health`, { cache: 'no-store' });
-  if (!r.ok) throw new Error(`Health check failed (${r.status})`);
-  return r.json();
-}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   let r: Response;
@@ -48,10 +43,15 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return r.json();
 }
 
+/** Fetch the dashboard snapshot from the accelerator (GET /v1/dashboard). */
 export async function fetchDashboard(): Promise<DashboardSnapshot> {
   return api<DashboardSnapshot>('/v1/dashboard');
 }
 
+/**
+ * Fetch the pipeline readiness snapshot from the accelerator
+ * (POST /v1/pipeline-readiness), optionally re-scanning the pipeline inventory first.
+ */
 export async function fetchReadiness(options?: {
   refreshInventory?: boolean;
 }): Promise<ReadinessSnapshot> {
@@ -65,18 +65,25 @@ export async function fetchReadiness(options?: {
   });
 }
 
+/** Fetch onboarding progress for the current user (GET /v1/onboarding/status). */
 export async function fetchOnboardingStatus(): Promise<OnboardingStatus> {
   return api<OnboardingStatus>('/v1/onboarding/status');
 }
 
+/** Fetch the console settings bundle from the accelerator (GET /v1/settings). */
 export async function fetchSettings(): Promise<UISettings> {
   return api<UISettings>('/v1/settings');
 }
 
+/** Fetch a single migration profile by id (GET /v1/settings/profiles/{id}). */
 export async function fetchMigrationProfile(profileId: string): Promise<MigrationProfile> {
   return api<MigrationProfile>(`/v1/settings/profiles/${profileId}`);
 }
 
+/**
+ * Create a migration profile with its ADO and GitHub credentials in one step
+ * (POST /v1/settings/profiles/setup) and return the created profile.
+ */
 export async function setupMigrationProfile(data: {
   name: string;
   ado_org_url: string;
@@ -92,6 +99,10 @@ export async function setupMigrationProfile(data: {
   });
 }
 
+/**
+ * Validate unsaved ADO organisation credentials before a profile exists
+ * (POST /v1/settings/validate/ado).
+ */
 export async function validateAdoInline(ado_org_url: string, ado_pat: string): Promise<AdoValidationResult> {
   return api<AdoValidationResult>('/v1/settings/validate/ado', {
     method: 'POST',
@@ -100,6 +111,10 @@ export async function validateAdoInline(ado_org_url: string, ado_pat: string): P
   });
 }
 
+/**
+ * Validate an unsaved GitHub token against an organisation before a profile exists
+ * (POST /v1/settings/validate/github).
+ */
 export async function validateGitHubInline(token: string, gh_org: string): Promise<TokenValidationResult> {
   return api<TokenValidationResult>('/v1/settings/validate/github', {
     method: 'POST',
@@ -108,19 +123,7 @@ export async function validateGitHubInline(token: string, gh_org: string): Promi
   });
 }
 
-export async function runMigrationScan(body: {
-  ado_org_url: string;
-  ado_pat: string;
-  gh_org: string;
-  max_repos?: number;
-}): Promise<MigrationScanResult> {
-  return api<MigrationScanResult>('/v1/migration/scan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
+/** Status of the background discovery scan for a profile, as reported by the accelerator. */
 export type ProfileScanJobStatus = {
   profile_id: string;
   running: boolean;
@@ -132,6 +135,7 @@ export type ProfileScanJobStatus = {
   service_connections?: number | null;
 };
 
+/** Start a background discovery scan for a profile (POST /v1/settings/profiles/{id}/scan). */
 export async function startProfileScan(profileId: string): Promise<ProfileScanJobStatus> {
   return api<ProfileScanJobStatus>(`/v1/settings/profiles/${profileId}/scan`, { method: 'POST' });
 }
@@ -142,6 +146,7 @@ export async function scanMigrationProfile(profileId: string): Promise<Migration
   return fetchProfileScan(profileId);
 }
 
+/** Poll the state of a profile's background scan (GET /v1/settings/profiles/{id}/scan/status). */
 export async function fetchProfileScanStatus(
   profileId: string,
 ): Promise<ProfileScanJobStatus> {
@@ -150,10 +155,15 @@ export async function fetchProfileScanStatus(
   );
 }
 
+/** Fetch the stored scan results for a profile (GET /v1/settings/profiles/{id}/scan). */
 export async function fetchProfileScan(profileId: string): Promise<MigrationScanResult> {
   return api<MigrationScanResult>(`/v1/settings/profiles/${profileId}/scan`);
 }
 
+/**
+ * Create or update a migration profile — POST /v1/settings/profiles when no id is given,
+ * PUT /v1/settings/profiles/{id} otherwise. Returns the saved profile.
+ */
 export async function saveMigrationProfile(
   data: Partial<MigrationProfile> & { name: string },
   id?: string,
@@ -166,6 +176,10 @@ export async function saveMigrationProfile(
   });
 }
 
+/**
+ * Delete a migration profile (DELETE /v1/settings/profiles/{id}), optionally naming
+ * the profile that takes over as default.
+ */
 export async function deleteMigrationProfile(id: string, newDefaultId?: string) {
   return api<{ deleted: string }>(`/v1/settings/profiles/${id}`, {
     method: 'DELETE',
@@ -174,31 +188,28 @@ export async function deleteMigrationProfile(id: string, newDefaultId?: string) 
   });
 }
 
+/** Mark a profile as the default one (POST /v1/settings/profiles/{id}/set-default). */
 export async function setProfileDefault(id: string) {
   return api<MigrationProfile>(`/v1/settings/profiles/${id}/set-default`, { method: 'POST' });
 }
 
-export async function deactivateProfile(id: string, newDefaultId?: string) {
-  return api<MigrationProfile>(`/v1/settings/profiles/${id}/deactivate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(newDefaultId ? { new_default_profile_id: newDefaultId } : {}),
-  });
-}
-
+/** Fetch profiles awaiting an approval decision (GET /v1/settings/profiles/pending). */
 export async function fetchPendingProfiles() {
   return api<MigrationProfile[]>('/v1/settings/profiles/pending');
 }
 
+/** Fetch the current user's own profiles awaiting approval (GET /v1/settings/profiles/mine/pending). */
 export async function fetchMyPendingProfiles() {
   return api<MigrationProfile[]>('/v1/settings/profiles/mine/pending');
 }
 
+/** Approve a pending migration profile (POST /v1/settings/profiles/{id}/approve). */
 export async function approveProfile(id: string) {
   return api<MigrationProfile>(`/v1/settings/profiles/${id}/approve`, { method: 'POST' });
 }
 
-export async function denyProfile(id: string, reason = '') {
+/** Deny a pending migration profile with an optional reason (POST /v1/settings/profiles/{id}/deny). */
+export async function denyProfile(id: string, reason: string = '') {
   return api<MigrationProfile>(`/v1/settings/profiles/${id}/deny`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -206,22 +217,35 @@ export async function denyProfile(id: string, reason = '') {
   });
 }
 
+/** Appeal a denied migration profile to send it back for review (POST /v1/settings/profiles/{id}/appeal). */
 export async function appealProfile(id: string) {
   return api<MigrationProfile>(`/v1/settings/profiles/${id}/appeal`, { method: 'POST' });
 }
 
+/**
+ * Switch the session to a different migration profile
+ * (POST /v1/settings/profiles/{id}/activate) and return the newly active profile id.
+ */
 export async function activateMigrationProfile(id: string) {
   return api<{ active_profile_id: string }>(`/v1/settings/profiles/${id}/activate`, {
     method: 'POST',
   });
 }
 
+/**
+ * Validate a profile's stored ADO source credentials
+ * (POST /v1/settings/profiles/{id}/validate/source).
+ */
 export async function validateProfileSource(profileId: string): Promise<AdoValidationResult> {
   return api<AdoValidationResult>(`/v1/settings/profiles/${profileId}/validate/source`, {
     method: 'POST',
   });
 }
 
+/**
+ * Validate both ends of a saved profile (POST /v1/settings/profiles/{id}/validate) and return
+ * the reachable ADO project count and remaining GitHub rate limit.
+ */
 export async function validateMigrationProfile(profileId: string) {
   return api<{ valid: boolean; message: string; ado_projects: number; gh_token_remaining: number }>(
     `/v1/settings/profiles/${profileId}/validate`,
@@ -229,6 +253,10 @@ export async function validateMigrationProfile(profileId: string) {
   );
 }
 
+/**
+ * Validate replacement ADO credentials against an existing profile without saving them
+ * (POST /v1/settings/profiles/{id}/validate/ado).
+ */
 export async function validateAdoForProfile(
   profileId: string,
   ado_org_url: string,
@@ -241,13 +269,10 @@ export async function validateAdoForProfile(
   });
 }
 
-export async function validateConnection() {
-  return api<{ valid: boolean; message: string; ado_projects: number; gh_token_remaining: number }>(
-    '/v1/settings/validate',
-    { method: 'POST' },
-  );
-}
-
+/**
+ * Add or update a GitHub token on a profile — POST /v1/settings/profiles/{id}/tokens when no
+ * token id is given, PUT /v1/settings/profiles/{id}/tokens/{tokenId} otherwise.
+ */
 export async function saveGitHubToken(
   profileId: string,
   data: Partial<GitHubTokenEntry> & { name: string },
@@ -263,12 +288,17 @@ export async function saveGitHubToken(
   });
 }
 
+/** Remove a GitHub token from a profile (DELETE /v1/settings/profiles/{id}/tokens/{tokenId}). */
 export async function deleteGitHubToken(profileId: string, tokenId: string) {
   return api<{ deleted: string }>(`/v1/settings/profiles/${profileId}/tokens/${tokenId}`, {
     method: 'DELETE',
   });
 }
 
+/**
+ * Validate a token already stored on a profile
+ * (POST /v1/settings/profiles/{id}/tokens/{tokenId}/validate).
+ */
 export async function validateGitHubTokenSaved(
   profileId: string,
   tokenId: string,
@@ -279,6 +309,10 @@ export async function validateGitHubTokenSaved(
   );
 }
 
+/**
+ * Validate a GitHub token against a profile before saving it
+ * (POST /v1/settings/profiles/{id}/tokens/validate).
+ */
 export async function validateGitHubTokenInline(
   profileId: string,
   token: string,
@@ -290,6 +324,7 @@ export async function validateGitHubTokenInline(
   });
 }
 
+/** Update advanced migration settings (PUT /v1/settings/advanced) and return the saved values. */
 export async function updateAdvanced(data: Partial<AdvancedSettings>) {
   return api<AdvancedSettings>('/v1/settings/advanced', {
     method: 'PUT',
@@ -298,14 +333,20 @@ export async function updateAdvanced(data: Partial<AdvancedSettings>) {
   });
 }
 
+/** Fetch the pipeline step definitions for a context (GET /v1/pipeline/steps). */
 export async function fetchPipelineSteps(context: 'migrate' | 'full' = 'migrate'): Promise<StepDefinition[]> {
   return api<StepDefinition[]>(`/v1/pipeline/steps?context=${context}`);
 }
 
+/** Fetch the discovery snapshot for a profile (GET /v1/settings/profiles/{id}/discovery). */
 export async function fetchDiscovery(profileId: string): Promise<DiscoverySnapshot> {
   return api<DiscoverySnapshot>(`/v1/settings/profiles/${profileId}/discovery`);
 }
 
+/**
+ * Run commit-level source-versus-target validation (POST /v1/validate) for a profile, phase or
+ * supplied config, and return the validation result.
+ */
 export async function runValidation(body: {
   profile_id?: string;
   phase?: string;
@@ -322,6 +363,10 @@ export async function runValidation(body: {
   });
 }
 
+/**
+ * Fetch a page of pipeline runs (GET /v1/pipeline/runs) with paging metadata and a status
+ * summary. Defaults to the first 20 runs.
+ */
 export async function fetchPipelineRuns(params?: {
   limit?: number;
   offset?: number;
@@ -359,10 +404,15 @@ export async function fetchPipelineRuns(params?: {
   );
 }
 
+/** Fetch a single pipeline run by id (GET /v1/pipeline/runs/{id}). */
 export async function fetchPipelineRun(id: string): Promise<{ run: PipelineRun }> {
   return api<{ run: PipelineRun }>(`/v1/pipeline/runs/${id}`);
 }
 
+/**
+ * Start a pipeline run (POST /v1/pipeline/runs) and return the created run. The accelerator
+ * rejects any field not listed here.
+ */
 export async function startPipelineRun(body: {
   name: string;
   dry_run: boolean;
@@ -380,6 +430,7 @@ export async function startPipelineRun(body: {
   });
 }
 
+/** Cancel an in-flight pipeline run (POST /v1/pipeline/runs/{id}/cancel). */
 export async function cancelPipelineRun(runId: string) {
   return api<{ run: PipelineRun; cancelled: boolean }>(`/v1/pipeline/runs/${runId}/cancel`, {
     method: 'POST',
@@ -400,18 +451,27 @@ function historyQueryString(params: AuditHistoryParams): string {
   return s ? `?${s}` : '';
 }
 
+/** Fetch a filtered page of audit history sessions (GET /v1/history/sessions). */
 export async function fetchHistory(
   params: AuditHistoryParams = {},
 ): Promise<AuditHistoryResponse> {
   return api<AuditHistoryResponse>(`/v1/history/sessions${historyQueryString(params)}`);
 }
 
+/**
+ * Fetch the distinct audit event types available for filtering (GET /v1/history/event-types),
+ * optionally narrowed to one profile.
+ */
 export async function fetchAuditEventTypes(profileId?: string): Promise<string[]> {
   const q = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
   const data = await api<{ event_types: string[] }>(`/v1/history/event-types${q}`);
   return data.event_types;
 }
 
+/**
+ * Download the filtered audit history as a CSV file (GET /v1/history/sessions/export) and
+ * save it in the browser as audit-history.csv.
+ */
 export async function downloadAuditHistoryExport(
   params: AuditHistoryParams = {},
 ): Promise<void> {
@@ -434,6 +494,7 @@ export async function downloadAuditHistoryExport(
   URL.revokeObjectURL(url);
 }
 
+/** A request to run a migration scope live, with its requester, status and decision details. */
 export type LiveApprovalItem = {
   id: string;
   requester_username: string;
@@ -448,12 +509,14 @@ export type LiveApprovalItem = {
   approver_username?: string | null;
 };
 
-export async function fetchLiveApprovals(status = 'pending') {
+/** Fetch live-execution approval requests by status (GET /v1/platform/approvals), pending by default. */
+export async function fetchLiveApprovals(status: string = 'pending') {
   return api<{ approvals: LiveApprovalItem[] }>(
     `/v1/platform/approvals?status=${encodeURIComponent(status)}`,
   );
 }
 
+/** Approve a live-execution request with a reason (POST /v1/platform/approvals/{id}/approve). */
 export async function approveLiveExecution(approvalId: string, reason: string) {
   return api<LiveApprovalItem>(`/v1/platform/approvals/${approvalId}/approve`, {
     method: 'POST',
@@ -462,6 +525,7 @@ export async function approveLiveExecution(approvalId: string, reason: string) {
   });
 }
 
+/** Deny a live-execution request with a reason (POST /v1/platform/approvals/{id}/deny). */
 export async function denyLiveExecution(approvalId: string, reason: string) {
   return api<LiveApprovalItem>(`/v1/platform/approvals/${approvalId}/deny`, {
     method: 'POST',
@@ -470,4 +534,5 @@ export async function denyLiveExecution(approvalId: string, reason: string) {
   });
 }
 
+/** Alias of ACCEL for callers that prefer the fuller name. */
 export { ACCEL as ACCELERATOR_URL };

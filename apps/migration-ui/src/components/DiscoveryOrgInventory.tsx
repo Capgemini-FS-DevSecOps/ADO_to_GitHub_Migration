@@ -17,6 +17,7 @@ type OrgInventory = {
   total_test_plans?: number;
 };
 
+/** Org-wide ADO inventory counts from a full scan, plus the per-project breakdown. */
 export function DiscoveryOrgInventory({
   orgInventory,
   projectDetails,

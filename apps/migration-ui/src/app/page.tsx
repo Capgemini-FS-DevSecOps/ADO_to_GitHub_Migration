@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { ChartBarIcon } from '@/components/Icons';
 import { RunStepDetails } from '@/components/RunStepDetails';
-import { StepPipelineBar, StepStatusBadge } from '@/components/PipelineProgress';
+import { CompactStepPipelineBar, StepPipelineBar, StepStatusBadge } from '@/components/PipelineProgress';
 import { ACCEL, cancelPipelineRun, fetchDashboard, fetchPipelineRun, fetchPipelineRuns } from '@/lib/api';
 import { mapPipelineRunStatus, pipelineRunNeedsApproval } from '@/lib/pipelineRunStatus';
 import type { PipelineRun, StepStatus } from '@/lib/types';
@@ -36,6 +36,10 @@ const FILTER_LABELS: Record<RunFilter, string> = {
 
 const PAGE_SIZE = 10;
 
+/**
+ * Console home dashboard showing migration progress, active and recent pipeline runs,
+ * run logs, phase gates, and quick actions.
+ */
 export default function DashboardPage() {
   const params = useSearchParams();
   const initialId = params.get('id') ?? params.get('run');
@@ -305,7 +309,7 @@ export default function DashboardPage() {
                   <strong>{r.name}</strong>
                   <StepStatusBadge status={mapPipelineRunStatus(r.status)} />
                 </div>
-                <StepPipelineBar steps={r.steps} compact />
+                <CompactStepPipelineBar steps={r.steps} />
                 <p style={{ fontSize: 11, margin: '8px 0 0', color: '#888' }}>
                   {r.dry_run ? 'DRY RUN' : 'LIVE'}{!r.repository_id ? ` · ${r.phase.toUpperCase()}` : ''} ·{' '}
                   {new Date(r.created_at).toLocaleString()}

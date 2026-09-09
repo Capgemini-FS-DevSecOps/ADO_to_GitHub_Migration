@@ -90,11 +90,19 @@ async function llmFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+/** List the supported LLM providers from `GET /v1/settings/llm-models/providers`. */
 export async function fetchProviders(): Promise<LlmProviderSpec[]> {
   const data = await llmFetch<{ providers: LlmProviderSpec[] }>('/v1/settings/llm-models/providers');
   return data.providers;
 }
 
+/**
+ * Look up the model catalog for one provider via `POST /v1/settings/llm-models/catalog`.
+ *
+ * The provider id, API key and base URL travel in the JSON request body rather than the
+ * query string, so the key never reaches browser history or proxy logs. Returns the
+ * catalog entries with their source, a staleness flag and any discovery error.
+ */
 export async function fetchCatalog(params: {
   provider: string;
   apiKey?: string;
@@ -113,10 +121,15 @@ export async function fetchCatalog(params: {
   });
 }
 
+/** Read the saved proxy and TLS connectivity profile from `GET /v1/settings/connectivity`. */
 export async function fetchConnectivity(): Promise<ConnectivityProfile> {
   return llmFetch<ConnectivityProfile>('/v1/settings/connectivity');
 }
 
+/**
+ * Save the proxy and TLS connectivity profile via `PUT /v1/settings/connectivity`.
+ * Returns the stored profile.
+ */
 export async function updateConnectivity(body: Record<string, unknown>): Promise<ConnectivityProfile> {
   return llmFetch<ConnectivityProfile>('/v1/settings/connectivity', {
     method: 'PUT',
@@ -125,10 +138,18 @@ export async function updateConnectivity(body: Record<string, unknown>): Promise
   });
 }
 
+/**
+ * Probe outbound connectivity via `POST /v1/settings/connectivity/test`.
+ * Returns a pass/fail result with its failure category and message.
+ */
 export async function testConnectivity(): Promise<ValidationResult> {
   return llmFetch<ValidationResult>('/v1/settings/connectivity/test', { method: 'POST' });
 }
 
+/**
+ * Validate an unsaved model draft via `POST /v1/settings/llm-models/validate`.
+ * Returns a pass/fail result with its failure category and message.
+ */
 export async function validateModel(body: Record<string, unknown>): Promise<ValidationResult> {
   return llmFetch<ValidationResult>('/v1/settings/llm-models/validate', {
     method: 'POST',
@@ -137,12 +158,10 @@ export async function validateModel(body: Record<string, unknown>): Promise<Vali
   });
 }
 
-export async function validateSavedModel(modelId: string): Promise<ValidationResult> {
-  return llmFetch<ValidationResult>(`/v1/settings/llm-models/${modelId}/validate`, {
-    method: 'POST',
-  });
-}
-
+/**
+ * Create or update an LLM model entry via `POST /v1/settings/llm-models`.
+ * Returns the stored record.
+ */
 export async function saveModel(body: Record<string, unknown>): Promise<LlmModelRecord> {
   return llmFetch<LlmModelRecord>('/v1/settings/llm-models', {
     method: 'POST',
@@ -151,16 +170,22 @@ export async function saveModel(body: Record<string, unknown>): Promise<LlmModel
   });
 }
 
+/**
+ * Delete an LLM model via `DELETE /v1/settings/llm-models/{id}`.
+ * Returns the id of the deleted model.
+ */
 export async function deleteModel(modelId: string): Promise<{ deleted: string }> {
   return llmFetch<{ deleted: string }>(`/v1/settings/llm-models/${modelId}`, {
     method: 'DELETE',
   });
 }
 
+/** A model can only be enabled once its most recent validation passed. */
 export function canEnableModel(validationStatus: string | undefined): boolean {
   return validationStatus === 'passed';
 }
 
+/** Human-readable label for a model's validation status badge. */
 export function validationBadgeLabel(status: string | undefined): string {
   if (status === 'passed') return 'Passed';
   if (status === 'failed') return 'Failed';

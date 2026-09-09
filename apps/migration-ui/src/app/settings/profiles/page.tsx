@@ -31,6 +31,7 @@ import {
 } from '@/lib/permissions';
 import type { MigrationProfile } from '@/lib/types';
 
+/** List migration profiles with activate, default, validate, delete, and appeal actions. */
 export default function MigrationProfilesPage() {
   const qc = useQueryClient();
   const router = useRouter();

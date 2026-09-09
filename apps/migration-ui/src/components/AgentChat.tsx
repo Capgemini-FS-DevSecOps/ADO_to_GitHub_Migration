@@ -471,6 +471,7 @@ function AgentFormPanel({
   );
 }
 
+/** Full agent chat console with session sidebar, streamed thinking, HITL forms, and composer. */
 export function AgentChat() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });
@@ -1497,7 +1498,7 @@ export function AgentChat() {
     );
   };
 
-  function TypewriterMessage({ content, streaming, messageId }: { content: string; streaming: boolean; messageId: string }) {
+  function TypewriterMessage({ content }: { content: string; streaming: boolean; messageId: string }) {
     return <MarkdownMessage content={content} />;
   }
 

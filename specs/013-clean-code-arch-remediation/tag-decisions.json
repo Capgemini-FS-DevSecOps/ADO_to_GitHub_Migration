@@ -1430,5 +1430,93 @@
     "rationale": "Operator decision 2026-09-08, overriding both the review agent's ESCALATE and the REJECT recorded in review-precheck.md: the 1439-line module spanned six domains and was split into session_routes (session lifecycle CRUD, provision, remediate), message_routes, form_routes, plan_routes, execution_routes and model_routes. Decided by the operator, not the reviewer. Split executed in increment 13; HTTP surface unchanged.",
     "state_hash": "e3c704108dace4ce4c66fa74d136cd088e654234",
     "decided_by": "operator"
+  },
+  {
+    "id": "apps/migration-ui/src/components/CredentialActions.tsx::IconButton",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "disabled is passed straight through to the DOM button element attribute, not a behavior switch within the function.",
+    "state_hash": "cb0976f61c22ba6df8507e428efa6af67f3063eb",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/components/CredentialActions.tsx::ValidationResult",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "valid boolean is rendered as part of the className, not controlling multiple code paths inside the function.",
+    "state_hash": "e6531ab4efe93b4db8c7585edf76c871ad6777e2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/agent.ts::approveAgentSession",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "approved is passed straight through to the HTTP request body as data.",
+    "state_hash": "103d40ec398a6b01abcd9c3a47187499c596f642",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/agent.ts::createAgentSession",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "dry_run is passed straight through to the HTTP request body as data.",
+    "state_hash": "e49a1e9a4f7320371b1667044476b2c849935cba",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/api.ts::fetchReadiness",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "refreshInventory is passed straight through to the HTTP request body as data.",
+    "state_hash": "a4b907b7d9953b35b913d15f345d5488d2347866",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/api.ts::startPipelineRun",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "dry_run is passed straight through to the HTTP request body as data.",
+    "state_hash": "e2eab4cd965b56d4d6e6672a5da46673769374d1",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/cloudCredentials.ts::fetchCloudCredentials",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "scan is passed to the query string as data (line 72), not controlling code paths inside the function.",
+    "state_hash": "2304ffe96b2bed6df1cb8052bf5d2f64ac05341e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/agentChat.ts::isAgentInterruptible",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08.",
+    "state_hash": "8d3662bd97b705a671225884aebd31d73f6eb32b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/components/PipelineProgress.tsx::StepPipelineBar",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "compact controls iconSize calculation and conditional rendering of the labels row (line 109); it is a behavior switch. Recorded by hand with the pre-increment state_hash: the split into StepPipelineBar and CompactStepPipelineBar was already applied, so the reviewed form no longer exists in the regenerated inventory (increment 4 precedent).",
+    "state_hash": "c9558e1d57c95b803c852e9f68f8ea3e81f7575e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/components/ScanRecommendations.tsx::ScanRecommendations",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "compact controls className and conditional rendering of repo list (line 63); it is a behavior switch. Recorded by hand with the pre-increment state_hash: the prop and both its branches were dead at the only call site and were deleted, so the reviewed form no longer exists (increment 4 precedent).",
+    "state_hash": "cacb63e5958699d000f63280d5158e98be2ce9dc",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::gateOverrideReason",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "dryRun selects between two processing paths: discard the reason parameter (when true) vs trim and return it (when false). Reviewed separately from the review-precheck run - the function was added by GAP-009 later in the same session, so it is a post-precheck row. Recorded by hand with the pre-split state_hash: it is now liveRunOverrideReason and dryRunOverrideReason.",
+    "state_hash": "9e385f725fe78976cdcc0b173af8b5ec6efd31de",
+    "decided_by": "cavecrew-reviewer"
   }
 ]

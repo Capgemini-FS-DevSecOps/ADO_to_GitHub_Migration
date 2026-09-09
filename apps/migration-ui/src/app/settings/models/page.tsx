@@ -53,6 +53,7 @@ function apiKeyPlaceholder(spec: LlmProviderSpec | undefined): string {
   return 'API key (required to load model catalog)';
 }
 
+/** Manage LLM models: list them, add from the provider catalog, validate, and delete. */
 export default function LlmModelsPage() {
   const qc = useQueryClient();
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });

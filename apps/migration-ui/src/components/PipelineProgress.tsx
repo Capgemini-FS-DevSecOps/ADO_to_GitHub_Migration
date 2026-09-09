@@ -72,7 +72,7 @@ function stepColor(status: StepStatus): string {
   }
 }
 
-export function StepPipelineBar({ steps, compact = false }: { steps: PipelineStep[]; compact?: boolean }) {
+function PipelineBar({ steps, compact }: { steps: PipelineStep[]; compact: boolean }) {
   if (!steps.length) return null;
 
   const iconSize = compact ? 20 : 28;
@@ -123,6 +123,17 @@ export function StepPipelineBar({ steps, compact = false }: { steps: PipelineSte
   );
 }
 
+/** Horizontal pipeline bar showing one full-size status icon per run step, with a labels row. */
+export function StepPipelineBar({ steps }: { steps: PipelineStep[] }) {
+  return <PipelineBar steps={steps} compact={false} />;
+}
+
+/** Space-saving pipeline bar with smaller step icons and no labels row. */
+export function CompactStepPipelineBar({ steps }: { steps: PipelineStep[] }) {
+  return <PipelineBar steps={steps} compact />;
+}
+
+/** Coloured badge showing a pipeline step's run status. */
 export function StepStatusBadge({ status }: { status: StepStatus | string }) {
   const label = pipelineRunStatusLabel(status);
   const css =

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { approveProfile, denyProfile, fetchPendingProfiles } from '@/lib/api';
 
+/** Review profiles awaiting approval and approve or deny each one. */
 export default function PendingProfilesPage() {
   const qc = useQueryClient();
   const { data: pending, isLoading } = useQuery({

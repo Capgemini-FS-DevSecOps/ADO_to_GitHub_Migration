@@ -12,6 +12,7 @@ import {
 import { ACCEL } from '@/lib/api';
 import { BrandLogo, BrandWordmark } from '@/components/BrandLogo';
 
+/** Login screen: sign in, bootstrap the first admin, or register an operator account. */
 export default function LoginClient() {
   const router = useRouter();
   const params = useSearchParams();

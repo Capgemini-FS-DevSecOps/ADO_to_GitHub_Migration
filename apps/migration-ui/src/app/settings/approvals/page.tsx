@@ -10,6 +10,7 @@ import {
 } from '@/lib/api';
 import { fetchSession } from '@/lib/auth';
 
+/** Queue of pending live-execution requests, approved or denied with a reason. */
 export default function LiveApprovalsPage() {
   const qc = useQueryClient();
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });

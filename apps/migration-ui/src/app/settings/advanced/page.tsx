@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchSettings, updateAdvanced } from '@/lib/api';
 
+/** Edit accelerator defaults such as paths, migration strategy, parallelism, and dry-run mode. */
 export default function AdvancedSettingsPage() {
   const qc = useQueryClient();
   const { data: settings, isLoading } = useQuery({

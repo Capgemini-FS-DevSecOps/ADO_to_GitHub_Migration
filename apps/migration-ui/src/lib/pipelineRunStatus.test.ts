@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  gateOverrideReason,
+  dryRunOverrideReason,
   mapPipelineRunStatus,
   pipelineRunNeedsApproval,
+  liveRunOverrideReason,
   pipelineRunStatusLabel,
 } from './pipelineRunStatus';
 
@@ -19,18 +20,18 @@ describe('pipelineRunStatus', () => {
   });
 });
 
-describe('gateOverrideReason', () => {
+describe('gate override reason', () => {
   it('sends the trimmed justification for a live run', () => {
-    expect(gateOverrideReason(false, '  exec sign-off, POC failure accepted  ')).toBe(
+    expect(liveRunOverrideReason('  exec sign-off, POC failure accepted  ')).toBe(
       'exec sign-off, POC failure accepted',
     );
   });
 
   it('sends nothing for a whitespace-only justification', () => {
-    expect(gateOverrideReason(false, '   ')).toBe('');
+    expect(liveRunOverrideReason('   ')).toBe('');
   });
 
   it('sends nothing on a dry run, which never reaches the gate', () => {
-    expect(gateOverrideReason(true, 'typed then switched back to dry run')).toBe('');
+    expect(dryRunOverrideReason()).toBe('');
   });
 });

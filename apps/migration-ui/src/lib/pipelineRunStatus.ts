@@ -18,18 +18,29 @@ export function pipelineRunStatusLabel(status: StepStatus | string): string {
   return String(status).replace(/_/g, ' ');
 }
 
+/** True when a pipeline run is paused waiting for operator approval. */
 export function pipelineRunNeedsApproval(status: string): boolean {
   return status === 'awaiting_approval';
 }
 
 /**
- * Normalise the gate override justification sent with a pipeline run.
+ * Gate override justification sent with a live pipeline run.
  *
  * A live run forces past the previous phase's migration gate, and the
  * accelerator only allows that escalation with a written justification, which it
- * records on the gate override. A dry run never reaches the gate, so it carries
- * no justification and cannot leave an override record behind.
+ * records on the gate override. Whitespace-only input normalises to an empty
+ * string, which the accelerator rejects as no justification at all.
  */
-export function gateOverrideReason(dryRun: boolean, reason: string): string {
-  return dryRun ? '' : reason.trim();
+export function liveRunOverrideReason(reason: string): string {
+  return reason.trim();
+}
+
+/**
+ * Gate override justification sent with a dry run: always none.
+ *
+ * A dry run never reaches the migration gate, so it carries no justification and
+ * cannot leave an override record behind, whatever the operator typed first.
+ */
+export function dryRunOverrideReason(): string {
+  return '';
 }

@@ -7,6 +7,7 @@ type RowState = DiscoveryRepoItem & { key: string };
 
 const PAGE_SIZE = 25;
 
+/** Paginated, filterable table of the ADO repositories found by discovery. */
 export function DiscoveryTable({ repos }: { repos: DiscoveryRepoItem[] }) {
   const rows = useMemo<RowState[]>(
     () => repos.map((r) => ({ ...r, key: `${r.project}/${r.repo_name}` })),

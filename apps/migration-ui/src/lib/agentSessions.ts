@@ -1,3 +1,4 @@
+/** One chat session as shown in the sidebar: id, display title, last-touched time, status. */
 export type SessionIndexEntry = {
   sessionId: string;
   title: string;
@@ -19,14 +20,17 @@ function activeKey(profileId: string, accountKey: string) {
   return `ado2gh-agent-active:${sanitizeAccountKey(accountKey)}:${profileId}`;
 }
 
+/** localStorage key holding a session's cached chat transcript, scoped to profile and account. */
 export function chatCacheKey(profileId: string, sessionId: string, accountKey: string) {
   return `ado2gh-agent-chat:${sanitizeAccountKey(accountKey)}:${profileId}:${sessionId}`;
 }
 
+/** localStorage key holding a session's cached thinking events, scoped to profile and account. */
 export function thinkingCacheKey(profileId: string, sessionId: string, accountKey: string) {
   return `ado2gh-agent-thinking:${sanitizeAccountKey(accountKey)}:${profileId}:${sessionId}`;
 }
 
+/** localStorage key holding the thinking events archived against a single turn of a session. */
 export function turnThinkingCacheKey(
   profileId: string,
   sessionId: string,
@@ -36,6 +40,10 @@ export function turnThinkingCacheKey(
   return `ado2gh-agent-turn-thinking:${sanitizeAccountKey(accountKey)}:${profileId}:${sessionId}:${turnIndex}`;
 }
 
+/**
+ * Archive a turn's thinking events so they can be re-shown after the live stream ends.
+ * No-op when the turn produced no events.
+ */
 export function saveTurnThinking(
   profileId: string,
   sessionId: string,
@@ -50,6 +58,7 @@ export function saveTurnThinking(
   );
 }
 
+/** Read back one turn's archived thinking events; empty array when missing or unparseable. */
 export function loadTurnThinking(
   profileId: string,
   sessionId: string,
@@ -68,6 +77,10 @@ export function loadTurnThinking(
   }
 }
 
+/**
+ * Collect the archived thinking events for every user turn in a session, keyed by turn index.
+ * Turns with nothing stored are omitted.
+ */
 export function loadAllTurnThinking(
   profileId: string,
   sessionId: string,
@@ -82,6 +95,7 @@ export function loadAllTurnThinking(
   return archived;
 }
 
+/** Drop every archived turn-thinking entry for a session, used when the session goes away. */
 export function clearSessionTurnThinking(
   profileId: string,
   sessionId: string,
@@ -96,6 +110,7 @@ export function clearSessionTurnThinking(
   keys.forEach((key) => localStorage.removeItem(key));
 }
 
+/** Read a session's cached thinking events; empty array when missing or unparseable. */
 export function loadCachedThinking(
   profileId: string,
   sessionId: string,
@@ -111,6 +126,7 @@ export function loadCachedThinking(
   }
 }
 
+/** A chat message as held in the local cache; all fields optional so older caches still parse. */
 export type CachedChatMessage = {
   id?: string;
   role?: string;
@@ -118,6 +134,10 @@ export type CachedChatMessage = {
   kind?: string;
 };
 
+/**
+ * Normalise a user message into a comparison key, folding Python-style True/False to JSON
+ * casing so the cached and server copies of the same message match.
+ */
 export function normalizeUserMessageKey(content: string): string {
   return (content ?? '')
     .trim()
@@ -176,6 +196,10 @@ export function mergeChatMessagesForLoad(
   return [...server, ...pendingUsers, ...pendingAssistants];
 }
 
+/**
+ * Load the sidebar session list for a profile and account, falling back to a one-time migration
+ * of legacy storage keys when no current index exists.
+ */
 export function loadSessionIndex(profileId: string, accountKey: string): SessionIndexEntry[] {
   const raw = localStorage.getItem(indexKey(profileId, accountKey));
   if (raw) {
@@ -233,6 +257,7 @@ function migrateLegacyStorage(profileId: string, accountKey: string): SessionInd
   return [];
 }
 
+/** Write the sidebar session list to localStorage, replacing whatever was stored before. */
 export function saveSessionIndex(
   profileId: string,
   accountKey: string,
@@ -268,6 +293,7 @@ export function patchSessionIndex(
   saveSessionIndex(profileId, accountKey, next);
 }
 
+/** Drop a session from the sidebar list along with its cached chat and thinking entries. */
 export function removeSessionIndex(
   profileId: string,
   accountKey: string,
@@ -280,10 +306,12 @@ export function removeSessionIndex(
   clearSessionTurnThinking(profileId, sessionId, accountKey);
 }
 
+/** The session this profile and account last had open, or null when none was recorded. */
 export function loadActiveSessionId(profileId: string, accountKey: string): string | null {
   return localStorage.getItem(activeKey(profileId, accountKey));
 }
 
+/** Remember the open session for this profile and account; passing null clears the record. */
 export function saveActiveSessionId(
   profileId: string,
   accountKey: string,
@@ -296,12 +324,17 @@ export function saveActiveSessionId(
   }
 }
 
-export function truncateTitle(text: string, max = 56): string {
+/** Collapse whitespace and clip a message down to a sidebar title, defaulting to 'New chat'. */
+export function truncateTitle(text: string, max: number = 56): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
   if (oneLine.length <= max) return oneLine || 'New chat';
   return `${oneLine.slice(0, max - 1)}…`;
 }
 
+/**
+ * Merge the locally cached session list with the server's, keeping local ordering and titles
+ * while taking status from the server and appending sessions seen only remotely.
+ */
 export function mergeSessionLists(
   local: SessionIndexEntry[],
   remote: SessionIndexEntry[],

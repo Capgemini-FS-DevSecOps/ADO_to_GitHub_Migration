@@ -1,6 +1,7 @@
 import { ACCEL } from './api';
 import type { SSEEvent } from './types/agent';
 
+/** Base URL of the `services/agent` PEV API, from NEXT_PUBLIC_AGENT_URL or localhost:8090. */
 export const AGENT = process.env.NEXT_PUBLIC_AGENT_URL || 'http://localhost:8090';
 
 const creds: RequestInit = { credentials: 'include' };
@@ -172,6 +173,10 @@ export type AgentSession = {
   reply?: string;
 };
 
+/**
+ * Check agent liveness (GET /health) on a short timeout and return the health record,
+ * including accelerator reachability and LLM configuration state.
+ */
 export async function fetchAgentHealth(): Promise<AgentHealth> {
   let r: Response;
   try {
@@ -191,6 +196,7 @@ export async function fetchAgentHealth(): Promise<AgentHealth> {
   return r.json();
 }
 
+/** Create an agent session (POST /v1/sessions) and return the new session record. */
 export async function createAgentSession(body: {
   profile_id: string;
   prompt: string;
@@ -204,6 +210,7 @@ export async function createAgentSession(body: {
   });
 }
 
+/** Fetch one session's current state (GET /v1/sessions/{id}), messages and tasks included. */
 export async function getAgentSession(sessionId: string) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}`);
 }
@@ -218,15 +225,18 @@ export type AgentSessionSummary = {
   message_count?: number;
 };
 
+/** List a profile's sessions (GET /v1/sessions) and return their summaries. */
 export async function listAgentSessions(profileId: string) {
   const q = new URLSearchParams({ profile_id: profileId });
   return agentApi<{ sessions: AgentSessionSummary[] }>(`/v1/sessions?${q}`);
 }
 
+/** Delete a session (DELETE /v1/sessions/{id}) and return the deleted session id. */
 export async function deleteAgentSession(sessionId: string) {
   return agentApi<{ deleted: string }>(`/v1/sessions/${sessionId}`, { method: 'DELETE' });
 }
 
+/** Send a chat message (POST /v1/sessions/{id}/message) and return the updated session. */
 export async function postAgentMessage(sessionId: string, message: string) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/message`, {
     method: 'POST',
@@ -242,6 +252,10 @@ export type StreamEvent = SSEEvent & {
   pending_form?: Record<string, unknown>;
 };
 
+/**
+ * Send a chat message over SSE (POST /v1/sessions/{id}/message-stream), invoking the
+ * callback for each event except heartbeats, then return the final session state.
+ */
 export async function streamAgentMessage(
   sessionId: string,
   message: string,
@@ -302,19 +316,17 @@ export async function streamAgentMessage(
   throw new Error('Failed to fetch final session state');
 }
 
-export async function patchAgentExecutionMode(sessionId: string, dry_run: boolean) {
-  return agentApi<AgentSession>(`/v1/sessions/${sessionId}/execution-mode`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dry_run }),
-  });
-}
-
+/** Ask for live (non dry-run) execution (POST /v1/sessions/{id}/request-live). */
 export async function requestAgentLive(sessionId: string) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/request-live`, { method: 'POST' });
 }
 
-export async function approveAgentSession(sessionId: string, approved: boolean, reason = '') {
+/** Approve or deny a session's live run (POST /v1/sessions/{id}/approve) with an optional reason. */
+export async function approveAgentSession(
+  sessionId: string,
+  approved: boolean,
+  reason: string = '',
+) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -322,6 +334,7 @@ export async function approveAgentSession(sessionId: string, approved: boolean, 
   });
 }
 
+/** Submit a pending HITL form (POST /v1/sessions/{id}/form-submit) and return the session. */
 export async function submitAgentForm(sessionId: string, values: Record<string, unknown>) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/form-submit`, {
     method: 'POST',
@@ -330,6 +343,10 @@ export async function submitAgentForm(sessionId: string, values: Record<string, 
   });
 }
 
+/**
+ * Submit a pending HITL form over SSE (POST /v1/sessions/{id}/form-submit-stream),
+ * invoking the callback for each event except heartbeats, then return the final session.
+ */
 export async function streamAgentFormSubmit(
   sessionId: string,
   values: Record<string, unknown>,
@@ -389,6 +406,7 @@ export async function streamAgentFormSubmit(
   throw new Error('Failed to fetch final session state');
 }
 
+/** Dismiss the pending HITL form (POST /v1/sessions/{id}/form-cancel) without answering it. */
 export async function cancelAgentForm(sessionId: string) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/form-cancel`, { method: 'POST' });
 }
@@ -405,39 +423,10 @@ export async function cancelAgentSession(sessionId: string, action: 'stop' | 'ro
   );
 }
 
-/** T072: Get plan summary for user confirmation (FR-014) */
-export async function getPlanSummary(sessionId: string) {
-  return agentApi<{
-    session_id: string;
-    dry_run: boolean;
-    repos: string[];
-    work_items: Array<{
-      repo: string;
-      scopes: string[];
-      status: string;
-      blocked_reasons: string[];
-    }>;
-    assumptions: string[];
-    revision: number;
-    requires_confirmation: boolean;
-  }>(`/v1/sessions/${sessionId}/plan-summary`);
-}
-
-/** T072: Confirm live execution (CA-001) */
-export async function confirmLiveExecution(sessionId: string) {
-  return agentApi<{ status: string; dry_run: boolean; session_id: string }>(
-    `/v1/sessions/${sessionId}/confirm-live`,
-    { method: 'POST' },
-  );
-}
-
-/** T072: Fetch Prometheus metrics (FR-069) */
-export async function fetchAgentMetrics(): Promise<string> {
-  const r = await fetch(`${AGENT}/metrics`, { cache: 'no-store', ...creds });
-  if (!r.ok) throw new Error('Failed to fetch metrics');
-  return r.text();
-}
-
+/**
+ * Load the configured LLM models (GET /v1/agent/models) and the default model id for the
+ * agent model picker.
+ */
 export async function fetchLlmModels() {
   let r: Response;
   try {
@@ -467,6 +456,7 @@ export type AgentModel = {
   validation_status?: string;
 };
 
+/** Build the picker label for a model as "provider : model", falling back to its ids. */
 export function formatAgentModelLabel(model: AgentModel): string {
   const platform = model.provider_label || model.provider;
   const modelName = model.model_id || model.id;

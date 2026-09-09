@@ -48,6 +48,7 @@ export function BrandLogo({ size = 44, className = '' }: BrandLogoProps) {
   );
 }
 
+/** ADO2GitHub wordmark with the Migration Console suffix, inline or stacked. */
 export function BrandWordmark({ layout = 'inline', className = '' }: BrandWordmarkProps) {
   return (
     <div className={`oai-brand-wordmark oai-brand-wordmark--${layout} ${className}`.trim()}>

@@ -4,7 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { UnifiedSubNavigation } from '@/components/UnifiedNavigation';
-import { DISCOVERY_SUB_TABS } from '@/lib/navigationState';
+import { DISCOVERY_SUB_TABS } from '@/lib/types/navigation';
 import {
   fetchPipelineRuns,
   fetchReadiness,
@@ -12,6 +12,7 @@ import {
   runValidation,
 } from '@/lib/api';
 
+/** Workflow review sub-tab: pipeline readiness, generated workflow output, and recent runs. */
 export function WorkflowsView() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const { data: readiness, isLoading: readinessLoading } = useQuery({
@@ -117,6 +118,7 @@ export function WorkflowsView() {
   );
 }
 
+/** Validation sub-tab: start a source-versus-target validation run and show its results. */
 export function ValidationView() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const profileId = settings?.active_profile_id;

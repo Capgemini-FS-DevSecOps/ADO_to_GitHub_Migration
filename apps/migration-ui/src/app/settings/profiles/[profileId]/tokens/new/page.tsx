@@ -11,6 +11,7 @@ import {
   validateGitHubTokenInline,
 } from '@/lib/api';
 
+/** Add and validate a new GitHub token for a migration profile. */
 export default function NewProfileTokenPage({ params }: { params: { profileId: string } }) {
   const router = useRouter();
   const qc = useQueryClient();

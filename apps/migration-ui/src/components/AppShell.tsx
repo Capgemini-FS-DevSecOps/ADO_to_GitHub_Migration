@@ -6,6 +6,7 @@ import { AuthGate } from '@/components/AuthGate';
 import { UserSessionBar } from '@/components/UserSessionBar';
 import { BrandLogo, BrandWordmark } from '@/components/BrandLogo';
 
+/** Console frame with header, navigation and footer; login and onboarding routes render bare. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLogin = pathname === '/login' || pathname.startsWith('/onboarding');

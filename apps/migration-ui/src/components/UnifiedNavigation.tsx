@@ -10,7 +10,7 @@ import {
   SearchIcon,
   SettingsIcon,
 } from '@/components/Icons';
-import { UNIFIED_TABS } from '@/lib/navigationState';
+import { UNIFIED_TABS } from '@/lib/types/navigation';
 
 const ICON_MAP: Record<string, React.ComponentType<{ size?: number; color?: string }>> = {
   search: SearchIcon,
@@ -21,6 +21,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ size?: number; color?: stri
   chart: ChartBarIcon,
 };
 
+/** Primary console tab bar driven by UNIFIED_TABS, with the active tab derived from the path. */
 export function UnifiedNavigation() {
   const pathname = usePathname();
 
@@ -57,6 +58,7 @@ export function UnifiedNavigation() {
   );
 }
 
+/** Secondary tab bar where the active tab comes from the `tab` query parameter. */
 export function UnifiedSubNavigation({
   tabs,
 }: {

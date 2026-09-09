@@ -9,6 +9,7 @@ type ValidateButtonProps = {
   title?: string;
 };
 
+/** Button that triggers a credential validation call and shows a spinner while it runs. */
 export function ValidateButton({
   onClick,
   loading = false,
@@ -35,6 +36,7 @@ export function ValidateButton({
   );
 }
 
+/** Small icon-only button that takes its accessible label from its title. */
 export function IconButton({
   onClick,
   title,
@@ -62,6 +64,7 @@ export function IconButton({
   );
 }
 
+/** Outcome of a credential validation: message, granted scopes, and any warnings. */
 export function ValidationResult({
   valid,
   message,
@@ -88,6 +91,7 @@ export function ValidationResult({
   );
 }
 
+/** Pencil glyph for edit actions. */
 export function EditIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -97,6 +101,7 @@ export function EditIcon() {
   );
 }
 
+/** Bin glyph for delete actions. */
 export function TrashIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

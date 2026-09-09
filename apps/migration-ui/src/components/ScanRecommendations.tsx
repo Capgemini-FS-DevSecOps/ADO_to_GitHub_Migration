@@ -2,14 +2,13 @@
 
 import type { MigrationScanResult, PhaseDefinition } from '@/lib/types';
 
+/** Phase-by-phase repo recommendations from a scan, ordered by migration phase. */
 export function ScanRecommendations({
   scan,
   phases,
-  compact = false,
 }: {
   scan: MigrationScanResult;
   phases?: PhaseDefinition[];
-  compact?: boolean;
 }) {
   const ordered =
     phases ??
@@ -34,7 +33,7 @@ export function ScanRecommendations({
           </span>
         )}
       </div>
-      <div className={`scan-phase-grid${compact ? ' scan-phase-grid-compact' : ''}`}>
+      <div className="scan-phase-grid">
         {sorted.map((phaseDef) => {
           const bucket = scan.recommendations[phaseDef.id];
           if (!bucket) {
@@ -60,7 +59,7 @@ export function ScanRecommendations({
                 </p>
               )}
               <p className="scan-phase-rationale">{bucket.rationale}</p>
-              {!compact && (bucket.repos?.length ?? 0) > 0 && (
+              {(bucket.repos?.length ?? 0) > 0 && (
                 <ul className="scan-repo-list">
                   {(bucket.repos ?? []).slice(0, 8).map((r) => (
                     <li key={`${r.project}/${r.repo_name}`}>

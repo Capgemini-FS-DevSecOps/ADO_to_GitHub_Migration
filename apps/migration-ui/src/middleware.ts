@@ -6,6 +6,14 @@ const ACCEL =
   process.env.NEXT_PUBLIC_ACCELERATOR_URL ||
   'http://localhost:8080';
 
+/**
+ * Send unauthenticated page requests to the login screen.
+ *
+ * Public paths and requests that already carry a session cookie pass straight through.
+ * Otherwise the accelerator's bootstrap status decides whether the login link asks for
+ * first-run bootstrap, and the original path rides along as `returnUrl`. When the API is
+ * unreachable the request is allowed through and the client-side AuthGate redirects.
+ */
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (
@@ -39,6 +47,7 @@ export async function middleware(request: NextRequest) {
   }
 }
 
+/** Run the middleware on every route except Next.js static assets and the favicon. */
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };

@@ -5,6 +5,7 @@ type ScanCompleteBannerProps = {
   onDismiss: () => void;
 };
 
+/** Dismissible banner announcing that a discovery scan finished. */
 export function ScanCompleteBanner({ message, onDismiss }: ScanCompleteBannerProps) {
   return (
     <div className="scan-complete-banner" role="status">

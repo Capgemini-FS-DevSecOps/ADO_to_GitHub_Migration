@@ -1,5 +1,6 @@
 type IconProps = { size?: number; className?: string; color?: string };
 
+/** Bar-chart glyph for analytics and reporting views. */
 export function ChartBarIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
@@ -10,6 +11,7 @@ export function ChartBarIcon({ size = 20, className = '', color = 'currentColor'
   );
 }
 
+/** Lightning-bolt glyph marking fast or automated actions. */
 export function BoltIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
@@ -18,15 +20,7 @@ export function BoltIcon({ size = 20, className = '', color = 'currentColor' }: 
   );
 }
 
-export function ClipboardIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
-      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-    </svg>
-  );
-}
-
+/** Cloud glyph for hosted or remote resources. */
 export function CloudIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
@@ -35,6 +29,7 @@ export function CloudIcon({ size = 20, className = '', color = 'currentColor' }:
   );
 }
 
+/** GitHub mark used to label migration targets. */
 export function GithubIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
@@ -43,6 +38,7 @@ export function GithubIcon({ size = 20, className = '', color = 'currentColor' }
   );
 }
 
+/** Magnifying-glass glyph for search and discovery. */
 export function SearchIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
@@ -52,31 +48,7 @@ export function SearchIcon({ size = 20, className = '', color = 'currentColor' }
   );
 }
 
-export function CheckCircleIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <polyline points="22 4 12 14.01 9 11.01" />
-    </svg>
-  );
-}
-
-export function ChevronLeftIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
-export function ChevronRightIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-
+/** Plus glyph for create and add actions. */
 export function PlusIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" className={className} aria-hidden>
@@ -86,6 +58,7 @@ export function PlusIcon({ size = 20, className = '', color = 'currentColor' }: 
   );
 }
 
+/** Robot glyph for the migration agent. */
 export function BotIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>
@@ -97,26 +70,7 @@ export function BotIcon({ size = 20, className = '', color = 'currentColor' }: I
   );
 }
 
-export function ClipboardListIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>
-      <rect x="8" y="2" width="8" height="4" rx="1" />
-      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-      <line x1="9" y1="12" x2="15" y2="12" />
-      <line x1="9" y1="16" x2="13" y2="16" />
-    </svg>
-  );
-}
-
-export function HistoryIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15 14" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
+/** Two-way arrow glyph for the ADO to GitHub migration flow. */
 export function ArrowRightLeftIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>
@@ -126,6 +80,7 @@ export function ArrowRightLeftIcon({ size = 20, className = '', color = 'current
   );
 }
 
+/** Pulse-line glyph for live activity and run status. */
 export function ActivityIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>
@@ -134,17 +89,7 @@ export function ActivityIcon({ size = 20, className = '', color = 'currentColor'
   );
 }
 
-export function WorkflowIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>
-      <circle cx="6" cy="6" r="2.5" />
-      <circle cx="18" cy="6" r="2.5" />
-      <circle cx="12" cy="18" r="2.5" />
-      <path d="M8.5 7.5L10.5 15M15.5 7.5L13.5 15M8 6h8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
+/** Gear glyph for settings and configuration. */
 export function SettingsIcon({ size = 20, className = '', color = 'currentColor' }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" className={className} aria-hidden>

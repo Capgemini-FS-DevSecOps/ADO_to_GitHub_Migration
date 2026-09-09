@@ -12,6 +12,7 @@ import {
   validateProfileSource,
 } from '@/lib/api';
 
+/** Edit and validate a profile's Azure DevOps source connection. */
 export default function ProfileSourcePage({ params }: { params: { profileId: string } }) {
   const router = useRouter();
   const qc = useQueryClient();

@@ -35,6 +35,7 @@ function summarizePayload(raw: string | undefined): string | null {
   }
 }
 
+/** Audit and session history browser with event-type filters, paging, and export. */
 export default function HistoryPage() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const { data: authSession } = useQuery({ queryKey: ['session'], queryFn: fetchSession });

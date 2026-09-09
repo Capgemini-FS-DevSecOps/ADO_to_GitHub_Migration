@@ -2,6 +2,7 @@
 
 import { ProfileWizard } from '@/components/ProfileWizard';
 
+/** Onboarding step where an administrator creates the first active deployment profile. */
 export default function OnboardingProfilePage() {
   return (
     <div>

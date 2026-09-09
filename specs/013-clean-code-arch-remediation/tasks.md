@@ -209,8 +209,8 @@
 
 ### Increment 14 — `apps/migration-ui/src/`
 
-- [ ] T069 [US2] Review-agent decisions for `--package apps/migration-ui` (TS proposals); record
-- [ ] T070 [US2] Clean `apps/migration-ui/src/` per protocol (≈340 functions; JSDoc on all 227 exports — FR-010; replace `any` params with the types in `src/lib/types/`; > 5 props → existing props interface; boolean behaviour props confirmed as switches → two components or an existing union type; delete dead exports with their tests; `next_route_export` rows are protected); verify with `cd apps/migration-ui && npx tsc --noEmit && npx vitest run`; changelog, commit
+- [X] T069 [US2] Review-agent decisions for `--package apps/migration-ui` (TS proposals); record
+- [X] T070 [US2] Clean `apps/migration-ui/src/` per protocol (≈340 functions; JSDoc on all 227 exports — FR-010; replace `any` params with the types in `src/lib/types/`; > 5 props → existing props interface; boolean behaviour props confirmed as switches → two components or an existing union type; delete dead exports with their tests; `next_route_export` rows are protected); verify with `cd apps/migration-ui && npx tsc --noEmit && npx vitest run`; changelog, commit
 
 **Checkpoint**: all 14 increments green; `inventory-summary.md` shows zero tags outside the exception register
 

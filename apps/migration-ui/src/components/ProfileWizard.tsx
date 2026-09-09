@@ -20,6 +20,7 @@ const STEPS = [
 
 type ProfileWizardMode = 'onboarding' | 'settings-admin' | 'settings-operator';
 
+/** Guided form that creates a migration profile and validates its ADO and GitHub credentials. */
 export function ProfileWizard({ mode = 'settings-admin' }: { mode?: ProfileWizardMode }) {
   const router = useRouter();
   const qc = useQueryClient();

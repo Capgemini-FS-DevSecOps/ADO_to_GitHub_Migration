@@ -960,35 +960,79 @@
     "reason": "orphan_allowlist"
   },
   {
+    "id": "services/agent/routes/execution_routes.py::approve_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::cancel_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::confirm_live_execution",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::deny_live_internal",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::request_live",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::resume_live_internal",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::run_pev",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::update_execution_mode",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::cancel_session_form",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::submit_session_form",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::submit_session_form_stream",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py::session_message",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py::session_message_stream",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py::agent_models",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py::llm_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/plan_routes.py::create_migration_plan",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/plan_routes.py::get_plan_summary",
+    "reason": "http_route"
+  },
+  {
     "id": "services/agent/routes/run_routes.py::health",
     "reason": "http_route"
   },
   {
     "id": "services/agent/routes/run_routes.py::metrics",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::agent_models",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::approve_session",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::cancel_session",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::cancel_session_form",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::confirm_live_execution",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::create_migration_plan",
     "reason": "http_route"
   },
   {
@@ -1000,14 +1044,6 @@
     "reason": "http_route"
   },
   {
-    "id": "services/agent/routes/session_routes.py::deny_live_internal",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::get_plan_summary",
-    "reason": "http_route"
-  },
-  {
     "id": "services/agent/routes/session_routes.py::get_session",
     "reason": "http_route"
   },
@@ -1016,47 +1052,11 @@
     "reason": "http_route"
   },
   {
-    "id": "services/agent/routes/session_routes.py::llm_status",
-    "reason": "http_route"
-  },
-  {
     "id": "services/agent/routes/session_routes.py::provision_session",
     "reason": "http_route"
   },
   {
     "id": "services/agent/routes/session_routes.py::remediate_session",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::request_live",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::resume_live_internal",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::run_pev",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::session_message",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::session_message_stream",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::submit_session_form",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::submit_session_form_stream",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/agent/routes/session_routes.py::update_execution_mode",
     "reason": "http_route"
   }
 ]

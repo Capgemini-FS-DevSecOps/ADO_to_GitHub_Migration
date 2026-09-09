@@ -11,6 +11,7 @@ import {
 import { fetchSession } from '@/lib/auth';
 import { modelsAccessDeniedMessage, modelsPageAllowed } from '@/lib/permissions';
 
+/** Configure corporate proxy, custom CA certificate, and model override for outbound calls. */
 export default function ConnectivitySettingsPage() {
   const qc = useQueryClient();
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });

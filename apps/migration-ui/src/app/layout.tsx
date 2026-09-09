@@ -11,11 +11,13 @@ const inter = Inter({
   variable: '--font-inter',
 });
 
+/** Browser tab title and description for the console. */
 export const metadata: Metadata = {
   title: 'ADO2GitHub Migration Console',
   description: 'Enterprise Azure DevOps to GitHub migration dashboard',
 };
 
+/** Viewport scaling and theme colour for the console. */
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
@@ -23,6 +25,7 @@ export const viewport: Viewport = {
   themeColor: '#050505',
 };
 
+/** Root layout wrapping every route in the embed shell, query providers, and app chrome. */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable}>

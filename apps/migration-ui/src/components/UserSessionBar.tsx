@@ -9,6 +9,7 @@ import {
   type AuthUser,
 } from '@/lib/auth';
 
+/** Header strip showing the signed-in user with a log out action, or a sign-in link. */
 export function UserSessionBar() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [needsBootstrap, setNeedsBootstrap] = useState(false);

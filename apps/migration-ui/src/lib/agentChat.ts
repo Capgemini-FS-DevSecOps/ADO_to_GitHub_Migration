@@ -14,6 +14,7 @@ import type {
 
 export type ChatMessage = AgentMessage & { id: string };
 
+/** Session statuses that mean the agent is still working on the current turn. */
 export const ACTIVE_AGENT_STATUSES = new Set([
   'thinking',
   'planning',
@@ -23,12 +24,17 @@ export const ACTIVE_AGENT_STATUSES = new Set([
 
 const SETTLED_STATUSES = ['completed', 'failed', 'cancelled', 'idle'];
 
+/** Report whether a session is mid-turn, either by status or by an unsettled pipeline run. */
 export function sessionIsBusy(s: AgentSession | null | undefined): boolean {
   if (!s) return false;
   if (ACTIVE_AGENT_STATUSES.has(s.status ?? '')) return true;
   return Boolean(s.pipeline_run_id && !SETTLED_STATUSES.includes(String(s.status ?? '')));
 }
 
+/**
+ * Report whether the stop control should be offered: true while the agent is streaming,
+ * polling or otherwise busy, and false whenever a HITL form is waiting on the operator.
+ */
 export function isAgentInterruptible(
   session: AgentSession | null,
   flags: {
@@ -44,12 +50,14 @@ export function isAgentInterruptible(
   return Boolean(session.pipeline_run_id && !SETTLED_STATUSES.includes(session.status));
 }
 
+/** Reconcile server and locally cached thinking events by keeping the longer of the two. */
 export function mergeThinkingEvents(server: StreamEvent[], cached: StreamEvent[]): StreamEvent[] {
   if (!cached.length) return server;
   if (!server.length) return cached;
   return cached.length >= server.length ? cached : server;
 }
 
+/** Rebuild the thinking-stream events from a session's persisted thinking log. */
 export function thinkingEventsFromSession(s: AgentSession): StreamEvent[] {
   const source = s.thinking_log ?? [];
   return source.map((m) => ({
@@ -100,6 +108,11 @@ export function pendingOptimisticUserMessages(
   return pending;
 }
 
+/**
+ * Render submitted HITL form values as the one-line chat bubble shown after submission.
+ * Plan-review forms get a confirmation or change-request sentence; other forms list their
+ * set fields, with `dry_run` normalised to a boolean and unset or false fields dropped.
+ */
 export function formatFormSubmissionSummary(
   values: Record<string, unknown>,
   formId?: string,
@@ -144,10 +157,12 @@ export function formatFormSubmissionSummary(
   return parts.join(', ');
 }
 
+/** Return a form option's submitted value, accepting either the string or object form. */
 export function formOptionValue(opt: string | AgentFormFieldOption): string {
   return typeof opt === 'string' ? opt : opt.value;
 }
 
+/** Return a form option's display label, suffixed with "(recommended)" when it is flagged. */
 export function formOptionLabel(opt: string | AgentFormFieldOption): string {
   const base = typeof opt === 'string' ? opt : opt.label;
   if (typeof opt !== 'string' && opt.recommended) {
@@ -156,6 +171,10 @@ export function formOptionLabel(opt: string | AgentFormFieldOption): string {
   return base;
 }
 
+/**
+ * Pick the initial value for a HITL form field, preferring the agent's recommended value,
+ * then the recommended or first select option, and otherwise an empty or unchecked value.
+ */
 export function fieldInitialValue(field: AgentFormField): unknown {
   if (field.recommended_value !== undefined && field.recommended_value !== null && field.recommended_value !== '') {
     if (field.type === 'checkbox') {
@@ -178,6 +197,7 @@ export function fieldInitialValue(field: AgentFormField): unknown {
   return '';
 }
 
+/** Report whether a chat message is a transient status line rather than chat content. */
 export function isStatusMessage(msg: ChatMessage): boolean {
   return msg.kind === 'status';
 }

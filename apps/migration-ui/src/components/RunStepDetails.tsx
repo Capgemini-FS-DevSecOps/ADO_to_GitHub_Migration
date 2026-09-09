@@ -372,6 +372,7 @@ function ValidateResults({ step }: { step: PipelineStep }) {
   );
 }
 
+/** Per-repo results for the migrate and validate steps of a pipeline run. */
 export function RunStepDetails({ steps }: { steps: PipelineStep[] }) {
   const migrateSteps = steps.filter((s) => {
     if (!MIGRATE_STEP_IDS.has(s.id)) return false;

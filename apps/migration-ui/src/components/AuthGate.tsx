@@ -10,6 +10,7 @@ import {
 } from '@/lib/auth';
 import { fetchOnboardingStatus } from '@/lib/api';
 
+/** Gate page content on a checked session, redirecting to login or onboarding as needed. */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();

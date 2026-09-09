@@ -6,6 +6,7 @@ import { ProfileWizard } from '@/components/ProfileWizard';
 import { fetchOnboardingStatus } from '@/lib/api';
 import { fetchSession } from '@/lib/auth';
 
+/** Profile creation wizard, gated until an admin has activated a first deployment profile. */
 export default function NewMigrationProfilePage() {
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });
   const { data: onboarding, isLoading } = useQuery({

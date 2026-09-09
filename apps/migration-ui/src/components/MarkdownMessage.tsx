@@ -27,6 +27,7 @@ const markdownComponents: Components = {
   },
 };
 
+/** Render agent markdown, routing internal links through the Next.js router. */
 export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
   return (
     <div className={className ? `agent-markdown ${className}` : 'agent-markdown'}>

@@ -8,6 +8,7 @@ const TOP_ITEMS = [
   { href: '/settings/advanced', label: 'Advanced' },
 ];
 
+/** Top-level settings tabs for migration profiles and advanced options. */
 export function SettingsNav() {
   const pathname = usePathname();
 
@@ -29,6 +30,7 @@ export function SettingsNav() {
   );
 }
 
+/** Per-profile settings tabs plus a back link to the profile list. */
 export function ProfileNav({ profileId, profileName }: { profileId: string; profileName: string }) {
   const pathname = usePathname();
   const base = `/settings/profiles/${profileId}`;

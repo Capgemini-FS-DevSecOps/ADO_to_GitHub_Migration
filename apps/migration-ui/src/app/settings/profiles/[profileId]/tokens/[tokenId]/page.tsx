@@ -12,6 +12,7 @@ import {
   validateGitHubTokenSaved,
 } from '@/lib/api';
 
+/** Edit, validate, and save an existing GitHub token on a migration profile. */
 export default function EditProfileTokenPage({
   params,
 }: {

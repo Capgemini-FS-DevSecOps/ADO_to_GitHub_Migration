@@ -2,6 +2,7 @@
 
 import type { ScanProjectDetail } from '@/lib/types';
 
+/** Scan coverage summary: project and repo counts, warnings, and per-project results. */
 export function ScanDiagnostics({
   projectsScanned,
   reposScanned,

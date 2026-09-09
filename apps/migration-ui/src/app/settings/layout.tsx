@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { fetchSession } from '@/lib/auth';
 import { operatorSettingsHint, visibleSettingsTabs } from '@/lib/permissions';
 
+/** Settings layout that wraps each settings page in the permission-filtered tab bar. */
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });

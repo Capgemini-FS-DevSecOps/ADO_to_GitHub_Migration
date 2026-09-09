@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import LoginClient from './LoginClient';
 
+/** Login route rendering the client login form behind a boot-loader fallback. */
 export default function LoginPage() {
   return (
     <Suspense

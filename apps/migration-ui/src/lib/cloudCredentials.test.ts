@@ -6,7 +6,7 @@ describe('cloudCredentials API helpers', () => {
     vi.restoreAllMocks();
   });
 
-  it('fetchCloudCredentials requests scan by default', async () => {
+  it('fetchCloudCredentials requests the scan query parameter', async () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ sources: [] }), { status: 200 }),
     );

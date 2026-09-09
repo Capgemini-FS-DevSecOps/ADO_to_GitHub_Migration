@@ -35,6 +35,7 @@ function statusLabel(status: string): string {
   return 'Active';
 }
 
+/** Platform user administration: approve pending signups, change roles, and create users. */
 export default function UsersSettingsPage() {
   const qc = useQueryClient();
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });

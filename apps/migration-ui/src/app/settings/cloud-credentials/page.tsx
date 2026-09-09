@@ -151,6 +151,7 @@ function SourceCard({
   );
 }
 
+/** Review detected cloud credential sources and approve, reject, revoke, or rescan them. */
 export default function CloudCredentialsPage() {
   const qc = useQueryClient();
   const { data: session, isSuccess: sessionReady } = useQuery({

@@ -68,15 +68,29 @@ async function cloudApi<T>(path: string, init?: RequestInit): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-export async function fetchCloudCredentials(scan = true): Promise<CloudCredentialsResponse> {
-  const q = scan ? '?scan=true' : '';
-  return cloudApi<CloudCredentialsResponse>(`/v1/settings/cloud-credentials${q}`);
+/**
+ * Read the cloud credential sources from `GET /v1/settings/cloud-credentials`, asking the
+ * accelerator to re-probe each provider first unless scanning is disabled. Returns the source list
+ * plus the platform model summary.
+ */
+export async function fetchCloudCredentials(scan: boolean = true): Promise<CloudCredentialsResponse> {
+  return cloudApi<CloudCredentialsResponse>(
+    `/v1/settings/cloud-credentials${scan ? '?scan=true' : ''}`,
+  );
 }
 
+/**
+ * Re-probe every provider via `POST /v1/settings/cloud-credentials/scan`.
+ * Returns the refreshed source list and platform model summary.
+ */
 export async function rescanCloudCredentials(): Promise<CloudCredentialsResponse> {
   return cloudApi<CloudCredentialsResponse>('/v1/settings/cloud-credentials/scan', { method: 'POST' });
 }
 
+/**
+ * Update the admin-supplied fields of one provider via
+ * `PATCH /v1/settings/cloud-credentials/{provider}`. Returns the updated source.
+ */
 export async function patchCloudCredential(
   provider: string,
   body: Record<string, string>,
@@ -87,6 +101,10 @@ export async function patchCloudCredential(
   });
 }
 
+/**
+ * Approve a provider's credentials via `POST /v1/settings/cloud-credentials/{provider}/approve`.
+ * Returns the updated source.
+ */
 export async function approveCloudCredential(provider: string): Promise<CloudCredentialSource> {
   return cloudApi<CloudCredentialSource>(`/v1/settings/cloud-credentials/${provider}/approve`, {
     method: 'POST',
@@ -94,9 +112,13 @@ export async function approveCloudCredential(provider: string): Promise<CloudCre
   });
 }
 
+/**
+ * Reject a provider's credentials via `POST /v1/settings/cloud-credentials/{provider}/reject`,
+ * recording the operator's reason. Returns the updated source.
+ */
 export async function rejectCloudCredential(
   provider: string,
-  reason = '',
+  reason: string = '',
 ): Promise<CloudCredentialSource> {
   return cloudApi<CloudCredentialSource>(`/v1/settings/cloud-credentials/${provider}/reject`, {
     method: 'POST',
@@ -104,6 +126,10 @@ export async function rejectCloudCredential(
   });
 }
 
+/**
+ * Revoke a previous approval via `POST /v1/settings/cloud-credentials/{provider}/revoke`.
+ * Returns the updated source.
+ */
 export async function revokeCloudCredential(provider: string): Promise<CloudCredentialSource> {
   return cloudApi<CloudCredentialSource>(`/v1/settings/cloud-credentials/${provider}/revoke`, {
     method: 'POST',

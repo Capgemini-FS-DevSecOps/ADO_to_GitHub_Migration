@@ -1,5 +1,6 @@
 import { ACCEL } from './api';
 
+/** The signed-in platform user as returned by the accelerator. */
 export type AuthUser = {
   id: string;
   username: string;
@@ -7,6 +8,7 @@ export type AuthUser = {
   display_name: string;
 };
 
+/** Capability flags carried on a session; an absent flag means the capability is not granted. */
 export type PlatformPermissions = {
   can_coordinate?: boolean;
   can_operate?: boolean;
@@ -17,6 +19,7 @@ export type PlatformPermissions = {
   can_manage_models?: boolean;
 };
 
+/** The active session: who is signed in, when it expires, and what they are allowed to do. */
 export type AuthSession = {
   authenticated: boolean;
   user: AuthUser;
@@ -24,6 +27,7 @@ export type AuthSession = {
   permissions: PlatformPermissions;
 };
 
+/** Whether the platform still needs its first admin, and whether auth and registration are on. */
 export type BootstrapStatus = {
   needs_bootstrap: boolean;
   auth_enabled: boolean;
@@ -45,12 +49,14 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
   }
 }
 
+/** Ask the accelerator whether the platform needs bootstrapping; throws when the check fails. */
 export async function fetchBootstrapStatus(): Promise<BootstrapStatus> {
   const r = await fetchWithTimeout(`${ACCEL}/v1/auth/bootstrap-status`, { cache: 'no-store', ...creds });
   if (!r.ok) throw new Error('Auth status unavailable');
   return r.json();
 }
 
+/** Fetch the current session, or null when the caller is not signed in. */
 export async function fetchSession(): Promise<AuthSession | null> {
   const r = await fetchWithTimeout(`${ACCEL}/v1/auth/session`, { cache: 'no-store', ...creds });
   if (r.status === 401) return null;
@@ -58,6 +64,10 @@ export async function fetchSession(): Promise<AuthSession | null> {
   return r.json();
 }
 
+/**
+ * Create the first administrator account from the supplied username, password and display name.
+ * Only succeeds while the platform is unbootstrapped; throws with the server's message otherwise.
+ */
 export async function bootstrapAdmin(body: {
   username: string;
   password: string;
@@ -76,6 +86,10 @@ export async function bootstrapAdmin(body: {
   return r.json();
 }
 
+/**
+ * Register a new platform account. Resolves with the created user and whether it still awaits
+ * administrator approval; throws with the server's message when the request is rejected.
+ */
 export async function register(body: {
   username: string;
   password: string;
@@ -114,6 +128,10 @@ function parseAuthError(text: string, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Sign in and establish the session cookie. Throws with a readable reason on failure, including
+ * the pending-approval and disabled-account cases.
+ */
 export async function login(body: { username: string; password: string }) {
   const r = await fetch(`${ACCEL}/v1/auth/login`, {
     method: 'POST',
@@ -128,10 +146,12 @@ export async function login(body: { username: string; password: string }) {
   return r.json();
 }
 
+/** End the current session on the server, clearing the session cookie. */
 export async function logout() {
   await fetch(`${ACCEL}/v1/auth/logout`, { method: 'POST', ...creds });
 }
 
+/** Build-time flag that forces the login gate on regardless of the platform's bootstrap state. */
 export const REQUIRE_AUTH =
   process.env.NEXT_PUBLIC_REQUIRE_AUTH === 'true' ||
   process.env.NEXT_PUBLIC_REQUIRE_AUTH === '1';
@@ -148,6 +168,7 @@ export function platformLoginRequired(
   return true;
 }
 
+/** Where to send an unauthenticated visitor — the bootstrap variant when no admin exists yet. */
 export function platformLoginPath(status: BootstrapStatus): string {
   return status.needs_bootstrap ? '/login?bootstrap=1' : '/login';
 }

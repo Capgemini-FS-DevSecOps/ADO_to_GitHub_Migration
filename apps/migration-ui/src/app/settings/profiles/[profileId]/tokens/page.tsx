@@ -23,6 +23,7 @@ import {
 } from '@/lib/api';
 import type { GitHubTokenEntry } from '@/lib/types';
 
+/** List a profile's GitHub tokens and launch a migration scan for the profile. */
 export default function ProfileTokensPage({ params }: { params: { profileId: string } }) {
   const qc = useQueryClient();
   const router = useRouter();

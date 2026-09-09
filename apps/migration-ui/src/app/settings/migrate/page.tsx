@@ -11,9 +11,10 @@ import {
   fetchSettings,
   startPipelineRun,
 } from '@/lib/api';
-import { gateOverrideReason } from '@/lib/pipelineRunStatus';
+import { dryRunOverrideReason, liveRunOverrideReason } from '@/lib/pipelineRunStatus';
 import type { DiscoveryRepoItem, PipelineStep } from '@/lib/types';
 
+/** Migration page: choose repositories, start a pipeline run, and follow step progress. */
 export default function MigratePage() {
   return <MigrationView />;
 }
@@ -75,7 +76,7 @@ function MigrationView() {
         steps: selectedSteps,
         repository_id: selectedRepoId || null,
         migrate_deps_only: migrateDepsOnly,
-        override_reason: gateOverrideReason(dryRun, overrideReason),
+        override_reason: dryRun ? dryRunOverrideReason() : liveRunOverrideReason(overrideReason),
       }),
     onSuccess: (d) => router.push(`/?run=${d.run.id}`),
     onError: (err) => {

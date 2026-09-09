@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ProfileNav } from '@/components/SettingsNav';
 import { fetchMigrationProfile } from '@/lib/api';
 
+/** Layout for one migration profile: loads the profile and renders its sub-navigation. */
 export default function ProfileLayout({
   children,
   params,

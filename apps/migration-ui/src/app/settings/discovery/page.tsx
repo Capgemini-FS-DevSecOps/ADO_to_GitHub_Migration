@@ -8,7 +8,7 @@ import { DiscoveryOrgInventory } from '@/components/DiscoveryOrgInventory';
 import { ScanCompleteBanner } from '@/components/ScanCompleteBanner';
 import { ScanDiagnostics } from '@/components/ScanDiagnostics';
 import { UnifiedSubNavigation } from '@/components/UnifiedNavigation';
-import { DISCOVERY_SUB_TABS } from '@/lib/navigationState';
+import { DISCOVERY_SUB_TABS } from '@/lib/types/navigation';
 import { WorkflowsView, ValidationView } from './WorkflowsAndValidation';
 import {
   fetchDiscovery,
@@ -61,6 +61,10 @@ function migrationClass(status?: string): string {
   }
 }
 
+/**
+ * Discovery settings page with sub-tabs for the repository inventory, scan diagnostics,
+ * pipeline readiness, workflows, and validation.
+ */
 export default function DiscoveryPage() {
   const searchParams = useSearchParams();
   const tab = searchParams.get('tab');
