@@ -340,3 +340,65 @@ def test_pending_exits_1_while_proposals_exist(run, fixture_tree, capsys):
     assert run() == 0
     assert run("--pending") == 1
     assert "pkg/core.py::toggle:bool_flag" in capsys.readouterr().out
+
+
+SUB_PY = '''\
+"""Fixture sub-package module."""
+
+
+def gamma(*, loud: bool = False):
+    """Gamma."""
+    return loud
+'''
+
+
+def test_package_filtered_run_keeps_decisions_it_did_not_walk(run, fixture_tree):
+    """A ``--package`` run only prunes decisions belonging to the packages it walked.
+
+    The generator used to rebuild the whole decision file from the Python rows of the
+    current run, so a run scoped to one package deleted every decision outside it —
+    including the TypeScript ones written by ``function_inventory_ts.mjs``. Only a
+    decision whose own package was walked and whose target is gone or has moved on may
+    be dropped.
+    """
+    tmp_path, out = fixture_tree
+    sub = tmp_path / "pkg" / "sub"
+    sub.mkdir()
+    (sub / "other.py").write_text(SUB_PY, encoding="utf-8")
+    assert run() == 0
+
+    live = _by_id(out)["pkg/core.py::toggle"]
+    assert _by_id(out)["pkg/sub/other.py::gamma"]["package"] == "pkg/sub"
+
+    def decision(target_id, state_hash):
+        return {
+            "id": target_id,
+            "tag": "bool_flag",
+            "decision": "confirm",
+            "rationale": "fixture",
+            "state_hash": state_hash,
+            "decided_by": "review-agent",
+        }
+
+    decisions = out / "tag-decisions.json"
+    decisions.write_text(
+        json.dumps(
+            [
+                decision("pkg/core.py::toggle", live["state_hash"]),
+                decision("pkg/core.py::stale_gone", "0" * 40),
+                decision("pkg/sub/other.py::gamma", "1" * 40),
+                decision("apps/migration-ui/src/lib/thing.ts::helper", "2" * 40),
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    assert run("--package", "pkg") == 0
+    kept = {d["id"] for d in json.loads(decisions.read_text(encoding="utf-8"))}
+    assert "pkg/core.py::toggle" in kept, "a live decision in the walked package survives"
+    assert "pkg/sub/other.py::gamma" in kept, "the filter left this package unwalked"
+    assert "apps/migration-ui/src/lib/thing.ts::helper" in kept, "TypeScript decisions survive"
+    assert "pkg/core.py::stale_gone" not in kept, "stale in a walked package is still pruned"
+
+    assert "bool_flag" in _by_id(out)["pkg/core.py::toggle"]["tags"]

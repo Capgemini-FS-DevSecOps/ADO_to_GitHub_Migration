@@ -726,10 +726,24 @@ def save_decisions(path: Path, decisions: list[dict]) -> None:
     write_json(path, sorted(decisions, key=lambda d: (d.get("id", ""), d.get("tag", ""))))
 
 
+def decision_package(target_id: str) -> str:
+    """Package of a decision target: a row id (``path::qualname``), a module path or a dir."""
+    return package_key(target_id.split("::", 1)[0])
+
+
 def apply_decisions(
-    rows: list[dict], module_proposals: dict[str, str], decisions_path: Path
+    rows: list[dict],
+    module_proposals: dict[str, str],
+    decisions_path: Path,
+    walked: set[str],
 ) -> list[dict]:
-    """Promote/clear proposals per recorded decision; drop decisions with a stale hash."""
+    """Promote/clear proposals per recorded decision; drop stale ones in the walked packages.
+
+    ``walked`` is the set of packages this run actually regenerated. A decision is dropped
+    only when its target sits in one of them and is gone or has a stale ``state_hash``;
+    every other decision — a TypeScript row, a Python package left out by ``--package`` —
+    is carried through untouched, because this run says nothing about it.
+    """
     live_hash: dict[str, str] = {row["id"]: row["state_hash"] for row in rows}
     live_hash.update(module_proposals)
 
@@ -738,12 +752,12 @@ def apply_decisions(
     for decision in load_decisions(decisions_path):
         key = (decision.get("id", ""), decision.get("tag", ""))
         current = live_hash.get(key[0])
-        if current is None:
-            continue  # the function or module no longer exists
-        if decision.get("state_hash") != current:
-            continue  # stale: dropped from the file, the proposal is re-raised
+        live = current is not None and decision.get("state_hash") == current
+        if not live and decision_package(key[0]) in walked:
+            continue  # gone or stale in a package this run walked: the proposal is re-raised
         kept.append(decision)
-        applicable[key] = decision
+        if live:
+            applicable[key] = decision
 
     save_decisions(decisions_path, kept)
 
@@ -1023,7 +1037,10 @@ def generate(args, out_dir: Path) -> int:
                 row["tags"].add("dead")
             fresh.append(row)
 
-    decisions = apply_decisions(fresh, module_hashes, out_dir / "tag-decisions.json")
+    walked = {package_key(path) for path in sources}
+    if args.package:
+        walked &= set(args.package)
+    decisions = apply_decisions(fresh, module_hashes, out_dir / "tag-decisions.json", walked)
 
     inventory_path = out_dir / "inventory.json"
     existing = []
