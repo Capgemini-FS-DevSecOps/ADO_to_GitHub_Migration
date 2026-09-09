@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
+from ado2gh.core.concurrency import ConcurrencyManager
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
 from ado2gh.models import (
@@ -23,7 +25,16 @@ from ado2gh.pipelines.validation import WorkflowValidator
 DEFAULT_WORKFLOW_BRANCH = "ado2gh/migrated-workflows"
 
 
-def _workflow_branch(ctx: ScopeContext) -> str:
+def _get_workflow_branch(ctx: ScopeContext) -> str:
+    """Resolve the branch generated workflows are pushed to for this run.
+
+    Args:
+        ctx: Scope context whose global config may override the branch name.
+
+    Returns:
+        The branch name configured under `workflow_branch`, or
+        `DEFAULT_WORKFLOW_BRANCH` when the run does not set one.
+    """
     return ctx.global_cfg.get("workflow_branch") or DEFAULT_WORKFLOW_BRANCH
 
 
@@ -33,6 +44,20 @@ def _finish_with_push(
     repo: RepoConfig,
     workflow_branch: str,
 ) -> ScopeResult:
+    """Push the locally generated workflows and record the outcome in `stats`.
+
+    Args:
+        stats: Running per-repo counters, mutated in place to carry the branch,
+            the pushed file list, the pull request URL and any push error.
+        ctx: Shared clients and state store used to perform the push.
+        repo: Repository the workflows belong to.
+        workflow_branch: Branch the workflow files are pushed to.
+
+    Returns:
+        A `ScopeResult` wrapping the updated stats. The failure count is zero
+        once the push succeeds; when the push fails the workflows remain on
+        disk only and the result reports at least one failure.
+    """
     push = push_repo_workflows(
         ctx.gh,
         repo,
@@ -65,16 +90,39 @@ def _finish_with_push(
 
 
 class PipelinesScopeHandler:
+    """Transform ADO pipelines into GitHub Actions workflows and push them."""
+
     scope = MigrationScope.PIPELINES.value
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Build the transformer and validator this handler reuses per repo."""
         self.transformer = PipelineTransformer()
         self.validator = WorkflowValidator()
 
-    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
-        pipeline_parallel = kwargs.get("pipeline_parallel", ctx.pipeline_parallel)
-        wave_id = kwargs.get("wave_id", ctx.wave_id)
-        workflow_branch = _workflow_branch(ctx)
+    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:
+        """Convert this repository's ADO pipelines and push the workflows to GitHub.
+
+        Args:
+            repo: Repository whose pipelines are being converted.
+            ctx: Shared clients, state store and execution mode.
+            **kwargs: Per-dispatch extras from `MigrationEngine`: `concurrency`,
+                `pipeline_parallel` and `wave_id`. Anything missing falls back
+                to the value on `ctx`.
+
+        Returns:
+            A `ScopeResult` counting the pipelines transformed, failed and
+            skipped, plus the workflow branch and pull request when the push
+            happened. In `ExecutionMode.DRY_RUN` workflows are transformed and
+            validated locally, nothing is pushed, and the stats carry
+            `dry_run: True`.
+        """
+        raw_parallel = kwargs.get("pipeline_parallel")
+        pipeline_parallel = (
+            raw_parallel if isinstance(raw_parallel, int) else ctx.pipeline_parallel
+        )
+        raw_wave_id = kwargs.get("wave_id")
+        wave_id = raw_wave_id if isinstance(raw_wave_id, int) else ctx.wave_id
+        workflow_branch = _get_workflow_branch(ctx)
 
         pipelines = ctx.db.get_pipelines_for_repo(repo.ado_project, repo.ado_repo)
         if repo.pipeline_filter:
@@ -103,7 +151,7 @@ class PipelinesScopeHandler:
                 if stage.environment:
                     env_names.add(stage.environment.name)
 
-        if not ctx.dry_run:
+        if ctx.mode is ExecutionMode.LIVE:
             for env_name in sorted(env_names):
                 try:
                     ctx.gh.create_environment(repo.gh_org, repo.gh_repo, env_name)
@@ -127,7 +175,7 @@ class PipelinesScopeHandler:
         )
         stats["output_dir"] = str(output_root)
 
-        if ctx.dry_run:
+        if ctx.mode is ExecutionMode.DRY_RUN:
             # Dry-run: transform and validate locally without pushing
             stats["dry_run"] = True
             stats["validation_mode"] = self.validator.validation_mode
@@ -218,10 +266,19 @@ class PipelinesScopeHandler:
                 "re-transforming and pushing"
             )
 
-        cm = kwargs.get("concurrency")
+        concurrency = kwargs.get("concurrency")
+        cm = concurrency if isinstance(concurrency, ConcurrencyManager) else None
         workers = min(pipeline_parallel, max(1, len(pending)))
 
         def _transform_one(pipe: PipelineMetadata) -> dict:
+            """Transform one pipeline, holding a concurrency slot when required.
+
+            Args:
+                pipe: Inventory record for the ADO pipeline being converted.
+
+            Returns:
+                The per-pipeline outcome mapping produced by `_do_transform`.
+            """
             if cm:
                 with cm.pipeline_slot():
                     return self._do_transform(
@@ -250,8 +307,23 @@ class PipelinesScopeHandler:
 
     def _do_transform(
         self, pipe: PipelineMetadata, wave_id: int, repo: RepoConfig,
-        ctx: ScopeContext, output_root,
+        ctx: ScopeContext, output_root: Path,
     ) -> dict:
+        """Convert a single ADO pipeline to a workflow file and record its status.
+
+        Args:
+            pipe: Inventory record for the ADO pipeline being converted.
+            wave_id: Wave the resulting pipeline migration row is attributed to.
+            repo: Repository the pipeline belongs to.
+            ctx: Shared clients and state store.
+            output_root: Directory the generated workflow file is written under.
+
+        Returns:
+            A mapping with the pipeline identifier and a `status` of either
+            `"completed"` or `"failed"`; a failure also carries an `error`
+            entry holding the exception text, which is mirrored into the
+            pipeline migration record.
+        """
         ctx.db.upsert_pipeline_migration(wave_id, pipe, repo, MigrationStatus.IN_PROGRESS)
         try:
             fetch_template = make_ado_git_fetcher(

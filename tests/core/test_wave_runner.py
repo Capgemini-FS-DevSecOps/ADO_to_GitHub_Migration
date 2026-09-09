@@ -44,7 +44,7 @@ def test_wave_runner_accepts_engine_and_db(wave_config, tmp_path):
             "failed": 0, "total": 1, "repos": {},
         }
         runner = WaveRunner(engine, db)
-        summary = runner.run_wave(wave_config, dry_run=True)
+        summary = runner.run_wave(wave_config, mode=ExecutionMode.DRY_RUN)
 
     mock_exec.assert_called_once_with(wave_config, mode=ExecutionMode.DRY_RUN)
     assert summary["completed"] == 1

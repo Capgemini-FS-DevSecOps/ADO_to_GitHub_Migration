@@ -85,7 +85,10 @@ class Accelerator:
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
         gh = _build_gh_client(global_cfg, gh_token=gh_token, gh_org=gh_org)
         db = create_state_db(request.db_path)
-        engine = MigrationEngine(global_cfg, ado, gh, db, dry_run=request.dry_run)
+        engine = MigrationEngine(
+            global_cfg, ado, gh, db,
+            mode=ExecutionMode.from_dry_run(dry_run=request.dry_run),
+        )
         executor = BatchExecutor(
             engine, db, ProgressTracker(total_repos=1, total_pipelines=1),
         )
@@ -126,7 +129,10 @@ class Accelerator:
         total_pipes = sum(
             db.inventory_count_for_repo(s["project"], s["repo_name"]) for s in phase_scores
         )
-        engine = MigrationEngine(global_cfg, ado, gh, db, dry_run=request.dry_run)
+        engine = MigrationEngine(
+            global_cfg, ado, gh, db,
+            mode=ExecutionMode.from_dry_run(dry_run=request.dry_run),
+        )
         executor = BatchExecutor(
             engine, db,
             ProgressTracker(total_repos=max(1, len(phase_scores)),

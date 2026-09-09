@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.git_scope import GitScopeHandler
-from ado2gh.models import RepoConfig
+from ado2gh.models import ExecutionMode, RepoConfig
 
 
 def test_run_gei_uses_ado2gh_extension():
@@ -92,7 +92,7 @@ def test_migrate_gei_skips_when_target_repo_already_verified():
         gh=MagicMock(),
         db=MagicMock(),
         strategy="gei",
-        dry_run=False,
+        mode=ExecutionMode.LIVE,
     )
     ctx.ado.get_repo.return_value = source
     ctx.ado.get_repo_stats.return_value = {"branch_count": 1}

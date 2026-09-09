@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from ado2gh.api.pipeline_runner import PipelineRunStore, enrich_pipeline_run_dict
 from ado2gh.core.migration_engine import MigrationEngine
-from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, RepoConfig
 
 
 def test_list_runs_paginated():
@@ -84,7 +84,7 @@ def test_migration_engine_skips_db_writes_on_dry_run():
         MagicMock(),
         MagicMock(),
         db,
-        dry_run=True,
+        mode=ExecutionMode.DRY_RUN,
     )
     repo = RepoConfig(
         ado_project="P",

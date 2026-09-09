@@ -100,7 +100,7 @@ def clear_session_migration_state(
     current_run_id: str | None = None,
 ) -> int:
     """Clear FR-036 in_progress rows for repos tied to this session."""
-    from ado2gh.core.migration_fr036 import clear_stale_in_progress_migrations
+    from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations
     from ado2gh.state.factory import create_state_db
 
     db = create_state_db()
@@ -234,7 +234,7 @@ async def cancel_agent_session(
 
 def clear_pipeline_run_migration_state(run: dict[str, Any] | Any) -> int:
     """Clear stale in_progress rows when a pipeline run ends or is cancelled."""
-    from ado2gh.core.migration_fr036 import clear_stale_in_progress_migrations
+    from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations
     from ado2gh.state.factory import create_state_db
 
     if hasattr(run, "to_dict"):

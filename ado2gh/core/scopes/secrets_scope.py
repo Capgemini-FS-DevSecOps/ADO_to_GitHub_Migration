@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import json
 import warnings
-from typing import Any
 
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
-from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, RepoConfig
 from ado2gh.output_dirs import output_base
 
 
@@ -22,6 +21,7 @@ class SecretsScopeHandler:
     scope = MigrationScope.SECRETS.value
 
     def __init__(self) -> None:
+        """Warn that this handler is deprecated in favour of the analyze_deps step."""
         warnings.warn(
             "SecretsScopeHandler is deprecated. Use analyze_deps step instead. "
             "This will be removed in v2.0.0.",
@@ -29,14 +29,30 @@ class SecretsScopeHandler:
             stacklevel=2,
         )
 
-    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
+    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:  # noqa: ARG002 - shared scope-handler signature (FR-011)
+        """Write a manifest naming the secrets an operator must set on the target.
+
+        Secret values cannot be read from the Azure DevOps API, so the manifest
+        carries variable-group and service-connection *names* and setup guidance
+        only — never a credential value (CA-003).
+
+        Args:
+            repo: Repository the manifest is written for.
+            ctx: Shared clients, state store and execution mode.
+            **kwargs: Per-dispatch extras from `MigrationEngine`; unused here.
+
+        Returns:
+            A `ScopeResult` counting the variable groups and service connections
+            found, plus the manifest path. In `ExecutionMode.DRY_RUN` no file is
+            written and the stats carry `dry_run: True`.
+        """
         var_groups = ctx.ado.list_variable_groups(repo.ado_project)
         svc_conns = ctx.ado.list_service_connections(repo.ado_project)
         stats = {
             "variable_groups": len(var_groups),
             "service_connections": len(svc_conns),
         }
-        if ctx.dry_run:
+        if ctx.mode is ExecutionMode.DRY_RUN:
             stats["dry_run"] = True
             return ScopeResult(stats=stats)
 
@@ -72,6 +88,18 @@ class SecretsScopeHandler:
 
     @staticmethod
     def _suggest(sc: dict) -> str:
+        """Suggest how an operator should re-create a service connection on GitHub.
+
+        Args:
+            sc: Service connection record from the Azure DevOps API. Only its
+                name and type are readable; no credential material is present.
+
+        Returns:
+            Guidance text naming the GitHub secrets or the OIDC login action to
+            configure for this connection type, or a prompt to review the
+            connection by hand when the type is not recognised. Names only,
+            never a credential value (CA-003).
+        """
         t = sc.get("type", "").lower()
         if "azure" in t:
             return "AZURE_CREDENTIALS or use OIDC (azure/login@v2)"

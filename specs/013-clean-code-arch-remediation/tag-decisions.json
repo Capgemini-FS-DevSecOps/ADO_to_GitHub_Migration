@@ -208,6 +208,254 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/core/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name describes the package's responsibility as the core migration engine.",
+    "state_hash": "39ad74ee957fa6c43559877816086436a8eb326b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/ado_cleanup.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes post-migration ADO cleanup responsibility.",
+    "state_hash": "a93fc2ca8f142ba36fe03ac62deced6a43d9bf3c",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/ado_cleanup.py::ADOCleanup._cleanup_one",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "Exception documented at lines 42-43; FR-012 not applied because the three action switches are independent and all combinations are valid.",
+    "state_hash": "6a94556e6a5d4087b70b2e0bfcace0e2556357b7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/ado_cleanup.py::ADOCleanup.cleanup_repos",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "Same exception documented; the design is intentional for independent cleanup actions.",
+    "state_hash": "19966e30fd476a9a42a710055dc80246301c33eb",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/concurrency.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes concurrency management responsibility.",
+    "state_hash": "1cd8a77bf874771bda1b90b606b5776c5055b668",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/concurrency.py::ConcurrencyManager.git_slot",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is clear and descriptive; context manager for git worker slot acquisition.",
+    "state_hash": "077ceae26fbbe205b75098edb98466b951b88a9c",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/concurrency.py::ConcurrencyManager.pipeline_slot",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is clear and follows a consistent pattern with git_slot.",
+    "state_hash": "20d9035fbf56f0e09ce72627997b2a4624996797",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/config_loader.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes configuration loading responsibility.",
+    "state_hash": "d75e7bf72248b2addcdb12b1ba6e60d5c902b369",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/conflict_detection.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Renamed from a requirement-ID reference (migration_fr036) to a responsibility-based name; conflict_detection accurately describes concurrent-run conflict detection and requires no further remediation.",
+    "state_hash": "db2d6c287a70a4472f58e731c5c62db121e5f6c7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/conflict_detection.py::other_run_holds_repo",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name accurately describes a boolean check for a concurrent-run conflict.",
+    "state_hash": "792686ab169da898e7ea103577fa8ce009140abf",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/discovery.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes ADO org discovery/scanning responsibility.",
+    "state_hash": "392026d3bca8fc42cb7c879b9f3b674b5c2594a8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/gei_runtime.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes GEI environment setup responsibility.",
+    "state_hash": "e73c06f3f7d9426693a9cdb324c969de2ad7ba28",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/migration_engine.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes per-repo migration orchestration responsibility.",
+    "state_hash": "fdac9052c3332868508a550317ed34a080229516",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/orchestration/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes batch orchestration responsibility.",
+    "state_hash": "b21ebc3d5c74acb6ffff30c09d6d947895cb09ce",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/orchestration/worker.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes worker task orchestration responsibility.",
+    "state_hash": "a105506855728862107ea0303819da8da8d0c116",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/redis_queue.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes Redis-backed job queue responsibility.",
+    "state_hash": "4b592db3e00e27cbcb847547740e02bccbaf1784",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/redis_queue.py::RedisJobQueue.length",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Standard queue API method name; clear and conventional.",
+    "state_hash": "b03c162b422fb2b03a60fe5084de4a063869ab7f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/rollback.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes scope-targeted rollback responsibility.",
+    "state_hash": "e4be1f89c03d94306d2c19581624474bdc2675a1",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes the scopes package responsibility.",
+    "state_hash": "ae7599306df01be6ef08a3fc9dc2260b8a8af00b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/base.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes base scope classes responsibility.",
+    "state_hash": "26de7c842591a18fa9fdc181d4eeb163b01349c2",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/branch_policies_scope.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes branch policies migration scope responsibility.",
+    "state_hash": "9e5ad53b6e010a86426b55617dba0dcc06673c0f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/git_scope.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes git/mirror migration scope responsibility.",
+    "state_hash": "9d1b351e7ea68e9397b953347f0a81db5f6dfa8d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/git_scope.py::GitScopeHandler._analyze_feasibility",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Descriptive private method name; it clearly states its responsibility.",
+    "state_hash": "5eb3a23ad8ca50e04fcefc27cae2b20239ba4d4a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/pipelines_scope.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes workflow/pipeline migration scope responsibility.",
+    "state_hash": "67fae74e374f244f7dd685ffd9dd2334dbc1fc89",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/registry.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes scope registry responsibility.",
+    "state_hash": "f0239cddfdd1f5ff35ba13c8e7b3530272eff204",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/secrets_scope.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes secrets mapping scope responsibility.",
+    "state_hash": "f44e8b56ab256069bde164270ffcc80163e77f12",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/secrets_scope.py::SecretsScopeHandler._suggest",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Private helper method; the name is clear in the context of service-connection type suggestion.",
+    "state_hash": "d7c3eca5ce48e859aa9f0cd4b1ffadb631dc621a",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/wiki_scope.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes wiki migration scope responsibility.",
+    "state_hash": "522b895f37de6e8722c0f099ba5fc563f14035ef",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/scopes/work_items_scope.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes work items migration scope responsibility.",
+    "state_hash": "fe5977f909850db788f3e6207a0a805a695c05e8",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/sessions.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes per-thread HTTP session factory responsibility.",
+    "state_hash": "9e5cd5b3f4e082e38df44061c1eb53bdb5a47720",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/core/wave_runner.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "name clearly describes wave-level migration orchestration responsibility.",
+    "state_hash": "f5505b51d6f9b076c28e546eae5972ecc9ed4b45",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/http_utils.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -616,54 +864,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/reporting/reporter.py::_colour",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Applies Rich colour markup to a status string; the name is accurate and the British spelling is fine.",
-    "state_hash": "f920fd446fc911e82a66d7b966bc027d54364ebe",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/reporting/reporter.py::_fmt_ts",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Formats an ISO timestamp for display; fmt and ts are conventional abbreviations here.",
-    "state_hash": "821191c844823aa7da5cf34cf3d171aed8c05d85",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/reporting/reporter.py::_html_complexity_badge",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Builds the HTML badge span for a complexity level; the name describes the output.",
-    "state_hash": "3e8906946460cc85ebdcad8d5afb76d6874a89d2",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/reporting/reporter.py::_html_pipeline_rows",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Builds the HTML table rows for pipeline migrations; the name describes the output.",
-    "state_hash": "6f6b639231eb4b9a5f5ef87bd2b6176a2e8d946d",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/reporting/reporter.py::_html_repo_rows",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Builds the HTML table rows for repo migrations; the name describes the output.",
-    "state_hash": "ffb845b847328a800beea3733b1b1f79232f1ea5",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/reporting/reporter.py::_html_status_badge",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Builds the HTML badge span for a migration status; the name describes the output.",
-    "state_hash": "13c34a33552bf70b957d4cf852aebb9f65a3341f",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/reporting/service_connection_manifest.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -792,27 +992,11 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.claim_next",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "selects and updates next pending job to RUNNING; verb-phrase action name accurate.",
-    "state_hash": "d7deca4bcb8015f6cc80125595154199a0b8878b",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/state/job_store.py::DynamoDBJobStore.complete",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "marks job as COMPLETED with result; verb-phrase action name accurate.",
     "state_hash": "5f4b17643e192ee146cc4fa072eb51bbdee829a5",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.enqueue",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "inserts job record; verb-phrase action name accurate.",
-    "state_hash": "a58c99e3abf16660bbfe5146aecadd8b793ebde0",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -856,27 +1040,11 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/state/job_store.py::PostgresJobStore.claim_next",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "selects next pending job with lock; verb-phrase name accurate.",
-    "state_hash": "1fca13a48e09956fc4c8b6956728204a8ea78739",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/state/job_store.py::PostgresJobStore.complete",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "updates job to COMPLETED; verb-phrase name accurate.",
     "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/state/job_store.py::PostgresJobStore.enqueue",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "inserts job record; verb-phrase name accurate.",
-    "state_hash": "a58c99e3abf16660bbfe5146aecadd8b793ebde0",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -896,27 +1064,11 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/state/job_store.py::SQLiteJobStore.claim_next",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "selects and updates next pending job; verb-phrase name accurate.",
-    "state_hash": "476456e31e96680d4a9019cf8bc9ad83a50b9734",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/state/job_store.py::SQLiteJobStore.complete",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "updates job to COMPLETED; verb-phrase name accurate.",
     "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/state/job_store.py::SQLiteJobStore.enqueue",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "inserts job record; verb-phrase name accurate.",
-    "state_hash": "a58c99e3abf16660bbfe5146aecadd8b793ebde0",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -1008,14 +1160,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/state/postgres_risk_gates_scan_mixin.py::PostgresRiskGatesScanMixin.reassign_phase_repos",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "UPDATEs phase assignments for Postgres; verb-phrase name accurate.",
-    "state_hash": "efd6db0a7d81c43c43de31cf5de430c4f34d15d2",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/state/sqlite_agentic_mixin.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -1104,14 +1248,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/state/sqlite_risk_gates_mixin.py::RiskGatesMixin.reassign_phase_repos",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "UPDATEs phase assignments; verb-phrase name accurate.",
-    "state_hash": "efd6db0a7d81c43c43de31cf5de430c4f34d15d2",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/state/sqlite_users_mixin.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -1126,5 +1262,173 @@
     "rationale": "module name accurately describes storage backend configuration.",
     "state_hash": "bf0d43269a97f9ac8e6a9ecef7546990bd767c65",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/main.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Standard name for the FastAPI application entry point and its startup configuration.",
+    "state_hash": "cf8550671deb32db142dc08617600ba715ce8cf5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/main.py::_recover_sessions_on_restart",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is imperative and accurately describes loading persisted sessions and marking active ones for resume on startup.",
+    "state_hash": "9dab39ac43a3ff4f4e9bd93451e6e13256ac0a92",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/main.py::agent_auth_middleware",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-dictated Starlette middleware; the name states what it authenticates and follows the established middleware naming pattern.",
+    "state_hash": "ce77b77642931e9ac3de10f53fada4645429fc15",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/profiles.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name directly describes the module responsibility: loading and managing local runtime profiles.",
+    "state_hash": "bfee03e7a912255d21a606eca75082f54fc24f42",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/profiles.py::capability_matrix",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Factory returning a data structure; a noun name is conventional and accurately describes the degraded-mode capability dict.",
+    "state_hash": "273fecfd10c8f23d3cf20cfd3bd44a5d93de9c44",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Standard package name for route handlers grouped by domain.",
+    "state_hash": "588d9b55c2031bc842c706cdfbe5315e3500fa1e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "New module from the increment 13 split; the name states its single domain, PEV run start, the live-approval handshake, execution mode and cancel.",
+    "state_hash": "448f319894857d6d8a759e66da4352a800a81d55",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::approve_session",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler; name accurately describes approving or denying a session for live execution.",
+    "state_hash": "42767e7dc6e37b5eab63b7f1d39e73d0cb2953c4",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "New module from the increment 13 split; the name states its single domain, the human-in-the-loop form submit, stream and cancel routes.",
+    "state_hash": "372b49582544be177bebf53c4ec24e552df79881",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::_continue_graph_after_form",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name accurately describes resuming an interrupted graph or continuing it after a form submission.",
+    "state_hash": "6a074dc9943e39af9cbe5e87d953ce155378b5aa",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "New module from the increment 13 split; the name states its single domain, the plain and SSE-streamed chat message routes.",
+    "state_hash": "0d5456c5f6cccd59a66afd7e4e842a7052cd596e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py::session_message",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler; name accurately describes handling a user message within a session.",
+    "state_hash": "8ef56ba622e41ed20551a53a60c2a58bfff32819",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py::session_message_stream",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler; name accurately describes streaming session messages over SSE.",
+    "state_hash": "ea4dfa2f437af2b707cfc669d2943098c0210773",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "New module from the increment 13 split; the name states its single domain, LLM status and the agent model catalogue.",
+    "state_hash": "1d695ccb7ebf4c98192e86008da9e9b38206f260",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py::agent_models",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler matching its endpoint; accurately describes listing the agent model catalogue.",
+    "state_hash": "8d5ef9ff74b5668975a3bab9649536d3526b7755",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py::llm_status",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler; standard naming for an LLM status endpoint on the frozen HTTP surface.",
+    "state_hash": "61a272df5398836bad7f24cba7c1ac07a07fee95",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/plan_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "New module from the increment 13 split; the name states its single domain, building a migration plan and summarising it.",
+    "state_hash": "943e1f364afd19a869592145a2b7fe547aebd47c",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/run_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Name describes the operational health and metrics routes used to monitor the running agent service.",
+    "state_hash": "5409326cd02e18627b18d0b1955cede7ab3b33f3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/run_routes.py::health",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler; standard naming for a health endpoint and part of the frozen HTTP surface.",
+    "state_hash": "16f7d6f5a6419b9977b0bf357d70cd70b56e64e5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/run_routes.py::metrics",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Framework-fixed FastAPI route handler; standard naming for a Prometheus metrics endpoint on the frozen HTTP surface.",
+    "state_hash": "7cfbcab8a24e633f111417bf0245d34868fb38ee",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py",
+    "tag": "module_name_review",
+    "decision": "confirm",
+    "rationale": "Operator decision 2026-09-08, overriding both the review agent's ESCALATE and the REJECT recorded in review-precheck.md: the 1439-line module spanned six domains and was split into session_routes (session lifecycle CRUD, provision, remediate), message_routes, form_routes, plan_routes, execution_routes and model_routes. Decided by the operator, not the reviewer. Split executed in increment 13; HTTP surface unchanged.",
+    "state_hash": "e3c704108dace4ce4c66fa74d136cd088e654234",
+    "decided_by": "operator"
   }
 ]

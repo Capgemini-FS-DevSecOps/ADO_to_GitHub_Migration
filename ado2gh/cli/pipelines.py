@@ -46,6 +46,7 @@ def register(cli):
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.migration_engine import MigrationEngine
         from ado2gh.core.wave_runner import WaveRunner
+        from ado2gh.models import ExecutionMode
         from ado2gh.reporting.reporter import Reporter
         from ado2gh.state.factory import create_state_db
         global_cfg, waves = ConfigLoader.load(config)
@@ -61,6 +62,7 @@ def register(cli):
             return
         if not dry_run:
             state.reset_failed_pipeline_migrations(wave)
-        engine = MigrationEngine(global_cfg, ado, gh, state, dry_run=dry_run)
-        WaveRunner(engine, state).run_wave(target, dry_run=dry_run)
+        mode = ExecutionMode.from_dry_run(dry_run=dry_run)
+        engine = MigrationEngine(global_cfg, ado, gh, state, mode=mode)
+        WaveRunner(engine, state).run_wave(target, mode=mode)
         Reporter(state).print_pipeline_status(wave)

@@ -43,10 +43,13 @@ def register(cli):
     def ado_cleanup(config, input_file, archive, dry_run):
         from ado2gh.core.ado_cleanup import ADOCleanup
         from ado2gh.core.config_loader import ConfigLoader
+        from ado2gh.models import ExecutionMode
         global_cfg, waves = ConfigLoader.load(config)
         ado, _ = load_clients(global_cfg)
         repos = load_repos(input_file, global_cfg, waves)
-        ADOCleanup(ado, dry_run=dry_run).cleanup_repos(repos, archive_repo=archive)
+        ADOCleanup(
+            ado, mode=ExecutionMode.from_dry_run(dry_run=dry_run)
+        ).cleanup_repos(repos, archive_repo=archive)
 
     @cli.command("push-workflows")
     @click.option("--config", "-c", required=True)

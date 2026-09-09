@@ -100,6 +100,7 @@ def register(cli):
         """Rollback migration artifacts — scope-targeted or full wave."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.core.rollback import RollbackHandler
+        from ado2gh.models import ExecutionMode
         from ado2gh.state.factory import create_state_db
 
         global_cfg, waves = ConfigLoader.load(config)
@@ -117,7 +118,11 @@ def register(cli):
                 else f"DELETE {len(target.repos)} GitHub repos in wave {wave}?"
             )
             click.confirm(msg, abort=True)
-        RollbackHandler(gh, state).rollback_wave(target, dry_run=dry_run, scopes=scope_list)
+        RollbackHandler(gh, state).rollback_wave(
+            target,
+            mode=ExecutionMode.from_dry_run(dry_run=dry_run),
+            scopes=scope_list,
+        )
 
     @cli.command("export-failed")
     @click.option("--db", default="migration_state.db", show_default=True)

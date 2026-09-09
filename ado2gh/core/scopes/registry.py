@@ -22,4 +22,12 @@ SCOPE_REGISTRY: dict[str, ScopeHandler] = {h.scope: h for h in _HANDLERS}
 
 
 def get_scope_handler(scope: str) -> ScopeHandler | None:
+    """Look up the handler registered for a scope name.
+
+    Args:
+        scope: Scope name, such as ``git`` or ``pipelines``.
+
+    Returns:
+        The matching handler, or ``None`` when the scope is unknown.
+    """
     return SCOPE_REGISTRY.get(scope)

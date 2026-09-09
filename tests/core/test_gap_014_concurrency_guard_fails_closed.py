@@ -1,7 +1,7 @@
 """GAP-014 (GAP-ENG-07) — the FR-036 concurrency guard must fail closed.
 
 Reproduction from the gap register: ``other_run_holds_repo`` in
-``ado2gh/core/migration_fr036.py`` asks two independent sources whether another
+``ado2gh/core/conflict_detection.py`` asks two independent sources whether another
 run owns the repo — ``REPO_LOCK_MANAGER.holder(...)`` at ``:14-21`` and
 ``PipelineRunStore.list_active_runs()`` at ``:22-33``. Both are wrapped in
 ``except Exception: pass`` with no record that the check was inconclusive, so
@@ -26,9 +26,9 @@ import pytest
 
 from ado2gh.api.pipeline_runner import PipelineRunStore
 from ado2gh.api.repo_lock import REPO_LOCK_MANAGER
+from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations, other_run_holds_repo
 from ado2gh.core.migration_engine import MigrationEngine
-from ado2gh.core.migration_fr036 import clear_stale_in_progress_migrations, other_run_holds_repo
-from ado2gh.models import MigrationScope, MigrationStatus, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, MigrationStatus, RepoConfig
 from ado2gh.state.db import StateDB
 
 
@@ -120,7 +120,7 @@ def test_migrate_repo_refuses_when_conflict_detection_is_inconclusive(db, repo):
         MagicMock(),
         MagicMock(),
         db,
-        dry_run=False,
+        mode=ExecutionMode.LIVE,
         pipeline_run_id="run-new",
     )
 

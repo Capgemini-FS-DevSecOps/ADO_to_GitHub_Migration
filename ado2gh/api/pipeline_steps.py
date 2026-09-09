@@ -736,7 +736,7 @@ class PipelineStepsMixin:
                 gh = _build_gh_client(global_cfg)
                 db = create_state_db(adv.db_path)
                 if not run.dry_run:
-                    from ado2gh.core.migration_fr036 import clear_stale_in_progress_migrations
+                    from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations
 
                     for repo in wave.repos:
                         clear_stale_in_progress_migrations(
@@ -750,7 +750,7 @@ class PipelineStepsMixin:
                     ado,
                     gh,
                     db,
-                    dry_run=run.dry_run,
+                    mode=ExecutionMode.from_dry_run(dry_run=run.dry_run),
                     pipeline_run_id=run.id,
                 )
                 executor = BatchExecutor(

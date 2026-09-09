@@ -34,6 +34,7 @@ from ado2gh.cli.main import cli
 from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.pipelines_scope import PipelinesScopeHandler
 from ado2gh.models import (
+    ExecutionMode,
     PipelineComplexity,
     PipelineMetadata,
     PipelineType,
@@ -147,7 +148,7 @@ def test_manual_classified_pipeline_is_not_live_pushed_by_phase_run(tmp_path, mo
     assert readiness["pipelines"][0]["classification"] == "manual"
 
     gh = _gh_mock()
-    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=gh, db=db, dry_run=False)
+    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=gh, db=db, mode=ExecutionMode.LIVE)
 
     with patch.object(
         PipelinesScopeHandler,

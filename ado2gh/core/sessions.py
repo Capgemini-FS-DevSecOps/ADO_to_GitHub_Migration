@@ -11,7 +11,12 @@ _thread_local = threading.local()
 
 
 def get_thread_session() -> requests.Session:
-    """Return a session bound to the current thread."""
+    """Return a session bound to the current thread.
+
+    Returns:
+        The calling thread's requests session, created on first use and reused
+        by every later call on the same thread.
+    """
     session = getattr(_thread_local, "session", None)
     if session is None:
         session = make_session()

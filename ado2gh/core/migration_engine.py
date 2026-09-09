@@ -1,16 +1,24 @@
 """Per-repo migration engine — thin scope dispatcher."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ado2gh.core.concurrency import ConcurrencyManager
 from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.registry import SCOPE_REGISTRY
 from ado2gh.logging_config import log
-from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, MigrationScope, MigrationStatus, RepoConfig
+from ado2gh.models import (
+    DEFAULT_MIGRATION_STRATEGY,
+    ExecutionMode,
+    MigrationScope,
+    MigrationStatus,
+    RepoConfig,
+)
 from ado2gh.state.db import StateDB
 
 if TYPE_CHECKING:
+    from rich.progress import Progress, TaskID
+
     from ado2gh.clients import ADOClient, GHClient
 
 
@@ -19,42 +27,65 @@ class MigrationEngine:
 
     SCOPES = [s.value for s in MigrationScope]
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - exception-register.md: no existing model groups these
         self,
         global_cfg: dict,
         ado: ADOClient,
         gh: GHClient,
         db: StateDB,
-        dry_run: bool = False,
+        mode: ExecutionMode = ExecutionMode.LIVE,
         concurrency: ConcurrencyManager | None = None,
         assignment_id: str | None = None,
         allowed_repo_keys: set[str] | None = None,
         pipeline_run_id: str | None = None,
-    ):
+    ) -> None:
+        """Wire the engine to its clients, its state store and its execution mode.
+
+        Args:
+            global_cfg: Parsed `global` block of migration.yaml.
+            ado: Azure DevOps client used to read the source repositories.
+            gh: GitHub client used to create and populate the targets.
+            db: State store recording per-scope migration rows.
+            mode: `ExecutionMode.DRY_RUN` previews without writing anything;
+                `ExecutionMode.LIVE` performs the migration (CA-001).
+            concurrency: Shared slot manager; built from `global_cfg` when omitted.
+            assignment_id: Cohort assignment this run belongs to, if any.
+            allowed_repo_keys: When set, only these `project/repo` keys may be
+                mutated — anything else is refused as a cross-cohort mutation.
+            pipeline_run_id: Accelerator run that owns this engine, used by the
+                FR-036 concurrency guard to recognise its own in-progress rows.
+        """
         self.cfg = global_cfg
         self.ado = ado
         self.gh = gh
         self.db = db
-        self.dry_run = dry_run
+        self.mode = mode
         self.strategy = global_cfg.get("migration_strategy", DEFAULT_MIGRATION_STRATEGY)
         self.concurrency = concurrency or ConcurrencyManager.from_dict(global_cfg)
         self.assignment_id = assignment_id
         self.allowed_repo_keys = allowed_repo_keys
         self.pipeline_run_id = pipeline_run_id
 
-    def _in_progress_block_reason(self, repo: RepoConfig) -> str | None:
+    def _get_in_progress_block_reason(self, repo: RepoConfig) -> str | None:
         """None when the stale in_progress row was cleared, else why it was kept.
 
         The reason distinguishes "another run holds this repo" from "conflict
         detection failed", so a refusal is not silently attributed to the wrong
         cause (FR-036).
+
+        Args:
+            repo: Repository carrying the in_progress row.
+
+        Returns:
+            None when the row was cleared and the migration may proceed, else a
+            sentence explaining why it was kept.
         """
-        from ado2gh.core.migration_fr036 import (
+        from ado2gh.core.conflict_detection import (
             clear_stale_in_progress_migrations,
-            repo_conflict_reason,
+            get_repo_conflict_reason,
         )
 
-        reason = repo_conflict_reason(
+        reason = get_repo_conflict_reason(
             f"{repo.ado_project}/{repo.ado_repo}", self.pipeline_run_id
         )
         if reason:
@@ -73,10 +104,23 @@ class MigrationEngine:
         self,
         wave_id: int,
         repo: RepoConfig,
-        progress: Any = None,
-        task_id: Any = None,
+        progress: Progress | None = None,
+        task_id: TaskID | None = None,
         pipeline_parallel: int = 8,
     ) -> dict:
+        """Migrate one repository across every scope it requests.
+
+        Args:
+            wave_id: Wave the migration rows are recorded against.
+            repo: Repository to migrate, carrying its own scope list.
+            progress: Optional rich progress bar to describe and advance.
+            task_id: Task within `progress` belonging to this repository.
+            pipeline_parallel: Worker count for the pipelines scope.
+
+        Returns:
+            `{"status": ..., "scopes": {...}, "errors": [...]}` where `status` is
+            `completed`, `partial` or `failed`.
+        """
         repo_key = f"{repo.ado_project}/{repo.ado_repo}"
         if self.allowed_repo_keys and repo_key not in self.allowed_repo_keys:
             return {
@@ -84,8 +128,10 @@ class MigrationEngine:
                 "scopes": {},
                 "errors": ["cross-cohort mutation blocked"],
             }
-        if not self.dry_run and self.db.has_repo_in_progress(repo.ado_project, repo.ado_repo):
-            block_reason = self._in_progress_block_reason(repo)
+        if self.mode is ExecutionMode.LIVE and self.db.has_repo_in_progress(
+            repo.ado_project, repo.ado_repo
+        ):
+            block_reason = self._get_in_progress_block_reason(repo)
             if block_reason:
                 return {
                     "status": "failed",
@@ -101,7 +147,7 @@ class MigrationEngine:
             ado=self.ado,
             gh=self.gh,
             db=self.db,
-            dry_run=self.dry_run,
+            mode=self.mode,
             strategy=self.strategy,
             wave_id=wave_id,
             pipeline_parallel=pipeline_parallel,
@@ -114,7 +160,7 @@ class MigrationEngine:
             if handler is None:
                 continue
 
-            if not self.dry_run:
+            if self.mode is ExecutionMode.LIVE:
                 self.db.upsert_migration(wave_id, repo, scope, MigrationStatus.IN_PROGRESS)
 
             if progress and task_id is not None:
@@ -123,7 +169,7 @@ class MigrationEngine:
                 )
 
             try:
-                kwargs: dict[str, Any] = {"concurrency": self.concurrency}
+                kwargs: dict[str, object] = {"concurrency": self.concurrency}
                 if scope == MigrationScope.PIPELINES.value:
                     kwargs["pipeline_parallel"] = pipeline_parallel
                     kwargs["wave_id"] = wave_id
@@ -134,7 +180,7 @@ class MigrationEngine:
 
                 if inner_failed:
                     results[scope] = {"status": "failed", "detail": stats}
-                    if not self.dry_run:
+                    if self.mode is ExecutionMode.LIVE:
                         self.db.upsert_migration(
                             wave_id, repo, scope, MigrationStatus.FAILED,
                             stats=stats,
@@ -142,7 +188,7 @@ class MigrationEngine:
                         )
                 else:
                     results[scope] = {"status": "completed", "detail": stats}
-                    if not self.dry_run:
+                    if self.mode is ExecutionMode.LIVE:
                         self.db.upsert_migration(
                             wave_id, repo, scope, MigrationStatus.COMPLETED, stats=stats,
                         )
@@ -152,7 +198,7 @@ class MigrationEngine:
                     scope, repo.ado_project, repo.ado_repo, exc,
                 )
                 results[scope] = {"status": "failed", "error": str(exc)}
-                if not self.dry_run:
+                if self.mode is ExecutionMode.LIVE:
                     self.db.upsert_migration(
                         wave_id, repo, scope, MigrationStatus.FAILED, error=str(exc),
                     )

@@ -10,19 +10,31 @@ from dataclasses import dataclass
 from typing import Any
 
 from ado2gh.audit import redact_payload
-from ado2gh.core.gei_runtime import gei_subprocess_env
+from ado2gh.core.concurrency import ConcurrencyManager
+from ado2gh.core.gei_runtime import build_gei_subprocess_env
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
 from ado2gh.logging_config import log
-from ado2gh.models import MigrationScope, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, RepoConfig
 
 
 def _redact(text: str, *secrets: str) -> str:
-    """Strip known secret values (PATs, tokens) out of subprocess output before
-    it reaches error messages, logs, or audit records.
+    """Strip known secret values out of subprocess output.
 
-    Exact-value stripping for the credentials we hold, then the platform's
-    single masking choke point (FR-025) for shapes we do not hold — a PAT echoed
-    by git for some *other* remote is still a leak."""
+    Exact-value stripping for the credentials we hold (Azure DevOps personal
+    access tokens and GitHub tokens), then the platform's single masking choke
+    point (FR-025) for shapes we do not hold — a PAT echoed by git for some
+    *other* remote is still a leak.
+
+    Args:
+        text: Raw subprocess output, which may quote a credential back at us.
+        secrets: Credential values the caller is holding; each one is replaced
+            wherever it occurs. Empty values are ignored.
+
+    Returns:
+        The same text with every credential the caller passed replaced by a
+        fixed mask, and any remaining secret-shaped substring masked too, so it
+        is safe to put in an error message, a log line, or an audit record.
+    """
     redacted = text
     for secret in secrets:
         if secret:
@@ -47,7 +59,17 @@ class FeasibilityReport:
 
 
 def _clean_clone_url(clone_url: str) -> str:
-    """Strip embedded credentials from ADO remoteUrl (e.g. https://org@dev.azure.com/...)."""
+    """Strip embedded credentials from an Azure DevOps remote URL.
+
+    Args:
+        clone_url: Remote URL as reported by Azure DevOps, which normally
+            carries a userinfo prefix in front of the host.
+
+    Returns:
+        The same URL with any userinfo component removed, so it can be logged
+        and handed to git without leaking whatever was encoded there. A value
+        that is not a URL is returned unchanged.
+    """
     if "://" not in clone_url:
         return clone_url
     scheme, rest = clone_url.split("://", 1)
@@ -57,8 +79,22 @@ def _clean_clone_url(clone_url: str) -> str:
     return f"{scheme}://{'/'.join(host_and_path)}"
 
 
-def _ado_git_env(pat: str) -> dict[str, str]:
-    """Git subprocess env using Basic auth header (reliable for Azure DevOps PATs)."""
+def _build_ado_git_env(pat: str) -> dict[str, str]:
+    """Build the git subprocess environment that authenticates against Azure DevOps.
+
+    Basic authentication through an HTTP extra header is used because it is the
+    form Azure DevOps accepts reliably for personal access tokens.
+
+    Args:
+        pat: Azure DevOps personal access token. The value is only encoded into
+            the returned environment; it is never logged, and `_redact` strips
+            it from any subprocess output that quotes it back.
+
+    Returns:
+        A copy of the current process environment with interactive credential
+        prompts disabled and a single git config override that supplies the
+        authorization header on every request git makes.
+    """
     token = base64.b64encode(f":{pat}".encode()).decode()
     return {
         **os.environ,
@@ -70,10 +106,29 @@ def _ado_git_env(pat: str) -> dict[str, str]:
 
 
 class GitScopeHandler:
+    """Move the repository's git history to GitHub, by mirror push or by GEI."""
+
     scope = MigrationScope.REPO.value
 
     def _analyze_feasibility(self, repo: RepoConfig, source: dict, repo_stats: dict, ctx: ScopeContext) -> FeasibilityReport:
-        """Analyze repository migration feasibility and recommend strategy."""
+        """Analyze repository migration feasibility and recommend a strategy.
+
+        Args:
+            repo: Repository being assessed.
+            source: Azure DevOps repository record; the repository size is read
+                from it.
+            repo_stats: Azure DevOps repository statistics; the branch count is
+                read from it.
+            ctx: Scope context, whose configured strategy is the starting
+                recommendation before the size thresholds are applied.
+
+        Returns:
+            A report pairing the measured size and branch count with a
+            recommended strategy ("mirror", "gei" or "manual"), an overall
+            status from "ok" through "fail_hard", and the human-readable
+            warnings that justify that status. The LFS object count is reported
+            as -1 because it cannot be known without cloning.
+        """
         size_kb = source.get("size", 0)
         size_mb = size_kb / 1024
         size_gb = size_mb / 1024
@@ -123,11 +178,30 @@ class GitScopeHandler:
             gei_available=gei_available,
         )
 
-    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
+    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:
+        """Migrate the repository contents to GitHub and map its teams.
+
+        Args:
+            repo: Repository to migrate.
+            ctx: Shared clients, state store and execution mode.
+            **kwargs: Per-dispatch extras from `MigrationEngine`; `concurrency`
+                supplies the git slot manager when one is in use.
+
+        Returns:
+            A `ScopeResult` carrying the chosen strategy, the feasibility report
+            and the branch counts observed on both sides. In
+            `ExecutionMode.DRY_RUN` no git command runs, nothing is created on
+            GitHub and the stats carry `dry_run: True`.
+
+        Raises:
+            ValueError: The repository has no GitHub organisation configured.
+            RuntimeError: `git` is missing, a git command failed, or the target
+                repository already exists with a different HEAD.
+        """
         log.info(
             "git: %s/%s -> %s/%s [strategy=%s]%s",
             repo.ado_project, repo.ado_repo, repo.gh_org, repo.gh_repo,
-            ctx.strategy, " [DRY RUN]" if ctx.dry_run else "",
+            ctx.strategy, " [DRY RUN]" if ctx.mode is ExecutionMode.DRY_RUN else "",
         )
 
         source = ctx.ado.get_repo(repo.ado_project, repo.ado_repo)
@@ -154,7 +228,7 @@ class GitScopeHandler:
             },
         }
 
-        if ctx.dry_run:
+        if ctx.mode is ExecutionMode.DRY_RUN:
             stats["dry_run"] = True
             return ScopeResult(stats=stats)
 
@@ -164,7 +238,8 @@ class GitScopeHandler:
                 "Configure gh_org on the migration profile or global.gh_org in migration.yaml."
             )
 
-        cm = kwargs.get("concurrency")
+        concurrency = kwargs.get("concurrency")
+        cm = concurrency if isinstance(concurrency, ConcurrencyManager) else None
         if ctx.strategy == "gei":
             existing = self._verify_existing_target_repo(repo, source, ctx)
             if existing:
@@ -209,7 +284,27 @@ class GitScopeHandler:
         source: dict,
         ctx: ScopeContext,
     ) -> dict[str, Any] | None:
-        """Skip GEI when the GitHub repo exists and default-branch HEAD matches ADO."""
+        """Decide whether a pre-existing GitHub repo already holds this migration.
+
+        Args:
+            repo: Repository being migrated.
+            source: Azure DevOps repository record, read for the repository id
+                and the default branch name.
+            ctx: Scope context supplying the Azure DevOps and GitHub clients.
+
+        Returns:
+            Stats recording the import as already done — including the matching
+            short commit SHAs from both sides — when the target repo exists and
+            its default-branch HEAD equals the Azure DevOps HEAD. `None` when
+            the target repo does not exist, or could not be checked, meaning the
+            caller should go ahead and run the import.
+
+        Raises:
+            RuntimeError: The target repo exists but its HEAD differs from Azure
+                DevOps, or its HEAD could not be read at all. GEI cannot import
+                into an existing repo, so the operator has to delete it or pick
+                a different target name.
+        """
         try:
             if not ctx.gh.repo_exists(repo.gh_org, repo.gh_repo):
                 return None
@@ -267,8 +362,33 @@ class GitScopeHandler:
         )
 
     def _run_mirror(self, repo: RepoConfig, clone_url: str, ctx: ScopeContext) -> dict:
+        """Mirror the Azure DevOps repository onto GitHub with git clone and push.
+
+        Clones into a temporary bare mirror, repoints the remote at GitHub,
+        force-pushes every branch and tag, pushes LFS objects unless the
+        repository opts out, and syncs the default branch. The temporary clone
+        is always removed.
+
+        Args:
+            repo: Repository being migrated, including its LFS opt-out flag.
+            clone_url: Azure DevOps remote URL; any embedded userinfo is
+                stripped before git sees it.
+            ctx: Scope context supplying the Azure DevOps personal access token
+                and the GitHub token that authenticates the push. Neither value
+                is logged, and both are masked out of any error raised from the
+                captured subprocess output.
+
+        Returns:
+            Stats marking the mirror as successful, merged with the LFS
+            counters produced by `_push_lfs`.
+
+        Raises:
+            RuntimeError: `git` is not on PATH, or the clone, the remote
+                rewrite, or the push of branches and tags failed. The failure
+                text is redacted before it is raised.
+        """
         clone_url = _clean_clone_url(clone_url)
-        git_env = _ado_git_env(ctx.ado.pat)
+        git_env = _build_ado_git_env(ctx.ado.pat)
         gh_token = ctx.gh.token_manager.get_token()
         target_url = (
             f"https://x-access-token:{gh_token}@github.com/"
@@ -317,7 +437,7 @@ class GitScopeHandler:
                 lfs_stats = self._push_lfs(mirror_path, target_url, gh_token)
 
             try:
-                source_default = self._source_default_branch(mirror_path)
+                source_default = self._get_source_default_branch(mirror_path)
                 if source_default:
                     current = ctx.gh.get_default_branch(repo.gh_org, repo.gh_repo)
                     if current != source_default:
@@ -333,7 +453,17 @@ class GitScopeHandler:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     @staticmethod
-    def _source_default_branch(mirror_path: str) -> str:
+    def _get_source_default_branch(mirror_path: str) -> str:
+        """Read the default branch name recorded in a local mirror clone.
+
+        Args:
+            mirror_path: Path to the bare mirror clone.
+
+        Returns:
+            The short branch name that HEAD points at, or an empty string when
+            git cannot resolve one, in which case the caller leaves the GitHub
+            default branch untouched.
+        """
         result = subprocess.run(
             ["git", "symbolic-ref", "--short", "HEAD"],
             capture_output=True, text=True, cwd=mirror_path, timeout=10,
@@ -342,6 +472,22 @@ class GitScopeHandler:
 
     @staticmethod
     def _push_lfs(mirror_path: str, target_url: str, token: str) -> dict:
+        """Push Git LFS objects from a mirror clone up to the GitHub remote.
+
+        Args:
+            mirror_path: Path to the bare mirror clone.
+            target_url: GitHub push URL that carries an access token inside it.
+                The value is never logged and is masked out of any error text
+                this function reports.
+            token: The GitHub token embedded in `target_url`, passed separately
+                so it can be stripped from an exception message.
+
+        Returns:
+            Counters describing the transfer: how many LFS objects the clone
+            holds, and whether the push succeeded, was only partial, or was
+            skipped because the git-lfs binary is not installed. A count of -1
+            means the objects could not be enumerated at all.
+        """
         try:
             result = subprocess.run(
                 ["git", "lfs", "ls-files"],
@@ -364,6 +510,30 @@ class GitScopeHandler:
             return {"lfs_objects": -1, "lfs_push": f"error: {_redact(str(exc), token)}"}
 
     def _run_gei(self, repo: RepoConfig, source: dict, ctx: ScopeContext) -> dict:
+        """Import the repository using the GitHub Enterprise Importer CLI.
+
+        Args:
+            repo: Repository being migrated.
+            source: Azure DevOps repository record, used only when the importer
+                declines and the existing target has to be verified.
+            ctx: Scope context supplying the Azure DevOps personal access token
+                and the GitHub token. Both reach the importer through its
+                subprocess environment only, and both are masked out of the
+                captured output before it can appear in an error or in the
+                returned stats.
+
+        Returns:
+            Stats marking the import as successful together with the redacted
+            head of the importer's output. If the importer declined because the
+            target repo already matches Azure DevOps, the skip stats from
+            `_verify_existing_target_repo` are returned instead.
+
+        Raises:
+            RuntimeError: The importer exited non-zero, printed its usage help
+                (which means the gh-ado2gh extension is not installed
+                correctly), or refused to import into an existing target repo
+                that does not match Azure DevOps.
+        """
         ado_org = ctx.global_cfg.get("ado_org_url", "").rstrip("/").split("/")[-1]
         gh_token = ctx.gh.token_manager.get_token()
         cmd = [
@@ -374,7 +544,7 @@ class GitScopeHandler:
             "--github-org", repo.gh_org,
             "--github-repo", repo.gh_repo,
         ]
-        env = gei_subprocess_env(ADO_PAT=ctx.ado.pat, GH_PAT=gh_token)
+        env = build_gei_subprocess_env(ADO_PAT=ctx.ado.pat, GH_PAT=gh_token)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200, env=env)
         combined = _redact(f"{result.stdout}\n{result.stderr}", ctx.ado.pat, gh_token)
         if result.returncode != 0:

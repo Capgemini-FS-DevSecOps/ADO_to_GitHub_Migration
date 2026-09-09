@@ -2,18 +2,36 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, RepoConfig
+from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, ExecutionMode, RepoConfig
+
+if TYPE_CHECKING:
+    from ado2gh.clients import ADOClient, GHClient
+    from ado2gh.state.base import StateDBBase
 
 
 @dataclass
 class ScopeContext:
+    """Everything a scope handler needs that is not the repository itself.
+
+    Attributes:
+        global_cfg: Parsed `global` block of migration.yaml.
+        ado: Azure DevOps client for the source organisation.
+        gh: GitHub client for the target organisation.
+        db: State store the handler records its rows against.
+        mode: `ExecutionMode.DRY_RUN` previews without writing to either side;
+            `ExecutionMode.LIVE` performs the migration (CA-001).
+        strategy: Repository migration strategy, `mirror` or `gei`.
+        wave_id: Wave the resulting rows belong to.
+        pipeline_parallel: Worker count for the pipelines scope.
+    """
+
     global_cfg: dict
-    ado: Any
-    gh: Any
-    db: Any
-    dry_run: bool = False
+    ado: ADOClient
+    gh: GHClient
+    db: StateDBBase
+    mode: ExecutionMode = ExecutionMode.LIVE
     strategy: str = DEFAULT_MIGRATION_STRATEGY
     wave_id: int = 0
     pipeline_parallel: int = 8
@@ -21,12 +39,34 @@ class ScopeContext:
 
 @dataclass
 class ScopeResult:
+    """Outcome of one scope handler run.
+
+    Attributes:
+        stats: Handler-specific counters and messages, surfaced to the caller.
+        failed: Number of items that failed; zero means the scope succeeded.
+    """
+
     stats: dict = field(default_factory=dict)
     failed: int = 0
 
 
 class ScopeHandler(Protocol):
+    """The single signature every scope handler in this package shares (FR-011)."""
+
     scope: str
 
-    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: Any) -> ScopeResult:
+    def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:
+        """Migrate one scope of one repository.
+
+        Args:
+            repo: Repository to migrate.
+            ctx: Shared clients, state store and execution mode.
+            **kwargs: Optional per-dispatch extras. `MigrationEngine` passes
+                `concurrency`, and for the pipelines scope also
+                `pipeline_parallel` and `wave_id`; handlers that do not need
+                them ignore the mapping.
+
+        Returns:
+            A `ScopeResult` carrying the handler's stats and failure count.
+        """
         ...

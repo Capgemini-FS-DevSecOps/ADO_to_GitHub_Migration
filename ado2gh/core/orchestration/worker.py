@@ -10,16 +10,28 @@ from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 ensure_gei_dotnet_env()
 
 from ado2gh.api.accelerator import Accelerator
+from ado2gh.api.contracts import JobRecord, RunWaveRequest
 from ado2gh.api.contracts import JobTypeEnum as JobType
-from ado2gh.api.contracts import RunWaveRequest
 from ado2gh.core.redis_queue import RedisJobQueue
 from ado2gh.state.job_store import JobStoreFactory
 
 log = logging.getLogger("ado2gh.worker")
 
 
-def execute_job(job) -> dict:
-    """Run a single job based on its type."""
+def execute_job(job: JobRecord) -> dict:
+    """Run a single job based on its type.
+
+    Args:
+        job: The claimed job. Its payload supplies the accelerator config and
+            database paths as well as the request fields for the job type.
+
+    Returns:
+        The accelerator response for that job type, as a plain dictionary
+        ready to be stored as the job result.
+
+    Raises:
+        ValueError: If the job type has no handler.
+    """
     accel = Accelerator(
         config_path=job.payload.get("config_path", ""),
         db_path=job.payload.get("db_path", "migration_state.db"),
@@ -50,6 +62,12 @@ def execute_job(job) -> dict:
 
 
 def run_worker(poll_interval: float = 1.0) -> None:
+    """Consume jobs from the queue forever, executing each one.
+
+    Args:
+        poll_interval: Seconds to wait for a queued job before falling back
+            to claiming directly from the job store.
+    """
     store = JobStoreFactory.from_env()
     queue = RedisJobQueue()
     log.info("Worker started — queue=%s", queue.queue_name)

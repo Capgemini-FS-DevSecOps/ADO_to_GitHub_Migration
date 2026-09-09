@@ -7,7 +7,7 @@ from typing import Any
 
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import RepoConfig
+from ado2gh.models import ExecutionMode, RepoConfig
 
 
 class ADOCleanup:
@@ -19,16 +19,29 @@ class ADOCleanup:
     3. Archive (disable) the ADO repo to prevent further commits
     """
 
-    def __init__(self, ado: ADOClient, dry_run: bool = False):
+    def __init__(self, ado: ADOClient, mode: ExecutionMode = ExecutionMode.LIVE) -> None:
+        """Wire the cleanup to an ADO client and an execution mode.
+
+        Args:
+            ado: Azure DevOps client for the source organisation.
+            mode: `ExecutionMode.DRY_RUN` reports what each action would do and
+                changes nothing; `ExecutionMode.LIVE` performs it (CA-001).
+        """
         self.ado = ado
-        self.dry_run = dry_run
+        self.mode = mode
 
     def cleanup_repos(self, repos: list[RepoConfig],
+                      *,
                       disable_pipelines: bool = True,
                       add_redirect: bool = True,
                       archive_repo: bool = False,
                       max_workers: int = 4) -> list[dict]:
         """Run cleanup actions on migrated ADO repos.
+
+        The three action switches are independent and every combination of them
+        is valid, so they stay booleans and are keyword-only rather than being
+        folded into an enum (the review agent recorded them as `bool_data`, not
+        `bool_flag`, in `tag-decisions.json`).
 
         Args:
             repos: Repos to clean up (should be successfully migrated).
@@ -36,19 +49,25 @@ class ADOCleanup:
             add_redirect: Push a README pointing to the new GitHub repo.
             archive_repo: Disable the ADO repo (no further pushes).
             max_workers: Parallelism for cleanup operations.
+
+        Returns:
+            One result dict per repo, each carrying its status and the outcome
+            of every action that ran.
         """
         results: list[dict] = []
         console.print(f"[bold]ADO Cleanup: {len(repos)} repos[/bold] "
                        f"[pipelines={'Y' if disable_pipelines else 'N'} "
                        f"redirect={'Y' if add_redirect else 'N'} "
                        f"archive={'Y' if archive_repo else 'N'}]"
-                       f"{'  [DRY RUN]' if self.dry_run else ''}")
+                       f"{'  [DRY RUN]' if self.mode is ExecutionMode.DRY_RUN else ''}")
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
                 pool.submit(
                     self._cleanup_one, repo,
-                    disable_pipelines, add_redirect, archive_repo,
+                    disable_pipelines=disable_pipelines,
+                    add_redirect=add_redirect,
+                    archive_repo=archive_repo,
                 ): repo
                 for repo in repos
             }
@@ -72,9 +91,22 @@ class ADOCleanup:
         return results
 
     def _cleanup_one(self, repo: RepoConfig,
+                     *,
                      disable_pipelines: bool,
                      add_redirect: bool,
                      archive_repo: bool) -> dict:
+        """Run the requested cleanup actions on one repo.
+
+        Args:
+            repo: Repo to clean up.
+            disable_pipelines: Disable all build/release pipelines.
+            add_redirect: Push a README pointing to the new GitHub repo.
+            archive_repo: Disable the ADO repo (no further pushes).
+
+        Returns:
+            The repo's result dict, with one entry under `actions` per action
+            that ran.
+        """
         result: dict[str, Any] = {
             "ado_project": repo.ado_project,
             "ado_repo": repo.ado_repo,
@@ -95,7 +127,16 @@ class ADOCleanup:
         return result
 
     def _disable_pipelines(self, repo: RepoConfig) -> dict:
-        """Disable all build pipelines associated with this repo."""
+        """Disable all build pipelines associated with this repo.
+
+        Args:
+            repo: Repo whose ADO build pipelines are disabled.
+
+        Returns:
+            Counters for the pipelines found, disabled and failed. In
+            `ExecutionMode.DRY_RUN` the counts are reported and the entry
+            `dry_run: True` is added, but no pipeline is touched.
+        """
         stats = {"disabled": 0, "failed": 0, "total": 0}
 
         pipelines = list(self.ado.list_all_pipelines(repo.ado_project))
@@ -113,7 +154,7 @@ class ADOCleanup:
 
         stats["total"] = len(repo_pipelines)
 
-        if self.dry_run:
+        if self.mode is ExecutionMode.DRY_RUN:
             stats["dry_run"] = True
             return stats
 
@@ -139,7 +180,16 @@ class ADOCleanup:
         return stats
 
     def enable_pipelines(self, repo: RepoConfig) -> dict:
-        """Re-enable ADO pipelines disabled after migration (FR-026a symmetric rollback)."""
+        """Re-enable ADO pipelines disabled after migration (FR-026a symmetric rollback).
+
+        Args:
+            repo: Repo whose ADO build pipelines are re-enabled.
+
+        Returns:
+            Counters for the pipelines found, re-enabled and failed. In
+            `ExecutionMode.DRY_RUN` the counts are reported and the entry
+            `dry_run: True` is added, but no pipeline is touched.
+        """
         stats = {"enabled": 0, "failed": 0, "total": 0}
         pipelines = list(self.ado.list_all_pipelines(repo.ado_project))
         repo_pipelines = []
@@ -152,7 +202,7 @@ class ADOCleanup:
             except Exception:
                 pass
         stats["total"] = len(repo_pipelines)
-        if self.dry_run:
+        if self.mode is ExecutionMode.DRY_RUN:
             stats["dry_run"] = True
             return stats
         for defn in repo_pipelines:
@@ -178,8 +228,21 @@ class ADOCleanup:
         return stats
 
     def _add_redirect_readme(self, repo: RepoConfig) -> dict:
-        """Push a MIGRATION_NOTICE.md to the ADO repo pointing to GitHub."""
-        if self.dry_run:
+        """Push a MIGRATION_NOTICE.md to the ADO repo pointing to GitHub.
+
+        Args:
+            repo: Repo the notice is pushed to, and whose GitHub target the
+                notice points at.
+
+        Returns:
+            `{"status": "added"}` on success, `{"status": "skipped", ...}` when
+            the repo has no default-branch ref, `{"status": "failed", ...}` with
+            the HTTP code when ADO refused the push, or
+            `{"status": "error", ...}` when the call raised. In
+            `ExecutionMode.DRY_RUN` it is `{"dry_run": True}` and nothing is
+            pushed.
+        """
+        if self.mode is ExecutionMode.DRY_RUN:
             return {"dry_run": True}
 
         notice_content = (
@@ -245,8 +308,18 @@ class ADOCleanup:
             return {"status": "error", "error": str(exc)}
 
     def _archive_repo(self, repo: RepoConfig) -> dict:
-        """Disable the ADO repo to prevent further pushes."""
-        if self.dry_run:
+        """Disable the ADO repo to prevent further pushes.
+
+        Args:
+            repo: Repo to archive on the ADO side.
+
+        Returns:
+            `{"status": "archived"}` on success, `{"status": "failed", ...}`
+            with the HTTP code when ADO refused, or `{"status": "error", ...}`
+            when the call raised. In `ExecutionMode.DRY_RUN` it is
+            `{"dry_run": True}` and the repo is left enabled.
+        """
+        if self.mode is ExecutionMode.DRY_RUN:
             return {"dry_run": True}
 
         try:

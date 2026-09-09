@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-from ado2gh.core.gei_runtime import ensure_gei_dotnet_env, gei_subprocess_env
+from ado2gh.core.gei_runtime import build_gei_subprocess_env, ensure_gei_dotnet_env
 
 
 def test_ensure_gei_dotnet_env_sets_invariant(monkeypatch):
@@ -14,7 +14,7 @@ def test_ensure_gei_dotnet_env_sets_invariant(monkeypatch):
 
 def test_gei_subprocess_env_merges_extra(monkeypatch):
     monkeypatch.setenv("DOTNET_SYSTEM_GLOBALIZATION_INVARIANT", "1")
-    env = gei_subprocess_env(ADO_PAT="x", GH_PAT="y")
+    env = build_gei_subprocess_env(ADO_PAT="x", GH_PAT="y")
     assert env["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] == "1"
     assert env["ADO_PAT"] == "x"
     assert env["GH_PAT"] == "y"

@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.scopes.base import ScopeContext, ScopeResult
-from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, RepoConfig
+from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, ExecutionMode, RepoConfig
 from ado2gh.state.factory import create_state_db
 from services.accelerator_api.routes._shared import (
     _settings,
@@ -124,7 +124,7 @@ def _build_scope_context(
         ado=ado,
         gh=gh,
         db=_state_db(),
-        dry_run=dry_run,
+        mode=ExecutionMode.from_dry_run(dry_run=dry_run),
         strategy=cfg.get("migration_strategy", DEFAULT_MIGRATION_STRATEGY),
     )
 

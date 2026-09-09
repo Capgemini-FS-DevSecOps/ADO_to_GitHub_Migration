@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from ado2gh.core.ado_cleanup import ADOCleanup
 from ado2gh.core.rollback import RollbackHandler
-from ado2gh.models import MigrationScope, MigrationStatus, RepoConfig
+from ado2gh.models import ExecutionMode, MigrationScope, MigrationStatus, RepoConfig
 from ado2gh.state.db import StateDB
 
 
@@ -15,7 +15,7 @@ def test_enable_pipelines_dry_run(tmp_path):
         "name": "build",
         "repository": {"name": "repo1"},
     }
-    cleanup = ADOCleanup(ado, dry_run=True)
+    cleanup = ADOCleanup(ado, mode=ExecutionMode.DRY_RUN)
     repo = RepoConfig(ado_project="P", ado_repo="repo1", gh_org="o", gh_repo="repo1")
     stats = cleanup.enable_pipelines(repo)
     assert stats.get("dry_run") is True
@@ -37,5 +37,5 @@ def test_rollback_pipelines_with_ado(tmp_path):
     }
     stats = {}
     with patch.object(ADOCleanup, "enable_pipelines", return_value={"enabled": 2}):
-        handler._rollback_pipelines(1, record, False, stats)
+        handler._rollback_pipelines(1, record, ExecutionMode.LIVE, stats)
     assert stats.get("ado_pipelines_reenabled") == 2

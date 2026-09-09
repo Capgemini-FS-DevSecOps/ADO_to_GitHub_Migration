@@ -1,3 +1,4 @@
+"""Core migration engine: discovery, wave execution, rollback and ADO cleanup."""
 from ado2gh.core.ado_cleanup import ADOCleanup as ADOCleanup
 from ado2gh.core.config_loader import ConfigLoader as ConfigLoader
 from ado2gh.core.discovery import DiscoveryScanner as DiscoveryScanner

@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from ado2gh.core.scopes.base import ScopeContext
 from ado2gh.core.scopes.pipelines_scope import PipelinesScopeHandler
-from ado2gh.models import PipelineMetadata, PipelineType, RepoConfig
+from ado2gh.models import ExecutionMode, PipelineMetadata, PipelineType, RepoConfig
 
 
 def _repo() -> RepoConfig:
@@ -62,7 +62,7 @@ def test_pipelines_scope_pushes_after_transform(mock_transform, mock_push, tmp_p
         ado=MagicMock(),
         gh=gh,
         db=db,
-        dry_run=False,
+        mode=ExecutionMode.LIVE,
     )
 
     result = PipelinesScopeHandler().migrate(_repo(), ctx, wave_id=1)
@@ -86,7 +86,7 @@ def test_pipelines_scope_fails_when_push_fails(mock_transform, mock_push):
     db = MagicMock()
     db.get_pipelines_for_repo.return_value = [_pipe()]
     db.get_wave_pipeline_migrations.return_value = []
-    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, dry_run=False)
+    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, mode=ExecutionMode.LIVE)
 
     result = PipelinesScopeHandler().migrate(_repo(), ctx, wave_id=1)
 
@@ -119,7 +119,7 @@ def test_pipelines_scope_retransforms_when_db_complete_but_github_missing(
             "gh_repo": "azure-pipelines-script-migration",
         },
     ]
-    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, dry_run=False)
+    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, mode=ExecutionMode.LIVE)
 
     with patch(
         "ado2gh.core.scopes.pipelines_scope._finish_with_push",
@@ -150,7 +150,7 @@ def test_pipelines_scope_skips_when_remote_workflows_exist(
             "gh_repo": "azure-pipelines-script-migration",
         },
     ]
-    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, dry_run=False)
+    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, mode=ExecutionMode.LIVE)
 
     result = PipelinesScopeHandler().migrate(_repo(), ctx, wave_id=1)
 
@@ -182,7 +182,7 @@ def test_pipelines_scope_does_not_skip_other_repo_completions(mock_transform, mo
             "gh_repo": "other-repo",
         },
     ]
-    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, dry_run=False)
+    ctx = ScopeContext(global_cfg={}, ado=MagicMock(), gh=MagicMock(), db=db, mode=ExecutionMode.LIVE)
 
     with patch("ado2gh.core.scopes.pipelines_scope.remote_workflow_files", return_value=[]):
         result = PipelinesScopeHandler().migrate(_repo(), ctx, wave_id=1)
