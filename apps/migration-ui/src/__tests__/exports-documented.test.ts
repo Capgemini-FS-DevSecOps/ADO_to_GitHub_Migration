@@ -129,3 +129,15 @@ describe('walkExports', () => {
     expect(row.next_route_export).toBe(true);
   });
 });
+
+// T073 (research R4): the zero-`missing_docstring` state the cleanup reached is enforced
+// here, not just measured in inventory.json. `walkExports` reads `src` relative to the
+// cwd, which `vitest run` sets to `apps/migration-ui` (package.json `test` script); a
+// wrong cwd makes the walk throw ENOENT rather than pass on an empty set.
+describe('every export in the console is documented', () => {
+  it('finds no export under src/ without a leading JSDoc block', () => {
+    const rows = toRows(walkExports('src'));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.filter((row) => !row.documented).map((row) => row.id)).toEqual([]);
+  });
+});
