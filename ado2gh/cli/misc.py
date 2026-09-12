@@ -27,7 +27,8 @@ def register(cli: click.Group) -> None:
     )
     @click.option(
         "--db", default="migration_state.db", show_default=True,
-        help="Path to the migration state database file holding the pipeline inventory.",
+        help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+             "ignored when ADO2GH_STORAGE_BACKEND selects postgres.",
     )
     def pipeline_readiness(config: str, input_file: str | None, output: str, db: str) -> None:
         """Classify every inventoried pipeline as an automatic, assisted or manual conversion.

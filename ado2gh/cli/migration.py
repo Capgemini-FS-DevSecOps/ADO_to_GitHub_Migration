@@ -34,7 +34,8 @@ def register(cli: click.Group) -> None:
     @click.option("--dry-run", is_flag=True, default=False,
                   help="Report what would be migrated without creating or pushing anything.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def run(config: str, wave: int | None, db: str, *, dry_run: bool) -> None:
         """Execute migration wave(s). A re-run is not free — read on.
 
@@ -85,7 +86,8 @@ def register(cli: click.Group) -> None:
     @click.option("--wave", "-w", type=int, default=None,
                   help="Wave number to report on. Omit for a summary of every wave.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file the status is read from.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def status(config: str, wave: int | None, db: str) -> None:
         """Show repo + pipeline migration status."""
         from ado2gh.core.config_loader import ConfigLoader
@@ -111,7 +113,8 @@ def register(cli: click.Group) -> None:
                   type=click.Choice(["html", "json", "csv"]), show_default=True,
                   help="Report format to generate.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file the report is built from.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def report(output: str, fmt: str, db: str) -> None:
         """Generate HTML, JSON, or CSV migration report."""
         from ado2gh.reporting.csv_exporter import CSVExporter
@@ -139,7 +142,8 @@ def register(cli: click.Group) -> None:
     @click.option("--dry-run", is_flag=True, default=False,
                   help="Report what would be undone without deleting or changing anything.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     @click.option("--scopes", "-s", default=None,
                   help="Comma-separated scopes to undo, for example "
                        "branch_policies,pipelines. Omit to roll back the whole wave, "
@@ -176,7 +180,8 @@ def register(cli: click.Group) -> None:
 
     @cli.command("export-failed")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file the failures are read from.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     @click.option("--phase", "-p", default=None,
                   help="Limit the export to one phase. Omit to export every failure.")
     @click.option("--output", "-o", default=lambda: output_str("failed_repos.txt"),
@@ -196,7 +201,8 @@ def register(cli: click.Group) -> None:
                   help="File listing the repos to validate. Defaults to the repos "
                        "in the config waves.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     @click.option("--output", "-o", default=lambda: output_str("validation_report.csv"),
                   show_default="$ADO2GH_OUTPUT_DIR/validation_report.csv",
                   help="Path of the CSV validation report to write.")

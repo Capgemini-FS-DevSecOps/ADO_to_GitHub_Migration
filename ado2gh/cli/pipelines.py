@@ -31,7 +31,8 @@ def register(cli: click.Group) -> None:
     )
     @click.option(
         "--db", default="migration_state.db", show_default=True,
-        help="Migration state database file the inventory is written to.",
+        help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+             "ignored when ADO2GH_STORAGE_BACKEND selects postgres.",
     )
     def pipelines_inventory(
         config: str, project: tuple[str, ...], parallel: int, db: str,
@@ -61,7 +62,8 @@ def register(cli: click.Group) -> None:
     @click.option("--wave", "-w", type=int, required=True, help="Wave number to report on.")
     @click.option(
         "--db", default="migration_state.db", show_default=True,
-        help="Migration state database file to read the pipeline results from.",
+        help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+             "ignored when ADO2GH_STORAGE_BACKEND selects postgres.",
     )
     def pipelines_status(wave: int, db: str) -> None:
         """Print the pipeline migration status for one wave."""
@@ -78,7 +80,8 @@ def register(cli: click.Group) -> None:
     )
     @click.option(
         "--db", default="migration_state.db", show_default=True,
-        help="Migration state database file holding the failed pipeline records.",
+        help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+             "ignored when ADO2GH_STORAGE_BACKEND selects postgres.",
     )
     def pipelines_retry_failed(config: str, wave: int, db: str, *, dry_run: bool) -> None:
         """Re-attempt the pipelines that failed in one wave.

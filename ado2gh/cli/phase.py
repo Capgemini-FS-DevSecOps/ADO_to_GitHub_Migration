@@ -87,7 +87,8 @@ def register(cli: click.Group) -> None:
                        "Does NOT get you past a blocked gate: record the override "
                        "first with 'phase gate-check --override --reason \"...\"'.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def phase_run(
         config: str, phase_name: str, db: str, *, dry_run: bool, force: bool,
     ) -> None:
@@ -134,7 +135,8 @@ def register(cli: click.Group) -> None:
                   help="Why you are overriding. Required with --override, and kept "
                        "on the gate record for the audit trail.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def gate_check(
         config: str, phase_name: str, reason: str, db: str, *, override: bool,
     ) -> None:
@@ -167,7 +169,8 @@ def register(cli: click.Group) -> None:
     @click.option("--config", "-c", required=True,
                   help="Settings config file with the ADO organisation and target org.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file the risk scores are written to.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def phase_assign(config: str, db: str) -> None:
         """Risk-score every repo in the organisation and assign it to a phase.
 
@@ -197,7 +200,8 @@ def register(cli: click.Group) -> None:
     @click.option("--config", "-c", required=True,
                   help="Phase config file, normally migration_phase.yaml.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def phase_plan(config: str, db: str) -> None:
         """Show how many repos and waves each phase holds, without running anything."""
         from rich.panel import Panel
@@ -220,7 +224,8 @@ def register(cli: click.Group) -> None:
     @click.option("--config", "-c", required=True, expose_value=False,
                   help="Phase config file, normally migration_phase.yaml.")
     @click.option("--db", default="migration_state.db", show_default=True,
-                  help="Migration state database file the snapshot is read from.")
+                  help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
+                       "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
     def phase_dashboard(db: str) -> None:
         """Print a snapshot of migration progress across every phase."""
         from ado2gh.api.accelerator import Accelerator
