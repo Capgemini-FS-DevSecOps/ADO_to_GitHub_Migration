@@ -220,10 +220,10 @@
 
 **Purpose**: Turn the clean state into an enforced state using the tooling already in CI.
 
-- [ ] T071 Extend `[tool.ruff.lint] select` in `pyproject.toml` with the T002-verified set (`D1`, `ANN`, `FBT001`, `FBT002`, `PLR0913`, `B006`, `ARG`, `RET501`, `RET502`, `RET503`), add `[tool.ruff.lint.pylint] max-args = 5` and `[tool.ruff.lint.pydocstyle] convention = "google"`; run `python -m ruff check ado2gh/ services/` — zero findings except `# noqa` lines listed in `FEATURE/exception-register.md`
-- [ ] T072 [P] Audit every `# noqa:` added during cleanup against `FEATURE/exception-register.md` (one row per noqa; remove orphans; add missing rows); confirm register rows ≤ 2 % of `totals.functions`
+- [X] T071 Extend `[tool.ruff.lint] select` in `pyproject.toml` with the T002-verified set (`D1`, `ANN`, `FBT001`, `FBT002`, `PLR0913`, `B006`, `ARG`, `RET501`, `RET502`, `RET503`), add `[tool.ruff.lint.pylint] max-args = 5` and `[tool.ruff.lint.pydocstyle] convention = "google"`; run `python -m ruff check ado2gh/ services/` — zero findings except `# noqa` lines listed in `FEATURE/exception-register.md`
+- [X] T072 [P] Audit every `# noqa:` added during cleanup against `FEATURE/exception-register.md` (one row per noqa; remove orphans; add missing rows); confirm register rows ≤ 2 % of `totals.functions`
 - [X] T073 [P] Turn on `"noUnusedParameters": true` in `apps/migration-ui/tsconfig.json` and add the assertion to `apps/migration-ui/src/__tests__/exports-documented.test.ts` that every export returned by `walkExports("src")` is documented; `npx tsc --noEmit && npx vitest run` green
-- [ ] T074 Run `.pre-commit-config.yaml` hooks locally (`pre-commit run --all-files` if installed, else `python -m ruff check --diff ado2gh/ services/`, which must print no diff) to confirm the new rule set is clean under the pinned `ruff-pre-commit` rev; commit `chore(013): enforce clean-code rule set`
+- [X] T074 Run `.pre-commit-config.yaml` hooks locally (`pre-commit run --all-files` if installed, else `python -m ruff check --diff ado2gh/ services/`, which must print no diff) to confirm the new rule set is clean under the pinned `ruff-pre-commit` rev; commit `chore(013): enforce clean-code rule set`
 
 ---
 
