@@ -142,18 +142,33 @@ class Accelerator:
             gh_token: GitHub credential override, used only when no multi-token or
                 token-config source is present.
 
+        A quoted ``request.live_approval_id`` is verified here before anything
+        else happens: it must name an ``approved`` live-execution approval or
+        nothing is migrated (GAP-018). Quoting no token leaves the run as it
+        was — this is not the approval gate itself, which lives in the routes.
+
         Returns:
             A ``RunWaveResult`` for the last wave executed: its wave id, final
             status, and the completed, failed and total repository counts.
 
         Raises:
-            ConfigurationError: The requested wave is not in the config, or Azure
+            ConfigurationError: The quoted live approval does not exist or was
+                not granted, the requested wave is not in the config, or Azure
                 DevOps or GitHub credentials could not be resolved.
         """
+        db = create_state_db(request.db_path)
+        if request.live_approval_id:
+            row = db.get_live_execution_approval(request.live_approval_id)
+            if not row or row.get("status") != "approved":
+                raise ConfigurationError(
+                    f"live_approval_id {request.live_approval_id!r} is not an "
+                    f"approved live-execution approval "
+                    f"(status: {row.get('status') if row else 'no such approval'}). "
+                    f"Nothing was migrated."
+                )
         global_cfg, waves = ConfigLoader.load(request.config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)
         gh = _build_gh_client(global_cfg, gh_token=gh_token)
-        db = create_state_db(request.db_path)
         engine = MigrationEngine(
             global_cfg, ado, gh, db,
             mode=ExecutionMode.from_dry_run(dry_run=request.dry_run),
