@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-53 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08 and GAP-053 on 2026-09-09, each with the next free id); the per-component placeholder each id
+54 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, and GAP-054 on 2026-09-12, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -22,13 +22,13 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 16 |
-| high | 21 |
+| high | 22 |
 | medium | 11 |
 | low | 5 |
-| **total** | **53** |
+| **total** | **54** |
 
 All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 53 entries carries at least one path:line citation or a reproduction command
+one of the 54 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -49,27 +49,34 @@ one of the 53 entries carries at least one path:line citation or a reproduction 
 | GAP-014 (GAP-ENG-07) | FR-036 concurrency guard fails open when both of its own checks throw | remediated |
 | GAP-015 (GAP-SEAM-01) | Work-item producer emits `scope`/`blocker`; all three consumers read `scopes`/`blocked_reasons` | remediated (residual recorded) |
 | GAP-016 (GAP-PIPE-04) | Live workflow-push approval gate is hardcoded satisfied by its only production caller and unsatisfiable from the CLI | remediated |
-| GAP-017 (GAP-CLI-01) | `phase gate-check` always raises TypeError; no gate row can be written through the CLI | open |
-| GAP-018 (GAP-CLI-03) | Migration commands execute live by default with no confirmation, and a declared approval token is discarded | open |
+| GAP-017 (GAP-CLI-01) | `phase gate-check` always raises TypeError; no gate row can be written through the CLI | remediated |
+| GAP-018 (GAP-CLI-03) | Migration commands execute live by default with no confirmation, and a declared approval token is discarded | deferred (pending operator decision) |
 | GAP-019 (GAP-AUTH-03) | `/sessions/{id}/provision` and `/remediate` take no `Request` and trust a client-supplied `actor` | open |
 | GAP-020 (GAP-AUTH-07) | Session cookie omits `Secure`; `max_age` hardcoded instead of reading `SESSION_HOURS` | open |
-| GAP-021 (GAP-ARCH-01) | Package layering is inverted in at least nine places, masked by deferred imports (G-seed 3) | open |
+| GAP-021 (GAP-ARCH-01) | Package layering is inverted in at least nine places, masked by deferred imports (G-seed 3) | remediated (residual recorded) |
 | GAP-022 (GAP-TOOL-01) | Coverage ratchet stands at 56% against a constitutional floor of 85% | deferred |
-| GAP-023 (GAP-TOOL-02) | mypy is configured so that it cannot fail, and never reaches most of the package | open |
+| GAP-023 (GAP-TOOL-02) | mypy is configured so that it cannot fail, and never reaches most of the package | remediated |
 | GAP-024 (GAP-UI-02) | Boolean `recommended_value` is stringified server-side and re-read as truthy in the browser, inverting the `confirm_execute` safe default | open |
-| GAP-025 (GAP-UI-03) | All 46 component and page files are untested and no linter is configured | open |
-| GAP-026 (GAP-PHASE-03) | `execute_phase` has no test coverage | open |
-| GAP-027 (GAP-ENG-04) | "Idempotent — skips completed scopes" is false; per-handler idempotency is ad hoc | open |
-| GAP-028 (GAP-STATE-01) | `DynamoDBJobStore` can silently double-claim or duplicate a job under concurrency | open |
-| GAP-029 (GAP-STATE-02) | `create_state_db()` silently discards `--db` under a non-default backend and crashes on a backend its own config validates | open |
-| GAP-030 (GAP-TOKEN-02) | GitHub token is passed in subprocess argv for the mirror strategy | open |
+| GAP-025 (GAP-UI-03) | All 46 component and page files are untested and no linter is configured | remediated |
+| GAP-026 (GAP-PHASE-03) | `execute_phase` has no test coverage | remediated |
+| GAP-027 (GAP-ENG-04) | "Idempotent — skips completed scopes" is false; per-handler idempotency is ad hoc | remediated |
+| GAP-028 (GAP-STATE-01) | `DynamoDBJobStore` can silently double-claim or duplicate a job under concurrency | remediated |
+| GAP-029 (GAP-STATE-02) | `create_state_db()` silently discards `--db` under a non-default backend and crashes on a backend its own config validates | remediated |
+| GAP-030 (GAP-TOKEN-02) | GitHub token is passed in subprocess argv for the mirror strategy | remediated |
 | GAP-031 (GAP-PIPE-01) | ADO variable-group variables are captured as metadata and never reach the generated workflow or its notes | open |
-| GAP-032 (GAP-PIPE-02) | The branch that keeps secret values out of generated YAML has no test | open |
+| GAP-032 (GAP-PIPE-02) | The branch that keeps secret values out of generated YAML has no test | remediated |
 | GAP-033 (GAP-DEPLOY-02) | Scheduled migration workflow pushes to GitHub on a cron with no environment approval gate | remediated |
 | GAP-034 (GAP-DEPLOY-04) | Production compose ships default credentials, an exposed database port, and a `change-me` secret fallback | remediated |
 | GAP-051 (GAP-TOOL-07) | The test suite opens the developer's real agent checkpoint DB and root `migration_state.db` | remediated |
 | GAP-052 (GAP-CLI-05) | `ado2gh phase assign` crashes on every invocation; no repo can be risk-scored from the CLI | remediated |
 | GAP-053 (GAP-ENG-08) | The queue worker cannot execute any job type: every one dies at `Accelerator` construction | remediated |
+| GAP-054 (GAP-STATE-05) | `JobStore.complete()`/`.fail()` assign `updated_at` on a `JobRecord` that has no such field, raising at runtime | open |
+
+Zero critical or high entries remain in `open` or `disputed` except four: GAP-019
+(GAP-AUTH-03), GAP-024 (GAP-UI-02) and GAP-031 (GAP-PIPE-01) stay `open`, each awaiting an
+operator decision on its FR-024 contract change recorded in `plan.md` § Approved contract
+changes; GAP-054 (GAP-STATE-05), opened during this same pass, is also `open` pending the
+same kind of FR-024 review before its fix — adding fields to `JobRecord` — can be applied.
 
 ## Disputes
 
@@ -461,6 +468,7 @@ in this register. T037 therefore had no dispute to put to the operator.
 - regression_check: —
 - revert_proof: —
 - contract_change: true
+- awaiting: operator decision (FR-024, plan.md § Approved contract changes)
 - closed_on: —
 
 ### GAP-020 (GAP-AUTH-07) Session cookie omits `Secure`; `max_age` hardcoded instead of reading `SESSION_HOURS`
@@ -495,12 +503,13 @@ in this register. T037 therefore had no dispute to put to the operator.
   - pre-registered as `specs/013-clean-code-arch-remediation/research.md:344` (G-seed 3, Principle IV, high) and independently reproduced by four separate assessments this pass
 - severity: high (critical_test: —)
 - blast_radius: no runtime failure today — every deferred import resolves. The cost is that the package graph is the opposite of what the directory names imply, `ado2gh/state/job_store.py` cannot be imported or unit-tested without `ado2gh/api` on the path, and any contributor "cleaning up" a deferred import back to top level is likely to reintroduce a genuine circular-import failure. This is the single largest obstacle to reasoning about which layer owns a given contract.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated (residual recorded)
+- resolution: `0e1da0a` (fix(GAP-021), T078) and `623152f` (refactor(013), T079) close the three worst-measured edges by relocating five symbols down a layer, plus removing the agents↔api mutual reference this entry's evidence also named. `state → api`: `JobRecord`/`JobStatus`/`JobTypeEnum` move from `ado2gh/api/contracts.py` to `ado2gh/models.py`; `manual_phase_overrides` (from `ado2gh/api/profile_discovery.py`) and `pack_scan_summary_json`/`extract_discovery_fields` (from `ado2gh/api/migration_scan.py`) move to the new `ado2gh/state/scan_payload.py`, closing the function-local imports in `ado2gh/state/postgres_risk_gates_scan_mixin.py` and `sqlite_profile_scan_mixin.py`. `clients → core`: `get_thread_session` moves from the deleted `ado2gh/core/sessions.py` to `ado2gh/http_utils.py`, so `ado2gh/clients/gh_client.py`'s `GHClient._session` property no longer needs a deferred import to dodge the load-time cycle through `ado2gh/core/__init__.py`'s eager `RollbackHandler` import. `api → cli`: `load_repos` moves from `ado2gh/cli/helpers.py` to the new `ado2gh/api/repo_input.py`, closing the function-local imports in `ado2gh/api/pipeline_steps.py` and `ado2gh/api/validation_run.py`. Separately, T079 moves `ado2gh/api/agentic_routes.py` to `services/accelerator_api/routes/history_routes.py` and `ado2gh/agents/migration_agent/route_helpers.py` to `services/agent/routes/_helpers.py`, removing the agents↔api mutual reference this entry's evidence cited (`route_helpers.py:26` vs `api/pipeline_runner.py:168`) by relocating one side out of `ado2gh` entirely. All seven relocations are byte-identical cut/paste diffs — verified via `git show --stat 0e1da0a` and `623152f`; no production function was deleted, so no FR-029 inventory pointer applies. The two lazy-import evidence bullets against `ado2gh/core/migration_fr036.py` (since renamed to `conflict_detection.py`) and `ado2gh/auth/service.py` were not touched by either commit and remain open as the residual below.
+- regression_check: `tests/unit/test_gap_021_layering.py` — reuses the AST import-graph walker from `test_no_orphaned_modules.py` (function-local imports included, not just top-level) and asserts zero edges for `ado2gh.state → ado2gh.api`, `ado2gh.clients → ado2gh.core`, `ado2gh.api → ado2gh.cli`.
+- revert_proof: `git stash push --` against the 21 tracked paths T078 touched (production: `ado2gh/models.py`, `ado2gh/api/contracts.py`, `ado2gh/http_utils.py`, `ado2gh/core/sessions.py`, `ado2gh/core/orchestration/worker.py`, `ado2gh/clients/gh_client.py`, `ado2gh/state/job_store.py`, `ado2gh/api/migration_scan.py`, `ado2gh/api/profile_discovery.py`, `ado2gh/state/postgres_risk_gates_scan_mixin.py`, `ado2gh/state/sqlite_profile_scan_mixin.py`, `ado2gh/cli/helpers.py`, `ado2gh/api/pipeline_steps.py`, `ado2gh/api/validation_run.py`, `ado2gh/cli/migration.py`, `ado2gh/cli/misc.py`; plus 5 test files whose imports followed the moved symbols — full list in `docs/STRUCTURAL_CHANGELOG.md`'s "013 Phase 8 T078: GAP-021 layering" section) — `python -m pytest tests/unit/test_gap_021_layering.py -q` then fails on all 8 forbidden edges the relocations removed (`ado2gh.api.pipeline_steps -> ado2gh.cli.helpers`, `ado2gh.api.validation_run -> ado2gh.cli.helpers`, `ado2gh.clients.gh_client -> ado2gh.core.sessions`, `ado2gh.state.job_store -> ado2gh.api.contracts`, plus two each from `postgres_risk_gates_scan_mixin` and `sqlite_profile_scan_mixin` against `api.migration_scan`/`api.profile_discovery`) — `git stash pop` restores the tree exactly (`git status` after matches before). The two new modules (`scan_payload.py`, `repo_input.py`) and the new test stay in place throughout since they did not exist pre-fix. Taken 2026-09-12 by Claude (sonnet subagent, T078 finisher).
+- contract_change: false — all seven relocations are internal Python module moves; no CLI command, HTTP route, database table or environment variable changes, and `tests/contract/test_public_surface_snapshot.py` passes unchanged for T079's route move too — the HTTP paths never moved, only the module serving them.
+- follow_up: two edges from this entry's original evidence are deliberately unclosed and stay open here rather than under a new id, following GAP-015's precedent of recording a residual against the existing entry rather than opening one. `core → api`: `ado2gh/core/orchestration/worker.py:12-13` imports `ado2gh.api.accelerator`/`ado2gh.api.contracts` at module level (driving the Accelerator SDK is that module's job), and `ado2gh/core/conflict_detection.py:33,41` (the file this entry's evidence names under its pre-rename `migration_fr036.py`) does two function-local imports of `api.repo_lock`/`api.pipeline_store`. `auth → api`: `ado2gh/auth/service.py:149,255` still does a function-local import of `ado2gh.api.profile_governance.write_profile_audit`. Neither is one of T078's three named edges, so neither is asserted by `test_gap_021_layering.py`. Closing them means moving the worker out of `ado2gh/core/` and moving the profile-audit writer below `auth`, both out of scope for T078; re-verified against disk at 2026-09-12 (all four line numbers current, not assumed from the commit message).
+- closed_on: 2026-09-12
 
 ### GAP-022 (GAP-TOOL-01) Coverage ratchet stands at 56% against a constitutional floor of 85%
 
@@ -530,12 +539,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - measured, `ado2gh/pipelines` alone with the override bypassed: exactly two real errors — `ado2gh/pipelines/validation/workflow_validator.py:93` (`List item 0 has incompatible type "str | None"`, a lost cross-method narrowing, runtime-safe) and `ado2gh/pipelines/resolve/template_resolver.py:160` (`Function "fetch_template" could always be true in boolean context`, a redundant conditional already narrowed at `:136`)
 - severity: high (critical_test: —)
 - blast_radius: the repository advertises static type checking in CI and receives none. Combined with the 56% coverage ratchet, two of the three automated quality gates named in the constitution are non-functional, which is why contract mismatches such as GAP-015 (GAP-SEAM-01) and signature mismatches such as GAP-017 (GAP-CLI-01) can reach the default branch green.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: Deleted the blanket `[[tool.mypy.overrides]] ignore_errors` block and the `|| true` mask on the CI mypy step (`.github/workflows/ci.yml:22`); added a numpy-only override (`follow_imports = "skip"` plus `follow_imports_for_stubs = true`, both required for `.pyi` files) instead of bumping `python_version`, which stays 3.11; fixed all 389 reported errors across 55 files with precise annotations and explicit Optional narrowing. Landed in two commits: `d1427fd` (T077) did the bulk of the fix, and `7a05ca9` (T077) committed nine files left uncommitted when `d1427fd` landed — eight `StateDB` → `StateDBBase` annotation swaps (`ado2gh/core/conflict_detection.py`, `migration_engine.py`, `rollback.py`, `ado2gh/phase/progress_tracker.py`, `repo_scoring.py`, `ado2gh/pipelines/inventory.py`, `ado2gh/reporting/csv_exporter.py`, `reporter.py`) plus `ado2gh/state/job_store.py`, an original T077 baseline file whose `JobRecord` construction sites and `created_at`/`updated_at` attribute writes needed `# type: ignore[call-arg]`/`[attr-defined]` rather than adding those fields to `JobRecord`, which would change its serialized shape (the runtime consequence of that gap is now tracked separately as GAP-054). The T077 agent's own `# type: ignore` figures were inconsistent between its two commit messages, so this entry measures instead of quoting: `git grep -n "type: ignore" ab4a303 -- ado2gh | wc -l` (the pre-T077 baseline) is 3; the same command at `7a05ca9` (current HEAD makes no further change to these lines) is 19, of which 10 are in `job_store.py` alone. `mypy ado2gh/ --ignore-missing-imports` exits 0 on 195 source files.
+- regression_check: the CI mypy step `.github/workflows/ci.yml:22` (`mypy ado2gh/ --ignore-missing-imports`, no `|| true`)
+- revert_proof: `git stash push -- .github/workflows/ci.yml pyproject.toml` reproduced both halves of the defect: mypy aborts with `.venv\Lib\site-packages\numpy\__init__.pyi:737: error: Type statement is only supported in Python 3.12 and greater [syntax]` (exit 2) and the restored `|| true` masks that exit as 0; `git stash pop` restored the green state. Taken 2026-09-12 by Claude (sonnet subagent, T077).
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-12
 
 ### GAP-TOOL-05 — tombstone, not a gap
 
@@ -561,6 +570,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: true
+- awaiting: operator decision (FR-024, plan.md § Approved contract changes)
 - closed_on: —
 
 ### GAP-025 (GAP-UI-03) All 46 component and page files are untested and no linter is configured
@@ -615,7 +625,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - status: remediated
 - resolution: `95ddc3f` (docs(GAP-027)) corrects the false "Idempotent — skips completed scopes" claim rather than implementing idempotency: `ado2gh/cli/migration.py`'s docstring (and `ado2gh run --help`, which changes under FR-010a as a result) now says what a re-run actually does per scope, and the `ScopeHandler` protocol docstring (`ado2gh/core/scopes/base.py`) states plainly that it imposes no idempotency requirement, so a new handler's author is told what guarantee, if any, to provide rather than inheriting an assumed one. `ado2gh/core/migration_engine.py`, `ado2gh/core/scopes/git_scope.py`, `ado2gh/core/scopes/pipelines_scope.py` and `ado2gh/core/scopes/work_items_scope.py` each gained a docstring stating their actual, differing re-run behaviour — `PipelinesScopeHandler` guards itself against re-running completed pipeline ids within one wave, `GitScopeHandler` force-pushes again under the mirror strategy but skips (or refuses, on a HEAD mismatch) under GEI, and `WorkItemsScopeHandler` consults nothing and duplicates an issue per ADO work item on every re-run. No behaviour changed anywhere; `tests/unit/test_gap_027_idempotency_docstrings.py` keys on the specific behavioural claims each docstring now makes, so the prose was rewritten but the underlying ad hoc idempotency this entry describes is not itself un-said. `phase run --help` and `phase gate-check --help` are byte-identical to before; the frozen `cli_commands` table in `tests/contract/public_surface_snapshot.json` is untouched.
 - regression_check: `tests/unit/test_gap_027_idempotency_docstrings.py`
-- revert_proof: proof pending: file in flight. `ado2gh/cli/migration.py`, one of this commit's six changed files, is currently modified by a concurrent agent in this working tree; per the standing instruction not to stash or edit a file another agent is actively working on, no fresh revert was attempted. No revert proof was recorded when `95ddc3f` landed either — the commit's own message describes only the docstring changes, not a stash/failure cycle — and `run-gap-017-018-027.txt` is a plain 21-passed log covering this test file alongside GAP-017's and GAP-018's.
+- revert_proof: No revert proof was recorded when `95ddc3f` landed — the commit's own message describes only the docstring changes, not a stash/failure cycle — and `run-gap-017-018-027.txt` is a plain 21-passed log covering this test file alongside GAP-017's and GAP-018's. Self-performed 2026-09-12 by Claude (sonnet subagent, T083 close-out) as a partial proof: the fix is already an ancestor of HEAD, so `git stash push` against it is a no-op (`No local changes to save`); five of the six fixed files — `ado2gh/cli/migration.py`, `ado2gh/core/scopes/base.py`, `ado2gh/core/scopes/git_scope.py`, `ado2gh/core/scopes/pipelines_scope.py`, `ado2gh/core/scopes/work_items_scope.py` — were instead reverted with `git checkout 95ddc3f^ -- <path>`, each confirmed clean (`git status --short`) immediately beforehand. The sixth, `ado2gh/core/migration_engine.py`, was left untouched per the standing instruction not to touch a file a concurrent agent (T077) has modified; `git show 95ddc3f -- ado2gh/core/migration_engine.py` independently confirms its slice of the fix is a self-contained +9-line docstring insertion with no code change, so omitting it from the revert does not weaken the proof. Reverting the five files also reintroduced a since-superseded import, `from ado2gh.cli.helpers import load_clients, load_repos`, because the unrelated later commit `0e1da0a` (GAP-021) moved `load_repos` to `ado2gh.api.repo_input`; that one import line was corrected to the current module split so the test would exercise the docstring regression rather than an unrelated `ImportError`, with every other line of the reverted files left at their pre-fix content. `.venv/Scripts/python.exe -m pytest tests/unit/test_gap_027_idempotency_docstrings.py -v` then gave `4 failed, 2 passed in 4.00s`: `cli-run`, `git-scope`, `work-items-scope` and `scope-handler-protocol` failed on the missing required phrases, exactly as expected from the five-file revert; `migration-engine` passed because that file was deliberately not reverted. `pipelines-scope` also passed, but not as a valid check: its assertion only requires the substring `"skip"`, and `PipelinesScopeHandler.migrate`'s pre-fix docstring already contained it for an unrelated reason (`ScopeResult`'s stats fields, "counting pipelines transformed, failed and skipped"), confirmed by printing the reverted docstring directly — that one parametrised case does not discriminate pre- and post-fix text, the other five do. Output: `specs/013-clean-code-arch-remediation/run-t083-gap-027-revert-proof.txt`. All five reverted files were restored with `git checkout HEAD -- <path>`, confirmed clean (`git status --short` empty) immediately after.
 - contract_change: false
 - closed_on: 2026-09-12
 
@@ -634,7 +644,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - status: remediated
 - resolution: `d88db23` (fix(GAP-028)) makes `DynamoDBJobStore.claim_next()` atomic: instead of scanning for a `PENDING` job and writing it back with an unconditional `put_item()`, it now moves the row from `pending` to `running` with a conditional `update_item()` guarded by `Attr("status").eq("pending")`, so a worker that loses the race gets `None` back instead of silently duplicating the claim — the same effect `PostgresJobStore.claim_next()` already gets from `SELECT ... FOR UPDATE SKIP LOCKED`. `get_by_idempotency()`'s scan is now strongly consistent (`ConsistentRead=True`), closing the second race where two callers enqueuing under the same idempotency key could both miss an eventually-consistent read and both insert. A claim lost to the race is no longer silent: it is logged at WARNING and audited as a `job.claim_conflict` event through the existing `AuditWriter` (CA-004), with the payload naming only `job_id`, `job_type` and the backend — never the job payload itself (CA-003).
 - regression_check: `tests/unit/test_gap_028_dynamo_double_claim.py`
-- revert_proof: proof pending: file in flight. `ado2gh/state/job_store.py`, this commit's sole production file, is currently modified by a concurrent agent in this working tree; per the standing instruction not to stash or edit a file another agent is actively working on, no fresh revert was attempted. No revert proof was recorded when `d88db23` landed either; `run-gap-028.txt` is a plain 37-passed log with no failure/stash content.
+- revert_proof: No revert proof was recorded when `d88db23` landed; `run-gap-028.txt` is a plain 37-passed log with no failure/stash content. Self-performed 2026-09-12 by Claude (sonnet subagent, T083 close-out): the fix is already an ancestor of HEAD, so `git stash push -- ado2gh/state/job_store.py` is a no-op (`No local changes to save`); the file was instead reverted with `git checkout d88db23^ -- ado2gh/state/job_store.py` (parent commit `84618d2a`), confirmed clean (`git status --short`) immediately beforehand. The reverted content's import of `JobStatus` from `ado2gh.api.contracts` (`from ado2gh.api.contracts import JobRecord, JobStatus`, `job_store.py:16` at `84618d2a`) no longer resolves, because the unrelated later commit `0e1da0a` (GAP-021) moved `JobStatus` to `ado2gh.models` without leaving a re-export; `ado2gh/api/contracts.py:8` still does `from ado2gh.models import JobRecord, JobTypeEnum`, so those two names resolve unchanged and only the `JobStatus` half of that one line needed correcting to import from `ado2gh.models` directly — the sibling line, `from ado2gh.api.contracts import JobTypeEnum as JobType`, was left as-is. `.venv/Scripts/python.exe -m pytest tests/unit/test_gap_028_dynamo_double_claim.py -v` then gave `4 failed in 4.23s`: three are `AssertionError`s that directly trip the exact logic the fix added — `test_two_racing_workers_claim_at_most_one_job` (`both workers claimed the same job: ['job-1', 'job-1']`), `test_claim_write_carries_a_condition_expression` (`claim write carries no ConditionExpression`), and `test_get_by_idempotency_reads_consistently` (`idempotency scan is eventually consistent`); only the fourth, `test_claim_conflict_is_logged_and_audited`, fails earlier on a constructor-level `TypeError: DynamoDBJobStore.__init__() got an unexpected keyword argument 'audit_writer'`, since the pre-fix constructor takes no audit-writer parameter. Three of the four failures are a direct trip of the race-condition/consistency logic itself, not a constructor mismatch. Output: `specs/013-clean-code-arch-remediation/run-t083-gap-028-revert-proof.txt`. Restored with `git checkout HEAD -- ado2gh/state/job_store.py`, confirmed clean (`git status --short` empty) immediately after.
 - contract_change: false
 - closed_on: 2026-09-09
 
@@ -692,6 +702,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: true
+- awaiting: operator decision (FR-024, plan.md § Approved contract changes)
 - closed_on: —
 
 ### GAP-032 (GAP-PIPE-02) The branch that keeps secret values out of generated YAML has no test
@@ -759,6 +770,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Add docstrings to `phase_run`, `ado_cleanup`, and the undocumented public methods under `ado2gh/phase/`; registered-only per spec.md's critical+high remediation-scope clarification (spec.md:35) — no successor task filed.
 - closed_on: —
 
 ### GAP-036 (GAP-ACC-04) Module naming and placement do not match responsibility (G-seed 11)
@@ -777,6 +789,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Rename `ado2gh/assignments/` to match its actual responsibility (audit-event writing) and replace `services/accelerator_api/routes/_shared.py`'s `__import__`-based singletons with ordinary imports so the orphan guard and import graphing can see them; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-037 (GAP-ACC-05) Deprecated `/v1/plan` points operators at a route that does not exist
@@ -793,6 +806,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Point the `/v1/plan` deprecation notice at a route that actually exists and add the removal version/date Principle III requires; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-038 (GAP-AGT-04) Deprecated in-memory `_sessions` store has no removal timeline, and `_runs` is write-only
@@ -811,6 +825,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Give the in-memory `_sessions`/`_runs` stores a concrete removal timeline now that spec 011's persistent `MigrationSessionStore` has landed, or drop the stale "being replaced" language if they are staying long-term; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-039 (GAP-PHASE-04) Failed repos are not auto-exported after a phase run, contradicting the documented behaviour
@@ -828,6 +843,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Either wire `execute_phase` to auto-write `failed_repos_{phase}.txt` as CLAUDE.md documents, or correct CLAUDE.md to describe the manual `export-failed` command instead; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-040 (GAP-TOKEN-03) `AuditWriter` redacts the payload but not the actor field
@@ -844,6 +860,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Extend `AuditWriter.write()`'s redaction to the `actor` field alongside `payload`, closing the same class of hole GAP-010 (GAP-TOKEN-01) closed for payloads; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-041 (GAP-TOKEN-05) Rate-limit handling and regex redaction paths are untested
@@ -861,6 +878,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Add direct tests for `token_manager.py`'s rate-limit update/rotation path and `audit.py`'s `_SECRET_PATTERNS` regex branch, the same kind of coverage sweep GAP-025 (GAP-UI-03) did for the console; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-042 (GAP-ENG-03) `rollback_repos()` is dead code and would corrupt sibling repos if called
@@ -880,6 +898,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Either delete `rollback_repos()` as dead code or give `reset_failed_pipeline_migrations` a repo parameter before wiring up a caller; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-043 (GAP-STATE-04) SQLite and Postgres schemas have drifted with no column-level parity test
@@ -898,6 +917,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: true
+- follow_up: Add a column-level schema parity test between `sqlite_db.py` and `postgres_db.py` (today's parity tests check table/method presence only); registered-only per spec.md:35, no successor task filed — would need `contract_change: true` if the schemas themselves are reconciled rather than just tested.
 - closed_on: —
 
 ### GAP-044 (GAP-SEAM-02) `blocked_items` is always empty because the field it filters on does not exist on the wire contract
@@ -917,6 +937,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Either add a `blocked` field to `DiscoveryRepoItem` and its producers so `blocked_items` computes something real, or delete the always-empty computation as dead code; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-045 (GAP-SEAM-03) The SSE event-kind contract test asserts nothing about event kinds
@@ -932,6 +953,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Rewrite the SSE event-kind contract test to actually assert `valid_kinds` against the producer (`nodes/streaming.py`, `runtime/orchestrator.py`) and consumer (`AgentChat.tsx`) instead of duplicating the heartbeat-interval test; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-046 (GAP-DEPLOY-05) Container base images use floating tags
@@ -949,6 +971,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Pin the four `FROM` lines (`services/accelerator_api/Dockerfile`, `services/agent/Dockerfile`, `apps/migration-ui/Dockerfile` x2) to a `@sha256:` digest; capped at low per FR-016a, registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-047 (GAP-TOOL-03) Orphan-module guard allowlist names a deleted module
@@ -965,6 +988,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Remove the stale `ado2gh.reporting.boards_gaps` entry from `test_no_orphaned_modules.py`'s allowlist now that its deletion is recorded in `docs/STRUCTURAL_CHANGELOG.md:201`; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-048 (GAP-TOOL-04) CLAUDE.md misstates the test count, the coverage threshold, and local tool availability
@@ -982,6 +1006,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Correct CLAUDE.md's test count, coverage-gate value, and local-tool-availability claims — best done once T083's Summary-table refresh and the ratchet's final 013 value are both settled, so the correction is written once; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-049 (GAP-TOOL-06) The two inventory generators disagree on `--excluded` handling
@@ -997,6 +1022,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Align `function_inventory_ts.mjs`'s `--excluded` handling with the Python generator's; affects only this feature's own tooling, registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-050 (GAP-AGT-05) `clear_langgraph_thread_sync` can build a checkpointer on a second event loop during teardown
@@ -1015,6 +1041,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
+- follow_up: Bound or serialize the fallback `asyncio.run()` path in `clear_langgraph_thread_sync` against whatever event loop the primary checkpointer holds; confined to test/teardown paths, registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-051 (GAP-TOOL-07) The test suite opens the developer's real agent checkpoint DB and root `migration_state.db`
@@ -1079,6 +1106,26 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: with `ado2gh/core/orchestration/worker.py` at its `d11d25e` content, `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_053_worker_inventory_job.py -p no:cacheprovider -q` gives `8 failed, 2 warnings in 5.98s`, every one of the eight reporting `TypeError: got an unexpected keyword argument 'config_path'` from `inspect`'s signature binding — the constructor defect masks the other two. Reverting only the two later defects (constructor fixed, `inventory` and `run_wave` call sites restored) gives `5 failed, 3 passed, 2 warnings in 4.40s`: four failures reporting `TypeError: missing a required argument: 'config_path'` and one reporting `AttributeError: 'tuple' object has no attribute 'model_dump'`, which proves each half of the check bites on its own defect. With the full fix in place: `8 passed, 2 warnings in 4.19s`. Taken 2026-09-09 by the implementation agent (Claude Opus 5).
 - contract_change: false — no route, CLI command, table or environment variable changed. `Accelerator`'s signatures are untouched, the `POST /v1/jobs` request body is unchanged, and a completed migrate job keeps its `{"waves": [...]}` result shape; `tests/contract/public_surface_snapshot.json` is unchanged.
 - closed_on: 2026-09-09
+
+### GAP-054 (GAP-STATE-05) `JobStore.complete()`/`.fail()` assign `updated_at` on a `JobRecord` that has no such field, raising at runtime
+
+- components: state persistence (DynamoDB job store), migration engine (queue worker)
+- violates: Principle V (Enterprise Migration Safeguards — CLAUDE.md documents "DynamoDB is job-store only", and a documented job-store backend cannot complete or fail a single job); Principle VI (no test exercises `DynamoDBJobStore.complete` or `.fail` — confirmed: neither file that references `DynamoDBJobStore`, `tests/unit/test_gap_028_dynamo_double_claim.py` or `tests/unit/test_gap_029_backend_parity.py`, calls either method)
+- evidence:
+  - `ado2gh/models.py:501-510` — `class JobRecord(BaseModel)` declares `id`, `job_type`, `status`, `payload`, `result`, `error`, `idempotency_key`; no `created_at` or `updated_at`. Pydantic 2.13.4's default `extra="ignore"` (measured: `python -c "import pydantic; print(pydantic.VERSION)"` → `2.13.4`) means passing either name to the constructor is silently dropped rather than rejected — measured live: `JobRecord(id="x", job_type=..., status=..., created_at=now, updated_at=now)` constructs without error, but `hasattr(rec, "created_at")` is `False`
+  - `ado2gh/state/job_store.py:432-441` (`DynamoDBJobStore.enqueue`) builds exactly that record, then immediately calls `self._save(record)`; `_save` (`:386-399`) reads `record.created_at.isoformat()` at `:396` — since the attribute was silently dropped at construction, this raises `AttributeError: 'JobRecord' object has no attribute 'created_at'` (measured live) on the very first write. No job can ever be enqueued through `DynamoDBJobStore`, before `complete()`/`fail()` are ever reached
+  - `ado2gh/state/job_store.py:537-545` (`complete()`) and `:547-555` (`fail()`) each assign `rec.updated_at = datetime.now(timezone.utc)` (`:544`, `:554`) before calling `self._save(rec)`. Assigning an attribute pydantic does not declare — unlike passing it to the constructor — is a hard error: measured live, `ValueError: "JobRecord" object has no field "updated_at"`. The `# type: ignore[attr-defined]` comments on both lines were added by `7a05ca9` (T077, see GAP-023) to silence mypy on exactly this line, not to fix it
+  - compounding failure mode: `ado2gh/core/orchestration/worker.py:116-122` calls `store.complete(job.id, result)` inside a `try`, and on any exception falls back to `store.fail(job.id, str(exc))` in the paired `except`, with nothing wrapping that fallback. For every other job store this fallback is the fail-safe default; for `DynamoDBJobStore` it is not, because `fail()` carries the identical defect, so the fallback call itself raises and propagates out of `run_worker`'s `while True:` loop uncaught — killing the whole worker process rather than leaving one job stuck
+  - reachability: only when `ADO2GH_STORAGE_BACKEND=dynamodb` (`ado2gh/state/job_store.py:577-579`, `JobStoreFactory.from_env`), which is not the shipped default (`sqlite` — CLAUDE.md, `docker-compose.yml`) and requires `boto3`, which this project does not declare anywhere in `pyproject.toml` (no match) and which is absent from this venv (measured: `ModuleNotFoundError: No module named 'boto3'`); `DynamoDBJobStore.__init__` (`:359`) imports `boto3` directly, so the class cannot even be constructed here
+- severity: high (critical_test: —). (a) not met — no destructive action, a crash; (b) not met — the `ValueError`/`AttributeError` names only a field, never a value (CA-003); (c) not met — `enqueue()` fails before `put_item` ever runs and `complete()`/`fail()` raise before `self._save` runs, so no row is ever written with wrong or corrupted content, there is nothing persisted to lose because nothing after the initial defect ever persists at all; (d) is met — the worker's own fail-safe fallback (catch, then `store.fail()`) is exactly the path that also raises, so a completed or failed `DynamoDBJobStore` job leaves no fail-safe default, it kills the worker instead — but per spec.md US3 Scenario 3, a critical test met only in a non-default configuration is rated high, not critical, and this backend is reachable only under a non-default `ADO2GH_STORAGE_BACKEND` value that also requires an undeclared, uninstalled dependency; (e) not met — no second component reads a disagreeing contract, the one process just fails outright. High rather than medium because Principle V is violated in a configuration the project documents as supported (CLAUDE.md: "DynamoDB is job-store only"), not merely hypothetical — the same reasoning GAP-053 and GAP-052 used for a shipped-but-broken capability.
+- blast_radius: identical in kind to GAP-053 before its fix — a documented backend that cannot perform its basic job lifecycle at all — but worse in degree for the one operator who does configure it: GAP-053's worker at least reached `store.fail()` cleanly on every defect it had; here `store.fail()` is itself the second point of failure, so the worker process dies instead of recording one job as failed and continuing. Capped in practice by the gate named above: no compose file, CI workflow, or documented setup in this repository selects the DynamoDB backend, and the dependency it needs is not installed, so no run anywhere in this project's own footprint is actually affected today.
+- status: open
+- resolution: —
+- regression_check: —
+- revert_proof: —
+- contract_change: true — adding `created_at`/`updated_at` to `JobRecord` changes every backend's serialized job record (`model_dump()` gains two fields), not only DynamoDB's, so any consumer that asserts an exact key set on a job payload would need to be checked
+- follow_up: add `created_at`/`updated_at` fields to `JobRecord` (`ado2gh/models.py:501-510`) with a serialization/migration review, once an operator approves the contract change under FR-024 (`plan.md` § Approved contract changes); doing so would also let the `# type: ignore[call-arg]` (six sites) and `# type: ignore[attr-defined]` (four sites) comments `7a05ca9` added across `ado2gh/state/job_store.py` be dropped instead of permanently suppressed. No successor task filed.
+- closed_on: —
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 
