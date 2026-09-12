@@ -23,7 +23,7 @@ class SecretRedactingFilter(logging.Filter):
                 record.msg = redact_payload(record.msg)
             if record.args:
                 record.args = redact_payload(record.args)
-        except Exception:  # noqa: BLE001 - fail safe: drop content, keep logging alive
+        except Exception:  # fail safe: drop content, keep logging alive
             record.msg = "<log record suppressed: redaction failed>"
             record.args = None
         return True

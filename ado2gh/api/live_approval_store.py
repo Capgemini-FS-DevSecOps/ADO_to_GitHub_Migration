@@ -439,7 +439,7 @@ class LiveApprovalStore:
                 },
                 db_path=self.db_path,
             )
-        except Exception:  # noqa: BLE001 - reporting a failure must not become one
+        except Exception:  # reporting a failure must not become one
             logger.exception("Could not record the live-execution notify failure")
 
     def _mark_pipeline_denied(self, run_id: str, reason: str) -> None:

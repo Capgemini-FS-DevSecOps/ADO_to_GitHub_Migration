@@ -94,11 +94,34 @@ line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
+# Clean-code rule set (feature 013, T002/T071). The second group is the enforced
+# half of the cleanup: missing docstrings (D1), missing annotations (ANN), boolean
+# flag parameters (FBT001/FBT002), > 5 parameters (PLR0913), mutable default
+# arguments (B006), unused arguments (ARG) and inconsistent returns (RET501-503).
+# Exceptions carry a `# noqa` and a row in
+# specs/013-clean-code-arch-remediation/exception-register.md.
+select = [
+    "E", "F", "W", "I",
+    "D1", "ANN", "FBT001", "FBT002", "PLR0913", "B006", "ARG",
+    "RET501", "RET502", "RET503",
+]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+# The clean-code set was scoped to `ado2gh/ services/` (T002). Test modules use
+# undocumented/unannotated helpers and unused fixture arguments by convention, so
+# the set is not enforced there; everything else (E, F, W, I) still is.
+"tests/**" = [
+    "D1", "ANN", "FBT001", "FBT002", "PLR0913", "B006", "ARG",
+    "RET501", "RET502", "RET503",
+]
+
+[tool.ruff.lint.pylint]
+max-args = 5
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.mypy]
 python_version = "3.11"

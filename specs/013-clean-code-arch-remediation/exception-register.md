@@ -10,6 +10,18 @@ latest line of `inventory-history.jsonl`. Before adding a row, check the cap; if
 row would exceed it, stop cleanup of that rule and ask the operator (raise the cap /
 amend the rule / accept the behaviour change) before continuing.
 
+**Cap as measured at T072** (audit of 2026-09-12, git head `95ddc3f`): the latest line
+of `inventory-history.jsonl` reports `totals.functions = 1492`, so the cap is
+`floor(1492 x 0.02) = 29`. The register holds **27 rows** — 27 <= 29, within the cap
+with two rows to spare. (`totals.functions` counts Python only; the 198 TypeScript
+exports are tracked in their own section of `inventory-summary.md`. Counting both —
+`floor(1690 x 0.02) = 33` — the register is within the cap either way.)
+
+Every row is audited against the source at T072: each of the 26 `# noqa` directives
+under `ado2gh/` and `services/` that suppress a clean-code rule maps to exactly one
+row here, and every row that names a ruff code has its directive in place. The two
+rows with no ruff code are walker-derived tags that no ruff rule can express.
+
 Schema: data-model.md § ExceptionRegisterEntry. Columns are fixed — do not add,
 reorder, or rename them.
 
