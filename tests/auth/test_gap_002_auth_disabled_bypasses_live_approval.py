@@ -5,7 +5,7 @@ is unset (``ado2gh/auth/service.py:21-22``). That is the code-level default, not
 deployment choice, and it is also the value shipped in ``docker-compose.yml:53``. Every
 platform RBAC guard short-circuits on that flag before any capability check
 (``ado2gh/api/platform_rbac.py:16-17,25-26``), as do the agent route gates
-(``ado2gh/agents/migration_agent/route_helpers.py:199,209``), the agent live-execution
+(``services/agent/routes/_helpers.py:199,209``), the agent live-execution
 policies (``ado2gh/agents/migration_agent/policies.py:127-129,141-143``) and both HTTP
 auth middlewares (``services/agent/main.py:94-95``,
 ``services/accelerator_api/main.py:106-107``).

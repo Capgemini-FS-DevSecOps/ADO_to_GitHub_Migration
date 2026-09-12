@@ -13,7 +13,13 @@ from fastapi.responses import StreamingResponse
 from ado2gh.agents.migration_agent.policies import (
     attach_actor_to_session,
 )
-from ado2gh.agents.migration_agent.route_helpers import (
+from ado2gh.agents.migration_agent.runtime.orchestrator import (
+    stream_user_message,
+)
+from ado2gh.agents.migration_agent.session.state import (
+    is_session_busy,
+)
+from services.agent.routes._helpers import (
     SessionMessageRequest,
     _accel_get,
     _accel_post,
@@ -25,12 +31,6 @@ from ado2gh.agents.migration_agent.route_helpers import (
     _session_accel_token,
     _session_payload,
     _session_token_from_request,
-)
-from ado2gh.agents.migration_agent.runtime.orchestrator import (
-    stream_user_message,
-)
-from ado2gh.agents.migration_agent.session.state import (
-    is_session_busy,
 )
 
 router = APIRouter()

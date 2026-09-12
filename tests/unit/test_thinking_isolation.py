@@ -1,7 +1,7 @@
 """Thinking log isolation per user turn."""
 from __future__ import annotations
 
-from ado2gh.agents.migration_agent.route_helpers import (
+from services.agent.routes._helpers import (
     _prune_stale_thinking_events,
     _thinking_log_for_current_turn,
 )

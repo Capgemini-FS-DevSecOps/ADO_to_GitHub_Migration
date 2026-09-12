@@ -71,7 +71,7 @@ def apply_model_selection(
 ) -> None:
     """Record the resolved LLM model state on a session dict.
 
-    The three values are produced together by ``route_helpers._resolve_model_id``.
+    The three values are produced together by ``routes._helpers._resolve_model_id``.
     Setting them in one place is what keeps ``llm_available`` in step with
     ``llm_unconfigured``.
     """

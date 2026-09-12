@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
-from ado2gh.agents.migration_agent.route_helpers import (
+from services.agent.routes._helpers import (
     _resolve_model_id,
 )
 

@@ -16,21 +16,21 @@ ensure_gei_dotnet_env()
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from ado2gh.agents.migration_agent.route_helpers import (
+from ado2gh.auth.service import SESSION_COOKIE, AuthService, auth_enabled, permissions_for
+from services.agent.routes._helpers import (
     # RunStatus, _accel_get, _accel_headers, _accel_post: re-exported so tests
-    # can import/patch them via services.agent.main (route_helpers' lazy
+    # can import/patch them via services.agent.main (_helpers' lazy
     # wrappers look up sys.modules["services.agent.main"] for patches).
     RunStatus,  # noqa: F401
     _accel_headers,  # noqa: F401
     _sessions,  # noqa: F401
 )
-from ado2gh.agents.migration_agent.route_helpers import (
+from services.agent.routes._helpers import (
     _accel_get_impl as _accel_get,  # noqa: F401
 )
-from ado2gh.agents.migration_agent.route_helpers import (
+from services.agent.routes._helpers import (
     _accel_post_impl as _accel_post,  # noqa: F401
 )
-from ado2gh.auth.service import SESSION_COOKIE, AuthService, auth_enabled, permissions_for
 from services.agent.routes.execution_routes import router as execution_router
 from services.agent.routes.form_routes import router as form_router
 from services.agent.routes.message_routes import router as message_router

@@ -6,14 +6,14 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 
-from ado2gh.agents.migration_agent.route_helpers import (
+from ado2gh.auth.service import auth_enabled
+from services.agent.profiles import capability_matrix
+from services.agent.routes._helpers import (
     ACCEL_URL,
     _check_accelerator,
     _profile,
     _resolve_model_id,
 )
-from ado2gh.auth.service import auth_enabled
-from services.agent.profiles import capability_matrix
 
 router = APIRouter()
 
@@ -104,7 +104,7 @@ async def health() -> dict[str, Any]:
 async def metrics() -> PlainTextResponse:
     """Expose agent counters and live session gauges in Prometheus text format."""
     from ado2gh.agents.metrics import get_metrics_collector
-    from ado2gh.agents.migration_agent.route_helpers import _sessions
+    from services.agent.routes._helpers import _sessions
 
     collector = get_metrics_collector()
     # FR-102: session gauges reflect current in-memory sessions

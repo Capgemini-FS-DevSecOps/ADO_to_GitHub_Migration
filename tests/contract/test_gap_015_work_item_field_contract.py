@@ -127,7 +127,7 @@ def _executor_detail_keys() -> set[str]:
 def plan_summary(monkeypatch):
     """Call the real GET /v1/sessions/{id}/plan-summary over producer-built work items."""
     monkeypatch.setenv("ADO2GH_AUTH_ENABLED", "false")
-    from ado2gh.agents.migration_agent import route_helpers
+    from services.agent.routes import _helpers as route_helpers
 
     def _call(work_items: list[dict[str, Any]]) -> dict[str, Any]:
         session_id = "ses_gap015_contract"

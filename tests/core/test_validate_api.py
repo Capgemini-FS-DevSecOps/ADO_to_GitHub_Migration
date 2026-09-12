@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ado2gh.api.agentic_routes import router as agentic_router
+from services.accelerator_api.routes.history_routes import router as agentic_router
 from ado2gh.api.contracts import ValidateResult
 from ado2gh.api.settings_store import MigrationProfile, SettingsStore, UISettings
 

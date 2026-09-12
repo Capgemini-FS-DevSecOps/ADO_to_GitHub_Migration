@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from ado2gh.api.agentic_routes import router
+from services.accelerator_api.routes.history_routes import router
 from ado2gh.api.audit_access import resolve_audit_actor_filter
 from ado2gh.audit import AuditWriter
 from ado2gh.auth.models import PlatformRole, PlatformUser

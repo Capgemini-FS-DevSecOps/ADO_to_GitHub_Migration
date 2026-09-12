@@ -24,7 +24,6 @@ ensure_gei_dotnet_env()
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from ado2gh.api.agentic_routes import router as agentic_router
 from ado2gh.api.contracts import (
     ActiveMigrationItem,
     DashboardSnapshot,
@@ -75,6 +74,7 @@ from ado2gh.models import ExecutionMode
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
 from ado2gh.state.factory import create_state_db
 from ado2gh.state.job_store import JobStoreFactory
+from services.accelerator_api.routes.history_routes import router as history_router
 
 try:
     from services.accelerator_api.auth_routes import SESSION_COOKIE
@@ -103,7 +103,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps these off the runtime
     from fastapi import Response
 
 app = FastAPI(title="ADO2GH Accelerator API", version="5.1.0")
-app.include_router(agentic_router)
+app.include_router(history_router)
 app.include_router(auth_router)
 app.include_router(settings_router)
 app.include_router(profile_router)

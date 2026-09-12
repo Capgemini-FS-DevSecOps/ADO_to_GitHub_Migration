@@ -16,7 +16,15 @@ from ado2gh.agents.migration_agent.policies import (
     request_username,
     session_requires_live_approval,
 )
-from ado2gh.agents.migration_agent.route_helpers import (
+from ado2gh.agents.migration_agent.runtime.orchestrator import (
+    process_user_message,
+)
+from ado2gh.agents.migration_agent.session.state import (
+    OrchestratorResult,
+    set_session_idle,
+)
+from ado2gh.auth.service import auth_enabled
+from services.agent.routes._helpers import (
     ProvisionRequest,
     RemediateRequest,
     SessionRequest,
@@ -37,14 +45,6 @@ from ado2gh.agents.migration_agent.route_helpers import (
     _session_token_from_request,
     _sessions,
 )
-from ado2gh.agents.migration_agent.runtime.orchestrator import (
-    process_user_message,
-)
-from ado2gh.agents.migration_agent.session.state import (
-    OrchestratorResult,
-    set_session_idle,
-)
-from ado2gh.auth.service import auth_enabled
 
 router = APIRouter()
 
