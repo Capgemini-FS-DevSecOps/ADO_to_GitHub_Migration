@@ -1003,9 +1003,9 @@
     "id": "ado2gh/agents/migration_agent/nodes/planner_research.py::_planner_operator_input_return",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Name is an accurate verb, predicate or noun-phrase accessor for what the function does; the generator's verb list is the false positive.",
-    "state_hash": "b77bed6a44882ea5eee1c73971bfd8061b3da683",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "private builder returning the AgentState-update dict for an operator-input hand-off; name and docstring make the shape and purpose clear.",
+    "state_hash": "33112f091d81d8e6c709862b34803196a8eb04ae",
+    "decided_by": "cavecrew-reviewer"
   },
   {
     "id": "ado2gh/agents/migration_agent/nodes/planner_research.py::_planner_text_indicates_blocker",
@@ -1184,118 +1184,6 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py",
-    "tag": "module_name_review",
-    "decision": "reject",
-    "rationale": "`route_helpers` accurately describes route handler utility functions.",
-    "state_hash": "ecbeb8d39fffc8ef9495328afa022c51c554dee6",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_accel_get",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes a GET wrapper operation.",
-    "state_hash": "0170b89be07fdb28174d495393c6a7dcd4037451",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_accel_get_impl",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The `_impl` suffix clearly indicates this is the implementation function.",
-    "state_hash": "c7a186acdd8631d00345a07bf372b861c356e3f3",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_accel_headers",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes building accelerator HTTP headers.",
-    "state_hash": "ce8b8befd68732335fc4ac50bcb70921a670e2e9",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_accel_post",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes a POST wrapper operation.",
-    "state_hash": "46ca4501db701b83f8f153c4359c0c6f6981193d",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_accel_post_impl",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The `_impl` suffix clearly indicates this is the implementation function.",
-    "state_hash": "7684709222998ca65a304ca65704452312f5e693",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_audit_actor",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes extracting audit actor information.",
-    "state_hash": "48664abded995ece294697655c9a2c751f515eda",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_enqueue_session_live_approval",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Name is an accurate verb, predicate or noun-phrase accessor for what the function does; the generator's verb list is the false positive.",
-    "state_hash": "3c8bd272bcbd757c6ae8636992bf5ce08035e1bd",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_platform_user",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Name is an accurate verb, predicate or noun-phrase accessor for what the function does; the generator's verb list is the false positive.",
-    "state_hash": "78389a5c61642c7de32b0d5724104f4ddd5e95bd",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_profile",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Name is an accurate verb, predicate or noun-phrase accessor for what the function does; the generator's verb list is the false positive.",
-    "state_hash": "a4bf9524d497e0bf3a2bbbe733ed538fad2151ec",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_session_accel_token",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes retrieving an accelerator token for a session.",
-    "state_hash": "b37671b6a0d3a18a06d785aa589034f4117f46cd",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_session_payload",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes building a session response payload.",
-    "state_hash": "2b3a3b582f8988f3f0afda8f59d8e75e2cf10065",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_session_token_from_request",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes extracting the session token from request cookies.",
-    "state_hash": "8ca5a3b4fd53146516847db3a84b649e2a9c5972",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/agents/migration_agent/route_helpers.py::_thinking_log_for_current_turn",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "The name clearly describes extracting thinking logs for the current turn.",
-    "state_hash": "e4ba66993e1419f39abd5dfa4d2eba27e0343538",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/agents/migration_agent/runtime/",
     "tag": "module_name_review",
     "decision": "reject",
@@ -1435,9 +1323,9 @@
     "id": "ado2gh/agents/migration_agent/session/lifecycle.py::apply_model_selection",
     "tag": "bool_flag",
     "decision": "reject",
-    "rationale": "`llm_degraded`/`llm_unconfigured` are stored on the session; `llm_available` is a derivation, not a branch.",
-    "state_hash": "29fdb2e6ff7a71307145b7eaca7ed9b6125c1335",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "llm_degraded/llm_unconfigured are LLM health and availability flags, not dry-run/live execution-mode flags; genuinely bool data.",
+    "state_hash": "345eb5e47c45916832aadd5b2844790682bb7f25",
+    "decided_by": "cavecrew-reviewer"
   },
   {
     "id": "ado2gh/agents/migration_agent/session/lifecycle.py::new_isolated_agent_session",
@@ -1717,38 +1605,6 @@
     "decision": "reject",
     "rationale": "private pure lookup whose name reads as the value it returns, the documented false-positive shape.",
     "state_hash": "a1c874690413e32aaf9720722102fdce16c7ce68",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/api/agentic_routes.py",
-    "tag": "module_name_review",
-    "decision": "reject",
-    "rationale": "Clearly describes FastAPI agentic subsystem routes.",
-    "state_hash": "d5f89391afa8d6fc37ce91d2d63bda1975e20750",
-    "decided_by": "review-agent"
-  },
-  {
-    "id": "ado2gh/api/agentic_routes.py::_db_path",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "private accessor returning a path, no side effects.",
-    "state_hash": "fc452b8d481841897e95cb74e98bbdbdf62d932b",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/api/agentic_routes.py::history_event_types",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "FastAPI handler bound to `GET /v1/history/event-types`, same frozen-surface reasoning.",
-    "state_hash": "8989e3af0da54e6aee30b33b32adf965eda83fad",
-    "decided_by": "caveman:cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/api/agentic_routes.py::history_sessions",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "FastAPI handler bound to `GET /v1/history/sessions`, rename is invisible to callers on a frozen HTTP surface.",
-    "state_hash": "a527b2bfe7942df06d0aa586177db7aba59dca85",
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
@@ -2256,14 +2112,6 @@
     "decided_by": "review-agent"
   },
   {
-    "id": "ado2gh/api/migration_scan.py::pack_scan_summary_json",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "\"pack\" is a verb describing the action of transforming scan data.",
-    "state_hash": "9f3615b756cb39e583c1d3e47008cf6fb2ed5ab9",
-    "decided_by": "review-agent"
-  },
-  {
     "id": "ado2gh/api/migration_status_report.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -2568,14 +2416,6 @@
     "decided_by": "review-agent"
   },
   {
-    "id": "ado2gh/api/profile_discovery.py::manual_phase_overrides",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "Noun correctly describing what is returned (overrides).",
-    "state_hash": "e9ac71d0b888a50ff872162da660cdb4d8097864",
-    "decided_by": "review-agent"
-  },
-  {
     "id": "ado2gh/api/profile_discovery.py::repo_configs_for_phase",
     "tag": "name_review",
     "decision": "reject",
@@ -2614,6 +2454,14 @@
     "rationale": "Noun correctly describing what is returned (payload).",
     "state_hash": "44ce49a6d80ce0b5d7a60a18dbae71d97b6dd236",
     "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/repo_input.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module handles repo input parsing; filename matches contents.",
+    "state_hash": "f5697e792afcca016dee59de1ba43afedd2764da",
+    "decided_by": "cavecrew-reviewer"
   },
   {
     "id": "ado2gh/api/repo_lock.py",
@@ -3304,14 +3152,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/core/sessions.py",
-    "tag": "module_name_review",
-    "decision": "reject",
-    "rationale": "name clearly describes per-thread HTTP session factory responsibility.",
-    "state_hash": "9e5cd5b3f4e082e38df44061c1eb53bdb5a47720",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/core/wave_runner.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -3435,8 +3275,24 @@
     "id": "ado2gh/phase/progress_tracker.py::ProgressTracker.snapshot",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "snapshot() accurately captures point-in-time progress metrics (velocity, ETA, counts, percentages); standard terminology",
-    "state_hash": "598907c1e0264b7309f360dae851ac0f94176d80",
+    "rationale": "idiomatic one-word method name that computes and returns the current point-in-time state; well documented.",
+    "state_hash": "6e6fc115f8c5613548a7853ca7ffd53187539a55",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/repo_scoring.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module implements repo risk scoring; filename matches contents.",
+    "state_hash": "99f8a90732497e53d7dce9f340d818bb4fc9f0f3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/phase/repo_scoring.py::_listing",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "trivial private 3-line wrapper that degrades a listing call to [] on failure; purpose is clear from the body and call sites.",
+    "state_hash": "9852cd9601038f8f3c5ac6e4f0fbe353ff4e9f85",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -3728,6 +3584,54 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/reporting/reporter.py::_colour",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private helper; colour is used as a verb here (wrap text in colour markup); tiny and unambiguous.",
+    "state_hash": "46fbd5a9c6ef4ce8511b74bff46c4e2266af7428",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_fmt_ts",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "fmt is a standard verb abbreviation for format; meaning is obvious.",
+    "state_hash": "6eff56ebe260c7187c3e8dbc4bac87f598ef8e00",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_complexity_badge",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private renderer, part of the consistent _html_* naming convention in this file; docstring matches exactly.",
+    "state_hash": "86a61097d8962c83c46fb5e06a09ee4d292aac9d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_pipeline_rows",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same _html_* convention as sibling renderers in the file; purpose is clear.",
+    "state_hash": "8b7e1ea39d42e81dd2d5981fddfd10d1267187d5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_repo_rows",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same _html_* convention as sibling renderers in the file; purpose is clear.",
+    "state_hash": "3151593bc24ffb05cc7621ded5dab7e916449e52",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/reporting/reporter.py::_html_status_badge",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same _html_* convention as sibling renderers in the file; purpose is clear.",
+    "state_hash": "d2beb2bba8c15506fd8ce42af5c47c886c5353d1",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/reporting/service_connection_manifest.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -3848,6 +3752,14 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore._audit",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private lazy getter that builds and returns an AuditWriter; textbook accessor.",
+    "state_hash": "cca73106cb13b0b4beda0a218106b66bbfd64b64",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/job_store.py::DynamoDBJobStore._table",
     "tag": "name_review",
     "decision": "reject",
@@ -3856,11 +3768,27 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "queue-claim accessor name, consistent across the three job store backends.",
+    "state_hash": "875bf98a43e8e165425355b1db4d0c26384e0608",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/job_store.py::DynamoDBJobStore.complete",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "marks job as COMPLETED with result; verb-phrase action name accurate.",
     "state_hash": "5f4b17643e192ee146cc4fa072eb51bbdee829a5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::DynamoDBJobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "enqueue is a standard verb, consistent across Postgres/SQLite/DynamoDB backends.",
+    "state_hash": "2c2f8e5781a8ead122a5b732ea114fbb0ba67742",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -3904,11 +3832,27 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same as the DynamoDB and SQLite claim_next rows; consistent naming across backends.",
+    "state_hash": "546a35bd0d84f34538f0265be8966e0dc2fe32b5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/job_store.py::PostgresJobStore.complete",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "updates job to COMPLETED; verb-phrase name accurate.",
     "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::PostgresJobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same as the DynamoDB and SQLite enqueue rows; consistent naming across backends.",
+    "state_hash": "2c2f8e5781a8ead122a5b732ea114fbb0ba67742",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -3928,11 +3872,27 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore.claim_next",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same as the DynamoDB and Postgres claim_next rows; consistent naming across backends.",
+    "state_hash": "24074c776438852f6e75e905ec72e5aa58a8498b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/job_store.py::SQLiteJobStore.complete",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "updates job to COMPLETED; verb-phrase name accurate.",
     "state_hash": "90cf7dacb848bd4e3f6ee42bb1adc24ef40874b5",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::SQLiteJobStore.enqueue",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same as the DynamoDB and Postgres enqueue rows; consistent naming across backends.",
+    "state_hash": "2c2f8e5781a8ead122a5b732ea114fbb0ba67742",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -4024,6 +3984,38 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/state/postgres_risk_gates_scan_mixin.py::PostgresRiskGatesScanMixin.reassign_phase_repos",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "reassign is a standard verb; name matches the SQLite mixin equivalent.",
+    "state_hash": "7b11450d949a1e182127e6d5d92023201e913e73",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/scan_payload.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module shapes and extracts scan payload data; filename matches contents.",
+    "state_hash": "a6d927978e7ec4d4ca053683194f53ae9d08466f",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/scan_payload.py::manual_phase_overrides",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "noun-phrase name for a lookup-table builder; matches typical query-style helper naming in this module.",
+    "state_hash": "e9ac71d0b888a50ff872162da660cdb4d8097864",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/scan_payload.py::pack_scan_summary_json",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "pack is a standard verb; name and behavior match.",
+    "state_hash": "9f3615b756cb39e583c1d3e47008cf6fb2ed5ab9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
     "id": "ado2gh/state/sqlite_agentic_mixin.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -4109,6 +4101,14 @@
     "decision": "reject",
     "rationale": "module name accurately describes SQLite risk/gates mixin.",
     "state_hash": "493db460c174dbaf3c2fe3860ac2ee7c5531418e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/sqlite_risk_gates_mixin.py::RiskGatesMixin.reassign_phase_repos",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same as the Postgres mixin equivalent; consistent naming across backends.",
+    "state_hash": "7b11450d949a1e182127e6d5d92023201e913e73",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -4259,8 +4259,8 @@
     "id": "services/accelerator_api/auth_routes.py::login",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "handler for POST /v1/auth/login; the name is the operation and matches the path.",
-    "state_hash": "5837cc96cf433fd7b7adcaf2bfd99dee752cb4f3",
+    "rationale": "FastAPI route handler named after the endpoint it serves (POST /login); standard route-handler naming.",
+    "state_hash": "34212534e074c77a33bf4f1a0ecad0d1923260cc",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -4469,6 +4469,38 @@
     "decision": "reject",
     "rationale": "verb phrase (\"approve\" is only missing from the VERBS list); handler for POST /v1/platform/approvals/{approval_id}/approve.",
     "state_hash": "cc57e71abc34230fd7c0d0aa742fa022b048cfc7",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "module holds only the /v1/history/* route handlers; filename matches the endpoint namespace used throughout the codebase.",
+    "state_hash": "9b5401e500e7fddec6a450ca0668bd768db2ff31",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::_db_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "returns the db path; noun name is a normal accessor idiom.",
+    "state_hash": "fc452b8d481841897e95cb74e98bbdbdf62d932b",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::history_event_types",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "FastAPI handler named after its resource path (/v1/history/event-types); consistent with sibling handlers in the same file.",
+    "state_hash": "8989e3af0da54e6aee30b33b32adf965eda83fad",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::history_sessions",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "FastAPI handler named after its resource path (/v1/history/sessions); consistent with sibling handlers in the same file.",
+    "state_hash": "a527b2bfe7942df06d0aa586177db7aba59dca85",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -4853,6 +4885,118 @@
     "decision": "reject",
     "rationale": "Standard package name for route handlers grouped by domain.",
     "state_hash": "588d9b55c2031bc842c706cdfbe5315e3500fa1e",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py",
+    "tag": "module_name_review",
+    "decision": "confirm",
+    "rationale": "file mixes trivial accessors with substantial migration-plan-building and live-approval/PEV-start business logic, contradicting its own docstring claim of being generic and not specific to LangGraph agent logic; the helpers name undersells what a reader needs to know here.",
+    "state_hash": "3be6269ee9c8cb283a4f9760fcec5c5a8b483c5c",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_accel_get",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "part of the _accel_get/_accel_post/_accel_headers namespaced trio; get makes the intent obvious.",
+    "state_hash": "0170b89be07fdb28174d495393c6a7dcd4037451",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_accel_get_impl",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same _accel_* namespaced convention; concrete implementation behind a lazy wrapper.",
+    "state_hash": "c7a186acdd8631d00345a07bf372b861c356e3f3",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_accel_headers",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private builder returning exactly the named value (request headers for the accelerator call).",
+    "state_hash": "ce8b8befd68732335fc4ac50bcb70921a670e2e9",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_accel_post",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same _accel_* namespaced convention as _accel_get.",
+    "state_hash": "46ca4501db701b83f8f153c4359c0c6f6981193d",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_accel_post_impl",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "same _accel_* namespaced convention; concrete implementation behind a lazy wrapper.",
+    "state_hash": "7684709222998ca65a304ca65704452312f5e693",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_audit_actor",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private helper computing and returning an (actor, role) tuple; noun name is a normal accessor idiom.",
+    "state_hash": "48664abded995ece294697655c9a2c751f515eda",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_enqueue_session_live_approval",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "enqueue is a plain verb (same whitelist gap as the job_store rows); matches the sibling routes own docstring wording of queuing a live-execution approval.",
+    "state_hash": "3c8bd272bcbd757c6ae8636992bf5ce08035e1bd",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_platform_user",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private resolver/getter; noun name is a normal accessor idiom.",
+    "state_hash": "78389a5c61642c7de32b0d5724104f4ddd5e95bd",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_profile",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "accessor/getter; single-word noun name is a normal accessor idiom.",
+    "state_hash": "a4bf9524d497e0bf3a2bbbe733ed538fad2151ec",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_session_accel_token",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "accessor/getter returning a token; noun name is a normal accessor idiom.",
+    "state_hash": "b37671b6a0d3a18a06d785aa589034f4117f46cd",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_session_payload",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "accessor/getter building a payload dict; noun name is a normal accessor idiom.",
+    "state_hash": "2b3a3b582f8988f3f0afda8f59d8e75e2cf10065",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_session_token_from_request",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "accessor/getter; noun name is a normal accessor idiom.",
+    "state_hash": "8ca5a3b4fd53146516847db3a84b649e2a9c5972",
+    "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::_thinking_log_for_current_turn",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "filter/getter over the message list; noun name is a normal accessor idiom.",
+    "state_hash": "e4ba66993e1419f39abd5dfa4d2eba27e0343538",
     "decided_by": "cavecrew-reviewer"
   },
   {

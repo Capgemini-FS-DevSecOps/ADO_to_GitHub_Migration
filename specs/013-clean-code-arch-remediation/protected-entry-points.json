@@ -92,18 +92,6 @@
     "reason": "langchain_tool"
   },
   {
-    "id": "ado2gh/api/agentic_routes.py::export_history_sessions",
-    "reason": "http_route"
-  },
-  {
-    "id": "ado2gh/api/agentic_routes.py::history_event_types",
-    "reason": "http_route"
-  },
-  {
-    "id": "ado2gh/api/agentic_routes.py::history_sessions",
-    "reason": "http_route"
-  },
-  {
     "id": "ado2gh/api/connectivity_store.py::ConnectivityProfile.custom_ca_configured",
     "reason": "orphan_allowlist"
   },
@@ -649,6 +637,18 @@
   },
   {
     "id": "services/accelerator_api/routes/approval_routes.py::list_live_approvals",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::export_history_sessions",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::history_event_types",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::history_sessions",
     "reason": "http_route"
   },
   {

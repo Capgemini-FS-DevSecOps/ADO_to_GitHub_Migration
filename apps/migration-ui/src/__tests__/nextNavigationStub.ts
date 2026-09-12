@@ -13,14 +13,12 @@ import { vi } from 'vitest';
 export const navState = {
   pathname: '/',
   search: '',
-  params: {} as Record<string, string>,
 };
 
-/** Reset the stub between tests: root path, no query string, no route params, no calls. */
+/** Reset the stub between tests: root path, no query string, no calls. */
 export function resetNavState(): void {
   navState.pathname = '/';
   navState.search = '';
-  navState.params = {};
   redirect.mockClear();
   notFound.mockClear();
   routerPush.mockClear();
@@ -47,11 +45,6 @@ export function usePathname(): string {
 /** Current query string, from `navState.search`. */
 export function useSearchParams(): URLSearchParams {
   return new URLSearchParams(navState.search);
-}
-
-/** Current dynamic route params, from `navState.params`. */
-export function useParams(): Record<string, string> {
-  return navState.params;
 }
 
 /** Router object whose navigation methods are the spies exported above. */
