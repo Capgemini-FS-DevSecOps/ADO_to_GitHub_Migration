@@ -418,12 +418,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/phase/gate_checker.py:103-108` — `can_advance` returns False when no gate row exists, and `check()` is the only CLI path that would write one
 - severity: high (critical_test: —)
 - blast_radius: the documented step 8 of the execution workflow (`phase gate-check --phase poc`) cannot run at all. Because no gate row is ever persisted through the CLI, `can_advance()` is permanently False for every phase, leaving `--force` (GAP-009 (GAP-CLI-02)) as the only way to advance a wave — which is where the unaudited bypass becomes routine rather than exceptional. Rated high rather than critical because the crash itself is fail-safe: nothing advances and nothing is destroyed; the destructive consequence is carried by GAP-009 (GAP-CLI-02).
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: The signature mismatch itself was already fixed under GAP-009 (GAP-CLI-02)'s commit `ceb6b0b`, which split the CLI's `gate-check` command into two distinct calls — `checker.override(phase, reason)` when `--override` is given, `checker.check(phase)` otherwise — instead of the single call with unsupported `override=`/`reason=` keywords the evidence above describes; those bullets are marked "(verified)" against that landed state, not the current one. `aefea23` (test(GAP-017)) closes the regression-coverage gap this entry was actually tracking: `tests/unit/test_gap_017_gate_check_signature.py` runs the command through Click's `CliRunner` against a real SQLite state DB and asserts the plain call exits 0 and persists a `phase_gates` row, that `--override --reason "..."` persists the override, and that `--override` with an empty reason is refused before any row is written.
+- regression_check: `tests/unit/test_gap_017_gate_check_signature.py`
+- revert_proof: No proof was recorded when `aefea23` landed. Self-performed 2026-09-12 by Claude (sonnet subagent, T082 close-out): reintroduced the original defect by changing `ado2gh/cli/phase.py`'s non-override branch back to `result = checker.check(phase, override=override, reason=reason)` — the exact call shape the evidence above cites. `.venv/Scripts/python.exe -m pytest tests/unit/test_gap_017_gate_check_signature.py -v` then failed `test_gate_check_runs_and_persists_the_gate` with `TypeError("PhaseGateChecker.check() got an unexpected keyword argument 'override'")`, while `test_gate_check_override_persists_the_reason` and `test_gate_check_override_without_reason_is_refused` still passed, since the override branch calls `checker.override()` and was untouched by the revert. Restored via a combined `git stash push -- ado2gh/cli/phase.py ado2gh/api/accelerator.py ado2gh/core/scopes/git_scope.py ado2gh/pipelines/transform/transformer.py ado2gh/pipelines/transform/job_graph.py`, taken together with the GAP-018, GAP-030 and GAP-032 proofs recorded in this same pass since all five files were reverted together; the same tests re-ran green afterward (17 passed across all four gaps' suites). `git stash drop` was then blocked by this session's own permission classifier — the working tree is confirmed clean on all five files (`git status --short` shows no diff, matching HEAD), but stash entry `5b591bf` was still sitting undropped as of this writing and needs a differently-permissioned session to clear it.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-12
 
 ### GAP-018 (GAP-CLI-03) Migration commands execute live by default with no confirmation, and a declared approval token is discarded
 
@@ -438,12 +438,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/api/contracts.py:25` — `RunWaveRequest.live_approval_id: Optional[str] = None` is declared, and grep of `ado2gh/api/accelerator.py` finds zero reads of it: `run_wave` accepts an approval token and discards it (verified)
 - severity: high (critical_test: —)
 - blast_radius: any operator or script invoking `ado2gh run --wave N` without `--dry-run` immediately performs live repo creation, git mirror/GEI transfer, and scoped pipeline and work-item writes with no interactive confirmation and no server-side approval check on this path. Not rated critical because a documented `--dry-run` option exists on every command named and invoking the command is itself the operator's explicit act; the dangling `live_approval_id` is the sharper defect and the reason this is high rather than medium.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: deferred
+- resolution: `5f799e7` (fix(GAP-018)) closes the `live_approval_id` half of this gap only: `Accelerator.run_wave` — the single function shared by the CLI, the queue worker, the pipeline runner and both accelerator routes — now looks up a quoted `request.live_approval_id` against `live_execution_approvals` before it loads the migration config or resolves any credential, and raises `ConfigurationError` (surfaced as an HTTP 400 on the route) when the row is missing or not `status == "approved"`; a request that quotes no token is unaffected. Previously the only reader of that field lived in the `POST /v1/migrate` route, whose own RBAC check already ran for every caller that reached it, so a pending, denied, or fabricated approval id reaching `run_wave` through any other caller (CLI, queue worker) was never checked at all. The other three evidence bullets — `run --dry-run`, `phase run --dry-run` and `ado-cleanup --dry-run` all defaulting to `False` with no `click.confirm` anywhere in `ado2gh/cli/run_cmd.py` — are unchanged: flipping those defaults is a contract change against the frozen CLI surface in `tests/contract/public_surface_snapshot.json`, and per FR-024 is held for an explicit operator decision rather than landed unilaterally. Blocker: operator decision pending on the FR-024 contract change (`plan.md` § Approved contract changes, awaiting item: `--dry-run` default). Compensating control: the landed approval-token verification in `Accelerator.run_wave`, plus CA-001's dry-run default on the accelerator path.
+- regression_check: `tests/unit/test_gap_018_live_approval_id.py`
+- revert_proof: No proof was recorded when `5f799e7` landed. Self-performed 2026-09-12 by Claude (sonnet subagent, T082 close-out): neutralized the check in `Accelerator.run_wave` (`ado2gh/api/accelerator.py`) by changing `if request.live_approval_id:` to `if False and request.live_approval_id:`. `.venv/Scripts/python.exe -m pytest tests/unit/test_gap_018_live_approval_id.py -v` then failed three of five tests — both parametrised cases of `test_undecided_or_denied_approval_migrates_nothing` (`pending`, `denied`) and `test_unknown_approval_id_migrates_nothing`, each with `Failed: DID NOT RAISE ConfigurationError` — while `test_approved_token_lets_the_wave_run` and `test_request_without_a_token_is_unaffected` still passed, since neither depends on the check firing. Restored via the same combined `git stash push -- ado2gh/cli/phase.py ado2gh/api/accelerator.py ado2gh/core/scopes/git_scope.py ado2gh/pipelines/transform/transformer.py ado2gh/pipelines/transform/job_graph.py` used for the GAP-017/GAP-030/GAP-032 proofs; the same tests re-ran green afterward. `git stash drop` was then blocked by this session's own permission classifier — the working tree is confirmed clean (`git status --short` shows no diff on any of the five files), but stash entry `5b591bf` was still sitting undropped as of this writing.
 - contract_change: false
-- closed_on: —
+- closed_on: — (deferred; the `--dry-run` default flip awaits the operator's FR-024 decision, with the landed approval-token check as its interim control)
 
 ### GAP-019 (GAP-AUTH-03) `/sessions/{id}/provision` and `/remediate` take no `Request` and trust a client-supplied `actor`
 
@@ -473,12 +473,12 @@ in this register. T037 therefore had no dispute to put to the operator.
   - no compose or k8s manifest in this repo terminates TLS or otherwise prevents cleartext transport
 - severity: high (critical_test: —)
 - blast_radius: on any deployment without an external HTTPS-enforcing proxy the session cookie — the sole bearer credential for both services — is transmitted in cleartext and can be intercepted, enabling session hijack up to APPROVER/ADMIN. Capped at high rather than critical (b) because the exposure requires a network position rather than a code path that writes the secret to an artefact.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
-- contract_change: false
-- closed_on: —
+- status: remediated
+- resolution: `a5e085a` (fix(GAP-020)) makes `_set_session_cookie` (`services/accelerator_api/auth_routes.py`) pass `secure=` computed from the request's own scheme, instead of never passing it and taking Starlette's `False` default: plain-HTTP local development still gets a cookie the browser will keep, and any HTTPS-terminated deployment gets `Secure` so the platform's one bearer credential never rides in cleartext past a TLS-terminating proxy. `max_age` is now computed from `SESSION_HOURS` (`ado2gh/auth/service.py`) at the moment the cookie is issued, rather than the literal `8*3600`, so the browser-held cookie cannot outlive the server-side session regardless of how `ADO2GH_SESSION_HOURS` is configured — one source of truth, by construction. `_clear_session_cookie` now repeats the same `HttpOnly`/`SameSite`/`Secure` flags on the deleting response, since a browser will refuse to let a non-Secure response overwrite a Secure cookie, which would otherwise leave a stale session cookie behind after logout over HTTPS.
+- regression_check: `tests/auth/test_gap_020_session_cookie_flags.py`
+- revert_proof: Recorded in the fix commit: `git stash push -- services/accelerator_api/auth_routes.py` → 5 of 8 tests failed → `git stash pop`. Taken 2026-09-12 by the T080-series implementation agent (Claude Opus 5).
+- contract_change: false — the public surface snapshot's routes, methods, tables and environment variables are unchanged; only response cookie header values differ.
+- closed_on: 2026-09-12
 
 ### GAP-021 (GAP-ARCH-01) Package layering is inverted in at least nine places, masked by deferred imports (G-seed 3)
 
@@ -575,12 +575,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - measured: `npx vitest run` in `apps/migration-ui` → 8 files, 42 tests, all passing
 - severity: high (critical_test: —)
 - blast_radius: no regression net for any UI change, including the settings pages that handle secrets and the live-execution approval flow. Demonstrated rather than hypothetical: GAP-024 (GAP-UI-02) lived undetected in exactly this untested surface.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `617b08f` (test(GAP-025)) adds a co-located `*.test.tsx`/`*.test.ts` file beside every component and page file (19 under `src/components/`, 26 under `src/app/**`), plus `apps/migration-ui/vitest.config.ts` configuring the `jsdom` environment and automatic JSX runtime the new files need, and the `src/__tests__/components-and-pages-tested.test.ts` guard that walks the real source tree — unlike the pre-existing `exports-documented.test.ts`, which only exercises synthetic fixtures — and fails if any component or page file has no sibling test. Coverage prioritised the surface adjacent to GAP-024 (GAP-UI-02): the live-execution approval UI, the gate-override justification field that only renders on a live run, permission-gated loading states, and the credential fields masked per CA-003. Interaction assertions (events, effects) stay out of scope for this entry. No new dependency was added; rendering uses `react-dom/server` and the project's existing `tsc --strict`/`noUnusedParameters` settings. **Residual finding**: no linter is configured for `apps/migration-ui` — `eslint` is neither installed nor declared as a devDependency, and adding one was out of scope for this entry per SC-003's bar on new dependencies; `tsc --strict` plus this new test suite is the compensating control until an operator approves the devDependency addition. Verified in the commit: `npx tsc --noEmit -p tsconfig.json` → no errors; `npx vitest run` → 55 files / 166 tests (baseline before this commit: 9 files / 48 tests).
+- regression_check: `apps/migration-ui/src/__tests__/components-and-pages-tested.test.ts`
+- revert_proof: No proof was recorded when `617b08f` landed. Self-performed 2026-09-12 by Claude (sonnet subagent, T082 close-out): renamed the tracked `apps/migration-ui/src/components/BrandLogo.test.tsx` to `BrandLogo.test.tsx.disabled`, outside vitest's `*.test.tsx` glob, then ran `npm --prefix apps/migration-ui test -- src/__tests__/components-and-pages-tested.test.ts`, which failed: `expected [ 'src/components/BrandLogo.tsx' ] to deeply equal []`. Renamed the file back to its original name; the same command then passed (2 passed), and `git status --short` showed no residual diff on either `BrandLogo.tsx` or `BrandLogo.test.tsx`.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-12
 
 ### GAP-026 (GAP-PHASE-03) `execute_phase` has no test coverage
 
@@ -591,12 +591,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - reproduction: `grep -rn 'execute_phase' tests/` → **0 matches** (verified at T035)
 - severity: high (critical_test: —)
 - blast_radius: the single function that fans a phase out into batches, applies gates between them, and checkpoints progress is unverified, so a regression in batching or checkpoint placement would ship green.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `84618d2` (test(GAP-026)) adds seven tests exercising `BatchExecutor.execute_phase` through real `Accelerator.run_phase` calls rather than summary counters: batch boundaries follow each phase's configured `batch_size`; only the requested phase's waves are batched, not sibling phases'; a phase with no waves returns a zeroed summary and touches no repo; one `batch_checkpoints` row is written per completed batch with the resume cursor advancing with it; a resumed run executes only the batches after the last checkpoint, never re-running a completed one; `DRY_RUN` writes no checkpoint and opens no wave run, so a live run afterward still has every batch to do; and a blocked prior-phase gate stops every batch until an audited override releases them. This entry's own blast_radius line above ("applies gates between them") is corrected by the tests themselves: the gate is evaluated once, ahead of the batch fan-out, by `Accelerator.run_phase`, not between individual batches. No production file was changed by this commit.
+- regression_check: `tests/unit/test_gap_026_execute_phase.py`
+- revert_proof: Recorded in the fix commit, taken 2026-09-09, against a backup copy of `ado2gh/phase/batch_executor.py` rather than `git stash` since the commit changed no production file to stash: collapsing the batching loop to a single unbatched pass (`batches = [all_repos]`) produced 5 failed / 2 passed (`assert 1 == 3` on batches_run); skipping both `upsert_batch_checkpoint` calls produced 4 failed / 3 passed (`assert [] == [0, 1, 2]` on the checkpoint batch numbers). The original file was restored from the backup; `git diff -- ado2gh/phase/batch_executor.py` was empty afterward.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-09
 
 ### GAP-027 (GAP-ENG-04) "Idempotent — skips completed scopes" is false; per-handler idempotency is ad hoc
 
@@ -612,12 +612,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - `ado2gh/models.py:51` — `DEFAULT_MIGRATION_STRATEGY = MigrationStrategy.GEI.value`; `ado2gh/core/config_loader.py:88` — default scope list is `["repo"]`, so both affected paths are non-default selections
 - severity: high (critical_test: c)
 - blast_radius: any retry or wave re-run — including `pipelines retry-failed`, which re-runs the whole wave — force-clobbers GitHub-side git state for mirror-strategy repos and duplicates GitHub issues for work-item-scoped repos, while the CLI docstring tells the operator re-running is safe. Downgraded from critical (c) because both affected paths require a non-default strategy or an opt-in scope.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `95ddc3f` (docs(GAP-027)) corrects the false "Idempotent — skips completed scopes" claim rather than implementing idempotency: `ado2gh/cli/migration.py`'s docstring (and `ado2gh run --help`, which changes under FR-010a as a result) now says what a re-run actually does per scope, and the `ScopeHandler` protocol docstring (`ado2gh/core/scopes/base.py`) states plainly that it imposes no idempotency requirement, so a new handler's author is told what guarantee, if any, to provide rather than inheriting an assumed one. `ado2gh/core/migration_engine.py`, `ado2gh/core/scopes/git_scope.py`, `ado2gh/core/scopes/pipelines_scope.py` and `ado2gh/core/scopes/work_items_scope.py` each gained a docstring stating their actual, differing re-run behaviour — `PipelinesScopeHandler` guards itself against re-running completed pipeline ids within one wave, `GitScopeHandler` force-pushes again under the mirror strategy but skips (or refuses, on a HEAD mismatch) under GEI, and `WorkItemsScopeHandler` consults nothing and duplicates an issue per ADO work item on every re-run. No behaviour changed anywhere; `tests/unit/test_gap_027_idempotency_docstrings.py` keys on the specific behavioural claims each docstring now makes, so the prose was rewritten but the underlying ad hoc idempotency this entry describes is not itself un-said. `phase run --help` and `phase gate-check --help` are byte-identical to before; the frozen `cli_commands` table in `tests/contract/public_surface_snapshot.json` is untouched.
+- regression_check: `tests/unit/test_gap_027_idempotency_docstrings.py`
+- revert_proof: proof pending: file in flight. `ado2gh/cli/migration.py`, one of this commit's six changed files, is currently modified by a concurrent agent in this working tree; per the standing instruction not to stash or edit a file another agent is actively working on, no fresh revert was attempted. No revert proof was recorded when `95ddc3f` landed either — the commit's own message describes only the docstring changes, not a stash/failure cycle — and `run-gap-017-018-027.txt` is a plain 21-passed log covering this test file alongside GAP-017's and GAP-018's.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-12
 
 ### GAP-028 (GAP-STATE-01) `DynamoDBJobStore` can silently double-claim or duplicate a job under concurrency
 
@@ -631,12 +631,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - `ado2gh/state/job_store.py:365-379` and `:305-317` — `DynamoDBJobStore.claim_next()` scans for `PENDING` then `put_item()`s with no `ConditionExpression`; two workers can both claim the same job with no error to either
 - severity: high (critical_test: e)
 - blast_radius: a serverless deployment — the role `ado2gh/state/storage_config.py`'s own docstring advertises for this backend — can execute the same migration job twice concurrently, or create duplicate jobs for one idempotency key, with no error, no log, and no audit entry. Downgraded from critical (e) because it requires `ADO2GH_STORAGE_BACKEND=dynamodb`, a non-default topology.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `d88db23` (fix(GAP-028)) makes `DynamoDBJobStore.claim_next()` atomic: instead of scanning for a `PENDING` job and writing it back with an unconditional `put_item()`, it now moves the row from `pending` to `running` with a conditional `update_item()` guarded by `Attr("status").eq("pending")`, so a worker that loses the race gets `None` back instead of silently duplicating the claim — the same effect `PostgresJobStore.claim_next()` already gets from `SELECT ... FOR UPDATE SKIP LOCKED`. `get_by_idempotency()`'s scan is now strongly consistent (`ConsistentRead=True`), closing the second race where two callers enqueuing under the same idempotency key could both miss an eventually-consistent read and both insert. A claim lost to the race is no longer silent: it is logged at WARNING and audited as a `job.claim_conflict` event through the existing `AuditWriter` (CA-004), with the payload naming only `job_id`, `job_type` and the backend — never the job payload itself (CA-003).
+- regression_check: `tests/unit/test_gap_028_dynamo_double_claim.py`
+- revert_proof: proof pending: file in flight. `ado2gh/state/job_store.py`, this commit's sole production file, is currently modified by a concurrent agent in this working tree; per the standing instruction not to stash or edit a file another agent is actively working on, no fresh revert was attempted. No revert proof was recorded when `d88db23` landed either; `run-gap-028.txt` is a plain 37-passed log with no failure/stash content.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-09
 
 ### GAP-029 (GAP-STATE-02) `create_state_db()` silently discards `--db` under a non-default backend and crashes on a backend its own config validates
 
@@ -650,12 +650,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - `ado2gh/cli/phase.py:23,39,51,65,83`, `ado2gh/cli/pipelines.py:20,34,44`, `ado2gh/cli/run_cmd.py:20`, `ado2gh/cli/misc.py:16` — every `--db` option is `default="migration_state.db", show_default=True` with no mention that `ADO2GH_STORAGE_BACKEND` overrides it
 - severity: high (critical_test: —)
 - blast_radius: an operator who sets `ADO2GH_STORAGE_BACKEND=postgres` in a shell or CI job and runs `ado2gh phase run --db test.db` believing they are isolated to a scratch file is silently redirected to the shared production database named by `ADO2GH_DATABASE_URL`, with no warning. Separately, any command run with the DynamoDB backend crashes with an unhandled `ValueError` for a configuration the platform accepts as legitimate.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `4999e19` (fix(GAP-029), T081) makes `create_state_db()`'s `backend` a keyword-only argument that defaults from the environment, so all 88 existing call sites are unchanged and a caller that does care can say which backend it wants explicitly. A non-default `--db` under a non-SQLite backend can no longer be silently discarded without a trace: it is now logged as a WARNING naming `ADO2GH_STORAGE_BACKEND` as the reason `db_path` was not honoured — raising outright was rejected because every CLI command passes a `--db` default and would then fail under a perfectly valid Postgres deployment, so this entry's fault was the silence, not which value wins. A DynamoDB backend is now refused with a message naming the actual configuration variable and pointing at the job store, the only thing this codebase backs with DynamoDB (`docs/ARCHITECTURE.md:188-190`), rather than the previous bare `Unsupported storage backend: {cfg.backend}`. `ADO2GH_SQLITE_PATH` still outranks an explicit `db_path` — deployments use it to point every command at one mounted volume, and `tests/conftest.py` relies on that precedence for per-test database isolation (GAP-051 (GAP-TOOL-07)) — so that precedence is documented by this fix, not changed. `tests/unit/test_state_factory.py::test_factory_no_dynamodb_option`, which had asserted only that the substring `"dynamodb"` never appears in the factory's source — a check that would have passed the exact bare-error-message defect this gap reports — was rewritten to assert FR-009's real invariant via an AST walk: no DynamoDB import and no DynamoDB construction anywhere in `ado2gh/state/factory.py`.
+- regression_check: `tests/unit/test_gap_029_backend_parity.py`
+- revert_proof: Recorded in the fix commit, taken 2026-09-12 by the T081 implementation agent (Claude Opus 5): `git stash push -- ado2gh/state/factory.py` → 4 failed, 11 passed → `git stash pop`.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-12
 
 ### GAP-030 (GAP-TOKEN-02) GitHub token is passed in subprocess argv for the mirror strategy
 
@@ -667,12 +667,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - mitigating: `ado2gh/core/scopes/git_scope.py:18-25` `_redact()` scrubs the value from captured subprocess output, so the leak is to argv rather than to logs
 - severity: high (critical_test: —)
 - blast_radius: on any multi-user host the platform token is readable from the process table for the duration of a clone or push. Capped at high rather than critical (b) because the default strategy is `gei`, which uses the environment; the argv path requires selecting `migration_strategy: mirror`.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `80a9301` (fix(GAP-030)) replaces the mirror strategy's token-bearing remote URL (`https://x-access-token:<token>@github.com/...`, passed as a literal subprocess argument to `git remote set-url`, `git push` and `git lfs push`) with the same environment-based mechanism the GEI path and the Azure DevOps clone already used: `_build_ado_git_env`'s `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` triple is generalised into `_build_git_auth_env`, optionally scoped to a single remote via `http.<url>.extraHeader`. The mirror clone, the mirror push and the LFS push now all pass the tokenless `https://github.com/<org>/<repo>.git` in argv, with the credential carried only in the subprocess environment (CA-003). The Azure DevOps clone side of the same file is unchanged, and a dry run still starts no subprocess at all (CA-001).
+- regression_check: `tests/core/test_gap_030_token_not_in_argv.py`
+- revert_proof: No proof was recorded when `80a9301` landed. Self-performed 2026-09-12 by Claude (sonnet subagent, T082 close-out): reintroduced the original defect by rebuilding `_run_mirror`'s `target_url` in `ado2gh/core/scopes/git_scope.py` with the token embedded (`https://x-access-token:{gh_token}@github.com/...`) instead of the plain URL. `.venv/Scripts/python.exe -m pytest tests/core/test_gap_030_token_not_in_argv.py -v` then failed four of six tests — `test_no_argv_element_carries_a_credential` (the placeholder credential turned up inside an argv element), `test_push_remote_is_tokenless`, `test_push_env_carries_the_url_scoped_auth_header` (the `http.<url>.extraHeader` config key the env-based path writes was simply absent) and `test_lfs_push_is_tokenless_and_authenticated_through_env` — while `test_ado_clone_auth_is_unchanged` and `test_dry_run_starts_no_subprocess` still passed, since the revert touched only the GitHub mirror-push URL construction. Restored via the same combined `git stash push -- ado2gh/cli/phase.py ado2gh/api/accelerator.py ado2gh/core/scopes/git_scope.py ado2gh/pipelines/transform/transformer.py ado2gh/pipelines/transform/job_graph.py` used for the GAP-017/GAP-018/GAP-032 proofs; the same tests re-ran green afterward (17 passed across all four gaps' suites together). `git stash drop` was then blocked by this session's own permission classifier — the working tree is confirmed clean on all five files (`git status --short` shows no diff, matching HEAD), but stash entry `5b591bf` was still sitting undropped as of this writing and needs a differently-permissioned session to clear it.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-09
 
 ### GAP-031 (GAP-PIPE-01) ADO variable-group variables are captured as metadata and never reach the generated workflow or its notes
 
@@ -703,12 +703,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - reproduction: `Grep pattern="PipelineVariable\(|is_secret\s*=\s*True|isSecret" path="tests"` → **0 matches**; no test anywhere constructs a secret `PipelineVariable` or asserts the output contains `${{ secrets.` rather than a literal value
 - severity: high (critical_test: —)
 - blast_radius: the one code path guaranteeing a secret value never reaches generated GitHub Actions YAML has no regression net. An accidental `if not v.is_secret` inversion or a merge dropping either branch would ship with the suite green. Present behaviour is correct — verified that no path in `ado2gh/pipelines/` writes a variable value into output outside these two guarded sites — so this is a missing guard, not a live leak.
-- status: open
-- resolution: —
-- regression_check: —
-- revert_proof: —
+- status: remediated
+- resolution: `52e94bf` (test(GAP-032)) adds the missing regression guard for the only two sites that ever write a `PipelineVariable.value` into generated output — `transformer.py::_build_env_block` (workflow-level) and `job_graph.py`'s job-level env builder — both already gated behind `if v.is_secret:` substituting `${{ secrets.NAME }}`. The new tests pin the guard twice: once through the real render path (`PipelineTransformer.transform` → the workflow file written to disk, asserted on its raw text) and once directly against the writer function, so an inverted condition or a dropped branch on either site fails the suite instead of shipping green. A plain (non-secret) variable is asserted to still render its value, so a blanket mask could not pass either. The values used in the tests are fabricated placeholders, and the assertion helper reports only the leaking variable *names*, never a value, so a failure message can never echo anything credential-shaped (CA-003). No production file was changed by this commit.
+- regression_check: `tests/pipeline/test_gap_032_secret_values_never_inlined.py`
+- revert_proof: No proof was recorded when `52e94bf` landed. Self-performed 2026-09-12 by Claude (sonnet subagent, T082 close-out): inverted both pre-existing (unmodified-by-this-commit) guards — `if v.is_secret:` to `if not v.is_secret:` in `ado2gh/pipelines/transform/transformer.py::_build_env_block` and the equivalent stage-env loop in `ado2gh/pipelines/transform/job_graph.py`. `.venv/Scripts/python.exe -m pytest tests/pipeline/test_gap_032_secret_values_never_inlined.py -v` then failed all three tests — `test_transform_writes_secret_references_not_values` (`API_KEY`, `DB_PASSWORD` and `DEPLOY_TOKEN` all found written into the generated workflow), `test_build_env_block_substitutes_a_secrets_reference_for_every_secret` and `test_stage_variables_become_job_env_with_secrets_referenced` — each reporting the leaking variables by name only, never by value. Restored via the same combined `git stash push` used for the GAP-017/GAP-018/GAP-030 proofs above; the same three tests re-ran green afterward. The same stash-cleanup caveat noted under GAP-030 applies here: the working tree is confirmed clean, but the stash entry (`5b591bf`) was not yet dropped as of this writing because `git stash drop` was blocked by this session's own permission classifier.
 - contract_change: false
-- closed_on: —
+- closed_on: 2026-09-09
 
 ### GAP-033 (GAP-DEPLOY-02) Scheduled migration workflow pushes to GitHub on a cron with no environment approval gate
 
