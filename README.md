@@ -78,13 +78,29 @@ tests/                  pytest + contract tests
 ## Key capabilities
 
 - **Phased migration** — poc → pilot → wave1–3 with gate checks and overrides
-- **Git strategies** — `mirror` (default) or `gei` (GitHub Enterprise Importer)
+- **Git strategies** — `gei` (default, GitHub Enterprise Importer) or `mirror` (git clone/push --mirror)
 - **Pipeline conversion** — 200+ ADO task mappings to GitHub Actions
 - **Profile-based ops** — deployment profiles, discovery scan, risk-based phase assignment in UI
 - **PEV agent** — tool-driven planner/executor/validator; migration-only scope guardrails
 - **Validation** — commit SHA verification between ADO and GitHub
 - **RBAC** — admin / operator / approver; live-run approval queue
 - **LLM onboarding** — catalog picker, validate-before-enable, Ollama + cloud providers
+
+---
+
+## Tests and quality gates
+
+```bash
+pytest                                      # ~1,000 tests, about 100 seconds
+ruff check ado2gh/ services/                # lint gate
+pytest --cov=ado2gh --cov-fail-under=61     # coverage ratchet, as CI runs it
+```
+
+On Windows, call the suite as `.\.venv\Scripts\python.exe -m pytest` when the virtual environment is not activated, and redirect the output to a file rather than piping it.
+
+On top of the usual `E`/`F`/`W`/`I` rules, the lint gate requires Google-style docstrings (`D1`) and type annotations (`ANN`), and rejects boolean flag parameters (`FBT001`/`FBT002`), more than five parameters (`PLR0913`), mutable default arguments (`B006`), unused arguments (`ARG`) and inconsistent returns (`RET501`-`RET503`). Test modules are exempt from that second group. The coverage threshold in `.github/workflows/ci.yml` is raised after each increment and never lowered; the 85 % target is still outstanding.
+
+Structural guard tests and the full local workflow: [docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md).
 
 ---
 

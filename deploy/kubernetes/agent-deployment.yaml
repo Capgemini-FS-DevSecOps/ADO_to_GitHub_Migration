@@ -5,7 +5,7 @@ metadata:
   namespace: ado2gh
 spec:
   # Must stay 1 — run/session/approval state lives in module-level dicts in
-  # ado2gh/agents/migration_agent/route_helpers.py, so a second replica would
+  # services/agent/routes/_helpers.py, so a second replica would
   # serve requests that cannot see sessions created by the first.
   replicas: 1
   selector:

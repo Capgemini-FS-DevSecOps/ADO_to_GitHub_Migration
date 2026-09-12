@@ -42,7 +42,7 @@ git lfs install
 
 gh --version
 gh auth login
-gh extension install github/gh-gei
+gh extension install github/gh-ado2gh
 ```
 
 ---
@@ -82,7 +82,7 @@ export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
 ### Single Token
 
 ```bash
-export GH_TOKEN="ghp_your_token_here"
+export GH_TOKEN="<your-github-token>"
 ```
 
 Required scopes: `repo`, `admin:org`, `workflow`, `delete_repo` (for rollback).
@@ -92,9 +92,9 @@ Required scopes: `repo`, `admin:org`, `workflow`, `delete_repo` (for rollback).
 GitHub's API rate limit is 5000 requests/hour per token. At scale, you'll exhaust this quickly.
 
 ```bash
-export GH_TOKEN_1="ghp_token_one"
-export GH_TOKEN_2="ghp_token_two"
-export GH_TOKEN_3="ghp_token_three"
+export GH_TOKEN_1="<github-token-1>"
+export GH_TOKEN_2="<github-token-2>"
+export GH_TOKEN_3="<github-token-3>"
 ```
 
 The tool auto-detects `GH_TOKEN_1` through `GH_TOKEN_19` and rotates with rate-limit awareness. Check status:
@@ -137,7 +137,7 @@ global:
   gh_org: "your-github-org"
   parallel: 4               # concurrent repos (keep 4-8 for network I/O)
   pipeline_parallel: 12     # pipeline transform threads (CPU-bound, 12-16 safe)
-  migration_strategy: mirror # "mirror" or "gei"
+  migration_strategy: gei   # "gei" (default) or "mirror"
   default_scopes:
     - repo
     - pipelines
@@ -174,8 +174,13 @@ ado2gh token-status --config migration.yaml
 # Test ADO connectivity
 ado2gh discover --config migration.yaml --output test_discovery.yaml
 
+# Run the test suite (needs the dev extra: pip install -e ".[api,agent,dev]")
+pytest
+
 # If discovery works, you're ready to start the migration workflow
 ```
+
+The suite is roughly 1,000 tests and takes about 100 seconds. On Windows, call it as `.\.venv\Scripts\python.exe -m pytest` when the virtual environment is not activated. CI gates the same suite with `ruff check ado2gh/ services/` and `pytest --cov=ado2gh --cov-fail-under=61`; see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for the full rule set and the structural guard tests.
 
 ---
 

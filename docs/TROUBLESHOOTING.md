@@ -16,9 +16,9 @@ export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
 ### `GH_TOKEN required`
 
 ```bash
-export GH_TOKEN="ghp_your_token"
+export GH_TOKEN="<your-github-token>"
 # OR for multi-token:
-export GH_TOKEN_1="ghp_token_one"
+export GH_TOKEN_1="<github-token-1>"
 ```
 
 ### ADO PAT authentication failures
@@ -123,11 +123,11 @@ export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 $env:DOTNET_SYSTEM_GLOBALIZATION_INVARIANT = "1"
 ```
 
-### `gh gei` not found
+### `gh ado2gh` not found
 
 ```bash
-gh extension install github/gh-gei
-gh gei --version
+gh extension install github/gh-ado2gh
+gh ado2gh --version
 ```
 
 ### GEI blob storage errors
@@ -143,7 +143,7 @@ See: https://docs.github.com/en/migrations/using-github-enterprise-importer
 GEI migrations are queued server-side. The `--wait` flag keeps the CLI waiting. For very large repos, this can timeout. Check migration status:
 
 ```bash
-gh gei wait-for-migration --migration-id <ID>
+gh ado2gh wait-for-migration --migration-id <ID>
 ```
 
 ---
@@ -249,6 +249,36 @@ The PAT needs `Code (Read & Write)` scope. The repo may be read-only or have pol
 ### Archive failed
 
 ADO repo archival requires project-level admin permissions. Verify the PAT owner has the necessary role.
+
+---
+
+## Test and Lint Failures
+
+### Running the suite on Windows
+
+Use the virtual environment's interpreter and redirect the output to a file rather than piping it:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest > test-output.txt 2>&1
+```
+
+Plain `pytest` works once the venv is activated. The suite is roughly 1,000 tests and takes about 100 seconds. `pytest-cov`, `ruff` and `vulture` are installed by `pip install -e ".[api,agent,dev]"`.
+
+### `Required test coverage of 61% not reached`
+
+CI runs `pytest --cov=ado2gh --cov-fail-under=61` (`.github/workflows/ci.yml`). Add tests for the code you changed. The threshold is raised after each increment and never lowered, so relaxing it is not a fix. The 85 % target is still outstanding.
+
+### Ruff errors on docstrings, annotations or parameter counts
+
+`ruff check ado2gh/ services/` enforces Google-style docstrings (`D1`), type annotations (`ANN`), no boolean flag parameters (`FBT001`/`FBT002`), at most five parameters (`PLR0913`, `max-args = 5`), no mutable default arguments (`B006`), no unused arguments (`ARG`) and consistent returns (`RET501`-`RET503`), on top of `E`, `F`, `W` and `I`. Fix the code rather than widening the rule set; genuine exceptions carry a `# noqa` and a matching row in the exception register. This group is not enforced under `tests/`.
+
+### A structural guard test fails
+
+| Test | Meaning |
+|---|---|
+| `tests/contract/test_public_surface_snapshot.py` | A CLI command, database table, environment variable or HTTP route changed. Update the stored snapshot if the change was intended; otherwise a public surface moved by accident |
+| `tests/unit/test_file_size_limit.py` | A Python file under `ado2gh/` or `services/` passed 800 lines. Split it |
+| `tests/unit/test_no_orphaned_modules.py` | A module is unreachable from any import. Wire it up, delete it, or add a dynamically imported module to the allowlist in that test |
 
 ---
 

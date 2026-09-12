@@ -72,8 +72,6 @@ _DYNAMIC_IMPORTS = {
     "ado2gh.api.credentials.cloud_credentials_store",
     "ado2gh.api.connectivity_store",
     "ado2gh.agents.metrics",
-    # Reporting module used only by tests
-    "ado2gh.reporting.boards_gaps",
 }
 # Modules with __main__ blocks that are run as standalone scripts.
 _STANDALONE_EXECUTABLES = {

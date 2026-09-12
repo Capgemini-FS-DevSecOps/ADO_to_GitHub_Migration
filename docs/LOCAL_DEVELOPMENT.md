@@ -16,7 +16,7 @@ Run the full migration platform on your laptop **without PostgreSQL**. SQLite is
 
 - **Docker Desktop** (for compose workflows) or **Python 3.11+** and **Node.js 20+** (for native)
 - **Git** on `PATH` (required for repo mirroring)
-- Optional: **GitHub CLI** + `gh-gei` if using the GEI migration strategy
+- Optional: **GitHub CLI** + `gh-ado2gh` if using the GEI migration strategy
 
 ---
 
@@ -137,7 +137,7 @@ $env:GH_TOKEN = "..."
 **UI only** (API already running):
 
 ```powershell
-.\scripts\run-ui.ps1
+.\scripts\dev\run-ui.ps1
 ```
 
 ---
@@ -221,6 +221,42 @@ the agent answers 401 and approved sessions never resume. `docker-compose.prod.y
 refuses to start without it.
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for PAT scopes and [ARCHITECTURE.md](ARCHITECTURE.md) for deployment modes.
+
+---
+
+## 9. Tests and quality gates
+
+Run the suite from the repository root. On Windows the virtual environment's interpreter is the reliable invocation; plain `pytest` works too once the venv is activated:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest > test-output.txt 2>&1
+```
+
+Redirect the output to a file rather than piping it, then read the file. The suite is roughly 1,000 tests and takes about 100 seconds. `pytest-cov`, `ruff` and `vulture` are installed by `pip install -e ".[api,agent,dev]"`.
+
+Lint with the same configuration CI uses:
+
+```bash
+ruff check ado2gh/ services/
+```
+
+On top of `E`, `F`, `W` and `I`, the rule set requires Google-style docstrings (`D1`) and type annotations (`ANN`), and rejects boolean flag parameters (`FBT001`/`FBT002`), more than five parameters (`PLR0913`, `max-args = 5`), mutable default arguments (`B006`), unused arguments (`ARG`) and inconsistent returns (`RET501`-`RET503`). That second group is not enforced under `tests/`, where undocumented helpers and unused fixture arguments are the convention. Genuine exceptions carry a `# noqa` and a matching row in the exception register.
+
+CI also runs a coverage ratchet:
+
+```bash
+pytest --cov=ado2gh --cov-fail-under=61
+```
+
+The threshold in `.github/workflows/ci.yml` is raised after each increment and never lowered, so relaxing it to make a build pass is not an option. The 85 % target is still outstanding.
+
+Three guard tests protect the structure of the tree:
+
+| Guard | What it enforces |
+|-------|------------------|
+| `tests/contract/test_public_surface_snapshot.py` | CLI commands, database tables, environment variables and HTTP routes are frozen. Update the stored snapshot deliberately when a public surface really changes |
+| `tests/unit/test_file_size_limit.py` | No Python file under `ado2gh/` or `services/` exceeds 800 lines |
+| `tests/unit/test_no_orphaned_modules.py` | Every module is reachable from an import; dynamically imported ones need an allowlist entry in that test |
 
 ---
 
