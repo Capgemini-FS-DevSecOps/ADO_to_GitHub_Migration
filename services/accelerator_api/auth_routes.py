@@ -6,15 +6,18 @@ admin-only user administration endpoints.
 
 Sessions are carried in an HTTP-only, same-site cookie rather than in the
 response body, so no token value is ever readable from JavaScript or visible in
-a payload. Passwords are accepted only on the way in and are stored hashed;
+a payload. The cookie is additionally marked ``Secure`` whenever the request
+arrived over HTTPS, and expires exactly when the server-side session does. Passwords are accepted only on the way in and are stored hashed;
 neither a password nor a session token appears in any response documented here.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from ado2gh.auth.models import PlatformRole, PlatformUser
+from ado2gh.auth.models import AuthSession, PlatformRole, PlatformUser
 from ado2gh.auth.service import (
     SESSION_COOKIE,
     AuthService,
@@ -124,35 +127,81 @@ def _onboarding_redirect() -> str | None:
     return None
 
 
-def _set_session_cookie(response: Response, token: str) -> None:
+def _is_https_deployment(request: Request) -> bool:
+    """Decide whether this request reached the platform over HTTPS (GAP-020).
+
+    The deployment is treated as HTTPS when the request scheme says so, or when
+    a TLS-terminating proxy in front of the service says so via
+    ``X-Forwarded-Proto`` — the repo ships no manifest that terminates TLS
+    itself, so the forwarded header is the only signal such a deployment has.
+    No new environment variable gates this: the transport the caller actually
+    used is a better answer than a flag someone has to remember to set.
+
+    Plain HTTP therefore stays plain on purpose. ``docker compose up`` serves
+    the console on ``:3000`` against the API on ``:8080`` over HTTP, and a
+    browser silently drops a ``Secure`` cookie on such an origin, so marking it
+    ``Secure`` there would lock every local operator out. A client that forges
+    the header over HTTP only makes its own cookie unusable.
+
+    Args:
+        request: Incoming request the response is being built for.
+
+    Returns:
+        True when the session cookie may be marked ``Secure``.
+    """
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    proto = forwarded.split(",")[0].strip() if forwarded else request.url.scheme
+    return proto.lower() == "https"
+
+
+def _set_session_cookie(response: Response, request: Request, session: AuthSession) -> None:
     """Attach the session cookie to an outgoing response.
 
-    The cookie is HTTP-only and same-site ``lax``, scoped to the whole site and
-    expiring after eight hours, so the session is not readable from JavaScript
-    and is not carried on cross-site requests.
+    The cookie is HTTP-only and same-site ``lax``, scoped to the whole site, and
+    marked ``Secure`` on an HTTPS deployment, so the session is not readable
+    from JavaScript, is not carried on cross-site requests, and is not sent in
+    cleartext. Its ``Max-Age`` is derived from the expiry the auth service
+    issued for this very session rather than from a second copy of the
+    lifetime, so the browser copy cannot outlive the server-side one whatever
+    ``ADO2GH_SESSION_HOURS`` is set to.
 
     Args:
         response: Outgoing response the cookie is written to.
-        token: Session token issued by the auth service. Its value goes into
-            the cookie only — never into a log line or a response body.
+        request: Incoming request, read only for the transport it arrived on.
+        session: Session issued by the auth service. Its token goes into the
+            cookie only — never into a log line or a response body.
     """
+    expires_at = datetime.fromisoformat(session.expires_at)
+    max_age = int((expires_at - datetime.now(timezone.utc)).total_seconds())
     response.set_cookie(
         key=SESSION_COOKIE,
-        value=token,
+        value=session.token,
         httponly=True,
         samesite="lax",
+        secure=_is_https_deployment(request),
         path="/",
-        max_age=8 * 3600,
+        max_age=max_age,
     )
 
 
-def _clear_session_cookie(response: Response) -> None:
+def _clear_session_cookie(response: Response, request: Request) -> None:
     """Delete the session cookie so the browser stops sending it.
+
+    The deletion carries the same attributes as the cookie it replaces; a
+    browser will not let a non-``Secure`` response overwrite a ``Secure``
+    cookie.
 
     Args:
         response: Outgoing response the cookie deletion is written to.
+        request: Incoming request, read only for the transport it arrived on.
     """
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        samesite="lax",
+        secure=_is_https_deployment(request),
+    )
 
 
 def _user_payload(user: PlatformUser) -> dict[str, object]:
@@ -204,7 +253,7 @@ def bootstrap_status() -> dict[str, object]:
 
 
 @router.post("/bootstrap", status_code=201)
-def bootstrap(body: BootstrapBody, response: Response) -> dict[str, object]:
+def bootstrap(body: BootstrapBody, request: Request, response: Response) -> dict[str, object]:
     """Create the platform's first admin account and sign it straight in.
 
     Only works while no account exists; once the platform is bootstrapped the
@@ -213,6 +262,7 @@ def bootstrap(body: BootstrapBody, response: Response) -> dict[str, object]:
 
     Args:
         body: Username, password and display name for the admin account.
+        request: Incoming request, read only for the transport it arrived on.
         response: Outgoing response the session cookie is attached to.
 
     Returns:
@@ -230,7 +280,7 @@ def bootstrap(body: BootstrapBody, response: Response) -> dict[str, object]:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _set_session_cookie(response, session.token)
+    _set_session_cookie(response, request, session)
     redirect = _onboarding_redirect()
     return {
         "user": _user_payload(session.user),
@@ -277,7 +327,7 @@ def register(body: RegisterBody) -> dict[str, object]:
 
 
 @router.post("/login")
-def login(body: LoginBody, response: Response) -> dict[str, object]:
+def login(body: LoginBody, request: Request, response: Response) -> dict[str, object]:
     """Sign in with a username and password and start a session.
 
     On success the session cookie is set on the response. The token itself is
@@ -285,6 +335,7 @@ def login(body: LoginBody, response: Response) -> dict[str, object]:
 
     Args:
         body: The sign-in credentials.
+        request: Incoming request, read only for the transport it arrived on.
         response: Outgoing response the session cookie is attached to.
 
     Returns:
@@ -306,7 +357,7 @@ def login(body: LoginBody, response: Response) -> dict[str, object]:
         if detail in ("account_pending_approval", "account_disabled"):
             raise HTTPException(status_code=403, detail=detail) from exc
         raise HTTPException(status_code=401, detail="Invalid credentials") from exc
-    _set_session_cookie(response, session.token)
+    _set_session_cookie(response, request, session)
     redirect = _onboarding_redirect()
     if session.user.role.value == "admin" and redirect:
         pass
@@ -506,7 +557,7 @@ def logout(request: Request, response: Response) -> dict[str, object]:
     token = request.cookies.get(SESSION_COOKIE, "")
     if token:
         _svc.logout(token)
-    _clear_session_cookie(response)
+    _clear_session_cookie(response, request)
     return {"ok": True}
 
 
