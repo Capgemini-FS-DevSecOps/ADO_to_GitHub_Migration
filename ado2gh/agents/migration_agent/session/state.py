@@ -67,18 +67,26 @@ class SessionStateMachine:
     """Tracks the current agent phase; transitions are direct assignments."""
 
     def __init__(self, initial: SessionState | str = SessionState.IDLE) -> None:
+        """Start in ``initial``, accepting a SessionState or a legacy status string."""
         if isinstance(initial, str):
             initial = SessionState(normalize_session_status(initial))
         self._state = initial
 
     @property
     def state(self) -> SessionState:
+        """Phase the agent is currently in.
+
+        Returns:
+            The current session state.
+        """
         return self._state
 
-    def can_transition(self, target: SessionState) -> bool:
-        return True
-
     def transition(self, target: SessionState) -> SessionState:
+        """Move the machine into ``target``.
+
+        Returns:
+            The new current state, which is always ``target``.
+        """
         self._state = target
         return self._state
 
@@ -148,33 +156,52 @@ def reset_session_for_new_migration(
         pass
 
 
-def maybe_reset_for_migration_request(
-    session: dict[str, Any],
-    repository_id: str,
-    *,
-    force: bool = False,
-) -> bool:
-    """Reset stale plan/PEV state when repo changes or operator starts a new run."""
+def reset_for_migration_request(session: dict[str, Any], repository_id: str) -> bool:
+    """Clear plan/PEV state and point the session at ``repository_id``.
+
+    Returns:
+        True once the session has been reset, or False when ``repository_id``
+        is blank — in which case the session is left untouched.
+    """
+    from ado2gh.agents.migration_agent.utils import normalize_repo_key
+
+    new_repo = normalize_repo_key(repository_id)
+    if not new_repo:
+        return False
+    reset_session_for_new_migration(session, repository_id=new_repo)
+    return True
+
+
+def maybe_reset_for_migration_request(session: dict[str, Any], repository_id: str) -> bool:
+    """Reset stale plan/PEV state only when this request supersedes the current one.
+
+    Returns:
+        True when the session was reset — the repository changed, a plan was
+        already built, or the last PEV run failed or exhausted its retries.
+        False when the request matches the session's existing state, or when
+        ``repository_id`` is blank.
+    """
     from ado2gh.agents.migration_agent.utils import normalize_repo_key
 
     new_repo = normalize_repo_key(repository_id)
     if not new_repo:
         return False
     old_repo = normalize_repo_key(str(session.get("plan_repository_id") or ""))
-    needs_reset = force or (
+    supersedes_current = (
         new_repo != old_repo
         or bool(session.get("migration_plan"))
         or session.get("last_pev_outcome") == "failed"
         or bool(session.get("pev_max_retries_exhausted"))
     )
-    if needs_reset:
-        reset_session_for_new_migration(session, repository_id=new_repo)
-        return True
-    return False
+    if not supersedes_current:
+        return False
+    return reset_for_migration_request(session, new_repo)
 
 
 @dataclass
 class OrchestratorResult:
+    """What one orchestrator turn produced for the caller."""
+
     reply: str = ""
     tasks: list[dict[str, Any]] = field(default_factory=list)
     pending_form: dict[str, Any] | None = None

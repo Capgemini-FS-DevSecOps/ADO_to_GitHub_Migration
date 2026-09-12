@@ -1,4 +1,4 @@
-"""validator.py module."""
+"""Validator node: verifies executor outcomes scope by scope and feeds the PEV loop."""
 from __future__ import annotations
 
 from typing import Any
@@ -26,6 +26,7 @@ from ado2gh.agents.migration_agent.session.state import SessionState
 from ado2gh.agents.migration_agent.utils import (
     _append_and_stream,
 )
+from ado2gh.models import ExecutionMode
 
 # ─── Node: validator ─────────────────────────────────────────────────────────────
 
@@ -36,6 +37,17 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
     outcomes via API calls and local validation, produces ValidationResult
     with per-scope pass/fail, sets AgentState.validation_feedback for failures,
     validates no operations outside approved plan.
+
+    Args:
+        state: Graph state; reads ``session``, ``llm``, ``accel_get``,
+            ``migration_plan``, ``executor_result`` and the iteration counters.
+
+    Returns:
+        An ``AgentState`` update carrying ``validation_result``,
+        ``validation_feedback``, the advanced ``iteration`` and
+        ``pev_retry_count``, the cycle summary and inter-agent message, and —
+        only when they apply — ``migration_queue``, ``pending_operator_input``
+        and ``pending_clarification``.
     """
     session = state.get("session") or {}
     _transition_session(session, SessionState.VALIDATING)
@@ -91,6 +103,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
         migration_plan=migration_plan if isinstance(migration_plan, dict) else None,
         executor_result=executor_result,
     )
+    mode = ExecutionMode.from_dry_run(dry_run=dry_run)
 
     # Per-scope validation
     per_scope: dict[str, dict[str, Any]] = {}
@@ -114,7 +127,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
                     })
                 continue
 
-            scope_validation = _validate_scope(scope_name, scope_result, migration_plan, dry_run)
+            scope_validation = _validate_scope(scope_name, scope_result, mode=mode)
             per_scope.setdefault(scope_name, {"repos": []})
             per_scope[scope_name]["repos"].append({
                 "repo": repo_id,
@@ -178,7 +191,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
     from ado2gh.agents.migration_agent.hitl.operator_input import is_fr036_failure
 
     for f in failures:
-        if _failure_is_benign(f, dry_run=dry_run):
+        if _failure_is_benign(f, mode=mode):
             continue
         failure_entry = {
             "repo": f.get("repo", ""),
@@ -512,7 +525,16 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _failure_text(failure: Any) -> str:
+def _failure_text(failure: object) -> str:
+    """Flatten a failure record into one lowercase string for hint matching.
+
+    Args:
+        failure: A failure dict from the executor, or any other value.
+
+    Returns:
+        The joined, lowercased text of the known message fields, or the
+        lowercased ``str()`` of the value when it is not a dict.
+    """
     if not isinstance(failure, dict):
         return str(failure).lower()
     return " ".join(
@@ -542,8 +564,19 @@ _DRY_RUN_SCOPE_OK_STATUSES = frozenset({
 })
 
 
-def _failure_is_benign(failure: Any, *, dry_run: bool) -> bool:
-    if not dry_run:
+def _failure_is_benign(failure: object, *, mode: ExecutionMode) -> bool:
+    """Report whether a failure is an expected artefact of not touching real targets.
+
+    Args:
+        failure: A failure record from the executor.
+        mode: Execution mode the run used.
+
+    Returns:
+        True when the run was a dry run and the failure is one of the known
+        missing-resource or unavailable-endpoint cases; False in live mode,
+        where every failure is real.
+    """
+    if mode is not ExecutionMode.DRY_RUN:
         return False
     text = _failure_text(failure)
     if "404" in text or "not found" in text:
@@ -551,15 +584,35 @@ def _failure_is_benign(failure: Any, *, dry_run: bool) -> bool:
     return any(hint in text for hint in _BENIGN_DRY_RUN_HINTS)
 
 
-def _all_failures_benign(failures: list[Any], *, dry_run: bool) -> bool:
-    return bool(failures) and all(_failure_is_benign(f, dry_run=dry_run) for f in failures)
+def _all_failures_benign(failures: list[Any], *, mode: ExecutionMode) -> bool:
+    """Report whether every failure in a non-empty list is benign.
+
+    Args:
+        failures: Failure records from the executor.
+        mode: Execution mode the run used.
+
+    Returns:
+        True only when the list is non-empty and each entry passes
+        :func:`_failure_is_benign`; an empty list is not "all benign".
+    """
+    return bool(failures) and all(_failure_is_benign(f, mode=mode) for f in failures)
 
 
-def _scope_result_is_benign(scope_result: dict[str, Any], *, dry_run: bool) -> bool:
+def _scope_result_is_benign(scope_result: dict[str, Any], *, mode: ExecutionMode) -> bool:
+    """Report whether a scope result needs no further validation.
+
+    Args:
+        scope_result: The executor's result for one scope of one repo.
+        mode: Execution mode the run used.
+
+    Returns:
+        True when the scope was skipped or is still pending, or when a dry run
+        reported a known infrastructure message; False otherwise.
+    """
     status = scope_result.get("status")
     if status in ("skipped", "pending"):
         return True
-    if dry_run:
+    if mode is ExecutionMode.DRY_RUN:
         message = str(
             scope_result.get("message") or scope_result.get("detail") or ""
         ).lower()
@@ -571,11 +624,24 @@ def _scope_result_is_benign(scope_result: dict[str, Any], *, dry_run: bool) -> b
 def _validate_scope(
     scope: str,
     scope_result: dict[str, Any],
-    plan: dict[str, Any] | None,
-    dry_run: bool,
+    *,
+    mode: ExecutionMode,
 ) -> dict[str, Any]:
-    """Validate a single scope's execution result."""
-    if _scope_result_is_benign(scope_result, dry_run=dry_run):
+    """Validate a single scope's execution result.
+
+    Args:
+        scope: Scope name, e.g. ``repo``, ``git`` or ``pipelines``.
+        scope_result: The executor's result for that scope.
+        mode: Execution mode the run used; dry runs accept statuses that would
+            be a failure live, and live runs check counts the dry run cannot.
+
+    Returns:
+        A verdict dict with ``passed``. On success it carries ``evidence``; on
+        failure it carries ``failure``, ``observed_state``, ``expected_state``
+        and ``remediation`` for the planner to act on.
+    """
+    dry_run = mode is ExecutionMode.DRY_RUN
+    if _scope_result_is_benign(scope_result, mode=mode):
         return {
             "passed": True,
             "evidence": {

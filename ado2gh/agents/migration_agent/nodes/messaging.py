@@ -1,4 +1,4 @@
-"""messaging.py module."""
+"""Structured inter-agent messages and PEV cycle summaries."""
 from __future__ import annotations
 
 from typing import Any
@@ -12,7 +12,20 @@ def _make_inter_agent_message(
     payload: dict[str, Any],
     correlation_ids: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Create an inter-agent message for AgentState.inter_agent_messages."""
+    """Create an inter-agent message for ``AgentState.inter_agent_messages``.
+
+    Args:
+        from_role: Role sending the message.
+        to_role: Role it is addressed to.
+        message_type: One of instruction, clarification_request, feedback or
+            result.
+        payload: Message body.
+        correlation_ids: Ids tying this message to an earlier exchange.
+
+    Returns:
+        The message dict, with a generated ``message_id`` and a UTC
+        ``timestamp``.
+    """
     from datetime import datetime, timezone
     return {
         "message_id": f"{from_role}_{to_role}_{message_type}_{datetime.now(timezone.utc).isoformat()}",
@@ -33,7 +46,19 @@ def _make_cycle_summary(
     validation_result: dict[str, Any],
     next_action: str,
 ) -> dict[str, Any]:
-    """Create a PevCycleSummary after each PEV cycle."""
+    """Create a PevCycleSummary after each PEV cycle.
+
+    Args:
+        cycle_number: 1-based index of the cycle just finished.
+        executor_result: Executor output for the cycle.
+        validation_result: Validator verdict for the cycle.
+        next_action: What the graph decided to do next.
+
+    Returns:
+        The summary dict with repo counts derived from the executor and
+        validator output, and the failure list capped at 10 entries to keep the
+        context window bounded.
+    """
     per_repo = executor_result.get("per_repo_results", [])
     failures = validation_result.get("failures", [])
     return {

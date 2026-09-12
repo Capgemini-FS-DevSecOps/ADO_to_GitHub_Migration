@@ -8,6 +8,7 @@ from ado2gh.agents.migration_agent.nodes.executor.pipeline import (
     resolve_agent_repository_id,
 )
 from ado2gh.api.contracts import PipelineRunStartRequest
+from ado2gh.models import ExecutionMode
 
 
 def test_resolve_agent_repository_id_from_discovery():
@@ -38,7 +39,7 @@ def test_agent_never_self_certifies_live_approval_in_run_body():
     session = {"live_approval_status": "approved"}
     asyncio.run(
         ensure_agent_pipeline_run(
-            session, {}, accel_post=accel_post, session_token=None, dry_run=False,
+            session, {}, accel_post=accel_post, session_token=None, mode=ExecutionMode.LIVE,
         )
     )
     asyncio.run(

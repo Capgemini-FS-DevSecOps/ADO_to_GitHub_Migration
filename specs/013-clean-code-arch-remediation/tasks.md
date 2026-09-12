@@ -189,8 +189,8 @@
 
 ### Increment 10 — `ado2gh/agents/`
 
-- [ ] T061 [US2] Review-agent decisions for `--package ado2gh/agents`; record
-- [ ] T062 [US2] Clean `ado2gh/agents/` per protocol (430 functions; 23 with > 5 params; 29 booleans incl. `dry_run`, `plan_confirmed`, `confirm_execute`, `start_pev` — decide split vs `ExecutionMode` per confirmed tag; tool inner functions in `tools/*.py` may change name/params — then update `prompts/*.md` (`github_api` 12×, `ado_api_query` 10×, `call_accelerator` 7×), `tests/agent/`, `tests/contract/test_agent_*`, and `apps/migration-ui/src` references in the same commit; LangGraph node signatures `(state, config)` are framework-fixed — document, do not "fix"); verify incl. `python -m pytest tests/agent tests/contract`, changelog, commit
+- [X] T061 [US2] Review-agent decisions for `--package ado2gh/agents`; record
+- [X] T062 [US2] Clean `ado2gh/agents/` per protocol (430 functions; 23 with > 5 params; 29 booleans incl. `dry_run`, `plan_confirmed`, `confirm_execute`, `start_pev` — decide split vs `ExecutionMode` per confirmed tag; tool inner functions in `tools/*.py` may change name/params — then update `prompts/*.md` (`github_api` 12×, `ado_api_query` 10×, `call_accelerator` 7×), `tests/agent/`, `tests/contract/test_agent_*`, and `apps/migration-ui/src` references in the same commit; LangGraph node signatures `(state, config)` are framework-fixed — document, do not "fix"); verify incl. `python -m pytest tests/agent tests/contract`, changelog, commit
 
 ### Increment 11 — `ado2gh/cli/`
 

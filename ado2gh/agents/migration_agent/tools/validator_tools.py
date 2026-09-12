@@ -15,26 +15,36 @@ from ado2gh.pipelines.validation import WorkflowValidator
 
 
 class ValidateWorkflowConversionArgs(BaseModel):
+    """Arguments for comparing an ADO pipeline against its converted workflow."""
+
     ado_pipeline_yaml: str = Field(description="ADO pipeline YAML content")
     github_workflow_yaml: str = Field(description="Converted GitHub Actions workflow YAML")
 
 
 class ValidateWorkflowSyntaxArgs(BaseModel):
+    """Arguments for validating GitHub Actions workflow YAML."""
+
     workflow_yaml: str = Field(description="GitHub Actions workflow YAML content")
 
 
 class ListAdoPipelinesArgs(BaseModel):
+    """Arguments for listing the ADO pipelines attached to a repository."""
+
     project: str = Field(description="ADO project name")
     repo_name: str = Field(description="ADO repository name")
 
 
 class ListGitHubWorkflowsArgs(BaseModel):
+    """Arguments for listing the workflow files in a GitHub repository."""
+
     github_org: str = Field(description="GitHub organization or owner")
     github_repo: str = Field(description="GitHub repository name")
     ref: str = Field(default="HEAD", description="Git ref")
 
 
 class FetchGitHubWorkflowArgs(BaseModel):
+    """Arguments for fetching one workflow file from a GitHub repository."""
+
     github_org: str = Field(description="GitHub organization or owner")
     github_repo: str = Field(description="GitHub repository name")
     workflow_path: str = Field(description="Path e.g. .github/workflows/ci.yml")
@@ -42,11 +52,16 @@ class FetchGitHubWorkflowArgs(BaseModel):
 
 
 def get_validator_tools(
-    accel_get: Any = None,
+    accel_get: Callable[..., Any] | None = None,
     session_token: str | None = None,
     session_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> list[StructuredTool]:
-    """Build the tool set for the Validator agent."""
+    """Build the tool set for the Validator agent.
+
+    Returns:
+        The validator's read-only API tools plus the local YAML comparison and
+        syntax checks, with the shared tools prepended.
+    """
 
     async def ado_api_query(endpoint: str) -> dict[str, Any]:
         if not accel_get:

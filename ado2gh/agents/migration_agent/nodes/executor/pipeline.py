@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable
 
+from ado2gh.models import ExecutionMode
+
 AccelGet = Callable[..., Awaitable[dict[str, Any]]]
 AccelPost = Callable[..., Awaitable[dict[str, Any]]]
 ProgressFn = Callable[[str, str, dict[str, Any]], None]
@@ -60,9 +62,26 @@ async def ensure_agent_pipeline_run(
     *,
     accel_post: AccelPost | None,
     session_token: str | None,
-    dry_run: bool,
+    mode: ExecutionMode,
 ) -> str | None:
-    """Create a dashboard-visible pipeline run for this agent migration attempt."""
+    """Create a dashboard-visible pipeline run for this agent migration attempt.
+
+    Reuses the session's existing run when there is one, so a retried attempt does not
+    open a second row on the dashboard.
+
+    Args:
+        session: The live agent session dict; the new run id and label are written back
+            onto it.
+        migration_plan: The plan being executed, read for its step ids and phase.
+        accel_post: Accelerator POST callable, or ``None`` when none was injected.
+        session_token: Bearer token forwarded to the accelerator.
+        mode: Whether this attempt previews or writes; sent to the accelerator as the
+            wire-level ``dry_run`` boolean and used in the run's display label.
+
+    Returns:
+        The pipeline run id, or ``None`` when no accelerator is available or the
+        accelerator's response carried no id.
+    """
     existing = str(session.get("run_id") or "").strip()
     if existing:
         return existing
@@ -77,9 +96,10 @@ async def ensure_agent_pipeline_run(
     repo_id = resolve_agent_repository_id(session, migration_plan)
     seq = int(session.get("agent_run_seq", 0)) + 1
     session["agent_run_seq"] = seq
-    mode = "dry-run" if dry_run else "live"
+    dry_run = mode is ExecutionMode.DRY_RUN
+    label = "dry-run" if dry_run else "live"
     target = repo_id or "migration"
-    run_name = session.get("agent_run_label") or f"Agent: {target} ({mode} #{seq})"
+    run_name = session.get("agent_run_label") or f"Agent: {target} ({label} #{seq})"
     session["agent_run_label"] = run_name
 
     run_body: dict[str, Any] = {
@@ -157,6 +177,12 @@ async def poll_pipeline_run(
 
 
 def _current_step_label(run: dict[str, Any]) -> str:
+    """Label of the step a run is on.
+
+    Returns:
+        The label of the first running step, else the first pending one, else
+        the run's ``current_step``; an empty string when none is set.
+    """
     for step in run.get("steps") or []:
         if isinstance(step, dict) and step.get("status") == "running":
             return str(step.get("label") or step.get("id") or "")
@@ -167,6 +193,12 @@ def _current_step_label(run: dict[str, Any]) -> str:
 
 
 def _scope_status_from_step(step_status: str) -> str:
+    """Translate a pipeline step status into an agent scope status.
+
+    Returns:
+        ``"success"`` for completed and warned steps, the status itself for
+        failed and skipped ones, and ``"unknown"`` when the step has no status.
+    """
     normalized = str(step_status or "").lower()
     if normalized == "completed":
         return "success"
@@ -258,60 +290,41 @@ def build_executor_result_from_pipeline(
     }
 
 
-async def execute_repo_migration(
-    repo_id: str,
-    ready_items: list[dict[str, Any]],
-    migration_plan: dict[str, Any],
-    session: dict[str, Any],
-    *,
-    accel_get: AccelGet | None,
-    accel_post: AccelPost | None,
-    session_token: str | None,
-    dry_run: bool,
-    on_progress: ProgressFn | None = None,
-    scope_executor: Any | None = None,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Run via accelerator pipeline when available; otherwise fall back to scope endpoints."""
-    if accel_get and accel_post:
-        executor_result = await execute_repo_via_pipeline(
-            repo_id,
-            migration_plan,
-            session,
-            accel_get=accel_get,
-            accel_post=accel_post,
-            session_token=session_token,
-            dry_run=dry_run,
-            on_progress=on_progress,
-        )
-        per_repo = (executor_result.get("per_repo_results") or [{}])[0]
-        return per_repo, list(executor_result.get("failures") or []), []
-
-    if scope_executor is None:
-        raise RuntimeError("accelerator_unavailable")
-    return await scope_executor(
-        repo_id,
-        ready_items,
-        migration_plan,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        session_token=session_token,
-        dry_run=dry_run,
-        session=session,
-    )
-
-
 async def execute_repo_via_pipeline(
     repo_id: str,
     migration_plan: dict[str, Any],
     session: dict[str, Any],
     *,
-    accel_get: AccelGet | None,
-    accel_post: AccelPost | None,
-    session_token: str | None,
+    deps: dict[str, Any] | None = None,
     dry_run: bool,
-    on_progress: ProgressFn | None = None,
 ) -> dict[str, Any]:
-    """Run migration through the accelerator pipeline and return executor_result."""
+    """Run migration through the accelerator pipeline and return executor_result.
+
+    Args:
+        repo_id: Canonical ``Project/Repo`` id being migrated.
+        migration_plan: The plan whose steps and phase drive the pipeline run.
+        session: The live agent session dict; the run id and status are written onto it.
+        deps: Per-invocation runtime dependencies, using the same key names as
+            ``runtime/deps.py``: ``accel_get`` and ``accel_post`` (both required here),
+            ``session_token``, and ``on_progress`` — a callable the executor node uses
+            to stream step progress into the chat.
+        dry_run: Whether this run previews or writes. Reviewer-classified as data
+            rather than a mode switch, so it keeps its boolean form and is passed
+            straight through to the accelerator's ``dry_run`` field.
+
+    Returns:
+        The executor result mapped from the terminal pipeline run — per-repo
+        scope outcomes, failures, and the pipeline run id and status.
+
+    Raises:
+        RuntimeError: When no accelerator callables were supplied, or the
+            pipeline run could not be created.
+    """
+    deps = deps or {}
+    accel_get: AccelGet | None = deps.get("accel_get")
+    accel_post: AccelPost | None = deps.get("accel_post")
+    session_token: str | None = deps.get("session_token")
+    on_progress: ProgressFn | None = deps.get("on_progress")
     if not accel_get or not accel_post:
         raise RuntimeError("accelerator_unavailable")
 
@@ -320,7 +333,7 @@ async def execute_repo_via_pipeline(
         migration_plan,
         accel_post=accel_post,
         session_token=session_token,
-        dry_run=dry_run,
+        mode=ExecutionMode.from_dry_run(dry_run=dry_run),
     )
     if not run_id:
         raise RuntimeError("pipeline_run_create_failed")

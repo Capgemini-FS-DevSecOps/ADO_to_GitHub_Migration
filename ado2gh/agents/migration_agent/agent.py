@@ -11,9 +11,12 @@ Optional ADK ``App`` wrapper is ``build_app()`` below.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING
 
 from ado2gh.agents.migration_agent.graph import get_compiled_graph
+
+if TYPE_CHECKING:
+    from langgraph.graph.state import CompiledStateGraph
 
 AGENT_NAME = "migration_agent"
 AGENT_DESCRIPTION = (
@@ -22,14 +25,18 @@ AGENT_DESCRIPTION = (
 )
 
 # ADK / `adk run` convention — compiled LangGraph workflow.
-root_graph: Any = None
+root_graph: CompiledStateGraph | None = None
 
 
-def get_root_graph() -> Any:
+def get_root_graph() -> CompiledStateGraph:
     """Return the compiled LangGraph (lazy singleton).
 
     Sync entry point for ADK tooling only (production uses ``runtime.run_turn``,
     fully async) — bridges via ``asyncio.run`` since ``get_compiled_graph`` is async.
+
+    Returns:
+        The compiled LangGraph, built on first call and cached in the module
+        global ``root_graph`` thereafter.
     """
     global root_graph
     if root_graph is None:
@@ -37,11 +44,19 @@ def get_root_graph() -> Any:
     return root_graph
 
 
-def build_langgraph_agent():
+def build_langgraph_agent() -> object:
     """Build ADK LangGraphAgent when google-adk is installed (messages-only graphs).
 
     Not used for the full migration workflow — kept for ADK tooling compatibility
     and smoke tests. Production execution uses ``runtime.run_turn``.
+
+    Returns:
+        A ``google.adk.agents.langgraph_agent.LangGraphAgent`` wrapping the
+        compiled graph. Typed ``object`` because google-adk is an optional
+        extra and its types are not importable without it.
+
+    Raises:
+        ImportError: google-adk is not installed.
     """
     try:
         from google.adk.agents.langgraph_agent import LangGraphAgent
@@ -59,8 +74,17 @@ def build_langgraph_agent():
     )
 
 
-def build_app() -> Any:
-    """Create a Google ADK ``App`` around the migration LangGraph agent."""
+def build_app() -> object:
+    """Create a Google ADK ``App`` around the migration LangGraph agent.
+
+    Returns:
+        A ``google.adk.apps.app.App`` named ``ado2gh_migration``. Typed
+        ``object`` because google-adk is an optional extra and its types are
+        not importable without it.
+
+    Raises:
+        ImportError: google-adk is not installed.
+    """
     try:
         from google.adk.apps.app import App
     except ImportError as exc:

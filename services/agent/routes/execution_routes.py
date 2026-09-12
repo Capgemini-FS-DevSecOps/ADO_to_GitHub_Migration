@@ -39,6 +39,7 @@ from ado2gh.agents.migration_agent.session.state import (
     is_session_busy,
     set_session_idle,
 )
+from ado2gh.models import ExecutionMode
 
 router = APIRouter()
 
@@ -86,7 +87,7 @@ async def request_live(session_id: str, request: Request) -> dict[str, Any]:
     """Queue a live-execution approval for this session and tell the operator."""
     session = _get_accessible_session(session_id, request)
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
-    await _enqueue_session_live_approval(session_id, session, request)
+    await _enqueue_session_live_approval(session)
     _add_message(session_id, "system", "Live execution requested — awaiting approval")
     return _session_payload(session_id)
 
@@ -164,7 +165,7 @@ def confirm_live_execution(session_id: str, request: Request) -> dict[str, Any]:
     if not plan:
         raise HTTPException(status_code=404, detail="No migration plan found")
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
-    enforce_live_mode_request(request, False, session=session)
+    enforce_live_mode_request(request, ExecutionMode.LIVE, session=session)
     plan["dry_run"] = False
     session["migration_plan"] = plan
     _audit.record(
@@ -182,7 +183,7 @@ async def update_execution_mode(
 ) -> dict[str, Any]:
     """Set dry-run vs live on an agent session (admins/approvers use live without approval queue)."""
     _require_operate(request)
-    enforce_live_mode_request(request, req.dry_run)
+    enforce_live_mode_request(request, ExecutionMode.from_dry_run(dry_run=req.dry_run))
     session = _get_accessible_session(session_id, request)
     if is_session_busy(session.get("status")):
         raise HTTPException(status_code=409, detail="session_busy")

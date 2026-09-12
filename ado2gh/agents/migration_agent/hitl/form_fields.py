@@ -1,9 +1,15 @@
 """Shared dynamic form field models and enrichment helpers."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from ado2gh.agents.migration_agent.hitl.schemas import (
+        IntakeFieldSpec,
+        OperatorInputFieldSpec,
+    )
 
 
 class FormFieldOption(BaseModel):
@@ -15,6 +21,12 @@ class FormFieldOption(BaseModel):
     recommended: bool = False
 
     def normalized(self) -> dict[str, Any]:
+        """Trim and length-limit this option for the console form payload.
+
+        Returns:
+            A dict with ``value`` and ``label`` always present, plus
+            ``description`` and ``recommended`` only when they carry content.
+        """
         value = str(self.value or "").strip()[:60]
         label = str(self.label or value).strip()[:60]
         out: dict[str, Any] = {"value": value, "label": label}
@@ -26,8 +38,13 @@ class FormFieldOption(BaseModel):
         return out
 
 
-def normalize_form_option(opt: Any) -> dict[str, Any]:
-    """Normalize string or dict options for UI + sanitize_form."""
+def normalize_form_option(opt: object) -> dict[str, Any]:
+    """Normalize a string, dict or ``FormFieldOption`` option for the UI.
+
+    Returns:
+        An option dict with ``value`` and ``label``; anything unrecognised is
+        stringified into both.
+    """
     if isinstance(opt, FormFieldOption):
         return opt.normalized()
     if isinstance(opt, dict):
@@ -47,11 +64,16 @@ def normalize_form_option(opt: Any) -> dict[str, Any]:
 
 
 def field_dict_from_spec(
-    spec: Any,
+    spec: IntakeFieldSpec | OperatorInputFieldSpec,
     *,
     planner_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a UI field dict from IntakeFieldSpec / OperatorInputFieldSpec + context hints."""
+    """Build a UI field dict from a field spec plus planner context hints.
+
+    Returns:
+        The form field dict the console renders; hints in
+        ``planner_context['field_recommendations']`` win over the spec.
+    """
     name = str(getattr(spec, "name", "field") or "field")
     field: dict[str, Any] = {
         "name": name[:40],
@@ -188,37 +210,49 @@ def build_field_recommendations(
     return recs
 
 
-def resolution_options_from_context(
-    *,
-    blockers: list[dict[str, Any]] | None = None,
-    probe_failures: bool = False,
-) -> list[dict[str, Any]]:
-    """Build operator resolution options from blocker context (LLM may override in forms)."""
-    blockers = blockers or []
-    text = " ".join(str(b.get("blocker") or b.get("specific_failure") or "") for b in blockers).lower()
-    options: list[dict[str, Any]] = []
+def _blocker_summary_text(blockers: list[dict[str, Any]]) -> str:
+    """Join every blocker message into one lower-cased string for keyword matching.
 
-    if probe_failures or "github" in text and ("not exist" in text or "missing" in text):
-        options.append({
+    Returns:
+        The concatenated ``blocker`` (or ``specific_failure``) text, empty when
+        there are no blockers.
+    """
+    return " ".join(
+        str(b.get("blocker") or b.get("specific_failure") or "") for b in blockers
+    ).lower()
+
+
+def _repository_target_options(blocker_text: str) -> list[dict[str, Any]]:
+    """Options for confirming or correcting the GitHub repository target.
+
+    Returns:
+        The ``confirm_github_repo_create`` and ``fix_repository_id`` options,
+        with the recommendation picked from the blocker wording.
+    """
+    return [
+        {
             "value": "confirm_github_repo_create",
             "label": "Confirm GitHub repo creation",
             "description": "Proceed assuming the target GitHub repository will be created or already exists.",
-            "recommended": "not exist" in text,
-        })
-        options.append({
+            "recommended": "not exist" in blocker_text,
+        },
+        {
             "value": "fix_repository_id",
             "label": "Correct repository ID",
             "description": "Update the ADO/GitHub repository mapping before continuing.",
-            "recommended": "not found" in text or "verification" in text,
-        })
-    elif any("inventory" in str(b.get("blocker", "")).lower() for b in blockers):
-        options.append({
-            "value": "run_pipeline_inventory",
-            "label": "Run pipeline inventory",
-            "description": "Refresh pipeline discovery before replanning.",
-            "recommended": True,
-        })
+            "recommended": "not found" in blocker_text or "verification" in blocker_text,
+        },
+    ]
 
+
+def _with_fallback_options(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Append the always-available choices and guarantee one recommendation.
+
+    Returns:
+        At most eight options, ending with ``skip_blocked_scope`` and
+        ``replan``, at least one of which is marked ``recommended``.
+    """
+    had_specific_options = bool(options)
     options.extend([
         {
             "value": "skip_blocked_scope",
@@ -230,10 +264,53 @@ def resolution_options_from_context(
             "value": "replan",
             "label": "Replan",
             "description": "Send the planner updated context and build a revised plan.",
-            "recommended": not options,
+            "recommended": not had_specific_options,
         },
     ])
 
     if not any(o.get("recommended") for o in options):
         options[0]["recommended"] = True
     return options[:8]
+
+
+def resolution_options_from_context(
+    *,
+    blockers: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build operator resolution options from blocker text (LLM may override in forms).
+
+    Returns:
+        Resolution options for the operator select field, blocker-specific
+        choices first and the skip/replan fallbacks last.
+    """
+    blockers = blockers or []
+    text = _blocker_summary_text(blockers)
+    options: list[dict[str, Any]] = []
+
+    if "github" in text and ("not exist" in text or "missing" in text):
+        options = _repository_target_options(text)
+    elif any("inventory" in str(b.get("blocker", "")).lower() for b in blockers):
+        options.append({
+            "value": "run_pipeline_inventory",
+            "label": "Run pipeline inventory",
+            "description": "Refresh pipeline discovery before replanning.",
+            "recommended": True,
+        })
+
+    return _with_fallback_options(options)
+
+
+def resolution_options_for_probe_failures(
+    *,
+    blockers: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Resolution options when baseline probes could not confirm the repositories.
+
+    Returns:
+        The repository-target options followed by the skip/replan fallbacks —
+        repo creation or ID correction is always offered here, whatever the
+        blocker wording says.
+    """
+    return _with_fallback_options(
+        _repository_target_options(_blocker_summary_text(blockers or []))
+    )

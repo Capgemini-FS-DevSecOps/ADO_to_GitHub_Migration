@@ -6,6 +6,7 @@ from ado2gh.agents.migration_agent.nodes import (
     _validate_scope,
 )
 from ado2gh.agents.migration_agent.utils import resolve_dry_run
+from ado2gh.models import ExecutionMode
 
 
 def test_resolve_dry_run_prefers_executor_result():
@@ -73,7 +74,7 @@ def test_gather_dry_run_evidence_from_executor_scopes():
             "pipelines": [{"repo_name": "Repo", "name": "build"}],
         },
     }
-    findings = _gather_validator_dry_run_evidence(executor, None, session)
+    findings = _gather_validator_dry_run_evidence(executor, session)
     assert len(findings) == 1
     assert findings[0]["executor_workflow_count"] == 2
     assert findings[0]["executor_scopes"]["pipelines"]["status"] == "success"
@@ -83,8 +84,7 @@ def test_validate_scope_git_passes_in_dry_run():
     result = _validate_scope(
         "git",
         {"status": "simulated"},
-        {"dry_run": True},
-        dry_run=True,
+        mode=ExecutionMode.DRY_RUN,
     )
     assert result["passed"] is True
 
@@ -94,7 +94,6 @@ def test_validate_scope_git_live_deferred_not_from_status_alone():
     result = _validate_scope(
         "git",
         {"status": "success"},
-        {"dry_run": False},
-        dry_run=False,
+        mode=ExecutionMode.LIVE,
     )
     assert result["passed"] is True

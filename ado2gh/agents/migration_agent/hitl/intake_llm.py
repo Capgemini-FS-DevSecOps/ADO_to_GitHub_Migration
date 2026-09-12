@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -11,6 +11,9 @@ from ado2gh.agents.migration_agent.hitl.schemas import (
     OperatorIntent,
     OperatorMessageAnalysis,
 )
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
 
 _ANALYSIS_SYSTEM_PROMPT = """You analyze operator messages for an Azure DevOps → GitHub migration assistant.
 
@@ -92,7 +95,7 @@ def _build_analysis_context(session: dict[str, Any]) -> dict[str, Any]:
 
 
 async def analyze_operator_message(
-    llm: Any,
+    llm: BaseChatModel | None,
     user_message: str,
     session: dict[str, Any],
 ) -> OperatorMessageAnalysis | None:

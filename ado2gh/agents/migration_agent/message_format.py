@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -69,14 +69,18 @@ def orchestrator_chat_already_published(session: dict[str, Any], reply: str) -> 
 
 
 def structured_context_to_markdown(
-    data: Any,
+    data: object,
     *,
     heading: str | None = None,
     max_depth: int = 4,
 ) -> str:
-    """Generic structured data → Markdown (no migration-specific layout rules)."""
+    """Generic structured data → Markdown (no migration-specific layout rules).
 
-    def _render(value: Any, depth: int) -> list[str]:
+    Returns:
+        Markdown with the optional heading first and emojis stripped.
+    """
+
+    def _render(value: object, depth: int) -> list[str]:
         if depth > max_depth:
             return [str(value)]
         if value is None:
@@ -120,7 +124,7 @@ def structured_context_to_markdown(
     return strip_emojis("\n".join(parts).strip())
 
 
-def _failure_detail_line(failure: Any) -> tuple[str, str]:
+def _failure_detail_line(failure: object) -> tuple[str, str]:
     """Return (title, detail) for one validation failure record."""
     if not isinstance(failure, dict):
         text = str(failure).strip() or "Unknown validation error"
@@ -363,6 +367,11 @@ def extract_pipeline_step_warnings(
 
 
 def format_pipeline_warnings_markdown(step_warnings: list[dict[str, Any]]) -> str:
+    """Render per-step pipeline warnings as a Markdown section.
+
+    Returns:
+        A "Pipeline warnings" section, or an empty string when there are none.
+    """
     if not step_warnings:
         return ""
     lines = ["### Pipeline warnings", ""]
@@ -428,13 +437,17 @@ def append_completion_extras(reply: str, completion_facts: dict[str, Any]) -> st
 
 
 async def fetch_pipeline_run_for_completion(
-    accel_get: Any,
+    accel_get: Callable[..., Any] | None,
     run_id: str,
     *,
     session_token: str | None = None,
     max_wait_seconds: float = 45.0,
 ) -> dict[str, Any] | None:
-    """Fetch pipeline run; brief poll so async monitor steps finish before summary."""
+    """Fetch pipeline run; brief poll so async monitor steps finish before summary.
+
+    Returns:
+        The run once terminal, the last one seen on timeout, else None.
+    """
     if not accel_get or not run_id:
         return None
 
@@ -478,12 +491,16 @@ _PIPELINE_STEP_SCOPES = {
 
 
 async def fetch_migration_status_for_repo(
-    accel_get: Any,
+    accel_get: Callable[..., Any] | None,
     repository_id: str,
     *,
     session_token: str | None = None,
 ) -> dict[str, Any] | None:
-    """Load per-repo migration state from StateDB via accelerator (same source as Monitor)."""
+    """Load per-repo migration state from StateDB via accelerator (same source as Monitor).
+
+    Returns:
+        The status report entry for ``repository_id``, else None.
+    """
     if not accel_get or not repository_id:
         return None
     try:
@@ -623,10 +640,16 @@ def build_migration_completion_facts(
     validation_result: dict[str, Any],
     session: dict[str, Any],
     *,
-    pipeline_run: dict[str, Any] | None = None,
     database_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Structured scope summary for completion messages (no LLM invention)."""
+    """Structured scope summary for completion messages (no LLM invention).
+
+    The pipeline run is read from ``session['pipeline_run_snapshot']``.
+
+    Returns:
+        Planned and executed scopes, run identifiers, the data sources used,
+        and the flags the completion prompt may talk about.
+    """
     from ado2gh.agents.migration_agent.hitl.blockers import sanitize_plan_for_operator_view
 
     plan = sanitize_plan_for_operator_view(migration_plan, session)
@@ -660,8 +683,8 @@ def build_migration_completion_facts(
         planned.append(entry)
 
     repository_id = session.get("plan_repository_id") or plan.get("repository_id") or ""
-    if pipeline_run is None and isinstance(session.get("pipeline_run_snapshot"), dict):
-        pipeline_run = session["pipeline_run_snapshot"]
+    snapshot = session.get("pipeline_run_snapshot")
+    pipeline_run = snapshot if isinstance(snapshot, dict) else None
 
     executed = build_executed_scopes_from_pipeline_run(pipeline_run, str(repository_id))
     if not executed:
@@ -731,7 +754,6 @@ async def compose_migration_completion_message(
         executor_result,
         validation_result,
         session,
-        pipeline_run=pipeline_run,
         database_status=database_status,
     )
     context = {

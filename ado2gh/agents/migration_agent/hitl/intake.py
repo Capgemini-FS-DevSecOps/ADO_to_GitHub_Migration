@@ -1,7 +1,7 @@
 """Intake merge, routing, and Pydantic form handling for the migration agent."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
 from ado2gh.agents.migration_agent.hitl.schemas import (
@@ -111,7 +111,17 @@ def normalize_repository_id(
     return intake.model_copy(update={"repository_id": repo_id, "repository_ids": None})
 
 
-def intake_field_value(intake: MigrationIntakeSchema, field_name: str) -> Any:
+def intake_field_value(
+    intake: MigrationIntakeSchema,
+    field_name: str,
+) -> str | bool | list[str] | None:
+    """Read one intake field in the form the dynamic form layer expects.
+
+    Returns:
+        The field value, with ``dry_run`` rendered as the string ``"true"`` or
+        ``"false"`` the select control uses, and None for unknown or unset
+        fields.
+    """
     if field_name == "dry_run":
         if intake.dry_run is None:
             return None
@@ -120,6 +130,12 @@ def intake_field_value(intake: MigrationIntakeSchema, field_name: str) -> Any:
 
 
 def is_field_missing(intake: MigrationIntakeSchema, field_name: str) -> bool:
+    """Decide whether an intake field still needs an answer from the operator.
+
+    Returns:
+        True when the field is unset, blank or an empty list. ``plan_confirmed``
+        is stricter: anything other than True counts as missing.
+    """
     value = intake_field_value(intake, field_name)
     if field_name == "plan_confirmed":
         return value is not True
@@ -141,6 +157,12 @@ def missing_intake_fields(
 
 
 def determine_intake_phase(session: dict[str, Any], *, intent: str = "") -> IntakePhase | None:
+    """Work out which intake step the session is on.
+
+    Returns:
+        The phase whose required fields must be collected next, or None when
+        the session needs nothing from the operator right now.
+    """
     if session.get("pending_cancellation"):
         return IntakePhase.CANCELLATION
     if session.get("migration_plan") and not session.get("plan_approved"):
@@ -154,6 +176,12 @@ def determine_intake_phase(session: dict[str, Any], *, intent: str = "") -> Inta
 
 
 def intake_ready_for_planner(intake: MigrationIntakeSchema) -> bool:
+    """Check that the planner has the minimum it needs to build a plan.
+
+    Returns:
+        True once a repository is resolved and an execution mode has been
+        chosen.
+    """
     return bool(
         intake.resolved_repository_id()
         and intake.dry_run is not None
@@ -200,14 +228,30 @@ def build_dynamic_form(
 
 async def consult_planner_context(
     session: dict[str, Any],
-    accel_get: Any,
+    accel_get: Callable[..., Any] | None,
     session_token: str | None,
     *,
     intake: MigrationIntakeSchema | None = None,
-    requests_new_migration: bool = False,
+    analysis: OperatorMessageAnalysis | None = None,
 ) -> dict[str, Any]:
-    """Load discovery via planner path and return context for missing-field prompts."""
+    """Load discovery via the planner path and build context for missing-field prompts.
+
+    Args:
+        session: Live agent session; the discovery snapshot is cached on it.
+        accel_get: Accelerator GET callable, or None when unavailable.
+        session_token: Token forwarded to the accelerator.
+        intake: Intake collected so far, used to suggest close repository names.
+        analysis: The turn's LLM message analysis. When it asks for a new
+            migration without naming a repository, already-completed repos are
+            dropped from the suggestions.
+
+    Returns:
+        Context for the dynamic form layer: repo counts, sample and suggested
+        repository names, the missing-field list and the session itself.
+    """
     import difflib
+
+    requests_new_migration = bool(analysis and analysis.requests_new_migration)
 
     from ado2gh.agents.migration_agent.utils import discovery_repo_names, load_discovery_snapshot
 
@@ -285,6 +329,11 @@ def format_form_submission_summary(
 
 
 def build_form_submit_prompt(values: dict[str, Any]) -> str:
+    """Turn submitted form values into the prompt that resumes the orchestrator.
+
+    Returns:
+        A one-line instruction naming every submitted value.
+    """
     summary = format_form_submission_summary(values)
     return f"Operator submitted form values: {summary}. Continue migration intake using the information schema."
 
@@ -348,9 +397,22 @@ async def prepare_form_submission(
     form: dict[str, Any],
     values: dict[str, Any],
     *,
-    ensure_repo_valid: Any,
+    ensure_repo_valid: Callable[[str], Awaitable[str | None]] | None,
 ) -> dict[str, Any]:
-    """Map form values → intake schema and decide the next orchestrator action."""
+    """Map form values to the intake schema and decide the next orchestrator action.
+
+    Args:
+        session: Live agent session, updated in place.
+        form: The form the operator answered.
+        values: Raw submitted values.
+        ensure_repo_valid: Awaitable returning a validation error string for a
+            repository id, or None when it is valid. May itself be None when
+            no validation hook is wired.
+
+    Returns:
+        The next orchestrator action — a ``status`` plus whichever of ``reply``,
+        ``form``, ``values`` or ``validation_error`` that status carries.
+    """
     form_id = str(form.get("form_id") or "")
 
     if form_id.startswith("operator_input_"):
@@ -514,7 +576,7 @@ async def resolve_intake_routing(
         accel_get,
         state.get("session_token"),
         intake=intake,
-        requests_new_migration=requests_new,
+        analysis=analysis,
     )
     intake = normalize_repository_id(intake, session.get("discovery_snapshot"))
     requested_repo = intake.resolved_repository_id()

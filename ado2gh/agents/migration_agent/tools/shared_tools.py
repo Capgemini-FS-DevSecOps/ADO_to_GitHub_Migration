@@ -12,12 +12,19 @@ class GetCurrentProfileArgs(BaseModel):
 
 
 async def fetch_current_profile(
-    accel_get: Any = None,
+    accel_get: Callable[..., Any] | None = None,
     *,
     session_token: str | None = None,
     session_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Resolve the active migration profile and API access paths for the current session."""
+    """Resolve the active migration profile and API access paths for the current session.
+
+    Returns:
+        The deployment and migration profile ids, the resolved profile, the
+        session's dry-run flag and the ADO/GitHub proxy paths. When the
+        accelerator is unreachable the dict carries ``error`` and the
+        deployment profile id only.
+    """
     session = session_getter() if session_getter else {}
     deployment_profile_id = str(session.get("profile_id") or "lightweight")
 
@@ -94,11 +101,16 @@ async def fetch_current_profile(
 
 
 def build_get_current_profile_tool(
-    accel_get: Any = None,
+    accel_get: Callable[..., Any] | None = None,
     session_token: str | None = None,
     session_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> StructuredTool:
-    """Build the get_current_profile StructuredTool for LangChain bind_tools."""
+    """Build the get_current_profile StructuredTool for LangChain bind_tools.
+
+    Returns:
+        A no-argument StructuredTool that returns the session's migration
+        environment.
+    """
 
     async def get_current_profile() -> dict[str, Any]:
         """Return the current user's migration environment and profile for API access."""
@@ -124,11 +136,16 @@ def build_get_current_profile_tool(
 def append_shared_tools(
     tools: list[StructuredTool],
     *,
-    accel_get: Any = None,
+    accel_get: Callable[..., Any] | None = None,
     session_token: str | None = None,
     session_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> list[StructuredTool]:
-    """Prepend shared tools to an agent-specific tool list."""
+    """Prepend shared tools to an agent-specific tool list.
+
+    Returns:
+        A new list with get_current_profile first, or ``tools`` unchanged when
+        a tool of that name is already present.
+    """
     shared = build_get_current_profile_tool(
         accel_get,
         session_token=session_token,

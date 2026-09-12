@@ -18,6 +18,8 @@ from ado2gh.agents.migration_agent.tools.shared_tools import append_shared_tools
 
 
 class AdoApiQueryArgs(BaseModel):
+    """Arguments for a read-only Azure DevOps API query."""
+
     endpoint: str = Field(
         description=(
             "ADO API endpoint path to query (read-only). "
@@ -29,6 +31,8 @@ class AdoApiQueryArgs(BaseModel):
 
 
 class GitHubApiQueryArgs(BaseModel):
+    """Arguments for a read-only GitHub API query."""
+
     endpoint: str = Field(
         description=(
             "GitHub API endpoint path to query (read-only). "
@@ -40,6 +44,8 @@ class GitHubApiQueryArgs(BaseModel):
 
 
 class GitHubApiArgs(BaseModel):
+    """Arguments for a GitHub REST call that may read or write."""
+
     method: str = Field(
         default="GET",
         description="HTTP method: GET, POST, PATCH, PUT, or DELETE",
@@ -66,6 +72,8 @@ class GitHubApiArgs(BaseModel):
 
 
 class CallAcceleratorArgs(BaseModel):
+    """Arguments for an accelerator API call."""
+
     method: str = Field(
         default="POST",
         description="HTTP method: GET or POST",
@@ -96,6 +104,8 @@ class CallAcceleratorArgs(BaseModel):
 
 
 class InvokePlannerArgs(BaseModel):
+    """Arguments for handing a single repository to the Planner agent."""
+
     repository_id: str = Field(
         description="The repository to migrate, in Project/RepoName format."
     )
@@ -110,6 +120,8 @@ class InvokePlannerArgs(BaseModel):
 
 
 class InvokeBulkPlannerArgs(BaseModel):
+    """Arguments for handing several repositories to the Planner agent at once."""
+
     repository_ids: list[str] = Field(
         description=(
             "List of repositories to migrate in bulk, each in Project/RepoName format. "
@@ -127,9 +139,7 @@ class InvokeBulkPlannerArgs(BaseModel):
 
 
 def get_orchestrator_tools(
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
+    accel_get: Callable[..., Any] | None = None,
     session_token: str | None = None,
     session_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> list[StructuredTool]:
@@ -137,7 +147,10 @@ def get_orchestrator_tools(
 
     - ado_api_query: generic read-only ADO API access
     - github_api_query: generic read-only GitHub API access
-    - invoke_planner: route to the Planner agent
+    - invoke_planner / invoke_bulk_planner: route to the Planner agent
+
+    Returns:
+        The orchestrator's StructuredTool list with the shared tools prepended.
     """
 
     async def ado_api_query(endpoint: str) -> dict[str, Any]:
@@ -160,7 +173,7 @@ def get_orchestrator_tools(
         except Exception as e:
             return {"error": str(e)}
 
-    def invoke_planner(repository_id: str, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
+    def invoke_planner(repository_id: str, *, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
         """Invoke the Planner agent to load discovery data, validate the repo, and build a migration plan.
 
         Call this AFTER you have collected repository_id and execution mode from the user.
@@ -177,7 +190,7 @@ def get_orchestrator_tools(
             "phase": phase,
         }
 
-    def invoke_bulk_planner(repository_ids: list[str], dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
+    def invoke_bulk_planner(repository_ids: list[str], *, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
         """Invoke the Planner agent for bulk migration of multiple repositories.
 
         Call this when the user wants to migrate multiple repos at once.

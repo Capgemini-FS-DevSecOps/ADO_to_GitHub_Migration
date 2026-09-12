@@ -1,5 +1,6 @@
 """Session persistence, activity state, and lifecycle hooks."""
 from ado2gh.agents.migration_agent.session.lifecycle import (
+    apply_model_selection,
     cancel_agent_session,
     cancel_linked_pipeline_run,
     clear_session_migration_state,
@@ -18,6 +19,7 @@ from ado2gh.agents.migration_agent.session.state import (
     maybe_reset_for_migration_request,
     normalize_session_status,
     release_session_for_chat,
+    reset_for_migration_request,
     reset_session_for_new_migration,
     set_session_idle,
     set_session_phase,
@@ -32,6 +34,7 @@ __all__ = [
     "SCHEMA",
     "SessionState",
     "SessionStateMachine",
+    "apply_model_selection",
     "cancel_agent_session",
     "cancel_linked_pipeline_run",
     "clear_session_migration_state",
@@ -43,6 +46,7 @@ __all__ = [
     "persist_session_snapshot",
     "release_session_for_chat",
     "release_session_repo_locks",
+    "reset_for_migration_request",
     "reset_session_for_new_migration",
     "set_session_idle",
     "set_session_phase",

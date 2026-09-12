@@ -54,13 +54,24 @@ class MigrationIntakeSchema(BaseModel):
 
     @field_validator("repository_id", "plan_notes", mode="before")
     @classmethod
-    def _strip_optional_strings(cls, value: Any) -> Any:
+    def _strip_optional_strings(cls, value: object) -> str | None:
+        """Trim an incoming string field before validation.
+
+        Returns:
+            The trimmed text, or None when the input is missing or blank.
+        """
         if value is None:
             return None
         text = str(value).strip()
         return text or None
 
     def resolved_repository_id(self) -> str | None:
+        """Single repository this intake targets.
+
+        Returns:
+            ``repository_id`` when set, else the first entry of
+            ``repository_ids``, else None.
+        """
         if self.repository_id:
             return self.repository_id
         if self.repository_ids:
@@ -106,7 +117,12 @@ class OperatorMessageAnalysis(BaseModel):
 
     @field_validator("repository_id", "plan_notes", mode="before")
     @classmethod
-    def _strip_optional_strings(cls, value: Any) -> Any:
+    def _strip_optional_strings(cls, value: object) -> str | None:
+        """Trim an incoming string field before validation.
+
+        Returns:
+            The trimmed text, or None when the input is missing or blank.
+        """
         if value is None:
             return None
         text = str(value).strip()
@@ -122,6 +138,12 @@ class OperatorMessageAnalysis(BaseModel):
         return self
 
     def intake_patch(self) -> dict[str, Any]:
+        """Extract the intake fields this analysis can merge into the session.
+
+        Returns:
+            The set fields only — routing metadata (intent, reasoning and the
+            three judgment booleans) and None values are dropped.
+        """
         skip = {
             "reasoning",
             "intent",
@@ -149,7 +171,14 @@ class FormIntakeSubmission(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _map_form_aliases(cls, data: Any) -> Any:
+    def _map_form_aliases(cls, data: object) -> object:
+        """Fold the console's alternative field names onto the canonical ones.
+
+        Returns:
+            A copy of the submitted mapping with ``repository_id``,
+            ``dry_run`` and ``cancellation_action`` filled in from their
+            aliases; non-mapping input is passed through untouched.
+        """
         if not isinstance(data, dict):
             return data
         raw = dict(data)
@@ -170,7 +199,13 @@ class FormIntakeSubmission(BaseModel):
 
     @field_validator("dry_run", mode="before")
     @classmethod
-    def _coerce_dry_run(cls, value: Any) -> bool | None:
+    def _coerce_dry_run(cls, value: object) -> bool | None:
+        """Read the execution mode out of whatever the form control submitted.
+
+        Returns:
+            True for dry-run wordings, False for live ones, and None when the
+            value is empty or unrecognised so the field stays unanswered.
+        """
         if value is None or value == "":
             return None
         if isinstance(value, bool):
@@ -184,7 +219,12 @@ class FormIntakeSubmission(BaseModel):
 
     @field_validator("repository_id", "plan_notes", mode="before")
     @classmethod
-    def _strip_strings(cls, value: Any) -> Any:
+    def _strip_strings(cls, value: object) -> str | None:
+        """Trim an incoming string field before validation.
+
+        Returns:
+            The trimmed text, or None when the input is missing or blank.
+        """
         if value is None:
             return None
         text = str(value).strip()
@@ -192,6 +232,12 @@ class FormIntakeSubmission(BaseModel):
 
     @classmethod
     def from_raw_values(cls, values: dict[str, Any]) -> FormIntakeSubmission:
+        """Validate a raw form payload into a submission.
+
+        Returns:
+            The parsed submission; an empty or missing payload yields one with
+            every field unset.
+        """
         return cls.model_validate(values or {})
 
 
@@ -250,6 +296,11 @@ INTAKE_FIELD_REGISTRY: dict[str, IntakeFieldSpec] = {
 
 
 def required_fields_for_phase(phase: IntakePhase) -> list[str]:
+    """List the intake fields that must be answered in a phase.
+
+    Returns:
+        Registry field names required in ``phase``, in registry order.
+    """
     return [
         name
         for name, spec in INTAKE_FIELD_REGISTRY.items()
@@ -282,4 +333,9 @@ class OperatorInputRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
 
     def form_id(self) -> str:
+        """Form id the console and the form router use for this request.
+
+        Returns:
+            ``operator_input_<request_id>``, truncated to 60 characters.
+        """
         return f"operator_input_{self.request_id}"[:60]

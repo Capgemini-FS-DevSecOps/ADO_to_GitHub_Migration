@@ -2,8 +2,15 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from ado2gh.models import ExecutionMode
+
+if TYPE_CHECKING:
+    from ado2gh.models import RepoConfig
+    from ado2gh.state.factory import StateStore
+
+AccelGet = Callable[..., Awaitable[dict[str, Any]]]
 AccelPost = Callable[..., Awaitable[dict[str, Any]]]
 
 SCOPE_ACCELERATOR_ENDPOINTS: dict[str, str] = {
@@ -43,6 +50,11 @@ def default_agent_enabled_scopes() -> list[str]:
 
 
 def _project_for_repo_key(repo_key: str) -> str:
+    """Split the ADO project off a ``Project/Repo`` key.
+
+    Returns:
+        The project segment, or an empty string when the key is repo-only.
+    """
     return repo_key.split("/", 1)[0] if "/" in repo_key else ""
 
 
@@ -120,7 +132,7 @@ def has_secret_dependencies(
 async def ensure_repo_feature_detection(
     session: dict[str, Any],
     repo_keys: list[str],
-    accel_get: Any | None,
+    accel_get: AccelGet | None,
     session_token: str | None = None,
 ) -> None:
     """Probe ADO (when available) and cache wiki / branch-policy / secret signals per repo."""
@@ -288,14 +300,19 @@ def resolve_agent_enabled_scopes(
 
 
 def build_agent_work_items_for_session(
-    repo_configs: list[Any],
+    repo_configs: list[RepoConfig],
     session: dict[str, Any],
     *,
-    db: Any = None,
+    db: StateStore | None = None,
     repo_pipeline_counts: dict[str, int] | None = None,
     plan: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Build plan work items with per-repo scope detection from discovery."""
+    """Build plan work items with per-repo scope detection from discovery.
+
+    Returns:
+        One work item per repository and enabled scope, with the scope set
+        resolved from discovery rather than a fixed list.
+    """
     from ado2gh.agents.migration_agent.nodes.executor.plan import pipeline_counts_from_discovery
     from ado2gh.api.migration_work_plan import build_work_items_for_repos
 
@@ -333,6 +350,11 @@ def build_agent_work_items_for_session(
 
 
 def _discovery_from_session(session: dict[str, Any] | None) -> dict[str, Any]:
+    """Read the discovery snapshot off a session, decoding it when stored as JSON.
+
+    Returns:
+        The snapshot dict, or an empty dict when absent or unparseable.
+    """
     if not isinstance(session, dict):
         return {}
     discovery = session.get("discovery_snapshot") or {}
@@ -466,9 +488,20 @@ async def _execute_secrets_scope(
     *,
     accel_post: AccelPost,
     session_token: str | None,
-    dry_run: bool,
+    mode: ExecutionMode,
     secret_mappings: dict[str, str] | None,
 ) -> dict[str, Any]:
+    """Migrate the service connections the operator mapped to GitHub secrets.
+
+    Secret values are never carried here — only the target secret names the
+    operator supplied; provisioning sends an empty value for the accelerator
+    to fill.
+
+    Returns:
+        A dict with ``status`` (``skipped`` without mappings, ``success`` when
+        every connection migrated, otherwise ``partial``), the number of
+        mappings attempted, and the per-connection results.
+    """
     mappings = {
         str(k): str(v).strip()
         for k, v in (secret_mappings or {}).items()
@@ -492,12 +525,12 @@ async def _execute_secrets_scope(
                     "connection_name": connection_name,
                     "github_org": ctx["github_org"],
                     "github_repo": ctx["github_repo"],
-                    "dry_run": dry_run,
+                    "dry_run": mode is ExecutionMode.DRY_RUN,
                 },
                 session_token=session_token,
             )
             results.append({"connection": connection_name, "service_connection": sc_result})
-            if not dry_run:
+            if mode is ExecutionMode.LIVE:
                 provision = await accel_post(
                     "/v1/migrate/secret-provision",
                     {
@@ -521,21 +554,40 @@ async def _execute_secrets_scope(
     }
 
 
-async def execute_migration_scope(
+async def execute_migration_scope(  # noqa: PLR0913 - exception-register.md: no existing model groups these
     scope: str,
     work_item: dict[str, Any],
     plan: dict[str, Any],
     *,
     accel_post: AccelPost | None,
     session_token: str | None,
-    dry_run: bool,
-    secret_mappings: dict[str, str] | None = None,
+    mode: ExecutionMode,
     session: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute one migration scope through the accelerator API."""
+    """Execute one migration scope through the accelerator API.
+
+    Args:
+        scope: Which scope to run — ``repo``, ``pipelines``, ``secrets`` and so on.
+        work_item: The plan work item naming the source and target for this scope.
+        plan: The approved plan the work item belongs to.
+        accel_post: Accelerator POST callable, or ``None`` when none was injected.
+        session_token: Bearer token forwarded to the accelerator.
+        mode: Whether this scope previews or writes; sent to the accelerator as the
+            wire-level ``dry_run`` boolean.
+        session: Live agent session. Operator-supplied secret names are read
+            from ``session["operator_secret_mappings"]`` for the secrets scope.
+
+    Returns:
+        The accelerator response for the scope on success, or a dict with
+        ``status`` ``skipped``/``failed`` plus ``error``/``error_code`` and,
+        for conflicts, a ``remediation`` hint.
+    """
     if not accel_post:
         return {"status": "skipped", "error": "accelerator_unavailable"}
 
+    # Accelerator payloads keep the boolean form; the mode converts here.
+    dry_run = mode is ExecutionMode.DRY_RUN
+    secret_mappings = (session or {}).get("operator_secret_mappings")
     ctx = resolve_repo_context(work_item, plan, session)
     normalized = scope
     if scope == "git":
@@ -586,7 +638,7 @@ async def execute_migration_scope(
                 ctx,
                 accel_post=accel_post,
                 session_token=session_token,
-                dry_run=dry_run,
+                mode=mode,
                 secret_mappings=secret_mappings,
             )
 

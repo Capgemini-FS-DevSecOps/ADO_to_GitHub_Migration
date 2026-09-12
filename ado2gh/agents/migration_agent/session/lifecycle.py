@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from ado2gh.agents.migration_agent.session.state import set_session_idle
 
@@ -15,27 +15,32 @@ def new_isolated_agent_session(
     session_id: str,
     *,
     profile_id: str,
-    assignment_id: str | None = None,
     session_token: str | None = None,
-    selected_model_id: str | None = None,
-    llm_degraded: bool = False,
-    llm_unconfigured: bool = False,
     dry_run: bool = True,
     user_username: str | None = None,
-    user_display_name: str | None = None,
 ) -> dict[str, Any]:
-    """Build a fresh in-memory agent session with no migration context carried over."""
+    """Build a fresh in-memory agent session with no migration context carried over.
+
+    The session starts with no model chosen and the LLM assumed available;
+    callers that have resolved a model apply it with ``apply_model_selection``.
+    The operator's display name is filled in by
+    ``policies.attach_actor_to_session`` once the platform user is known.
+
+    Returns:
+        The session dict the agent routes, graph nodes and store all read and
+        mutate.
+    """
     from ado2gh.agents.migration_agent.graph import clear_langgraph_thread_sync
 
     clear_langgraph_thread_sync(session_id)
     return {
         "session_id": session_id,
         "profile_id": profile_id,
-        "assignment_id": assignment_id,
+        "assignment_id": None,
         "session_token": session_token,
-        "selected_model_id": selected_model_id,
-        "llm_degraded": llm_degraded,
-        "llm_unconfigured": llm_unconfigured,
+        "selected_model_id": None,
+        "llm_degraded": False,
+        "llm_unconfigured": False,
         "status": "idle",
         "subagent": None,
         "dry_run": dry_run,
@@ -44,7 +49,7 @@ def new_isolated_agent_session(
         "approval": None,
         "live_approval_id": None,
         "live_approval_status": None,
-        "llm_available": not llm_unconfigured,
+        "llm_available": True,
         "plan_approved": False,
         "tasks": [],
         "pev_retry_count": 0,
@@ -53,18 +58,42 @@ def new_isolated_agent_session(
         "created_at": _now(),
         "updated_at": _now(),
         "user_username": user_username,
-        "user_display_name": user_display_name,
+        "user_display_name": None,
     }
 
 
+def apply_model_selection(
+    session: dict[str, Any],
+    *,
+    selected_model_id: str | None,
+    llm_degraded: bool = False,
+    llm_unconfigured: bool = False,
+) -> None:
+    """Record the resolved LLM model state on a session dict.
+
+    The three values are produced together by ``route_helpers._resolve_model_id``.
+    Setting them in one place is what keeps ``llm_available`` in step with
+    ``llm_unconfigured``.
+    """
+    session["selected_model_id"] = selected_model_id
+    session["llm_degraded"] = llm_degraded
+    session["llm_unconfigured"] = llm_unconfigured
+    session["llm_available"] = not llm_unconfigured
+
+
 def collect_session_repo_ids(session: dict[str, Any]) -> list[str]:
-    """Repository ids referenced by this session's migration state."""
+    """Repository ids referenced by this session's migration state.
+
+    Returns:
+        Normalized repository keys from the session's target repos and its
+        migration plan, de-duplicated and in first-seen order.
+    """
     from ado2gh.agents.migration_agent.utils import canonical_repo_id, normalize_repo_key
 
     ids: list[str] = []
     seen: set[str] = set()
 
-    def _add(raw: Any) -> None:
+    def _add(raw: object) -> None:
         text = normalize_repo_key(str(raw or "").strip())
         if text and text not in seen:
             seen.add(text)
@@ -99,7 +128,11 @@ def clear_session_migration_state(
     *,
     current_run_id: str | None = None,
 ) -> int:
-    """Clear FR-036 in_progress rows for repos tied to this session."""
+    """Clear FR-036 in_progress rows for repos tied to this session.
+
+    Returns:
+        How many in-progress migration rows were cleared.
+    """
     from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations
     from ado2gh.state.factory import create_state_db
 
@@ -121,6 +154,7 @@ def clear_session_migration_state(
 
 
 def release_session_repo_locks(session_id: str) -> None:
+    """Release every repo lock this session holds, ignoring store failures."""
     try:
         from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
@@ -154,10 +188,16 @@ def persist_session_snapshot(session: dict[str, Any]) -> None:
 
 async def cancel_linked_pipeline_run(
     session: dict[str, Any],
-    accel_post: Any | None,
+    accel_post: Callable[..., Any] | None,
     session_token: str | None,
 ) -> bool:
-    """Request accelerator cancellation for the session's pipeline run."""
+    """Request accelerator cancellation for the session's pipeline run.
+
+    Returns:
+        True when a cancellation was requested, either through the accelerator
+        or directly against the pipeline run store. False when the session has
+        no run or neither path accepted the request.
+    """
     run_id = str(session.get("run_id") or session.get("pipeline_run_id") or "").strip()
     if not run_id:
         return False
@@ -183,10 +223,22 @@ async def cancel_agent_session(
     session: dict[str, Any],
     *,
     action: str = "stop",
-    accel_post: Any | None = None,
+    accel_post: Callable[..., Any] | None = None,
     session_token: str | None = None,
 ) -> dict[str, Any]:
-    """Cancel an agent session and clean linked migration state."""
+    """Cancel an agent session and clean linked migration state.
+
+    Args:
+        session: Live agent session, reset in place.
+        action: ``"stop"`` to end the session, or ``"rollback"`` to also flag
+            session-created GitHub resources for removal.
+        accel_post: Accelerator POST callable used to cancel a linked run.
+        session_token: Token forwarded to the accelerator.
+
+    Returns:
+        The operator-facing result: ``status``, whether a rollback was
+        initiated, a message and the session id.
+    """
     from ado2gh.agents.migration_agent.session.state import reset_session_for_new_migration
 
     run_id = str(session.get("run_id") or session.get("pipeline_run_id") or "").strip()
@@ -232,8 +284,17 @@ async def cancel_agent_session(
     }
 
 
-def clear_pipeline_run_migration_state(run: dict[str, Any] | Any) -> int:
-    """Clear stale in_progress rows when a pipeline run ends or is cancelled."""
+def clear_pipeline_run_migration_state(run: object) -> int:
+    """Clear stale in_progress rows when a pipeline run ends or is cancelled.
+
+    Args:
+        run: A pipeline run, either as a dict or as any object exposing
+            ``to_dict()`` and ``id``.
+
+    Returns:
+        How many in-progress migration rows were cleared; zero when the run
+        carries no usable ``Project/Repo`` id.
+    """
     from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations
     from ado2gh.state.factory import create_state_db
 

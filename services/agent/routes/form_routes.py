@@ -76,11 +76,12 @@ async def _continue_graph_after_form(
         session,
         message,
         resume_value={"form_id": form_id, "values": values},
-        model_id=session.get("selected_model_id"),
-        accel_get=_accel_get,
-        accel_post=_accel_post,
-        build_plan=_build_migration_plan,
-        session_token=session_token,
+        deps={
+            "accel_get": _accel_get,
+            "accel_post": _accel_post,
+            "build_plan": _build_migration_plan,
+            "session_token": session_token,
+        },
     )
 
 
@@ -615,11 +616,12 @@ async def submit_session_form_stream(
                 session,
                 synthetic_msg,
                 resume_value={"form_id": form_id, "values": values},
-                model_id=session.get("selected_model_id"),
-                accel_get=_accel_get,
-                accel_post=_accel_post,
-                build_plan=_build_migration_plan,
-                session_token=session_token,
+                deps={
+                    "accel_get": _accel_get,
+                    "accel_post": _accel_post,
+                    "build_plan": _build_migration_plan,
+                    "session_token": session_token,
+                },
             ):
                 if event.get("__done__"):
                     reply = event.get("reply", "")

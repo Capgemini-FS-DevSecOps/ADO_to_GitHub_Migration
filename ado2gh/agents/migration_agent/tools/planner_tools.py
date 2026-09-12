@@ -23,6 +23,8 @@ from ado2gh.agents.migration_agent.tools.shared_tools import append_shared_tools
 
 
 class PlannerCallAcceleratorArgs(BaseModel):
+    """Arguments for a read-only accelerator GET the planner may issue."""
+
     endpoint: str = Field(
         description=(
             "Accelerator API endpoint path (GET only). Available endpoints: "
@@ -33,8 +35,7 @@ class PlannerCallAcceleratorArgs(BaseModel):
 
 
 def get_planner_tools(
-    accel_get: Any = None,
-    accel_post: Any = None,
+    accel_get: Callable[..., Any] | None = None,
     session_token: str | None = None,
     session_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> list[StructuredTool]:
@@ -43,6 +44,9 @@ def get_planner_tools(
     - ado_api_query: generic read-only ADO API access
     - github_api_query: generic read-only GitHub API access
     - call_accelerator: read-only accelerator API access (GET only)
+
+    Returns:
+        The planner's StructuredTool list with the shared tools prepended.
     """
 
     async def ado_api_query(endpoint: str) -> dict[str, Any]:

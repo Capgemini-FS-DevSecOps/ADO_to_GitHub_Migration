@@ -2,11 +2,17 @@
 
 Provides process_user_message() and stream_user_message() that compile
 the LangGraph once and invoke it with thread_id=session_id for checkpointing.
+
+Every public entry point takes the same optional ``deps`` mapping. Its keys are
+the per-invocation runtime dependencies declared by ``_RUNTIME_KEYS`` in
+``ado2gh/agents/migration_agent/runtime/deps.py`` — callers supply
+``accel_get``, ``accel_post``, ``build_plan`` and ``session_token``; ``llm`` and
+``capabilities`` are resolved here from the session's ``selected_model_id``.
 """
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
@@ -19,6 +25,11 @@ from ado2gh.agents.migration_agent.runtime.deps import clear_runtime_deps, set_r
 from ado2gh.agents.migration_agent.runtime.llm_bridge import resolve_langchain_llm
 from ado2gh.agents.migration_agent.runtime.tracing import graph_run_config
 from ado2gh.agents.migration_agent.session.state import OrchestratorResult, release_session_for_chat, set_session_idle
+
+if TYPE_CHECKING:
+    from langgraph.graph.state import CompiledStateGraph
+
+    from ado2gh.agents.migration_agent.runtime.llm_bridge import ModelCapabilities
 
 logger = logging.getLogger(__name__)
 
@@ -35,46 +46,48 @@ _PERSISTENT_STATE_KEYS = (
 
 
 def _bind_runtime_deps(
-    *,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
-) -> None:
-    """Store non-serializable deps for the current graph invocation."""
-    llm, _degraded, _unconfigured, capabilities = resolve_langchain_llm(model_id)
-    set_runtime_deps(
-        llm=llm,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-        capabilities=capabilities,
-    )
+    session: dict[str, Any],
+    deps: dict[str, Any] | None = None,
+) -> tuple[bool, bool, ModelCapabilities | None]:
+    """Store non-serializable deps for the current graph invocation.
+
+    The LLM client is resolved from ``session["selected_model_id"]`` and merged
+    into ``deps`` before binding, so callers never pass a model id separately.
+
+    Args:
+        session: Session dict; its ``selected_model_id`` selects the LLM.
+        deps: Runtime dependencies keyed by the names in ``runtime/deps.py``
+            (``accel_get``, ``accel_post``, ``build_plan``, ``session_token``).
+
+    Returns:
+        A ``(degraded, unconfigured, capabilities)`` triple: whether the resolved
+        model is a stub/offline fallback, whether no usable model is configured,
+        and the detected model capabilities (None when unresolved).
+    """
+    llm, degraded, unconfigured, capabilities = resolve_langchain_llm(session.get("selected_model_id"))
+    set_runtime_deps(**{**(deps or {}), "llm": llm, "capabilities": capabilities})
+    return degraded, unconfigured, capabilities
 
 
 def _build_initial_state(
     session: dict[str, Any],
     user_message: str,
     *,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build the initial AgentState for a graph invocation."""
-    llm, degraded, unconfigured, capabilities = resolve_langchain_llm(model_id)
+    """Build the initial AgentState for a graph invocation and bind runtime deps.
+
+    Args:
+        session: Session dict carrying prior counters and the selected model.
+        user_message: Text of the turn; an empty string starts with no messages.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Returns:
+        A fresh AgentState dict seeded from the session (iteration counters,
+        migration plan, PEV retry count) with all per-turn fields reset.
+    """
+    degraded, unconfigured, capabilities = _bind_runtime_deps(session, deps)
     max_budget = capabilities.max_token_budget if capabilities else 0
-    set_runtime_deps(
-        llm=llm,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-        capabilities=capabilities,
-    )
     return {
         "messages": [HumanMessage(content=user_message)] if user_message else [],
         "user_message": user_message,
@@ -113,11 +126,17 @@ def _build_initial_state(
 
 
 async def _merge_checkpoint_state(
-    graph: Any,
+    graph: CompiledStateGraph,
     config: dict[str, Any],
     turn_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Merge prior thread checkpoint into turn input (LangGraph persistence best practice)."""
+    """Merge prior thread checkpoint into turn input (LangGraph persistence best practice).
+
+    Returns:
+        ``turn_state``, with the keys in ``_PERSISTENT_STATE_KEYS`` overwritten
+        from the thread's last checkpoint. Returned unchanged when the graph has
+        no checkpointer, has no snapshot yet, or the snapshot read fails.
+    """
     if getattr(graph, "checkpointer", None) is None:
         return turn_state
     try:
@@ -134,7 +153,12 @@ async def _merge_checkpoint_state(
 
 
 def _state_has_interrupt(final_state: dict[str, Any]) -> bool:
-    """True when graph paused via LangGraph interrupt() (HITL form)."""
+    """Detect a LangGraph interrupt (HITL form) recorded in a state dict.
+
+    Returns:
+        True when the state carries ``__interrupt__`` or a non-empty
+        ``interrupts`` entry, meaning the graph paused for operator input.
+    """
     if final_state.get("__interrupt__"):
         return True
     interrupts = final_state.get("interrupts")
@@ -142,7 +166,13 @@ def _state_has_interrupt(final_state: dict[str, Any]) -> bool:
 
 
 async def is_graph_interrupted(session_id: str) -> bool:
-    """Return True when a thread is paused at a LangGraph interrupt."""
+    """Check the persisted checkpoint for a thread paused at an interrupt.
+
+    Returns:
+        True when the thread's snapshot or any of its pending tasks holds an
+        interrupt. False when there is no checkpointer, no snapshot, or the
+        snapshot read fails.
+    """
     graph = await get_compiled_graph()
     if getattr(graph, "checkpointer", None) is None:
         return False
@@ -165,25 +195,26 @@ async def is_graph_interrupted(session_id: str) -> bool:
 
 async def resume_interrupted_graph(
     session: dict[str, Any],
-    resume_value: Any,
+    resume_value: dict[str, Any],
     *,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> OrchestratorResult:
-    """Resume a paused graph with Command(resume=...) per LangGraph HITL docs."""
+    """Resume a paused graph with Command(resume=...) per LangGraph HITL docs.
+
+    Args:
+        session: Session dict for the paused thread.
+        resume_value: Payload handed to the waiting ``interrupt()`` call, e.g.
+            ``{"form_id": ..., "values": ...}`` for a HITL form submission.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Returns:
+        An OrchestratorResult with the final reply, the session's task list, and
+        the pending form when the graph paused again on another interrupt.
+    """
     graph = await get_compiled_graph()
     thread_id = str(session.get("session_id") or "default")
     config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
-    _bind_runtime_deps(
-        model_id=model_id,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-    )
+    _bind_runtime_deps(session, deps)
 
     final_state: dict[str, Any] = {}
     interrupted = False
@@ -228,34 +259,26 @@ async def continue_session_graph(
     session: dict[str, Any],
     user_message: str,
     *,
-    resume_value: Any | None = None,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    resume_value: dict[str, Any] | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> OrchestratorResult:
-    """Resume an interrupted thread or start/continue a normal user turn."""
+    """Resume an interrupted thread or start/continue a normal user turn.
+
+    Args:
+        session: Session dict for the thread.
+        user_message: Text used when the thread is not paused at an interrupt.
+        resume_value: Interrupt payload; when set and the thread really is
+            paused, the graph resumes instead of starting a new turn.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Returns:
+        The OrchestratorResult of whichever path ran — ``resume_interrupted_graph``
+        or ``process_user_message``.
+    """
     session_id = str(session.get("session_id") or "default")
     if resume_value is not None and await is_graph_interrupted(session_id):
-        return await resume_interrupted_graph(
-            session,
-            resume_value,
-            model_id=model_id,
-            accel_get=accel_get,
-            accel_post=accel_post,
-            build_plan=build_plan,
-            session_token=session_token,
-        )
-    return await process_user_message(
-        session,
-        user_message,
-        model_id=model_id,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-    )
+        return await resume_interrupted_graph(session, resume_value, deps=deps)
+    return await process_user_message(session, user_message, deps=deps)
 
 
 def _persist_session_counters(session: dict[str, Any], final_state: dict[str, Any]) -> None:
@@ -272,28 +295,24 @@ async def process_user_message(
     session: dict[str, Any],
     user_message: str,
     *,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> OrchestratorResult:
     """Process a user message through the LangGraph agent (non-streaming).
 
-    Returns an OrchestratorResult with reply, start_pev, and pending_form.
+    Args:
+        session: Session dict; mutated in place with counters, pending form and
+            status, then persisted via MigrationSessionStore.
+        user_message: The operator's message for this turn.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Returns:
+        An OrchestratorResult with the final reply, the session's task list, and
+        the pending form when the graph paused on a HITL interrupt.
     """
     graph = await get_compiled_graph()
     from ado2gh.agents.metrics import get_metrics_collector
     get_metrics_collector().record_pev_cycle()
-    initial_state = _build_initial_state(
-        session,
-        user_message,
-        model_id=model_id,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-    )
+    initial_state = _build_initial_state(session, user_message, deps=deps)
 
     thread_id = str(session.get("session_id") or "default")
     config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
@@ -341,11 +360,26 @@ async def process_user_message(
 
 async def _stream_graph_events(
     session: dict[str, Any],
-    graph: Any,
+    graph: CompiledStateGraph,
     config: dict[str, Any],
-    graph_input: Any,
+    graph_input: dict[str, Any] | Command,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """Stream LangGraph custom + updates events; yields done payload last."""
+    """Stream LangGraph custom + updates events; yields done payload last.
+
+    Args:
+        session: Session dict; mutated in place and persisted when the run ends.
+        graph: The compiled agent graph.
+        config: LangGraph invoke config from ``graph_run_config``.
+        graph_input: Initial AgentState for a new turn, or ``Command(resume=...)``
+            to continue a thread paused at an interrupt.
+
+    Yields:
+        SSE-shaped event dicts: the ``token`` and ``thinking`` events written by
+        nodes via ``get_stream_writer()`` are relayed verbatim, plus ``message``,
+        ``tool_call``, ``status`` and ``form_request`` events derived from state
+        updates, then one final ``done`` event carrying ``reply`` and
+        ``pending_form``.
+    """
     final_state: dict[str, Any] = {}
     prev_msg_count = len(session.get("messages", []))
     prev_status = session.get("status", "")
@@ -481,29 +515,25 @@ async def stream_user_message(
     session: dict[str, Any],
     user_message: str,
     *,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Stream agent events via SSE as the LangGraph PEV workflow executes.
 
     Uses LangGraph ``stream_mode=["custom", "updates"]``: custom events from
     ``get_stream_writer()`` in nodes; updates for reply, forms, and tool calls.
+
+    Args:
+        session: Session dict; mutated in place and persisted when the run ends.
+        user_message: The operator's message for this turn.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Yields:
+        The SSE event dicts produced by ``_stream_graph_events``.
     """
     graph = await get_compiled_graph()
     from ado2gh.agents.metrics import get_metrics_collector
     get_metrics_collector().record_pev_cycle()
-    initial_state = _build_initial_state(
-        session,
-        user_message,
-        model_id=model_id,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-    )
+    initial_state = _build_initial_state(session, user_message, deps=deps)
 
     thread_id = str(session.get("session_id") or "default")
     config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
@@ -515,28 +545,27 @@ async def stream_user_message(
 
 async def stream_interrupted_graph(
     session: dict[str, Any],
-    resume_value: Any,
+    resume_value: dict[str, Any],
     *,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """Resume a paused graph via Command(resume=...) and stream SSE events."""
+    """Resume a paused graph via Command(resume=...) and stream SSE events.
+
+    Args:
+        session: Session dict for the paused thread.
+        resume_value: Payload handed to the waiting ``interrupt()`` call.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Yields:
+        The SSE event dicts produced by ``_stream_graph_events``.
+    """
     graph = await get_compiled_graph()
     from ado2gh.agents.metrics import get_metrics_collector
 
     get_metrics_collector().record_pev_cycle()
     thread_id = str(session.get("session_id") or "default")
     config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
-    _bind_runtime_deps(
-        model_id=model_id,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-    )
+    _bind_runtime_deps(session, deps)
 
     async for event in _stream_graph_events(session, graph, config, Command(resume=resume_value)):
         yield event
@@ -546,42 +575,39 @@ async def continue_session_graph_stream(
     session: dict[str, Any],
     user_message: str,
     *,
-    resume_value: Any | None = None,
-    model_id: str | None = None,
-    accel_get: Any = None,
-    accel_post: Any = None,
-    build_plan: Any = None,
-    session_token: str | None = None,
+    resume_value: dict[str, Any] | None = None,
+    deps: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """Stream resume for interrupted thread or a normal user turn."""
+    """Stream resume for interrupted thread or a normal user turn.
+
+    Args:
+        session: Session dict for the thread.
+        user_message: Text used when the thread is not paused at an interrupt.
+        resume_value: Interrupt payload; when set and the thread really is
+            paused, the graph resumes instead of starting a new turn.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Yields:
+        The SSE event dicts of whichever path ran — ``stream_interrupted_graph``
+        or ``stream_user_message``.
+    """
     session_id = str(session.get("session_id") or "default")
     if resume_value is not None and await is_graph_interrupted(session_id):
-        async for event in stream_interrupted_graph(
-            session,
-            resume_value,
-            model_id=model_id,
-            accel_get=accel_get,
-            accel_post=accel_post,
-            build_plan=build_plan,
-            session_token=session_token,
-        ):
+        async for event in stream_interrupted_graph(session, resume_value, deps=deps):
             yield event
         return
 
-    async for event in stream_user_message(
-        session,
-        user_message,
-        model_id=model_id,
-        accel_get=accel_get,
-        accel_post=accel_post,
-        build_plan=build_plan,
-        session_token=session_token,
-    ):
+    async for event in stream_user_message(session, user_message, deps=deps):
         yield event
 
 
 def _node_to_subagent(node_name: str) -> str:
-    """Map graph node names to subagent labels for SSE events."""
+    """Map graph node names to subagent labels for SSE events.
+
+    Returns:
+        The subagent label the UI renders for that node — ``planner``,
+        ``executor``, ``validator``, or ``orchestrator`` for anything else.
+    """
     mapping = {
         "classify_intent": "orchestrator",
         "orchestrator": "orchestrator",
@@ -598,17 +624,37 @@ def _node_to_subagent(node_name: str) -> str:
 async def run_turn(
     session: dict[str, Any],
     user_message: str,
-    **kwargs: Any,
+    *,
+    deps: dict[str, Any] | None = None,
 ) -> OrchestratorResult:
-    """Run one user turn through the LangGraph PEV workflow."""
-    return await process_user_message(session, user_message, **kwargs)
+    """Run one user turn through the LangGraph PEV workflow.
+
+    Args:
+        session: Session dict for the thread.
+        user_message: The operator's message for this turn.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Returns:
+        The OrchestratorResult from ``process_user_message``.
+    """
+    return await process_user_message(session, user_message, deps=deps)
 
 
 async def stream_turn(
     session: dict[str, Any],
     user_message: str,
-    **kwargs: Any,
+    *,
+    deps: dict[str, Any] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """Stream SSE-shaped events for one user turn."""
-    async for event in stream_user_message(session, user_message, **kwargs):
+    """Stream SSE-shaped events for one user turn.
+
+    Args:
+        session: Session dict for the thread.
+        user_message: The operator's message for this turn.
+        deps: Runtime dependencies — see ``runtime/deps.py`` ``_RUNTIME_KEYS``.
+
+    Yields:
+        The SSE event dicts produced by ``stream_user_message``.
+    """
+    async for event in stream_user_message(session, user_message, deps=deps):
         yield event

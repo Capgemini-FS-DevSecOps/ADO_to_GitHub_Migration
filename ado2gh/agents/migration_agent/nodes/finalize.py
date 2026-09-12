@@ -1,4 +1,4 @@
-"""finalize.py module."""
+"""Finalize node: composes the operator reply and returns the session to idle."""
 from __future__ import annotations
 
 from typing import Any
@@ -17,7 +17,15 @@ from ado2gh.agents.migration_agent.utils import (
 # ─── Node: finalize ───────────────────────────────────────────────────
 
 async def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Prepare response and append events to session."""
+    """Prepare the response, append events to the session and release its locks.
+
+    Args:
+        state: Graph state at the end of the turn.
+
+    Returns:
+        An ``AgentState`` update with ``should_return`` true, plus the ``reply``
+        and any ``pending_form`` the client still has to handle.
+    """
     session = state.get("session") or {}
     reply = state.get("reply")
 

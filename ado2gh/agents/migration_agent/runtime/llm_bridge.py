@@ -6,9 +6,12 @@ BaseChatModel instances for use in the LangGraph agent.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.language_models import BaseChatModel
+
+if TYPE_CHECKING:
+    from ado2gh.api.llm.llm_model_store import LLMModelConfig
 
 LLM_TIMEOUT_SECONDS = 60
 
@@ -44,8 +47,14 @@ _PROVIDER_CAPABILITY_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
-def _detect_capabilities(cfg: Any) -> ModelCapabilities:
-    """Detect capabilities from model config, with provider-based defaults."""
+def _detect_capabilities(cfg: LLMModelConfig) -> ModelCapabilities:
+    """Detect capabilities from model config, with provider-based defaults.
+
+    Returns:
+        The model's capabilities: explicit ``cfg.capabilities`` entries win, then
+        the provider defaults, then the dataclass defaults. ``supports_thinking``
+        is forced on for model ids that imply a reasoning model.
+    """
     provider = getattr(cfg, "provider", "") or ""
     model_id = str(getattr(cfg, "id", None) or getattr(cfg, "model_id", None) or "")
     defaults = _PROVIDER_CAPABILITY_DEFAULTS.get(provider, {})
@@ -71,7 +80,12 @@ def _detect_capabilities(cfg: Any) -> ModelCapabilities:
 
 
 def _model_id_implies_thinking(model_id: str | None, provider: str) -> bool:
-    """Heuristic: Qwen and similar models expose reasoning/thinking tokens."""
+    """Heuristic: Qwen and similar models expose reasoning/thinking tokens.
+
+    Returns:
+        True when the model id looks like a reasoning model (qwen, deepseek-r1,
+        or a think/r1 marker on a local provider).
+    """
     mid = (model_id or "").lower()
     if "qwen" in mid or "deepseek-r1" in mid or "reasoning" in mid:
         return True
@@ -80,8 +94,13 @@ def _model_id_implies_thinking(model_id: str | None, provider: str) -> bool:
     return False
 
 
-def _get_model_config(model_id: str | None = None):
-    """Resolve a model config from the store, falling back to the default."""
+def _get_model_config(model_id: str | None = None) -> LLMModelConfig | None:
+    """Resolve a model config from the store, falling back to the default.
+
+    Returns:
+        The stored config for ``model_id``, else the store's default model, else
+        None when neither is configured.
+    """
     from ado2gh.api.llm.llm_model_store import LLMModelStore
 
     store = LLMModelStore()
@@ -95,10 +114,19 @@ def _get_model_config(model_id: str | None = None):
     return cfg
 
 
-def build_langchain_chat_model(cfg: Any, capabilities: ModelCapabilities | None = None) -> BaseChatModel | None:
+def build_langchain_chat_model(
+    cfg: LLMModelConfig | None,
+    capabilities: ModelCapabilities | None = None,
+) -> BaseChatModel | None:
     """Build a LangChain ChatModel from a stored model config.
 
-    Returns None when the config is invalid or the provider is unsupported.
+    Args:
+        cfg: Stored model config; a disabled or missing config yields None.
+        capabilities: Pre-detected capabilities; detected from ``cfg`` when omitted.
+
+    Returns:
+        A configured LangChain chat model, or None when the config is disabled,
+        the provider is unsupported, or a required base URL / API key is absent.
     """
     if not cfg or not cfg.enabled:
         return None

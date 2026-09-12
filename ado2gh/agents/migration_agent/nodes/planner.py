@@ -1,4 +1,4 @@
-"""planner.py module."""
+"""Planner node: turns operator intent plus research evidence into a migration plan."""
 from __future__ import annotations
 
 import json
@@ -34,6 +34,7 @@ from ado2gh.agents.migration_agent.utils import (
     normalize_discovery_repo,
     repo_not_found_clarification,
 )
+from ado2gh.models import ExecutionMode
 
 
 async def planner_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -43,6 +44,14 @@ async def planner_node(state: dict[str, Any]) -> dict[str, Any]:
     generates MigrationPlan with topological sort, stores in AgentState.migration_plan.
     Handles validation_feedback for revised plans and sets pending_clarification
     when discovery data is insufficient.
+
+    Args:
+        state: Graph state for the current turn.
+
+    Returns:
+        An ``AgentState`` update carrying the plan and routing flags, or — when
+        planning raised — an ``error`` update with ``should_return`` true. The
+        node never propagates the exception.
     """
     session = state.get("session") or {}
     _transition_session(session, SessionState.PLANNING)
@@ -68,7 +77,17 @@ async def _planner_post_validation_handoff(
     state: dict[str, Any],
     session: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Route validator outcomes through planner (validator → planner only)."""
+    """Route validator outcomes through the planner (validator to planner only).
+
+    Args:
+        state: Graph state carrying ``validation_result`` and feedback.
+        session: Session dict updated with the handoff messages.
+
+    Returns:
+        An ``AgentState`` update when the validator's outcome decides where to
+        go next, or None when there is no validation result yet and normal
+        planning should run.
+    """
     validation = state.get("validation_result")
     if validation is None:
         return None
@@ -138,7 +157,7 @@ async def _planner_post_validation_handoff(
                 "should_return": False,
                 "start_execution": False,
             }
-        if failures and _all_failures_benign(failures, dry_run=dry_run):
+        if failures and _all_failures_benign(failures, mode=ExecutionMode.from_dry_run(dry_run=dry_run)):
             _append_and_stream(
                 session,
                 role="system",
@@ -187,7 +206,17 @@ async def _planner_post_validation_handoff(
 
 
 async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> dict[str, Any]:
-    """Planner node implementation — wrapped by planner_node for error handling."""
+    """Build the migration plan; wrapped by ``planner_node`` for error handling.
+
+    Args:
+        state: Graph state for the current turn.
+        session: Session dict, already transitioned into the planning state.
+
+    Returns:
+        An ``AgentState`` update with ``migration_plan`` and
+        ``migration_queue``, or a clarification/operator-input update when the
+        planner cannot produce a plan yet.
+    """
     post_validation = await _planner_post_validation_handoff(state, session)
     if post_validation is not None:
         return post_validation
@@ -206,7 +235,9 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
         dry_run = bool(session.get("dry_run", True))
         from ado2gh.agents.migration_agent.nodes.validator import _all_failures_benign
 
-        if _all_failures_benign(validation_feedback["failures"], dry_run=dry_run):
+        if _all_failures_benign(
+            validation_feedback["failures"], mode=ExecutionMode.from_dry_run(dry_run=dry_run)
+        ):
             validation_feedback = None
         else:
             from ado2gh.agents.migration_agent.hitl.operator_input import (
@@ -276,7 +307,6 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
     llm_unconfigured = state.get("llm_unconfigured", False)
     capabilities = state.get("capabilities")
     accel_get = state.get("accel_get")
-    accel_post = state.get("accel_post")
     session_token = state.get("session_token")
     validation_feedback = state.get("validation_feedback")
     if validation_feedback and isinstance(validation_feedback, str):
@@ -484,7 +514,6 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
 
         planner_tools = get_planner_tools(
             accel_get=accel_get,
-            accel_post=accel_post,
             session_token=session_token,
             session_getter=lambda: session,
         )
@@ -540,14 +569,10 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
 
         parsed = await _run_planner_research_loop(
             state,
-            session,
-            llm_with_tools,
             trimmed_messages,
-            capabilities=capabilities,
-            accel_get=accel_get,
-            session_token=session_token,
+            llm=llm_with_tools,
             validation_feedback=validation_feedback if isinstance(validation_feedback, dict) else None,
-            dry_run=dry_run,
+            mode=ExecutionMode.from_dry_run(dry_run=dry_run),
         )
 
         if parsed.get("repos"):

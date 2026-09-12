@@ -8,7 +8,16 @@ from ado2gh.models import MigrationScope
 
 
 def _build_migration_queue_from_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    """Build a migration queue from a plan's repos and work items."""
+    """Build a migration queue from a plan's repos and work items.
+
+    Args:
+        plan: The migration plan, read for ``repos`` and ``work_items``.
+
+    Returns:
+        A queue dict with one item per repo (plan order first, then any repo
+        that only appears in work items), plus the ``current_index``,
+        ``completed`` and ``failed`` bookkeeping the executor advances.
+    """
     plan_repos = plan.get("repos", [])
     work_items = [wi for wi in plan.get("work_items", []) if isinstance(wi, dict)]
 
@@ -56,7 +65,16 @@ def _advance_migration_queue(
     *,
     repo_id: str = "",
 ) -> bool:
-    """Advance queue after one repo slot is consumed. Returns True if advanced."""
+    """Advance the queue after one repo slot is consumed.
+
+    Args:
+        migration_queue: Queue dict, mutated in place.
+        repo_id: Repo to mark completed; defaults to the repo at the current
+            index.
+
+    Returns:
+        True when the index moved, False when the queue was already exhausted.
+    """
     queue_items = migration_queue.get("items", [])
     current_index = int(migration_queue.get("current_index", 0) or 0)
     if current_index >= len(queue_items):
@@ -75,7 +93,21 @@ def _build_heuristic_plan(
     session: dict[str, Any],
     revision: int,
 ) -> dict[str, Any]:
-    """Build a migration plan using topological sort and migrate-tab pipeline steps."""
+    """Build a migration plan using topological sort and migrate-tab pipeline steps.
+
+    Used when no LLM is available, or as the fallback when the model's plan
+    cannot be parsed.
+
+    Args:
+        repos: Repo dicts to plan for.
+        session: Session dict; supplies the discovery snapshot and the
+            ``dry_run`` flag the plan records.
+        revision: Plan revision counter, incremented on each replan.
+
+    Returns:
+        A migration plan with dependency-ordered repos, per-repo work items and
+        the repo/pipeline counts, in the same shape the LLM path produces.
+    """
     from ado2gh.agents.migration_agent.nodes.executor.plan import (
         finalize_agent_migration_plan,
         pipeline_counts_from_discovery,
@@ -149,7 +181,17 @@ def _build_migration_plan_from_llm(
     session: dict[str, Any],
     revision: int,
 ) -> dict[str, Any]:
-    """Build a migration plan from LLM-parsed JSON output."""
+    """Build a migration plan from LLM-parsed JSON output.
+
+    Args:
+        parsed: The JSON object the planner model produced.
+        session: Session dict supplying discovery context and defaults.
+        revision: Plan revision counter, incremented on each replan.
+
+    Returns:
+        A migration plan in the same shape as the heuristic builder's, with the
+        model's repo list normalised against discovery.
+    """
     from ado2gh.agents.migration_agent.nodes.executor.plan import (
         finalize_agent_migration_plan,
         pipeline_counts_from_discovery,

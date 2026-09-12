@@ -25,7 +25,7 @@ from ado2gh.agents.migration_agent.session.state import normalize_session_status
 from ado2gh.agents.migration_agent.utils import IdeAuditBridge
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
 from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
-from services.agent.profiles import get_profile
+from services.agent.profiles import LocalAgentProfile, get_profile
 
 AGENT_DEFAULT_PIPELINE_STEPS = [s["id"] for s in MIGRATE_UI_PIPELINE_STEPS]
 MIGRATE_STEP_IDS = frozenset({
@@ -51,6 +51,8 @@ _audit = IdeAuditBridge()
 
 
 class RunStatus(str, Enum):
+    """Lifecycle states reported for an agent run."""
+
     PLANNING = "planning"
     EXECUTING = "executing"
     VALIDATING = "validating"
@@ -60,10 +62,14 @@ class RunStatus(str, Enum):
 
 
 class PlanPhaseBody(BaseModel):
+    """Request body selecting which migration phase to plan."""
+
     phase: Optional[str] = None
 
 
 class SessionRequest(BaseModel):
+    """Request body for creating an agent session."""
+
     profile_id: str = "lightweight"
     prompt: str = ""
     dry_run: bool = True
@@ -72,29 +78,41 @@ class SessionRequest(BaseModel):
 
 
 class SessionMessageRequest(BaseModel):
+    """Request body carrying one operator message for a session turn."""
+
     message: str = ""
 
 
 class FormSubmitRequest(BaseModel):
+    """Request body with the operator's answers to a pending HITL form."""
+
     values: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExecutionModeRequest(BaseModel):
+    """Request body switching a session between dry-run and live execution."""
+
     dry_run: bool
 
 
 class ProvisionRequest(BaseModel):
+    """Request body for provisioning a session's access tier."""
+
     tier: str = "read"
     actor: str = "operator"
     reason: str = ""
 
 
 class RemediateRequest(BaseModel):
+    """Request body asking the agent to retry one repository."""
+
     repo_key: str = ""
     retry_count: int = 0
 
 
 class ApprovalRequest(BaseModel):
+    """Request body recording an operator's approval decision."""
+
     approved: bool
     reason: str = ""
 
@@ -105,7 +123,13 @@ _PLANNER_SYSTEM = (
 )
 
 
-def _profile(profile_id: Optional[str] = None):
+def _profile(profile_id: Optional[str] = None) -> LocalAgentProfile | None:
+    """Load a deployment profile by id, defaulting to the configured local one.
+
+    Returns:
+        The requested profile, or the process-wide active profile when the id is
+        unknown. None only when no active profile could be loaded at import.
+    """
     pid = profile_id or os.environ.get("ADO2GH_LOCAL_PROFILE", "lightweight")
     try:
         return get_profile(pid)
@@ -176,7 +200,13 @@ async def _accel_get(path: str, *, session_token: str | None = None) -> dict:
     return await _accel_get_impl(path, session_token=session_token)
 
 
-def _platform_user(request: Request | None = None):
+def _platform_user(request: Request | None = None) -> str | None:
+    """Resolve the authenticated username for a request.
+
+    Returns:
+        The username from the request's platform session, or None when there is
+        no request or no authenticated user.
+    """
     if request is None:
         return None
     return request_username(request)
@@ -253,7 +283,10 @@ def _get_accessible_session(
 def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
     """Load a persisted HTTP session into memory without cross-session state."""
     try:
-        from ado2gh.agents.migration_agent.session.lifecycle import new_isolated_agent_session
+        from ado2gh.agents.migration_agent.session.lifecycle import (
+            apply_model_selection,
+            new_isolated_agent_session,
+        )
         from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
         record = MigrationSessionStore().get_session(session_id)
@@ -263,8 +296,11 @@ def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
             session_id,
             profile_id=str(record.get("profile_id") or "lightweight"),
             dry_run=bool(record.get("dry_run", True)),
-            selected_model_id=str(record.get("model_id") or "") or None,
             user_username=record.get("user_username"),
+        )
+        apply_model_selection(
+            session,
+            selected_model_id=str(record.get("model_id") or "") or None,
         )
         session["messages"] = list(record.get("messages") or [])
         session["migration_plan"] = record.get("migration_plan")
@@ -381,12 +417,12 @@ def _add_message(
     _sessions[session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
 
 
-async def _assert_deployment_profile_active(
-    profile_id: str,
-    *,
-    session_token: str | None = None,
-) -> None:
-    """Assert that the deployment profile is active."""
+async def _assert_deployment_profile_active(profile_id: str) -> None:
+    """Assert that the deployment profile is active.
+
+    Raises:
+        HTTPException: 404 when no profile matches the id.
+    """
     profile = _profile(profile_id)
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -505,12 +541,8 @@ async def _build_migration_plan(
 
 
 
-async def _enqueue_session_live_approval(
-    session_id: str,
-    session: dict[str, Any],
-    request: Request,
-) -> None:
-    """Enqueue session for live execution approval."""
+async def _enqueue_session_live_approval(session: dict[str, Any]) -> None:
+    """Mark a session as waiting for live-execution approval and park it as idle."""
     from ado2gh.agents.migration_agent.session.state import set_session_idle
 
     session["live_approval_status"] = "pending"
@@ -544,21 +576,21 @@ async def _try_start_pev_run(session_id: str, request: Request | None = None) ->
     if session_requires_live_approval(session):
         msg = live_execution_block_message(session)
         if request:
-            await _enqueue_session_live_approval(session_id, session, request)
+            await _enqueue_session_live_approval(session)
         _add_message(session_id, "assistant", msg, kind="message")
         return False
 
     # Use orchestrator to start PEV
     session_token = _session_accel_token(session_id)
-    selected_model_id = session.get("selected_model_id")
     result = await process_user_message(
         session,
         "Start migration execution",
-        model_id=selected_model_id,
-        accel_get=_accel_get,
-        accel_post=_accel_post,
-        build_plan=_build_migration_plan,
-        session_token=session_token,
+        deps={
+            "accel_get": _accel_get,
+            "accel_post": _accel_post,
+            "build_plan": _build_migration_plan,
+            "session_token": session_token,
+        },
     )
 
     if result.reply:

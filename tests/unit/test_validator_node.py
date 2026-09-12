@@ -8,6 +8,7 @@ from ado2gh.agents.migration_agent.nodes import (
     _advance_migration_queue,
     _build_migration_queue_from_plan,
 )
+from ado2gh.models import ExecutionMode
 from ado2gh.agents.migration_agent.hitl.operator_input import (
     blockers_from_validator_baseline_probes,
     validation_failures_from_baseline_probes,
@@ -35,13 +36,13 @@ def _make_state(**kwargs):
 # ─── _validate_scope ──────────────────────────────────────────────────
 
 def test_validate_scope_error():
-    result = _validate_scope("git", {"error": "mirror failed"}, None, True)
+    result = _validate_scope("git", {"error": "mirror failed"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is False
     assert "mirror failed" in result["failure"]
 
 
 def test_validate_scope_skipped():
-    result = _validate_scope("git", {"status": "skipped"}, None, True)
+    result = _validate_scope("git", {"status": "skipped"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is True
 
 
@@ -53,36 +54,35 @@ def test_validate_scope_skipped_with_endpoint_detail_passes():
             "message": "Accelerator endpoint unavailable for scope 'wiki'",
             "detail": "404 Not Found",
         },
-        None,
-        True,
+        mode=ExecutionMode.DRY_RUN,
     )
     assert result["passed"] is True
 
 
 def test_validate_scope_pending():
-    result = _validate_scope("secrets", {"status": "pending"}, None, True)
+    result = _validate_scope("secrets", {"status": "pending"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is True
 
 
 def test_validate_scope_git_dry_run():
-    result = _validate_scope("git", {"status": "success"}, None, True)
+    result = _validate_scope("git", {"status": "success"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is True
     assert result["evidence"]["dry_run"] is True
 
 
 def test_validate_scope_git_dry_run_status():
-    result = _validate_scope("git", {"status": "dry_run"}, None, True)
+    result = _validate_scope("git", {"status": "dry_run"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is True
     assert result["evidence"]["status"] == "dry_run"
 
 
 def test_validate_scope_git_live():
-    result = _validate_scope("git", {"status": "success"}, None, False)
+    result = _validate_scope("git", {"status": "success"}, mode=ExecutionMode.LIVE)
     assert result["passed"] is True
 
 
 def test_validate_scope_pipelines():
-    result = _validate_scope("pipelines", {"status": "success"}, None, True)
+    result = _validate_scope("pipelines", {"status": "success"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is True
 
 
@@ -95,8 +95,7 @@ def test_validate_scope_pipelines_validation_errors_fail():
             "validation_errors": ["ci.yml: missing on:", "deploy.yml: missing runs-on"],
             "completed": 3,
         },
-        None,
-        True,
+        mode=ExecutionMode.DRY_RUN,
     )
     assert result["passed"] is False
     assert "missing on" in result["failure"]
@@ -106,14 +105,13 @@ def test_validate_scope_pipelines_executor_failed_count():
     result = _validate_scope(
         "pipelines",
         {"status": "partial", "failed": 1, "completed": 2, "message": "1 pipeline failed"},
-        None,
-        False,
+        mode=ExecutionMode.LIVE,
     )
     assert result["passed"] is False
 
 
 def test_validate_scope_unknown():
-    result = _validate_scope("wiki", {"status": "success"}, None, True)
+    result = _validate_scope("wiki", {"status": "success"}, mode=ExecutionMode.DRY_RUN)
     assert result["passed"] is True
 
 

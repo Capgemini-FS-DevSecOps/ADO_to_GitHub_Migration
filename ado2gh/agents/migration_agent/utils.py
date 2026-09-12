@@ -6,10 +6,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ado2gh.audit import redact_payload
+
+if TYPE_CHECKING:  # AuditWriter is imported lazily so the state DB is not opened on import
+    from ado2gh.audit import AuditWriter
 
 
 def _now() -> str:
@@ -32,7 +36,7 @@ def resolve_dry_run(
     return True
 
 
-def _append_event(
+def _append_event(  # noqa: PLR0913 - exception-register.md: the message record's own fields
     session: dict[str, Any],
     *,
     role: str,
@@ -46,6 +50,18 @@ def _append_event(
     Sole entry point for the in-memory message list, so this is where CA-003
     masking is applied — everything downstream (SSE, the persisted
     ``messages_json`` column, the chat feed) reads the masked entry it returns.
+
+    Args:
+        session: The live agent session dict, mutated in place.
+        role: Who is speaking — ``assistant``, ``system`` or ``user``.
+        content: The message body, masked before it is stored.
+        kind: The event kind the console dispatches on.
+        subagent: Which agent produced the entry, when it matters to the UI.
+        meta: Structured extras for the entry; redacted before it is stored.
+
+    Returns:
+        The stored entry, with ``content`` and ``meta`` already masked and a UTC
+        ``timestamp`` added — callers stream this, never their own inputs.
     """
     entry: dict[str, Any] = {
         "role": role,
@@ -81,25 +97,28 @@ def publish_orchestrator_chat(session: dict[str, Any], content: str) -> str:
     return str(entry["content"])
 
 
-def _append_and_stream(
-    session: dict[str, Any],
+def _stream_entry(
+    entry: dict[str, Any],
     *,
-    role: str,
-    content: str,
-    kind: str = "thinking",
+    kind: str,
     subagent: str | None = None,
-    meta: dict[str, Any] | None = None,
 ) -> None:
-    """Append event to session AND emit via LangGraph stream writer for live SSE."""
-    entry = _append_event(
-        session, role=role, content=content, kind=kind, subagent=subagent, meta=meta
-    )
+    """Emit an already-appended message entry over the live SSE stream.
+
+    Takes the entry :func:`_append_event` returned rather than the raw values, so the
+    masked content is what reaches the wire and never the raw arguments (CA-003).
+    A missing stream writer is normal outside a graph invocation and is ignored.
+
+    Args:
+        entry: The masked entry returned by :func:`_append_event`.
+        kind: The event kind the console dispatches on.
+        subagent: Which agent produced the entry, when it matters to the UI.
+    """
     try:
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
         if writer:
-            # Stream the masked entry, never the raw arguments (CA-003).
             evt: dict[str, Any] = {"kind": kind, "content": entry["content"]}
             if subagent:
                 evt["subagent"] = subagent
@@ -110,7 +129,33 @@ def _append_and_stream(
         pass
 
 
-MAX_STATUS_MESSAGES_PER_TURN = 40
+def _append_and_stream(
+    session: dict[str, Any],
+    *,
+    role: str,
+    content: str,
+    kind: str = "thinking",
+    subagent: str | None = None,
+) -> None:
+    """Append an event to the session and emit it for live SSE in one call.
+
+    Call :func:`_append_event` followed by :func:`_stream_entry` directly when the
+    event also carries ``meta``.
+
+    Args:
+        session: The live agent session dict, mutated in place.
+        role: Who is speaking — ``assistant``, ``system`` or ``user``.
+        content: The message body; masked by :func:`_append_event` before it is stored
+            or streamed.
+        kind: The event kind the console dispatches on.
+        subagent: Which agent produced the entry, when it matters to the UI.
+    """
+    _stream_entry(
+        _append_event(session, role=role, content=content, kind=kind, subagent=subagent),
+        kind=kind,
+        subagent=subagent,
+    )
+
 
 TOOL_STATUS_START: dict[str, str] = {
     "run_migration_pev": "Starting migration pipeline…",
@@ -144,40 +189,12 @@ TOOL_TASK_IDS: dict[str, str] = {
 
 
 def _reset_turn_status_budget(session: dict[str, Any]) -> None:
+    """Clear the per-turn status-message counter at the start of a turn.
+
+    Args:
+        session: The live agent session dict, mutated in place.
+    """
     session["_status_msg_count"] = 0
-
-
-def _append_status_message(
-    session: dict[str, Any],
-    content: str,
-    *,
-    subagent: str | None = None,
-) -> None:
-    if session.get("_status_msg_count", 0) >= MAX_STATUS_MESSAGES_PER_TURN:
-        return
-    session["_status_msg_count"] = int(session.get("_status_msg_count", 0)) + 1
-    entry = _append_event(
-        session,
-        role="assistant",
-        content=content,
-        kind="status",
-        subagent=subagent,
-    )
-    # Emit via stream bus for real-time SSE
-    try:
-        from langgraph.config import get_stream_writer
-
-        writer = get_stream_writer()
-        if writer:
-            writer(
-                {
-                    "kind": "status",
-                    "content": entry["content"],
-                    "subagent": subagent or "orchestrator",
-                }
-            )
-    except Exception:
-        pass
 
 
 def _tool_status_done(tool_name: str, result: dict[str, Any]) -> str:
@@ -210,7 +227,7 @@ def _emit_tool_call(
     """Record and stream a tool invocation (shown in thinking panel as tool, not status)."""
     label = TOOL_STATUS_START.get(tool_name, tool_name)
     meta = {"name": tool_name, "arguments": arguments or {}}
-    _append_and_stream(
+    entry = _append_event(
         session,
         role="system",
         content=label,
@@ -218,6 +235,7 @@ def _emit_tool_call(
         subagent=subagent,
         meta=meta,
     )
+    _stream_entry(entry, kind="tool_call", subagent=subagent)
 
 
 def _emit_tool_result(
@@ -286,9 +304,14 @@ def _has_queued_messages(session: dict[str, Any]) -> bool:
 
 
 def _parse_llm_json(text: str) -> dict[str, Any]:
-    """Parse JSON from LLM output, tolerating markdown code fences and alternate formats."""
-    import re
+    """Parse JSON from LLM output, tolerating markdown code fences and alternate formats.
 
+    Args:
+        text: Raw model output, which may wrap the JSON in a ```json fence or prose.
+
+    Returns:
+        The decoded object, or an empty dict when the text holds no parsable JSON.
+    """
     if not text:
         return {}
     cleaned = text.strip()
@@ -361,9 +384,16 @@ class IdeAuditBridge:
     """Audit bridge for IDE sessions and MCP tool calls."""
 
     def __init__(self) -> None:
+        """Create the bridge without opening a database connection."""
         self._writer = None
 
-    def _ensure_writer(self) -> Any:
+    def _ensure_writer(self) -> AuditWriter:
+        """Open the audit writer on first use.
+
+        Returns:
+            The process-wide :class:`~ado2gh.audit.AuditWriter`, created against the
+            configured state database the first time an event is recorded.
+        """
         if self._writer is None:
             from ado2gh.audit import AuditWriter
             from ado2gh.state.factory import create_state_db
@@ -371,7 +401,7 @@ class IdeAuditBridge:
             self._writer = AuditWriter(create_state_db())
         return self._writer
 
-    def record(
+    def record(  # noqa: PLR0913 - exception-register.md: the audit event's own columns
         self,
         action: str,
         *,
@@ -382,7 +412,24 @@ class IdeAuditBridge:
         session_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> str | None:
-        """Record an audit event. Returns audit ID or None on failure."""
+        """Write one agent-side audit event, masking every value it carries (CA-003/CA-004).
+
+        ``repo``, ``detail``, ``session_id`` and ``metadata`` become the event payload;
+        ``action``, ``profile_id`` and ``actor`` are the event's own columns. Auditing
+        must never break the operation it records, so a write failure is swallowed.
+
+        Args:
+            action: The event type, e.g. ``session.confirm_live``.
+            profile_id: Deployment profile the action ran under.
+            repo: Repository the action touched, when it targets one.
+            detail: Free-text description; masked before it is stored.
+            actor: Who performed the action; defaults to the local developer.
+            session_id: Agent session the action belongs to.
+            metadata: Structured extras; every value is masked before it is stored.
+
+        Returns:
+            The new audit record's id, or ``None`` when the write failed.
+        """
         try:
             writer = self._ensure_writer()
             payload: dict[str, Any] = {}
@@ -527,10 +574,24 @@ def hydrate_session_target_org(
 
 async def load_discovery_snapshot(
     session: dict[str, Any],
-    accel_get: Any,
+    accel_get: Callable[..., Awaitable[Any]] | None,
     session_token: str | None = None,
 ) -> dict[str, Any]:
-    """Load discovery data into the session when missing."""
+    """Load the profile's discovery snapshot into the session when it is missing.
+
+    A cached snapshot with repos is returned as-is. Discovery is best-effort context,
+    so a missing accelerator callable or a failed fetch returns whatever is cached
+    rather than raising.
+
+    Args:
+        session: The live agent session dict; the fetched snapshot and its timestamp
+            are written back onto it.
+        accel_get: Accelerator GET callable, or ``None`` when none was injected.
+        session_token: Bearer token forwarded to the accelerator.
+
+    Returns:
+        The discovery snapshot dict, or an empty dict when none could be obtained.
+    """
     discovery = session.get("discovery_snapshot")
     if discovery and isinstance(discovery, dict) and discovery.get("repos"):
         return discovery

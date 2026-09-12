@@ -54,10 +54,14 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
     """Create a chat session; PEV runs only when execute_pev is true or /run-pev is called."""
     _require_operate(request)
     session_token = _session_token_from_request(request)
-    await _assert_deployment_profile_active(req.profile_id, session_token=session_token)
+    await _assert_deployment_profile_active(req.profile_id)
     profile = _profile(req.profile_id)
     dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default
-    from ado2gh.agents.migration_agent.session.lifecycle import new_isolated_agent_session, persist_session_snapshot
+    from ado2gh.agents.migration_agent.session.lifecycle import (
+        apply_model_selection,
+        new_isolated_agent_session,
+        persist_session_snapshot,
+    )
 
     user_prompt = req.prompt or ""
     session_id = f"ses_{uuid.uuid4().hex[:12]}"
@@ -69,12 +73,14 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
         session_id,
         profile_id=req.profile_id,
         session_token=session_token,
+        dry_run=dry_run,
+        user_username=getattr(platform_user, "username", None) if platform_user else None,
+    )
+    apply_model_selection(
+        _sessions[session_id],
         selected_model_id=selected_model_id,
         llm_degraded=llm_degraded,
         llm_unconfigured=llm_unconfigured,
-        dry_run=dry_run,
-        user_username=getattr(platform_user, "username", None) if platform_user else None,
-        user_display_name=getattr(platform_user, "display_name", None) if platform_user else None,
     )
     attach_actor_to_session(_sessions[session_id], platform_user)
     persist_session_snapshot(_sessions[session_id])
@@ -92,7 +98,7 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
             kind="message",
         )
         try:
-            await _enqueue_session_live_approval(session_id, _sessions[session_id], request)
+            await _enqueue_session_live_approval(_sessions[session_id])
         except Exception:
             pass
         _sessions[session_id]["live_approval_status"] = "pending"
@@ -120,11 +126,12 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
         orch = await process_user_message(
             _sessions[session_id],
             user_prompt,
-            model_id=selected_model_id,
-            accel_get=_accel_get,
-            accel_post=_accel_post,
-            build_plan=_build_migration_plan,
-            session_token=session_token,
+            deps={
+                "accel_get": _accel_get,
+                "accel_post": _accel_post,
+                "build_plan": _build_migration_plan,
+                "session_token": session_token,
+            },
         )
     except (httpx.ConnectError, httpx.HTTPStatusError):
         orch = OrchestratorResult(tasks=_sessions[session_id].get("tasks", []))

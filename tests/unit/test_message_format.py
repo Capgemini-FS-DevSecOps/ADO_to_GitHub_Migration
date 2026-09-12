@@ -275,8 +275,7 @@ def test_build_executed_scopes_from_pipeline_run_uses_repo_details():
         {"work_items": [{"scope": "repo", "status": "ready"}, {"scope": "pipelines", "status": "ready"}]},
         {"dry_run": False, "per_repo_results": [{"repo": repo, "scopes": {"repo": {"status": "failed", "endpoint": "POST /api/migrate/repo"}}}]},
         {"passed": False},
-        {"plan_repository_id": repo, "dry_run": False},
-        pipeline_run=pipeline_run,
+        {"plan_repository_id": repo, "dry_run": False, "pipeline_run_snapshot": pipeline_run},
         database_status={"ado_repo": repo, "rollup_status": "failed"},
     )
     assert facts["data_sources"] == ["pipeline_run", "migration_status"]

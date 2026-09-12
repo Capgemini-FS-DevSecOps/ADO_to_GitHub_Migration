@@ -87,10 +87,8 @@ def test_executor_repo_lock_does_not_advance_queue_index():
         session,
         repo_id="proj/app",
         lock_holder_session_id="ses_other",
-        dry_run=True,
         iteration=1,
         migration_queue=migration_queue,
-        failed=migration_queue["failed"],
     )
     assert migration_queue["current_index"] == 0
     assert result["executor_result"]["failures"][0]["lock_holder_session_id"] == "ses_other"

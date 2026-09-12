@@ -9,6 +9,7 @@ from ado2gh.agents.migration_agent.nodes.executor.scope import (
     resolve_agent_enabled_scopes,
     resolve_repo_context,
 )
+from ado2gh.models import ExecutionMode
 
 
 def test_default_agent_enabled_scopes_core_only():
@@ -131,7 +132,7 @@ async def test_execute_work_items_calls_boards_endpoint():
         {},
         accel_post=mock_post,
         session_token="tok",
-        dry_run=True,
+        mode=ExecutionMode.DRY_RUN,
     )
     assert result["work_item_count"] == 3
     assert calls[0][0] == "/v1/migrate/boards"
@@ -152,7 +153,7 @@ async def test_execute_branch_policies_calls_endpoint():
         {},
         accel_post=mock_post,
         session_token=None,
-        dry_run=True,
+        mode=ExecutionMode.DRY_RUN,
     )
     assert calls == ["/v1/migrate/branch-policies"]
 
@@ -168,7 +169,7 @@ async def test_execute_repo_404_includes_endpoint():
         {},
         accel_post=mock_post,
         session_token=None,
-        dry_run=True,
+        mode=ExecutionMode.DRY_RUN,
     )
     assert result["status"] == "skipped"
     assert result["endpoint"] == "POST /v1/migrate/git-mirror"
@@ -189,8 +190,12 @@ async def test_execute_secrets_uses_operator_mappings():
         {},
         accel_post=mock_post,
         session_token=None,
-        dry_run=True,
-        secret_mappings={"secret_mapping__Proj__azure-prod": "AZURE_CLIENT_ID"},
+        mode=ExecutionMode.DRY_RUN,
+        session={
+            "operator_secret_mappings": {
+                "secret_mapping__Proj__azure-prod": "AZURE_CLIENT_ID"
+            }
+        },
     )
     assert result["status"] == "success"
     assert calls[0] == "/v1/migrate/service-connection"

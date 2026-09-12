@@ -24,6 +24,12 @@ def _slug(text: str) -> str:
 
 
 def request_id_for_blockers(blockers: list[dict[str, Any]]) -> str:
+    """Derive a stable request id from the set of blocker keys.
+
+    Returns:
+        ``blockers_<digest>`` where the digest is a short SHA-256 of the sorted
+        keys, so the same blockers always produce the same request id.
+    """
     keys = sorted(str(b.get("key", "")) for b in blockers)
     digest = hashlib.sha256("|".join(keys).encode()).hexdigest()[:10]
     return f"blockers_{digest}"
@@ -305,12 +311,11 @@ def operator_input_from_probe_failures(
     keys = [str(b.get("key")) for b in blockers if b.get("key")]
     details = "\n".join(f"- **{b.get('repo', repo)}**: {b.get('blocker', '')}" for b in blockers[:6])
 
-    from ado2gh.agents.migration_agent.hitl.form_fields import resolution_options_from_context
-
-    options = resolution_options_from_context(
-        blockers=blockers,
-        probe_failures=True,
+    from ado2gh.agents.migration_agent.hitl.form_fields import (
+        resolution_options_for_probe_failures,
     )
+
+    options = resolution_options_for_probe_failures(blockers=blockers)
     recommended = next((o["value"] for o in options if o.get("recommended")), options[0]["value"] if options else "")
     title = (
         "Validation blocker — operator decision required"
@@ -356,7 +361,14 @@ def operator_input_from_probe_failures(
     )
 
 
-def _failure_needs_operator(failure: Any) -> bool:
+def _failure_needs_operator(failure: object) -> bool:
+    """Decide whether a failure record needs an operator decision.
+
+    Returns:
+        True when the failure asks for operator input explicitly, is the FR-036
+        live-migration guard, or reads as a blocker a retry cannot clear.
+        Transient or benign accelerator errors return False.
+    """
     if not isinstance(failure, dict):
         return False
     if failure.get("operator_input_required"):
@@ -397,8 +409,13 @@ def _failure_needs_operator(failure: Any) -> bool:
     return any(hint in text for hint in hints)
 
 
-def is_fr036_failure(failure: Any) -> bool:
-    """True when failure is the one-live-migration-per-repo guard (FR-036)."""
+def is_fr036_failure(failure: object) -> bool:
+    """Detect the one-live-migration-per-repo guard (FR-036).
+
+    Returns:
+        True when the failure carries an FR-036 error code or message, whether
+        it is a structured dict or plain text.
+    """
     if isinstance(failure, dict):
         code = str(failure.get("error_code", "")).lower()
         if code in ("migration_in_progress", "fr036", "active_live_migration"):
@@ -622,14 +639,22 @@ def assess_operator_input_needed(
 
 
 def store_operator_input(session: dict[str, Any], request: OperatorInputRequest) -> None:
+    """Park an operator-input request on the session until the form comes back."""
     session["pending_operator_input"] = request.model_dump()
 
 
 def clear_operator_input(session: dict[str, Any]) -> None:
+    """Drop any parked operator-input request from the session."""
     session.pop("pending_operator_input", None)
 
 
 def pending_operator_input(session: dict[str, Any]) -> OperatorInputRequest | None:
+    """Read back the parked operator-input request.
+
+    Returns:
+        The stored request, or None when nothing is pending or the stored
+        payload no longer validates against the current schema.
+    """
     raw = session.get("pending_operator_input")
     if not raw:
         return None

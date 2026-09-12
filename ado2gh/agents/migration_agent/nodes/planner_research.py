@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -18,6 +18,12 @@ from ado2gh.agents.migration_agent.utils import (
     _parse_llm_json,
     canonical_repo_id,
 )
+from ado2gh.models import ExecutionMode
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from langchain_core.language_models import BaseChatModel
 
 _PLANNER_RESEARCH_TOOLS = frozenset({
     "get_current_profile",
@@ -30,10 +36,23 @@ _PLANNER_RESEARCH_TOOLS = frozenset({
 async def _execute_planner_tool_call(
     tc: dict[str, Any],
     session: dict[str, Any],
-    accel_get: Any,
+    accel_get: Callable[..., Awaitable[Any]] | None,
     session_token: str | None,
 ) -> dict[str, Any]:
-    """Run a single read-only planner tool call."""
+    """Run a single read-only planner tool call.
+
+    Args:
+        tc: Tool-call dict from the model, with ``name`` and ``arguments``.
+        session: Session dict; a discovery response is cached back into it.
+        accel_get: Accelerator GET callable; when falsy every accelerator-backed
+            tool reports itself unavailable.
+        session_token: Bearer token forwarded to the accelerator, if any.
+
+    Returns:
+        A record of the call carrying ``tool``, ``arguments`` and either
+        ``result`` or ``error``. Unknown or unusable tools return
+        ``error: "tool_unavailable"`` rather than raising.
+    """
     tool_name = str(tc.get("name", ""))
     args = tc.get("arguments") or {}
     if not isinstance(args, dict):
@@ -86,10 +105,24 @@ async def _execute_planner_tool_call(
 async def _gather_planner_baseline_context(
     session: dict[str, Any],
     repos: list[dict[str, Any]],
-    accel_get: Any,
+    accel_get: Callable[..., Awaitable[Any]] | None,
     session_token: str | None,
 ) -> list[dict[str, Any]]:
-    """Deterministic pre-LLM probes so planning always has source/target signals."""
+    """Run deterministic pre-LLM probes so planning always has source/target signals.
+
+    Args:
+        session: Session dict; supplies the discovery snapshot and receives the
+            findings under ``planner_baseline_context``.
+        repos: Repo dicts the plan will cover.
+        accel_get: Accelerator GET callable used for the probes; when falsy the
+            findings are limited to what discovery already knows.
+        session_token: Bearer token forwarded to the accelerator, if any.
+
+    Returns:
+        One finding per repo, carrying the resolved GitHub org/repo, the
+        discovered ADO pipeline count and any probe errors — or
+        ``config_error`` when the repo config could not be built at all.
+    """
     from ado2gh.agents.migration_agent.nodes.executor.plan import repo_config_from_discovery
 
     findings: list[dict[str, Any]] = []
@@ -178,6 +211,15 @@ async def _gather_planner_baseline_context(
 
 
 def _planner_text_indicates_blocker(parsed: dict[str, Any]) -> bool:
+    """Report whether a parsed planner response reads like it hit a blocker.
+
+    Args:
+        parsed: The JSON object parsed from the planner's LLM response.
+
+    Returns:
+        True when the thinking, risk summary or reply mentions a blocker hint.
+        This is a keyword heuristic on free text, not a structured signal.
+    """
     text = " ".join(
         str(parsed.get(key, ""))
         for key in ("thinking", "risk_summary", "reply")
@@ -197,9 +239,16 @@ def _planner_text_indicates_blocker(parsed: dict[str, Any]) -> bool:
 
 def _planner_append_thinking(
     session: dict[str, Any],
-    content: Any,
+    content: object,
     seen: set[str],
 ) -> None:
+    """Append one planner thinking event, skipping blanks and repeats.
+
+    Args:
+        session: Session dict the event is appended to and streamed from.
+        content: Raw thinking text; stringified and stripped before use.
+        seen: Texts already emitted this loop, updated in place.
+    """
     text = str(content or "").strip()
     if not text or text in seen:
         return
@@ -218,8 +267,23 @@ def _planner_operator_input_return(
     plan: dict[str, Any],
     migration_queue: dict[str, Any],
     iteration: int,
-    op_req: Any,
+    op_req: object,
 ) -> dict[str, Any]:
+    """Build the planner return that hands an operator decision to the orchestrator.
+
+    Args:
+        session: Session dict; the request is stored on it and announced.
+        plan: The plan produced so far, carried through unchanged.
+        migration_queue: The batch queue, carried through unchanged.
+        iteration: Current PEV iteration count.
+        op_req: The operator-input request, dumped to a dict when it is a
+            Pydantic model.
+
+    Returns:
+        An ``AgentState`` update that routes to the orchestrator with the
+        request attached as both ``pending_clarification`` and
+        ``pending_operator_input``, and execution held back.
+    """
     from ado2gh.agents.migration_agent.hitl.operator_input import store_operator_input
 
     store_operator_input(session, op_req)
@@ -247,17 +311,37 @@ def _planner_operator_input_return(
 
 async def _run_planner_research_loop(
     state: dict[str, Any],
-    session: dict[str, Any],
-    llm: Any,
     conversation: list[Any],
     *,
-    capabilities: Any = None,
-    accel_get: Any = None,
-    session_token: str | None = None,
+    llm: BaseChatModel,
     validation_feedback: dict[str, Any] | None = None,
-    dry_run: bool = True,
+    mode: ExecutionMode = ExecutionMode.DRY_RUN,
 ) -> dict[str, Any]:
-    """Multi-turn planner loop: tool research → final plan JSON."""
+    """Run the multi-turn planner loop: tool research, then final plan JSON.
+
+    Args:
+        state: Graph state; the session, model capabilities, accelerator getter
+            and session token are read from it.
+        conversation: Message list for the loop, extended in place with each
+            round's assistant reply and tool results.
+        llm: Chat model to stream — the planner passes the tool-bound model, so
+            this is not read off ``state``.
+        validation_feedback: Feedback from a failed PEV cycle; its presence
+            marks this as a replan and lifts the minimum-probe requirement.
+        mode: Execution mode the plan targets; only changes the wording of the
+            probe hint given to the model. Defaults to dry run (CA-001).
+
+    Returns:
+        The last parsed JSON object from the model: the plan once it carries
+        ``repos``, an ``operator_input_request`` when the planner needs a
+        decision, or whatever the final round produced if the loop ran out of
+        rounds.
+    """
+    session = state.get("session") or {}
+    capabilities = state.get("capabilities")
+    accel_get = state.get("accel_get")
+    session_token = state.get("session_token")
+    dry_run = mode is ExecutionMode.DRY_RUN
     research_tool_calls = 0
     last_parsed: dict[str, Any] = {}
     replan = bool(validation_feedback)

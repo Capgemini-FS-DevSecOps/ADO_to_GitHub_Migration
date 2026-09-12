@@ -51,6 +51,12 @@ def outstanding_blockers(plan: dict[str, Any], session: dict[str, Any]) -> list[
 
 
 def needs_blocker_resolution(plan: dict[str, Any], session: dict[str, Any]) -> bool:
+    """Report whether the plan still has blockers the operator has not answered.
+
+    Returns:
+        True when at least one blocked work item is neither declined nor
+        already resolved for this session.
+    """
     return bool(outstanding_blockers(plan, session))
 
 
@@ -79,6 +85,7 @@ def apply_skip_blocked_scopes(
 
 
 def record_declined_blockers(session: dict[str, Any], blocker_keys: list[str]) -> None:
+    """Remember blocker keys the operator chose not to resolve, skipping duplicates."""
     declined = list(session.get("declined_blocker_resolutions") or [])
     for key in blocker_keys:
         if key not in declined:

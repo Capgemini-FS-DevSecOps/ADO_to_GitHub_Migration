@@ -1,11 +1,9 @@
-"""executor.py module."""
+"""Executor graph node — deterministic per-repo migration execution."""
 from __future__ import annotations
 
 import json
 import logging
-from typing import Any
-
-logger = logging.getLogger(__name__)
+from typing import TYPE_CHECKING, Any
 
 from ado2gh.agents.migration_agent.nodes._common import (
     _executor_result_for_repo_lock,
@@ -17,6 +15,12 @@ from ado2gh.agents.migration_agent.utils import (
     _append_event,
     canonical_plan_repo_key,
 )
+from ado2gh.models import ExecutionMode
+
+if TYPE_CHECKING:
+    from ado2gh.agents.migration_agent.nodes.executor.pipeline import AccelGet, AccelPost
+
+logger = logging.getLogger(__name__)
 
 # ─── Node: executor ───────────────────────────────────────────────────
 
@@ -31,17 +35,34 @@ async def _execute_deterministic_repo_scopes(
     ready_items: list[dict[str, Any]],
     migration_plan: dict[str, Any],
     *,
-    accel_get: Any,
-    accel_post: Any,
-    session_token: str | None,
-    dry_run: bool,
     session: dict[str, Any],
+    deps: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-    """Run only ready plan scopes for one repository."""
+    """Run only the ready plan scopes for one repository.
+
+    Args:
+        repo_id: Canonical ``Project/Repo`` id being migrated.
+        ready_items: The plan work items whose dependencies are satisfied.
+        migration_plan: The approved plan the work items belong to.
+        session: Live agent session. The execution mode is read off
+            ``session["dry_run"]``, which ``executor_node`` resolves and writes
+            before any repository runs; an absent key means dry-run.
+        deps: Runtime dependency mapping in the shape returned by
+            ``runtime.deps.get_runtime_deps`` — ``accel_get``, ``accel_post``
+            and ``session_token`` are the keys read here.
+
+    Returns:
+        A ``(repo_result, failures, rollback_records)`` triple. ``repo_result``
+        holds one entry per executed scope, ``failures`` the errors that are
+        neither skipped nor pending, and ``rollback_records`` one entry per
+        write scope that succeeded during a live run (empty in dry-run).
+    """
     from ado2gh.agents.migration_agent.nodes.executor.plan import work_item_scopes
+
+    runtime = deps or {}
+    mode = ExecutionMode.from_dry_run(dry_run=bool(session.get("dry_run", True)))
     discovery = session.get("discovery_snapshot")
     if isinstance(discovery, str):
-        import json
         try:
             discovery = json.loads(discovery)
         except Exception:
@@ -69,10 +90,10 @@ async def _execute_deterministic_repo_scopes(
                 scope,
                 wi,
                 migration_plan,
-                accel_get,
-                accel_post,
-                session_token,
-                dry_run,
+                runtime.get("accel_get"),
+                runtime.get("accel_post"),
+                runtime.get("session_token"),
+                mode is ExecutionMode.DRY_RUN,
                 session,
             )
             repo_result["scopes"][scope] = scope_result
@@ -89,7 +110,7 @@ async def _execute_deterministic_repo_scopes(
             if (
                 scope in _AGENT_WRITE_SCOPES
                 and not scope_result.get("error")
-                and not dry_run
+                and mode is ExecutionMode.LIVE
             ):
                 rollback_records.append({
                     "resource_type": scope,
@@ -157,7 +178,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
     work_items = migration_plan.get("work_items", [])
     session["dry_run"] = dry_run
 
-    from ado2gh.agents.migration_agent.nodes.executor.pipeline import execute_repo_migration
+    from ado2gh.agents.migration_agent.nodes.executor.pipeline import execute_repo_via_pipeline
 
     def _pipeline_progress(label: str, status: str, run: dict[str, Any]) -> None:
         run_id = str(run.get("id") or session.get("run_id") or "")
@@ -177,18 +198,41 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                 subagent="executor",
             )
 
-    async def _run_repo(repo_id: str, ready_items: list[dict[str, Any]]):
-        return await execute_repo_migration(
+    async def _run_repo(
+        repo_id: str,
+        ready_items: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+        """Migrate one repo via the accelerator pipeline, else scope by scope.
+
+        Returns:
+            The ``(repo_result, failures, rollback_records)`` triple produced by
+            whichever execution path was available.
+        """
+        if accel_get and accel_post:
+            executor_result = await execute_repo_via_pipeline(
+                repo_id,
+                migration_plan,
+                session,
+                deps={
+                    "accel_get": accel_get,
+                    "accel_post": accel_post,
+                    "session_token": session_token,
+                    "on_progress": _pipeline_progress,
+                },
+                dry_run=dry_run,
+            )
+            per_repo = (executor_result.get("per_repo_results") or [{}])[0]
+            return per_repo, list(executor_result.get("failures") or []), []
+        return await _execute_deterministic_repo_scopes(
             repo_id,
             ready_items,
             migration_plan,
-            session,
-            accel_get=accel_get,
-            accel_post=accel_post,
-            session_token=session_token,
-            dry_run=dry_run,
-            on_progress=_pipeline_progress,
-            scope_executor=_execute_deterministic_repo_scopes,
+            session=session,
+            deps={
+                "accel_get": accel_get,
+                "accel_post": accel_post,
+                "session_token": session_token,
+            },
         )
 
     # T107: Use LLM-driven execution when available
@@ -201,7 +245,6 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
     if migration_queue:
         queue_items = migration_queue.get("items", [])
         current_index = migration_queue.get("current_index", 0)
-        failed = migration_queue.get("failed", [])
 
         # Process one repo at a time
         if current_index < len(queue_items):
@@ -254,10 +297,8 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                                 session,
                                 repo_id=repo_id,
                                 lock_holder_session_id=holder,
-                                dry_run=dry_run,
                                 iteration=iteration,
                                 migration_queue=migration_queue,
-                                failed=failed,
                             )
                         lock_acquired = True
                     except Exception:
@@ -385,7 +426,6 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                         session,
                         repo_id=repo_id,
                         lock_holder_session_id=holder,
-                        dry_run=dry_run,
                         iteration=iteration,
                     )
                     failures.extend(lock_result["executor_result"]["failures"])
@@ -435,17 +475,29 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _execute_scope(
+async def _execute_scope(  # noqa: PLR0913 - exception-register.md: positional shape pinned by tests
     scope: str,
     work_item: dict[str, Any],
     plan: dict[str, Any],
-    accel_get: Any,
-    accel_post: Any,
+    _accel_get: AccelGet | None,
+    accel_post: AccelPost | None,
     session_token: str | None,
-    dry_run: bool,
+    dry_run: bool,  # noqa: FBT001 - exception-register.md: positional shape pinned by tests
     session: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Execute a single migration scope for a work item."""
+    """Execute a single migration scope for a work item.
+
+    The positional shape of this signature is pinned by callers that pass all
+    seven leading arguments positionally, so ``_accel_get`` stays even though
+    scope execution only ever posts — the leading underscore marks it as accepted
+    and unused. ``dry_run`` keeps its boolean form (the reviewer classified it as
+    data, not a mode switch) and is converted to an
+    :class:`~ado2gh.models.ExecutionMode` here.
+
+    Returns:
+        The accelerator response for the scope, or a dict carrying ``status``
+        and ``error``/``message`` when the scope was skipped or failed.
+    """
     from ado2gh.agents.migration_agent.nodes.executor.scope import execute_migration_scope
 
     return await execute_migration_scope(
@@ -454,8 +506,7 @@ async def _execute_scope(
         plan,
         accel_post=accel_post,
         session_token=session_token,
-        dry_run=dry_run,
-        secret_mappings=(session or {}).get("operator_secret_mappings"),
+        mode=ExecutionMode.from_dry_run(dry_run=dry_run),
         session=session,
     )
 

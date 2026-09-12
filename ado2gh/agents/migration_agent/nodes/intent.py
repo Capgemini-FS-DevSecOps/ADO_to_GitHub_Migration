@@ -1,4 +1,4 @@
-"""intent.py module."""
+"""Intent classification and the session-context block injected into prompts."""
 from __future__ import annotations
 
 import json
@@ -16,7 +16,16 @@ from ado2gh.agents.migration_agent.utils import (
 
 
 def _build_classification_prompt(user_message: str, session: dict[str, Any]) -> str:
-    """Build the intent classification prompt."""
+    """Build the intent classification prompt.
+
+    Args:
+        user_message: The operator's message.
+        session: Session dict supplying the discovery/plan/status flags.
+
+    Returns:
+        A JSON string with the message and the session flags the classifier
+        needs.
+    """
     discovery = session.get("discovery_snapshot")
     has_plan = bool(session.get("migration_plan"))
     has_discovery = bool(discovery and discovery.get("repos"))
@@ -29,7 +38,17 @@ def _build_classification_prompt(user_message: str, session: dict[str, Any]) -> 
 
 
 def _build_session_context(session: dict[str, Any]) -> str:
-    """Build a context block from session state to inject into the LLM prompt."""
+    """Build a context block from session state to inject into the LLM prompt.
+
+    Args:
+        session: Session dict read for the selected repos, execution mode,
+            discovery snapshot, plan and outstanding intake fields.
+
+    Returns:
+        A markdown block headed "Current session context", or an empty string
+        when the session has nothing worth telling the model. Plan details come
+        from the operator-sanitised view, so blockers are omitted.
+    """
     ctx_parts: list[str] = []
     session_id = str(session.get("session_id") or "").strip()
     if session_id:
@@ -91,10 +110,10 @@ def _build_session_context(session: dict[str, Any]) -> str:
 
 def _begin_new_agent_migration(session: dict[str, Any], *, repository_id: str | None = None) -> None:
     """Reset monitor run linkage and stale plan state for a new migration attempt."""
-    from ado2gh.agents.migration_agent.session.state import maybe_reset_for_migration_request
+    from ado2gh.agents.migration_agent.session.state import reset_for_migration_request
 
     if repository_id:
-        maybe_reset_for_migration_request(session, repository_id, force=True)
+        reset_for_migration_request(session, repository_id)
     else:
         session.pop("run_id", None)
         session.pop("pev_execution_completed", None)
@@ -105,7 +124,17 @@ def _begin_new_agent_migration(session: dict[str, Any], *, repository_id: str | 
 
 
 async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
-    """Classify user intent via LLM + Pydantic (no heuristic text extraction)."""
+    """Classify user intent via LLM + Pydantic (no heuristic text extraction).
+
+    Args:
+        state: Graph state carrying the user message, session and LLM.
+
+    Returns:
+        An ``AgentState`` update with ``intent`` and the operator-message
+        analysis. Out-of-scope messages, an unconfigured LLM and unparseable
+        input each return ``general_chat`` with a reply and ``should_return``
+        true.
+    """
     user_message = state.get("user_message", "")
     session = state.get("session") or {}
     _transition_session(session, SessionState.THINKING)
@@ -175,6 +204,13 @@ async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
 
 
 async def classify_intent_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Backward-compatible alias — classification runs inside orchestrator_node."""
+    """Backward-compatible alias — classification runs inside orchestrator_node.
+
+    Args:
+        state: Graph state for the current turn.
+
+    Returns:
+        Whatever :func:`_classify_user_intent` returned.
+    """
     return await _classify_user_intent(state)
 

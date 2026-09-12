@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -20,9 +20,19 @@ from ado2gh.agents.migration_agent.utils import (
     _parse_llm_json,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from langchain_core.tools import StructuredTool
+
 
 def _validator_executor_log_summary(executor_result: dict[str, Any]) -> dict[str, Any]:
-    """Executor output used as primary evidence in dry-run validation."""
+    """Extract the executor output used as primary evidence in dry-run validation.
+
+    Returns:
+        The dry-run flag, per-repo results, failures, skips and pipeline run id
+        from the executor result, ready to serialise into the prompt.
+    """
     return {
         "dry_run": executor_result.get("dry_run", True),
         "per_repo_results": executor_result.get("per_repo_results"),
@@ -33,7 +43,13 @@ def _validator_executor_log_summary(executor_result: dict[str, Any]) -> dict[str
 
 
 def _validator_executor_metadata(executor_result: dict[str, Any]) -> dict[str, Any]:
-    """Minimal executor metadata for live validation (not evidentiary)."""
+    """Summarise executor metadata for live validation (not evidentiary).
+
+    Returns:
+        The repos processed, the failure count and the pipeline run id. Live
+        validation must confirm outcomes with API probes, so the executor's own
+        claims are deliberately reduced to counts and identifiers here.
+    """
     repos = [
         str(r.get("repo") or "")
         for r in (executor_result.get("per_repo_results") or [])
@@ -49,10 +65,22 @@ def _validator_executor_metadata(executor_result: dict[str, Any]) -> dict[str, A
 
 def _gather_validator_dry_run_evidence(
     executor_result: dict[str, Any],
-    migration_plan: dict[str, Any] | None,
     session: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Build validator findings from executor logs only (dry-run)."""
+    """Build validator findings from executor logs only (dry-run).
+
+    Args:
+        executor_result: Executor output for the cycle being validated.
+        session: Session dict; the discovery snapshot is read from it and the
+            findings are written back under ``validator_baseline_probes``.
+
+    Returns:
+        One finding per repo the executor processed, carrying the scopes it
+        ran and — for pipeline scopes — the converted workflow count against
+        the discovered ADO pipeline count, flagged as
+        ``pipeline_conversion_gap`` when pipelines were discovered but nothing
+        was converted.
+    """
     from ado2gh.agents.migration_agent.utils import canonical_plan_repo_key
 
     discovery = session.get("discovery_snapshot") or {}
@@ -105,6 +133,15 @@ def _gather_validator_dry_run_evidence(
 
 
 def _validator_has_pipeline_scope(executor_result: dict[str, Any]) -> bool:
+    """Report whether any repo actually ran the pipelines scope.
+
+    Args:
+        executor_result: Executor output for the cycle being validated.
+
+    Returns:
+        True when at least one repo has a pipelines scope that was neither
+        skipped nor left pending.
+    """
     for repo_result in executor_result.get("per_repo_results") or []:
         scopes = repo_result.get("scopes") or {}
         if "pipelines" in scopes and scopes["pipelines"].get("status") not in ("skipped", "pending"):
@@ -113,14 +150,30 @@ def _validator_has_pipeline_scope(executor_result: dict[str, Any]) -> bool:
 
 
 def _validator_text_indicates_blocker(parsed: dict[str, Any]) -> bool:
+    """Report whether a parsed validator response describes a blocker.
+
+    Args:
+        parsed: The JSON object parsed from the validator's LLM response.
+
+    Returns:
+        True when the response names a blocker, using the same rules as the
+        planner.
+    """
     return _planner_text_indicates_blocker(parsed)
 
 
 def _validator_append_thinking(
     session: dict[str, Any],
-    content: Any,
+    content: object,
     seen: set[str],
 ) -> None:
+    """Append one validator thinking event, skipping blanks and repeats.
+
+    Args:
+        session: Session dict the event is appended to and streamed from.
+        content: Raw thinking text; stringified and stripped before use.
+        seen: Texts already emitted this round, updated in place.
+    """
     text = str(content or "").strip()
     if not text or text in seen:
         return
@@ -138,10 +191,26 @@ async def _gather_validator_baseline_probes(
     session: dict[str, Any],
     executor_result: dict[str, Any],
     migration_plan: dict[str, Any] | None,
-    accel_get: Any,
+    accel_get: Callable[..., Awaitable[Any]] | None,
     session_token: str | None,
 ) -> list[dict[str, Any]]:
-    """Deterministic pre-LLM validation probes for executed repos."""
+    """Run deterministic pre-LLM validation probes for the executed repos.
+
+    Args:
+        session: Session dict; supplies the discovery snapshot and the
+            ``dry_run`` fallback.
+        executor_result: Executor output for the cycle being validated.
+        migration_plan: The approved plan, used to resolve repos missing from
+            discovery. May be None or a non-dict, which is ignored.
+        accel_get: Accelerator GET callable used to build validator tools;
+            when falsy the live probes degrade to discovery-only findings.
+        session_token: Bearer token forwarded to the accelerator, if any.
+
+    Returns:
+        One finding per repo the executor processed. In dry-run mode these come
+        from executor logs; in live mode each entry adds the resolved GitHub
+        org/repo and whatever the probe tools returned.
+    """
     from ado2gh.agents.migration_agent.utils import resolve_dry_run
 
     dry_run = resolve_dry_run(
@@ -150,11 +219,7 @@ async def _gather_validator_baseline_probes(
         executor_result=executor_result,
     )
     if dry_run:
-        return _gather_validator_dry_run_evidence(
-            executor_result,
-            migration_plan if isinstance(migration_plan, dict) else None,
-            session,
-        )
+        return _gather_validator_dry_run_evidence(executor_result, session)
 
     from ado2gh.agents.migration_agent.nodes.executor.plan import repo_config_from_discovery
     from ado2gh.agents.migration_agent.utils import canonical_plan_repo_key, find_discovery_repo
@@ -297,7 +362,13 @@ def _build_validator_investigation_context(
     baseline_failures: list[dict[str, Any]],
     baseline_findings: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Build human message for validator LLM investigation."""
+    """Build the human message that briefs the validator LLM.
+
+    Returns:
+        A single prompt string: executor evidence (logs in dry run, metadata
+        only when live), any deterministic baseline findings and failures, the
+        GitHub org, and the tool-call expectation when a pipeline scope ran.
+    """
     from ado2gh.agents.migration_agent.utils import resolve_dry_run
 
     dry_run = resolve_dry_run(
@@ -369,10 +440,22 @@ def _build_validator_investigation_context(
 
 
 async def _invoke_validator_tool(
-    tool: Any,
+    tool: StructuredTool,
     args: dict[str, Any],
-) -> Any:
-    """Invoke a LangChain validator tool (async or sync)."""
+) -> object:
+    """Invoke a LangChain validator tool (async or sync).
+
+    Args:
+        tool: The tool object to call.
+        args: Keyword arguments for the tool.
+
+    Returns:
+        Whatever the tool returned, usually a JSON-serialisable mapping.
+
+    Raises:
+        RuntimeError: The object exposes none of the supported call
+            conventions.
+    """
     if hasattr(tool, "ainvoke"):
         return await tool.ainvoke(args)
     if getattr(tool, "coroutine", None):
@@ -387,6 +470,19 @@ async def _execute_validator_tool_calls(
     tools_by_name: dict[str, Any],
     session: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    """Run a batch of validator tool calls, streaming call and result events.
+
+    Args:
+        tool_calls: Tool-call dicts from the model, with ``name`` and
+            ``arguments``.
+        tools_by_name: Available validator tools keyed by tool name.
+        session: Session dict the tool events are streamed through.
+
+    Returns:
+        One entry per call, in request order, holding either ``result`` or
+        ``error``; an unknown tool name yields ``{"error": "unknown_tool"}``
+        rather than raising.
+    """
     results: list[dict[str, Any]] = []
     for tc in tool_calls:
         name = str(tc.get("name") or "")
@@ -410,7 +506,17 @@ async def _execute_validator_tool_calls(
     return results
 
 
-def _normalize_validator_failure(raw: Any, *, default_repo: str = "") -> dict[str, Any] | None:
+def _normalize_validator_failure(raw: object, *, default_repo: str = "") -> dict[str, Any] | None:
+    """Coerce a model-produced failure into the shape the planner consumes.
+
+    Args:
+        raw: A candidate failure object from the validator's JSON response.
+        default_repo: Repo id to attach when the entry does not name one.
+
+    Returns:
+        The normalised failure dict, or None when the input is not a dict or
+        carries no failure text worth reporting.
+    """
     if not isinstance(raw, dict):
         return None
     specific = str(
@@ -443,7 +549,20 @@ async def _run_validator_llm_investigation(
     baseline_failures: list[dict[str, Any]],
     baseline_findings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """Multi-round LLM validation with read-only tools."""
+    """Run multi-round LLM validation with read-only tools.
+
+    Args:
+        state: Graph state; supplies the LLM, session, accelerator getter,
+            session token and model capabilities.
+        executor_result: Executor output for the cycle being validated.
+        migration_plan: The approved plan, used for repo resolution.
+        baseline_failures: Failures the deterministic probes already found.
+        baseline_findings: Deterministic probe findings, when they ran.
+
+    Returns:
+        The parsed validation verdict, or None when no LLM is configured or the
+        rounds produced no usable JSON.
+    """
     llm = state.get("llm")
     if not llm or state.get("llm_unconfigured"):
         return None

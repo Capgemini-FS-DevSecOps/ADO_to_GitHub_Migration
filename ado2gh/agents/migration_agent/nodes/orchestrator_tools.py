@@ -1,4 +1,4 @@
-"""orchestrator_tools.py module."""
+"""Orchestrator tool execution: forms, planner handoff, read-only queries, rollback."""
 from __future__ import annotations
 
 from typing import Any
@@ -15,7 +15,12 @@ from ado2gh.agents.migration_agent.utils import (
 # ─── Orchestrator tool execution (inlined — no separate graph node) ───
 
 def _planner_handoff_state_clear() -> dict[str, Any]:
-    """Drop stale graph plan/PEV fields when invoke_planner requests a fresh plan."""
+    """Drop stale graph plan/PEV fields when invoke_planner requests a fresh plan.
+
+    Returns:
+        An ``AgentState`` patch clearing the plan, queue, executor result and
+        validation state so the new plan starts from nothing.
+    """
     return {
         "migration_plan": None,
         "migration_queue": None,
@@ -28,7 +33,18 @@ def _planner_handoff_state_clear() -> dict[str, Any]:
 
 
 async def _apply_orchestrator_tools(state: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
-    """Run orchestrator tool calls inline before graph routing."""
+    """Run orchestrator tool calls inline before graph routing.
+
+    Args:
+        state: Graph state for the current turn.
+        result: The orchestrator's update, possibly carrying ``tool_calls``.
+
+    Returns:
+        ``result`` unchanged when there was nothing to run, otherwise ``result``
+        merged with the tool output and ``tool_calls`` emptied. A tool that
+        produced a form also sets ``should_return`` so the turn stops for the
+        operator.
+    """
     tool_calls = result.get("tool_calls") or []
     if not tool_calls or result.get("should_return"):
         return result
@@ -44,7 +60,18 @@ async def _execute_orchestrator_tools(
     state: dict[str, Any],
     tool_calls: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Execute orchestrator tool calls (forms, planner handoff, read-only queries)."""
+    """Execute orchestrator tool calls (forms, planner handoff, read-only queries).
+
+    Args:
+        state: Graph state; supplies the session, accelerator getter, plan
+            builder and session token.
+        tool_calls: Tool-call dicts from the model.
+
+    Returns:
+        An ``AgentState`` update with the tool results, plus whichever of
+        ``pending_form``, ``reply``, ``start_pev`` and the planner-handoff
+        clear-out the calls produced.
+    """
     session = state.get("session") or {}
     accel_get = state.get("accel_get")
     build_plan = state.get("build_plan")
@@ -320,7 +347,14 @@ async def _execute_orchestrator_tools(
 
 
 async def execute_tools_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Backward-compatible alias — tools run inside orchestrator_node."""
+    """Backward-compatible alias — tools run inside orchestrator_node.
+
+    Args:
+        state: Graph state carrying the ``tool_calls`` to run.
+
+    Returns:
+        Whatever :func:`_execute_orchestrator_tools` returned.
+    """
     return await _execute_orchestrator_tools(state, state.get("tool_calls") or [])
 
 
@@ -328,7 +362,17 @@ async def _execute_rollback(
     state: dict[str, Any],
     session: dict[str, Any],
 ) -> dict[str, Any]:
-    """T101: Execute rollback by deleting GitHub resources from rollback_records."""
+    """T101: Execute rollback by deleting GitHub resources from rollback_records.
+
+    Args:
+        state: Graph state; supplies ``rollback_records``, the accelerator POST
+            callable and the session token.
+        session: Session dict the progress events are appended to.
+
+    Returns:
+        An ``AgentState`` update with ``rollback_complete`` and
+        ``rollback_count`` — zero when there was nothing recorded to undo.
+    """
     rollback_records = state.get("rollback_records", [])
     accel_post = state.get("accel_post")
     session_token = state.get("session_token")

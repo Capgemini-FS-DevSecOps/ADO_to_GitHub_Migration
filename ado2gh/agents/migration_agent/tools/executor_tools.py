@@ -8,7 +8,7 @@ Write tools are wrapped with guardrails (plan approval, dry-run, deletion checks
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
@@ -22,29 +22,47 @@ from ado2gh.agents.migration_agent.tools.shared_tools import append_shared_tools
 
 
 class GeneratePlanArgs(BaseModel):
+    """Arguments for building a migration plan from the executor."""
+
     phase: str | None = Field(default=None, description="Optional migration phase (only when operator specified)")
     repository_id: str = Field(default="", description="Specific repo as Project/RepoName (optional)")
 
 
 def get_executor_tools(
-    accel_get: Any = None,
-    accel_post: Any = None,
-    session_token: str | None = None,
-    build_plan: Any = None,
-    session_getter: Any = None,
-    log_decision: Any = None,
-    accel_request: Any = None,
+    deps: dict[str, Any] | None = None,
+    *,
+    session_getter: Callable[[], dict[str, Any]] | None = None,
+    log_decision: Callable[..., Any] | None = None,
 ) -> list[StructuredTool]:
     """Build the tool set for the Executor agent.
 
     - call_accelerator: generic accelerator API (GET/POST) — wrapped with guardrails
     - github_api: GitHub REST read/write via accelerator proxy — wrapped with guardrails
     - ado_api_query: read-only ADO API
-    - generate_plan: optional, if build_plan is available
+    - generate_plan: only when ``deps`` supplies ``build_plan``
+
+    Args:
+        deps: Per-invocation runtime dependencies in the shape
+            ``runtime.deps.get_runtime_deps()`` returns. ``accel_get``,
+            ``accel_post``, ``session_token`` and ``build_plan`` are read from
+            it; anything else is ignored.
+        session_getter: Returns the live session dict the guardrail inspects.
+        log_decision: Records each guardrail decision.
+
+    Returns:
+        The executor's StructuredTool list, with every write tool already
+        wrapped in the guardrail and the shared tools prepended.
     """
     from ado2gh.agents.migration_agent.guardrails import wrap_tool_with_guardrail
 
-    if accel_request is None and (accel_get or accel_post):
+    runtime = deps or {}
+    accel_get = runtime.get("accel_get")
+    accel_post = runtime.get("accel_post")
+    session_token = runtime.get("session_token")
+    build_plan = runtime.get("build_plan")
+    accel_request: Callable[..., Any] | None = None
+
+    if accel_get or accel_post:
         async def _default_accel_request(
             method: str,
             path: str,
@@ -99,12 +117,18 @@ def get_executor_tools(
         repository_id: str = "",
     ) -> dict[str, Any]:
         """Call the GitHub REST API (read or write). GET for reads; POST/PATCH/PUT/DELETE for writes."""
+        del repository_id  # read off the call arguments by the guardrail wrapper, not here
         path = endpoint.lstrip("/")
         method_upper = method.upper()
         body = body or {}
         request_fn = accel_request
         if request_fn is None and accel_get and method_upper == "GET":
-            async def request_fn(m, p, b=None):
+            async def request_fn(
+                m: str,
+                p: str,
+                b: dict[str, Any] | None = None,
+            ) -> dict[str, Any]:
+                del m, b  # the GET fallback ignores the method and body
                 return await accel_get(f"/{p.lstrip('/')}", session_token=session_token)
         if request_fn is None:
             return {"error": "accelerator_unavailable"}

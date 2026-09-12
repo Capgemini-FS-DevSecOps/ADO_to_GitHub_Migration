@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ado2gh.agents.migration_agent.constants import (
     MAX_PEV_RETRIES,
@@ -16,6 +16,9 @@ from ado2gh.agents.migration_agent.utils import (
     _append_event,
     publish_orchestrator_chat,
 )
+
+if TYPE_CHECKING:
+    from ado2gh.agents.migration_agent.hitl.schemas import OperatorInputRequest
 
 
 def _is_start_execution_message(message: str) -> bool:
@@ -60,12 +63,29 @@ def _executor_result_for_repo_lock(
     *,
     repo_id: str,
     lock_holder_session_id: str | None,
-    dry_run: bool,
     iteration: int,
     migration_queue: dict[str, Any] | None = None,
-    failed: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build executor return payload when repo lock cannot be acquired (queue index unchanged)."""
+    """Build executor return payload when repo lock cannot be acquired.
+
+    The queue index is left where it is so the blocked repo is retried rather
+    than skipped. When a queue is supplied the repo is appended to its
+    ``failed`` list in place.
+
+    Args:
+        session: Live agent session; ``session["dry_run"]`` supplies the mode
+            reported back in the executor result and defaults to dry-run.
+        repo_id: The repository whose lock could not be taken.
+        lock_holder_session_id: The session already holding the lock, when known.
+        iteration: The executor iteration to report back unchanged.
+        migration_queue: The batch queue, when the run has one; the blocked repo is
+            appended to its ``failed`` list in place.
+
+    Returns:
+        The executor node's state update: an ``executor_result`` carrying the
+        lock failure and a skipped entry, the unchanged ``iteration``, and the
+        ``migration_queue`` when one was passed.
+    """
     from ado2gh.agents.migration_agent.hitl.operator_input import build_repo_lock_failure
 
     failure = build_repo_lock_failure(repo_id, lock_holder_session_id)
@@ -81,16 +101,14 @@ def _executor_result_for_repo_lock(
         "reason": "locked",
         "details": [failure["specific_failure"]],
     }]
-    if failed is not None:
-        failed.append(repo_id)
-        if migration_queue is not None:
-            migration_queue["failed"] = failed
+    if migration_queue is not None:
+        migration_queue.setdefault("failed", []).append(repo_id)
     result: dict[str, Any] = {
         "executor_result": {
             "per_repo_results": [],
             "failures": [failure],
             "skipped": skipped,
-            "dry_run": dry_run,
+            "dry_run": bool(session.get("dry_run", True)),
             "current_repo_id": repo_id,
         },
         "iteration": iteration,
@@ -105,8 +123,14 @@ def _executor_result_for_repo_lock(
 def _load_operator_input_request(
     state: dict[str, Any],
     session: dict[str, Any],
-) -> Any:
-    """Resolve pending operator-input from session, graph state, or validation feedback."""
+) -> OperatorInputRequest | None:
+    """Resolve pending operator-input from session, graph state, or validation feedback.
+
+    Returns:
+        The first request found in the session, the graph state, a pending
+        clarification, or one assessed from validation failures; ``None`` when
+        no operator input is needed.
+    """
     from ado2gh.agents.migration_agent.hitl.operator_input import (
         assess_operator_input_needed,
         pending_operator_input,
@@ -150,6 +174,7 @@ def _load_operator_input_request(
 
 
 def _prepare_validation_escalation_session(session: dict[str, Any]) -> None:
+    """Park the session for operator chat after PEV retries are exhausted."""
     session.pop("start_execution", None)
     session["pev_max_retries_exhausted"] = True
     release_session_for_chat(session, outcome="failed")
@@ -189,10 +214,12 @@ async def _present_validation_failure_to_operator(
     _prepare_validation_escalation_session(session)
 
     from ado2gh.agents.migration_agent.nodes.validator import _failure_is_benign
+    from ado2gh.models import ExecutionMode
 
+    executed_mode = ExecutionMode.from_dry_run(dry_run=bool(executor_result.get("dry_run", True)))
     visible_failures = [
         f for f in failures
-        if not _failure_is_benign(f, dry_run=bool(executor_result.get("dry_run", True)))
+        if not _failure_is_benign(f, mode=executed_mode)
     ]
     failure_set = visible_failures or failures
     lock_msg = repo_lock_operator_message(failure_set)
@@ -291,9 +318,14 @@ async def _present_pev_escalation_to_operator(
 
 def _present_operator_input(
     session: dict[str, Any],
-    request: Any,
+    request: OperatorInputRequest,
 ) -> dict[str, Any]:
-    """Present a schema-driven operator-input form from planner/validator."""
+    """Present a schema-driven operator-input form from planner/validator.
+
+    Returns:
+        A node state update that stops the graph, carrying the published reply,
+        the pending form and the serialized request.
+    """
     from ado2gh.agents.migration_agent.hitl.operator_input import (
         operator_input_to_form,
         store_operator_input,

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -42,10 +42,18 @@ from ado2gh.agents.migration_agent.utils import (
     publish_orchestrator_chat,
 )
 
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
+
 # ─── Node: orchestrator ───────────────────────────────────────────────
 
 async def orchestrator_node(state: dict[str, Any]) -> dict[str, Any]:
-    """User-facing orchestrator: classify intent, handle messages, run tools, route to planner."""
+    """User-facing orchestrator: classify intent, handle messages, run tools, route to planner.
+
+    Returns:
+        An ``AgentState`` update with the reply and routing flags, after any
+        orchestrator tool calls the model requested have been applied.
+    """
     session = state.get("session") or {}
     _transition_session(session, SessionState.THINKING)
     # Planner handoff is one-shot; clear stale flag when a plan is already awaiting review.
@@ -77,6 +85,10 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
     - migration_action: parameter collection, forms, route to Planner
     - form_submission: handle dynamic form submissions (e.g., rollback)
     - pending_clarification: handle clarification requests from Planner/Executor
+
+    Returns:
+        An ``AgentState`` update from whichever intent handler ran; tool calls
+        are not applied here, the caller does that.
     """
     user_message = state.get("user_message", "")
     session = state.get("session") or {}
@@ -390,29 +402,36 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
                 return intake_result
 
     if intent == "general_chat":
-        return await _handle_general_chat(state, llm, llm_unconfigured, user_message, session)
+        return await _handle_general_chat(state, llm, user_message, session)
 
     if intent == "migration_info":
-        return await _handle_migration_info(state, llm, llm_unconfigured, user_message, session)
+        return await _handle_migration_info(state, llm, user_message, session)
 
     if intent == "migration_action":
-        return await _handle_migration_action(state, llm, llm_unconfigured, user_message, session)
+        return await _handle_migration_action(state, llm, user_message, session)
 
     # Unmatched intent — let LLM handle if available, otherwise hardcoded fallback
     if llm and not llm_unconfigured:
-        return await _handle_general_chat(state, llm, llm_unconfigured, user_message, session)
+        return await _handle_general_chat(state, llm, user_message, session)
     return {"should_return": True, "reply": "I didn't understand that request."}
 
 
 async def _handle_general_chat(
     state: dict[str, Any],
-    llm: Any,
-    llm_unconfigured: bool,
+    llm: BaseChatModel | None,
     user_message: str,
     session: dict[str, Any],
 ) -> dict[str, Any]:
-    """Handle general chat with direct LLM response."""
-    if llm_unconfigured or not llm:
+    """Handle general chat with a direct LLM response.
+
+    ``llm_unconfigured`` is read off ``state`` rather than passed in.
+
+    Returns:
+        An ``AgentState`` update. Either a terminal reply (``should_return``
+        true) or, when the model asked for tools, the ``tool_calls`` to run
+        next with ``should_return`` false.
+    """
+    if bool(state.get("llm_unconfigured")) or not llm:
         reply = publish_orchestrator_chat(session, NO_LLM_CONFIGURED_MESSAGE)
         return {"should_return": True, "reply": reply}
 
@@ -479,12 +498,20 @@ async def _handle_general_chat(
 
 async def _handle_migration_info(
     state: dict[str, Any],
-    llm: Any,
-    llm_unconfigured: bool,
+    llm: BaseChatModel | None,
     user_message: str,
     session: dict[str, Any],
 ) -> dict[str, Any]:
-    """Handle migration info queries using session context data."""
+    """Answer a migration status question from session context data.
+
+    Falls back to the plain summary text when no model is bound.
+    ``llm_unconfigured`` is read off ``state`` rather than passed in.
+
+    Returns:
+        An ``AgentState`` update carrying the reply, with ``should_return``
+        true — status answers never continue into the graph.
+    """
+    llm_unconfigured = bool(state.get("llm_unconfigured"))
     # Use session context only — discovery data is loaded by the Planner, not here.
     info_text = ""
     discovery = session.get("discovery_snapshot")
@@ -541,7 +568,12 @@ async def _apply_intake_routing(
     *,
     intent: str = "migration_action",
 ) -> dict[str, Any] | None:
-    """Schema extraction + routing — ask only for missing intake fields."""
+    """Extract intake fields from the conversation and ask only for what is missing.
+
+    Returns:
+        An ``AgentState`` update carrying the next form or clarification, or
+        None when nothing is missing and the caller should continue.
+    """
     from ado2gh.agents.migration_agent.hitl.intake import analysis_from_state, resolve_intake_routing
 
     routing = await resolve_intake_routing(
@@ -608,12 +640,20 @@ async def _apply_intake_routing(
 
 async def _handle_migration_action(
     state: dict[str, Any],
-    llm: Any,
-    llm_unconfigured: bool,
+    llm: BaseChatModel | None,
     user_message: str,
     session: dict[str, Any],
 ) -> dict[str, Any]:
-    """Handle migration action requests — collect params, build forms, route to Planner."""
+    """Handle a migration action request: collect params, build forms, route to Planner.
+
+    ``llm_unconfigured`` is read off ``state`` rather than passed in.
+
+    Returns:
+        An ``AgentState`` update: an intake form or clarification when
+        parameters are still missing, otherwise the tool calls that hand over
+        to the planner.
+    """
+    llm_unconfigured = bool(state.get("llm_unconfigured"))
     # Information schema: extract from conversation and route to missing fields only.
     intake_result = await _apply_intake_routing(state, session, user_message)
     if intake_result is not None:

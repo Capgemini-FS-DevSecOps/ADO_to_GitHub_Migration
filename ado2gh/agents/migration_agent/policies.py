@@ -5,9 +5,14 @@ agent_scope into a single module for the migration_agent package.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, Request
+
+from ado2gh.models import ExecutionMode
+
+if TYPE_CHECKING:  # imported lazily at runtime to keep `agents -> auth` off the import path
+    from ado2gh.auth.models import PlatformUser
 
 # ─── Agent scope guardrails ───────────────────────────────────────────
 
@@ -55,11 +60,32 @@ _PROHIBITED_PHRASES = (
 
 
 def is_migration_related(user_message: str) -> bool:
+    """Check whether a message mentions any Azure DevOps or GitHub migration term.
+
+    Args:
+        user_message: Raw text the operator typed into the agent chat.
+
+    Returns:
+        ``True`` when at least one term from the migration vocabulary appears in the
+        message, case-insensitively; ``False`` otherwise.
+    """
     msg = user_message.lower()
     return any(term in msg for term in _MIGRATION_TERMS)
 
 
 def is_in_scope_meta(user_message: str) -> bool:
+    """Check whether a message is small talk the assistant should still answer.
+
+    Greetings, thanks and "what can you do" carry no migration vocabulary but are part
+    of using the assistant, so they must not be refused as off-topic.
+
+    Args:
+        user_message: Raw text the operator typed into the agent chat.
+
+    Returns:
+        ``True`` for an empty message, a recognised greeting or a capability question;
+        ``False`` otherwise.
+    """
     msg = user_message.lower().strip()
     if not msg:
         return True
@@ -71,11 +97,34 @@ def is_in_scope_meta(user_message: str) -> bool:
 
 
 def is_prohibited_message(user_message: str) -> bool:
+    """Check whether a message asks for harmful or illegal help.
+
+    Args:
+        user_message: Raw text the operator typed into the agent chat.
+
+    Returns:
+        ``True`` when the message contains a phrase from the prohibited list (hacking,
+        credential theft, malware and similar); ``False`` otherwise.
+    """
     msg = user_message.lower()
     return any(phrase in msg for phrase in _PROHIBITED_PHRASES)
 
 
 def is_out_of_scope_message(user_message: str) -> bool:
+    """Decide whether the assistant should refuse a message instead of answering it.
+
+    Prohibited requests are refused outright. Anything with migration vocabulary, and
+    any greeting or capability question, is in scope. What is left is refused when it
+    matches a known off-topic phrase or is long enough to be a real request about
+    something else.
+
+    Args:
+        user_message: Raw text the operator typed into the agent chat.
+
+    Returns:
+        ``True`` when the assistant should reply with a refusal from
+        :func:`scope_refusal_reply` instead of handling the message; ``False`` otherwise.
+    """
     if is_prohibited_message(user_message):
         return True
     if is_migration_related(user_message):
@@ -90,6 +139,15 @@ def is_out_of_scope_message(user_message: str) -> bool:
 
 
 def scope_refusal_reply(user_message: str) -> str:
+    """Pick the refusal text that matches why a message is out of scope.
+
+    Args:
+        user_message: The message :func:`is_out_of_scope_message` rejected.
+
+    Returns:
+        :data:`PROHIBITED_REPLY` for a harmful or illegal request, otherwise
+        :data:`OUT_OF_SCOPE_REPLY`.
+    """
     if is_prohibited_message(user_message):
         return PROHIBITED_REPLY
     return OUT_OF_SCOPE_REPLY
@@ -97,8 +155,18 @@ def scope_refusal_reply(user_message: str) -> str:
 
 # ─── Live execution policy ────────────────────────────────────────────
 
-def _attach_actor_to_session(session: dict[str, Any], user: Any | None) -> None:
-    """Persist platform user identity on an agent session."""
+def _attach_actor_to_session(session: dict[str, Any], user: PlatformUser | None) -> None:
+    """Persist platform user identity on an agent session.
+
+    Writes ``user_id``, ``user_username``, ``user_role``, ``user_display_name`` and the
+    role's ``permissions`` onto the session dict, which is what every live-execution
+    predicate below reads. A ``None`` user leaves the session untouched, so a session
+    with no attached actor keeps no authority.
+
+    Args:
+        session: The live agent session dict, mutated in place.
+        user: The authenticated platform user, or ``None`` when the request carried none.
+    """
     if not user:
         return
     from ado2gh.auth.service import permissions_for
@@ -115,6 +183,15 @@ attach_actor_to_session = _attach_actor_to_session
 
 
 def _role_may_execute_live(role: str | None) -> bool:
+    """Check whether a platform role carries live-execution authority by itself.
+
+    Args:
+        role: The ``PlatformRole`` value stored on the session, or ``None``.
+
+    Returns:
+        ``True`` only for ADMIN and APPROVER; ``False`` for every other role and for
+        a session with no role at all.
+    """
     if not role:
         return False
     from ado2gh.auth.models import PlatformRole
@@ -129,6 +206,14 @@ def can_execute_live_without_approval(session: dict[str, Any]) -> bool:
     whole agent approval gate inert (GAP-002). A session with no attached actor now
     has no live authority, exactly like an OPERATOR session. Dry-run still short-
     circuits first, so auth-disabled local development is unaffected.
+
+    Args:
+        session: The live agent session dict.
+
+    Returns:
+        ``True`` when the session may run live immediately — it is still in dry-run, it
+        already carries an approval, or its actor holds approve-live permission or an
+        ADMIN/APPROVER role. ``False`` when the run must go through the approval queue.
     """
     if session.get("dry_run", True):
         return True
@@ -146,6 +231,14 @@ def session_requires_live_approval(session: dict[str, Any]) -> bool:
     Previously ended in a role-name comparison against OPERATOR, so a COORDINATOR —
     a role that can operate and cannot approve — fell through to "no approval needed"
     (the agent-side twin of GAP-005).
+
+    Args:
+        session: The live agent session dict.
+
+    Returns:
+        ``False`` for a dry-run session, otherwise the negation of
+        :func:`can_execute_live_without_approval` — ``True`` means the run must wait
+        for a platform admin or approver.
     """
     if session.get("dry_run", True):
         return False
@@ -154,7 +247,7 @@ def session_requires_live_approval(session: dict[str, Any]) -> bool:
 
 def enforce_live_mode_request(
     request: Request | None,
-    dry_run: bool,
+    mode: ExecutionMode,
     session: dict[str, Any] | None = None,
 ) -> None:
     """The single check every non-dry-run entry point routes through.
@@ -176,10 +269,22 @@ def enforce_live_mode_request(
     short-circuit to "no approval needed" while ``session["dry_run"]`` is still
     ``True`` — the exact window ``confirm-live`` used to escalate through (GAP-006).
 
-    Call this *before* mutating ``dry_run`` so a refused request leaves the session
-    in dry-run.
+    Call this *before* mutating the session's mode so a refused request leaves the
+    session in dry-run.
+
+    Args:
+        request: The inbound HTTP request, read for its authenticated platform user.
+        mode: The mode the caller wants the session to run in. Convert the wire-level
+            boolean at the route with ``ExecutionMode.from_dry_run(dry_run=req.dry_run)``
+            — the converter is keyword-only.
+        session: The session being taken live, for entry points with no approval queue
+            behind them. Omit it on entry points that enqueue an approval.
+
+    Raises:
+        HTTPException: 401 when a live request carries no authenticated user, 403 when
+            the caller lacks the authority the entry point requires.
     """
-    if dry_run:
+    if mode is ExecutionMode.DRY_RUN:
         return
     if not getattr(getattr(request, "state", None), "platform_user", None):
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -209,6 +314,15 @@ def resolve_execution_dry_run(
     dry-run/live banner it streams and the migration run itself. That node still
     assigns the result back to ``session["dry_run"]``; the assignment is safe now
     precisely because the value has been through this reconciliation first.
+
+    Args:
+        session: The live agent session dict.
+        migration_plan: The plan about to be executed, or ``None`` when there is none.
+
+    Returns:
+        ``True`` when the run must stay a dry run — either source says dry-run, or the
+        plan asks for live and the session holds no live authority. ``False`` only when
+        both agree the run may write.
     """
     session_dry = bool(session.get("dry_run", True))
     plan_dry = bool((migration_plan or {}).get("dry_run", session_dry))
@@ -220,6 +334,16 @@ def resolve_execution_dry_run(
 
 
 def live_execution_block_message(session: dict[str, Any]) -> str:
+    """Compose the chat reply shown when a live run is refused pending approval.
+
+    Args:
+        session: The live agent session dict, read for the signed-in identity and the
+            active deployment profile.
+
+    Returns:
+        Markdown naming the operator, their role and the profile, explaining that an
+        admin or approver must review the run, and stating that nothing was started.
+    """
     name = session.get("user_display_name") or session.get("user_username") or "operator"
     role = session.get("user_role") or "unknown"
     profile = session.get("profile_id") or "active profile"
@@ -237,6 +361,17 @@ def live_execution_block_message(session: dict[str, Any]) -> str:
 
 
 def execution_policy_summary(session: dict[str, Any]) -> dict[str, Any]:
+    """Flatten the live-execution policy for a session into one payload for the console.
+
+    Args:
+        session: The live agent session dict.
+
+    Returns:
+        A dict with ``dry_run``, ``requires_live_approval``, ``live_approved``,
+        ``can_execute_live_without_approval``, ``can_approve_live_execution``,
+        ``user_role`` and ``user_display_name`` — the values the UI needs to decide
+        which execution controls to show.
+    """
     dry_run = bool(session.get("dry_run", True))
     requires = session_requires_live_approval(session)
     perms = session.get("permissions") or {}
@@ -254,6 +389,14 @@ def execution_policy_summary(session: dict[str, Any]) -> dict[str, Any]:
 # ─── Session access control ───────────────────────────────────────────
 
 def request_username(request: Request | None) -> str | None:
+    """Read the username of the platform user attached to a request.
+
+    Args:
+        request: The inbound HTTP request, or ``None`` outside a request context.
+
+    Returns:
+        The username, or ``None`` when there is no request or no authenticated user.
+    """
     if not request:
         return None
     user = getattr(request.state, "platform_user", None)
@@ -261,6 +404,16 @@ def request_username(request: Request | None) -> str | None:
 
 
 def is_admin_request(request: Request | None) -> bool:
+    """Check whether a request may act with platform administrator authority.
+
+    Args:
+        request: The inbound HTTP request, or ``None`` outside a request context.
+
+    Returns:
+        ``True`` when the attached user is an ADMIN. With authentication disabled there
+        is no identity to check, so a request without a user is treated as admin —
+        that is the local single-operator mode, not a bypass of an enabled gate.
+    """
     from ado2gh.auth.models import PlatformRole
     from ado2gh.auth.service import auth_enabled
     if not request:
@@ -271,33 +424,5 @@ def is_admin_request(request: Request | None) -> bool:
     return getattr(user, "role", None) == PlatformRole.ADMIN
 
 
-def session_owner_username(session: dict[str, Any]) -> str | None:
-    return session.get("user_username")
-
-
-def can_access_agent_session(
-    request: Request | None,
-    session: dict[str, Any],
-    *,
-    profile_id: str | None = None,
-    write: bool = False,
-) -> bool:
-    from ado2gh.auth.service import auth_enabled
-    if profile_id and session.get("profile_id") != profile_id:
-        return False
-    if not auth_enabled():
-        return True
-    if is_admin_request(request):
-        return True
-    owner = session_owner_username(session)
-    viewer = request_username(request)
-    if not owner or not viewer:
-        return False
-    if owner == viewer:
-        return True
-    if write:
-        return False
-    perms = getattr(request.state, "permissions", None) or {}
-    return bool(perms.get("can_approve_live_execution"))
 
 

@@ -8,7 +8,13 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
+
+if TYPE_CHECKING:
+    import sqlite3
+
+    from ado2gh.state.postgres_db import PostgresStateDB
+    from ado2gh.state.sqlite_db import SQLiteStateDB
 
 
 def _now() -> str:
@@ -19,7 +25,7 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-def _messages_json(messages: Any) -> str:
+def _messages_json(messages: list[dict[str, Any]] | None) -> str:
     """Serialise the chat message list for the durable ``messages_json`` column.
 
     Masks at the write, not at the caller: this column is the only durable,
@@ -29,6 +35,16 @@ def _messages_json(messages: Any) -> str:
     from ado2gh.audit import redact_payload
 
     return json.dumps(redact_payload(messages or []))
+
+
+# Columns ``update_session`` may patch: intake name → (column, value adapter).
+_SESSION_PATCH_COLUMNS: dict[str, tuple[str, Callable[[Any], Any]]] = {
+    "pending_form": ("pending_form_json", json.dumps),
+    "migration_plan": ("migration_plan_json", json.dumps),
+    "iteration_count": ("iteration_count", int),
+    "pev_retry_count": ("pev_retry_count", int),
+    "dry_run": ("dry_run", lambda value: 1 if value else 0),
+}
 
 
 SCHEMA = """
@@ -172,7 +188,11 @@ CREATE INDEX IF NOT EXISTS idx_repo_locks_active
 class MigrationSessionStore:
     """Persistent session storage for the migration agent."""
 
-    def __init__(self, db=None) -> None:
+    def __init__(self, db: SQLiteStateDB | PostgresStateDB | None = None) -> None:
+        """Bind to ``db`` (or the configured state store) and create the schema.
+
+        Only ``db._conn()`` is used, so a test double providing that one method works.
+        """
         if db is None:
             from ado2gh.state.factory import create_state_db
             db = create_state_db()
@@ -185,11 +205,21 @@ class MigrationSessionStore:
                 conn.executescript(SCHEMA)
                 self._migrate_user_username_column(conn)
 
-    def _migrate_user_username_column(self, conn: Any) -> None:
+    def _migrate_user_username_column(self, conn: sqlite3.Connection) -> None:
         """Add user_username to agent_sessions when upgrading existing DBs."""
         cols = {r[1] for r in conn.execute("PRAGMA table_info(agent_sessions)").fetchall()}
         if cols and "user_username" not in cols:
             conn.execute("ALTER TABLE agent_sessions ADD COLUMN user_username TEXT")
+
+    def _rows(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+        """Run a SELECT and materialise its result rows.
+
+        Returns:
+            One dict per row, in the order the query produced them.
+        """
+        with self._db._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
 
     # ── Agent sessions ──────────────────────────────────────────────────
 
@@ -197,8 +227,14 @@ class MigrationSessionStore:
         self,
         profile_id: str,
         model_id: str = "",
+        *,
         dry_run: bool = True,
     ) -> dict[str, Any]:
+        """Insert a new agent session row.
+
+        Returns:
+            The session record, including the generated ``session_id``.
+        """
         sid = _uuid()
         now = _now()
         record = {
@@ -278,6 +314,12 @@ class MigrationSessionStore:
             )
 
     def get_session(self, session_id: str) -> Optional[dict[str, Any]]:
+        """Load one session with its JSON columns decoded.
+
+        Returns:
+            The session record with ``messages``, ``pending_form``,
+            ``migration_plan`` and ``dry_run`` decoded, or None if unknown.
+        """
         with self._db._conn() as conn:
             row = conn.execute(
                 "SELECT * FROM agent_sessions WHERE session_id=?",
@@ -293,6 +335,7 @@ class MigrationSessionStore:
         return d
 
     def update_session_status(self, session_id: str, status: str) -> None:
+        """Store a new status and stamp the session's last activity time."""
         now = _now()
         with self._db._conn() as conn:
             conn.execute(
@@ -300,45 +343,36 @@ class MigrationSessionStore:
                 (status, now, session_id),
             )
 
-    def update_session(
-        self,
-        session_id: str,
-        *,
-        pending_form: Optional[dict] = None,
-        migration_plan: Optional[dict] = None,
-        iteration_count: Optional[int] = None,
-        pev_retry_count: Optional[int] = None,
-        dry_run: Optional[bool] = None,
-    ) -> None:
-        fields: list[str] = []
+    def update_session(self, session_id: str, **fields: object) -> None:
+        """Patch the mutable columns of one agent session row.
+
+        ``fields`` accepts any key of ``_SESSION_PATCH_COLUMNS``; None values and
+        unknown names are ignored.
+        """
+        assignments: list[str] = []
         values: list[Any] = []
-        if pending_form is not None:
-            fields.append("pending_form_json=?")
-            values.append(json.dumps(pending_form))
-        if migration_plan is not None:
-            fields.append("migration_plan_json=?")
-            values.append(json.dumps(migration_plan))
-        if iteration_count is not None:
-            fields.append("iteration_count=?")
-            values.append(iteration_count)
-        if pev_retry_count is not None:
-            fields.append("pev_retry_count=?")
-            values.append(pev_retry_count)
-        if dry_run is not None:
-            fields.append("dry_run=?")
-            values.append(1 if dry_run else 0)
-        if not fields:
+        for name, value in fields.items():
+            column = _SESSION_PATCH_COLUMNS.get(name)
+            if column is None or value is None:
+                continue
+            assignments.append(f"{column[0]}=?")
+            values.append(column[1](value))
+        if not assignments:
             return
-        fields.append("last_activity_at=?")
-        values.append(_now())
-        values.append(session_id)
+        assignments.append("last_activity_at=?")
+        values.extend((_now(), session_id))
         with self._db._conn() as conn:
             conn.execute(
-                f"UPDATE agent_sessions SET {', '.join(fields)} WHERE session_id=?",
+                f"UPDATE agent_sessions SET {', '.join(assignments)} WHERE session_id=?",
                 values,
             )
 
     def list_sessions(self, profile_id: str | None = None) -> list[dict[str, Any]]:
+        """List sessions, most recently active first.
+
+        Returns:
+            Every session row, or only those of ``profile_id`` when given.
+        """
         with self._db._conn() as conn:
             if profile_id:
                 rows = conn.execute(
@@ -352,6 +386,7 @@ class MigrationSessionStore:
         return [dict(r) for r in rows]
 
     def delete_session(self, session_id: str) -> None:
+        """Delete a session and every row any other table holds for it."""
         with self._db._conn() as conn:
             for table in (
                 "agent_messages", "migration_plans", "executor_results",
@@ -371,8 +406,12 @@ class MigrationSessionStore:
         to_role: str,
         message_type: str,
         payload: dict[str, Any],
-        correlation_ids: Optional[dict] = None,
     ) -> str:
+        """Record one inter-agent message.
+
+        Returns:
+            The generated message id.
+        """
         mid = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -382,21 +421,26 @@ class MigrationSessionStore:
                     payload_json, timestamp, correlation_json)
                    VALUES (?,?,?,?,?,?,?,?)""",
                 (mid, session_id, from_role, to_role, message_type,
-                 json.dumps(payload), now, json.dumps(correlation_ids or {})),
+                 json.dumps(payload), now, "{}"),
             )
         return mid
 
     def get_messages(self, session_id: str) -> list[dict[str, Any]]:
-        with self._db._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM agent_messages WHERE session_id=? ORDER BY timestamp",
-                (session_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """Read a session's inter-agent messages.
+
+        Returns:
+            Every message row for the session, oldest first.
+        """
+        return self._rows("SELECT * FROM agent_messages WHERE session_id=? ORDER BY timestamp", (session_id,))
 
     # ── Migration plans ─────────────────────────────────────────────────
 
     def save_plan(self, session_id: str, plan: dict[str, Any]) -> str:
+        """Persist a migration plan revision.
+
+        Returns:
+            The generated plan id.
+        """
         pid = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -418,6 +462,11 @@ class MigrationSessionStore:
     # ── PEV cycle summaries ─────────────────────────────────────────────
 
     def save_cycle_summary(self, session_id: str, summary: dict[str, Any]) -> str:
+        """Persist the outcome of one plan-execute-validate cycle.
+
+        Returns:
+            The generated cycle id.
+        """
         cid = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -437,16 +486,21 @@ class MigrationSessionStore:
         return cid
 
     def get_cycle_summaries(self, session_id: str) -> list[dict[str, Any]]:
-        with self._db._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM pev_cycle_summaries WHERE session_id=? ORDER BY cycle_number",
-                (session_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """Read a session's PEV cycle summaries.
+
+        Returns:
+            One row per cycle, in cycle-number order.
+        """
+        return self._rows("SELECT * FROM pev_cycle_summaries WHERE session_id=? ORDER BY cycle_number", (session_id,))
 
     # ── Guardrail decisions ─────────────────────────────────────────────
 
     def save_guardrail_decision(self, session_id: str, decision: dict[str, Any]) -> str:
+        """Record one guardrail allow/deny decision for the audit trail.
+
+        Returns:
+            The generated decision id.
+        """
         did = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -469,6 +523,11 @@ class MigrationSessionStore:
     # ── Rollback records ────────────────────────────────────────────────
 
     def save_rollback_record(self, session_id: str, record: dict[str, Any]) -> str:
+        """Record a resource this session created, so it can be rolled back.
+
+        Returns:
+            The generated record id.
+        """
         rid = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -488,16 +547,23 @@ class MigrationSessionStore:
         return rid
 
     def get_rollback_records(self, session_id: str) -> list[dict[str, Any]]:
-        with self._db._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM rollback_records WHERE session_id=? AND rollback_status='eligible'",
-                (session_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """Read the resources this session can still roll back.
+
+        Returns:
+            Rows still marked ``eligible``; already rolled-back ones are
+            excluded.
+        """
+        return self._rows("SELECT * FROM rollback_records WHERE session_id=? AND rollback_status='eligible'", (session_id,))
 
     # ── Repo locks ──────────────────────────────────────────────────────
 
     def acquire_repo_lock(self, session_id: str, repository_id: str) -> bool:
+        """Take the exclusive migration lock on a repository.
+
+        Returns:
+            True when this session now holds the lock, False when another
+            session already does.
+        """
         now = _now()
         with self._db._conn() as conn:
             existing = conn.execute(
@@ -525,6 +591,7 @@ class MigrationSessionStore:
         return str(row["session_id"])
 
     def release_repo_lock(self, session_id: str, repository_id: str) -> None:
+        """Release this session's lock on one repository."""
         now = _now()
         with self._db._conn() as conn:
             conn.execute(
@@ -533,6 +600,7 @@ class MigrationSessionStore:
             )
 
     def release_all_locks(self, session_id: str) -> None:
+        """Release every repository lock this session still holds."""
         now = _now()
         with self._db._conn() as conn:
             conn.execute(
@@ -543,6 +611,11 @@ class MigrationSessionStore:
     # ── Executor results ────────────────────────────────────────────────
 
     def save_executor_result(self, session_id: str, plan_id: str, result: dict[str, Any]) -> str:
+        """Persist one executor run against a plan.
+
+        Returns:
+            The generated result id.
+        """
         rid = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -559,16 +632,21 @@ class MigrationSessionStore:
         return rid
 
     def get_executor_results(self, session_id: str) -> list[dict[str, Any]]:
-        with self._db._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM executor_results WHERE session_id=? ORDER BY created_at",
-                (session_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """Read a session's executor results.
+
+        Returns:
+            One row per executor run, oldest first.
+        """
+        return self._rows("SELECT * FROM executor_results WHERE session_id=? ORDER BY created_at", (session_id,))
 
     # ── Validation results ──────────────────────────────────────────────
 
     def save_validation_result(self, session_id: str, plan_id: str, result: dict[str, Any]) -> str:
+        """Persist one validation run against a plan.
+
+        Returns:
+            The generated validation id.
+        """
         vid = _uuid()
         now = _now()
         with self._db._conn() as conn:
@@ -586,12 +664,12 @@ class MigrationSessionStore:
         return vid
 
     def get_validation_results(self, session_id: str) -> list[dict[str, Any]]:
-        with self._db._conn() as conn:
-            rows = conn.execute(
-                "SELECT * FROM validation_results WHERE session_id=? ORDER BY created_at",
-                (session_id,),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        """Read a session's validation results.
+
+        Returns:
+            One row per validation run, oldest first.
+        """
+        return self._rows("SELECT * FROM validation_results WHERE session_id=? ORDER BY created_at", (session_id,))
 
     # ── Full session state persistence (T059-T060) ──────────────────────
 
@@ -610,7 +688,6 @@ class MigrationSessionStore:
         iteration = state.get("iteration", 0)
         pev_retry_count = state.get("pev_retry_count", 0)
 
-        # Update session metadata
         self.update_session(
             session_id,
             migration_plan=migration_plan,
@@ -618,24 +695,19 @@ class MigrationSessionStore:
             pev_retry_count=pev_retry_count,
         )
 
-        # Save migration plan
         plan_id = None
         if migration_plan:
             plan_id = self.save_plan(session_id, migration_plan)
 
-        # Save executor result
         if executor_result and plan_id:
             self.save_executor_result(session_id, plan_id, executor_result)
 
-        # Save validation result
         if validation_result and plan_id:
             self.save_validation_result(session_id, plan_id, validation_result)
 
-        # Save cycle summaries
         for summary in cycle_summaries:
             self.save_cycle_summary(session_id, summary)
 
-        # Save rollback records
         for record in rollback_records:
             self.save_rollback_record(session_id, record)
 
@@ -651,7 +723,6 @@ class MigrationSessionStore:
         cycle_summaries_raw = self.get_cycle_summaries(session_id)
         rollback_records = self.get_rollback_records(session_id)
 
-        # Get latest executor and validation results
         executor_results = self.get_executor_results(session_id)
         validation_results = self.get_validation_results(session_id)
 

@@ -10,10 +10,25 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import StructuredTool
 from langgraph.prebuilt import ToolNode
 
 
-async def _invoke_tool_direct(tool: Any, args: dict[str, Any]) -> Any:
+async def _invoke_tool_direct(tool: StructuredTool, args: dict[str, Any]) -> object:
+    """Invoke a tool without a graph runtime, trying each calling convention.
+
+    Args:
+        tool: A LangChain tool object, or anything exposing ``ainvoke``,
+            ``coroutine`` or ``invoke``.
+        args: Keyword arguments for the tool call.
+
+    Returns:
+        Whatever the tool returned — usually a string or a JSON-serialisable
+        mapping.
+
+    Raises:
+        TypeError: The object exposes none of the supported call conventions.
+    """
     if hasattr(tool, "ainvoke"):
         return await tool.ainvoke(args)
     if hasattr(tool, "coroutine") and tool.coroutine:
@@ -25,11 +40,24 @@ async def _invoke_tool_direct(tool: Any, args: dict[str, Any]) -> Any:
 
 async def invoke_read_tools(
     tool_calls: list[dict[str, Any]],
-    tools: list[Any],
+    tools: list[StructuredTool],
     *,
     existing_messages: list[Any] | None = None,
 ) -> list[ToolMessage]:
-    """Execute read-only tool calls through LangGraph ToolNode or direct ainvoke."""
+    """Execute read-only tool calls through LangGraph ToolNode or direct ainvoke.
+
+    Args:
+        tool_calls: Raw tool-call dicts as produced by the model; ``id``,
+            ``name`` and ``args``/``arguments`` keys are normalised here.
+        tools: Tool objects available to the calling role.
+        existing_messages: Prior conversation messages to prepend so ToolNode
+            sees the same history the model did.
+
+    Returns:
+        One ``ToolMessage`` per requested call, in request order. Failures are
+        reported as messages carrying a JSON ``error`` payload rather than
+        raising. Empty when there was nothing to call.
+    """
     if not tool_calls or not tools:
         return []
 
@@ -43,7 +71,7 @@ async def invoke_read_tools(
             }
         )
 
-    tools_by_name = {getattr(t, "name", ""): t for t in tools}
+    tools_by_name: dict[str, StructuredTool] = {getattr(t, "name", ""): t for t in tools}
     messages = list(existing_messages or [])
     messages.append(AIMessage(content="", tool_calls=normalized))
 

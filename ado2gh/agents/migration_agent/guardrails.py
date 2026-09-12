@@ -12,6 +12,14 @@ from typing import Any, Callable
 
 
 class GuardrailAction(str, Enum):
+    """What a guardrail evaluation tells the tool wrapper to do.
+
+    Attributes:
+        ALLOW: Run the tool.
+        BLOCK: Refuse the call and return the reason to the agent.
+        REQUIRE_CONFIRMATION: Refuse for now and ask the operator to confirm (CA-002).
+    """
+
     ALLOW = "allow"
     BLOCK = "block"
     REQUIRE_CONFIRMATION = "require_confirmation"
@@ -31,14 +39,29 @@ class GuardrailDecision:
 
     @property
     def allowed(self) -> bool:
+        """Whether the tool call may proceed.
+
+        Returns:
+            ``True`` when the action is :attr:`GuardrailAction.ALLOW`.
+        """
         return self.action == GuardrailAction.ALLOW
 
     @property
     def blocked(self) -> bool:
+        """Whether the tool call was refused outright.
+
+        Returns:
+            ``True`` when the action is :attr:`GuardrailAction.BLOCK`.
+        """
         return self.action == GuardrailAction.BLOCK
 
     @property
     def needs_confirmation(self) -> bool:
+        """Whether the tool call needs explicit operator confirmation first (CA-002).
+
+        Returns:
+            ``True`` when the action is :attr:`GuardrailAction.REQUIRE_CONFIRMATION`.
+        """
         return self.action == GuardrailAction.REQUIRE_CONFIRMATION
 
     @property
@@ -47,6 +70,11 @@ class GuardrailDecision:
         return self.action.value
 
     def to_dict(self) -> dict[str, Any]:
+        """Flatten the decision for the audit log and the agent-facing error payload.
+
+        Returns:
+            A JSON-serialisable dict of every field, with ``action`` as its string value.
+        """
         return {
             "action": self.action.value,
             "agent_role": self.agent_role,
@@ -80,10 +108,15 @@ _READ_OPERATIONS = frozenset({
 
 
 def _now() -> str:
+    """Timestamp helper for guardrail records.
+
+    Returns:
+        The current UTC time in ISO 8601 form.
+    """
     return datetime.now(timezone.utc).isoformat()
 
 
-def evaluate_guardrail(
+def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization inputs, no existing model groups them
     agent_role: str,
     tool_name: str,
     arguments: dict[str, Any],
@@ -93,13 +126,34 @@ def evaluate_guardrail(
     session: dict[str, Any] | None = None,
     approved_plan: dict[str, Any] | None = None,  # backward compat alias
 ) -> GuardrailDecision:
-    """Evaluate whether a tool call should proceed.
+    """Decide whether one tool call may run, in order of severity.
 
-    Checks:
-    1. Plan authorization for write operations
-    2. Resource validation (resource exists in plan)
-    3. Deletion confirmation requirement
-    4. Parameter validation
+    The checks are, in order: read-only operations always pass; accelerator and GitHub
+    ``GET`` calls pass as reads; accelerator and GitHub *writes* are blocked while the
+    session is in dry-run (CA-001); a GitHub ``DELETE`` needs operator confirmation;
+    remaining write operations need an approved plan whose repo list contains the
+    target resource; and the deletion operations need confirmation (CA-002).
+
+    ``operation_type`` is derived from ``tool_name`` and never from the arguments, so a
+    tool call cannot name itself read-only to skip the write checks.
+
+    Args:
+        agent_role: Which agent asked — orchestrator, planner, executor or validator.
+        tool_name: The tool being invoked; also the operation identity.
+        arguments: The tool arguments, read for ``target_resource``/``repository_id``
+            and for the HTTP ``method`` of the accelerator and GitHub tools.
+        migration_plan: The plan this call must be covered by, if there is one.
+        plan_approved: Whether the operator has approved ``migration_plan``. This is
+            approval state on record, not an execution mode, so it stays a boolean
+            (operator decision, spec 013 increment 10).
+        session: The live session, read only for its ``dry_run`` flag.
+        approved_plan: Backward-compatible alias for passing an already-approved plan;
+            supplying it implies ``plan_approved=True``.
+
+    Returns:
+        A :class:`GuardrailDecision` carrying the action, the operation identity, the
+        target resource, a human-readable reason and, for plan-scoped decisions, the
+        plan id. Unknown operations are allowed and say so in the reason.
     """
     # operation_type is derived from tool_name, never from LLM-supplied arguments —
     # otherwise a tool call could set operation_type to a read-only value to bypass
@@ -272,10 +326,23 @@ def wrap_tool_with_guardrail(
     If blocked, returns an error dict instead of calling the tool.
     If confirmation required, returns a confirmation request dict.
     Supports both sync and async (coroutine) tool functions.
+
+    Args:
+        tool_func: The tool implementation, sync or coroutine.
+        agent_role: The role the wrapped tool is being handed to.
+        session_getter: Returns the live session at call time; the guardrail reads the
+            migration plan, its approval state and the dry-run flag from it.
+        log_decision: Receives ``(session_id, decision_dict)`` for the audit trail.
+
+    Returns:
+        A callable with the same calling convention as ``tool_func`` (a coroutine
+        function when ``tool_func`` is one) that either returns the tool's own result
+        or, when the guardrail refuses, an error dict with ``error`` set to
+        ``guardrail_blocked`` or ``confirmation_required``.
     """
     import asyncio
 
-    def _evaluate(**kwargs) -> GuardrailDecision | None:
+    def _evaluate(**kwargs: object) -> GuardrailDecision | None:
         session = session_getter() if session_getter else {}
         migration_plan = session.get("migration_plan")
         plan_approved = session.get("plan_approved", False)
@@ -294,8 +361,17 @@ def wrap_tool_with_guardrail(
 
         return decision
 
-    def _check_decision(decision: GuardrailDecision | None, kwargs: dict) -> dict | None:
-        """Return error dict if blocked/needs confirmation, else None."""
+    def _check_decision(decision: GuardrailDecision | None) -> dict[str, Any] | None:
+        """Record the tool call in metrics and turn a refusal into an error payload.
+
+        Args:
+            decision: The guardrail verdict, or ``None`` when none was produced.
+
+        Returns:
+            ``None`` when the tool may run, otherwise an error dict carrying
+            ``guardrail_blocked`` or ``confirmation_required``, the reason and the
+            serialised decision.
+        """
         from ado2gh.agents.metrics import get_metrics_collector
 
         metrics = get_metrics_collector()
@@ -322,18 +398,18 @@ def wrap_tool_with_guardrail(
         return None
 
     if asyncio.iscoroutinefunction(tool_func):
-        async def wrapped_async(**kwargs) -> Any:
+        async def wrapped_async(**kwargs: object) -> object:
             decision = _evaluate(**kwargs)
-            error = _check_decision(decision, kwargs)
+            error = _check_decision(decision)
             if error:
                 return error
             kwargs.pop("_tool_name", None)
             return await tool_func(**kwargs)
         return wrapped_async
     else:
-        def wrapped(**kwargs) -> Any:
+        def wrapped(**kwargs: object) -> object:
             decision = _evaluate(**kwargs)
-            error = _check_decision(decision, kwargs)
+            error = _check_decision(decision)
             if error:
                 return error
             kwargs.pop("_tool_name", None)

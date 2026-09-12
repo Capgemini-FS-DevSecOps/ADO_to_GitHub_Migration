@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
@@ -24,6 +24,12 @@ from ado2gh.agents.migration_agent.constants import (
     MAX_PEV_RETRIES,
 )
 from ado2gh.agents.migration_agent.graph.state import AgentState
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+    from langgraph.graph.state import CompiledStateGraph
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +58,7 @@ _CHECKPOINTER: Any = None
 _CHECKPOINTER_LOOP: Any = None
 
 
-async def _close_checkpointer(checkpointer: Any) -> None:
+async def _close_checkpointer(checkpointer: BaseCheckpointSaver) -> None:
     """Close a checkpointer's DB connection so its worker thread exits.
 
     aiosqlite connections run a non-daemon worker thread; abandoning one on
@@ -69,7 +75,7 @@ async def _close_checkpointer(checkpointer: Any) -> None:
         logger.debug("stale checkpointer connection close failed", exc_info=True)
 
 
-async def _get_checkpointer():
+async def _get_checkpointer() -> BaseCheckpointSaver | None:
     """Build a LangGraph checkpointer based on storage backend.
 
     Production: AsyncPostgresSaver or AsyncSqliteSaver (durable, multi-worker safe).
@@ -85,6 +91,13 @@ async def _get_checkpointer():
     from a different loop, its internal lock raises ``RuntimeError``. Rebuild
     when the running loop changed (e.g. each pytest test / TestClient gets its
     own loop; a stable loop in production means this never rebuilds there).
+
+    Returns:
+        The cached async checkpointer for the running loop —
+        ``AsyncPostgresSaver``, ``AsyncSqliteSaver`` or ``InMemorySaver``
+        depending on backend and what is installed — or None when no
+        checkpointer package is available, in which case thread state is not
+        persisted.
     """
     global _CHECKPOINTER, _CHECKPOINTER_LOOP
     current_loop = asyncio.get_running_loop()
@@ -155,21 +168,47 @@ async def _get_checkpointer():
 _LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=0.5, backoff_factor=2.0)
 
 
-def _with_runtime_deps(node_fn: Any) -> Any:
-    """Inject per-invocation callables into node state (not checkpointed)."""
+def _with_runtime_deps(
+    node_fn: Callable[[AgentState], Awaitable[dict[str, Any]]],
+) -> Callable[..., Awaitable[dict[str, Any]]]:
+    """Inject per-invocation callables into node state (not checkpointed).
+
+    Args:
+        node_fn: The node coroutine to wrap.
+
+    Returns:
+        A node coroutine with the LangGraph-required ``(state, config)`` shape
+        that merges the runtime deps in before the call and strips them out of
+        the returned update, so they never reach the checkpointer.
+    """
     from ado2gh.agents.migration_agent.runtime.deps import (
         merge_runtime_into_state,
         strip_runtime_deps,
     )
 
-    async def wrapped(state: AgentState, config: RunnableConfig | None = None) -> Any:
+    async def wrapped(state: AgentState, _config: RunnableConfig | None = None) -> dict[str, Any]:
+        """Run the wrapped node with runtime deps merged in and stripped out.
+
+        ``_config`` is the framework's second argument to a node callable. The
+        body never reads it, so it is underscore-prefixed; LangGraph only
+        injects the config when the parameter is literally named ``config``.
+
+        Returns:
+            The node's ``AgentState`` update with the non-serialisable runtime
+            deps removed.
+        """
         return strip_runtime_deps(await node_fn(merge_runtime_into_state(state)))
 
     return wrapped
 
 
-async def _build_graph() -> Any:
-    """Build and compile the migration agent StateGraph."""
+async def _build_graph() -> CompiledStateGraph:
+    """Build and compile the migration agent StateGraph.
+
+    Returns:
+        The compiled graph, with the checkpointer attached when one is
+        available and the human-input interrupt node wired in.
+    """
     from ado2gh.agents.migration_agent.hitl.interrupt_node import human_input_node
     from ado2gh.agents.migration_agent.nodes import (
         executor_node,
@@ -245,7 +284,12 @@ async def _build_graph() -> Any:
 # ─── Routing (strict PEV boundaries) ──────────────────────────────────
 
 def _needs_human_input(state: AgentState) -> bool:
-    """True when a dynamic form must be collected via LangGraph interrupt()."""
+    """Report whether a dynamic form must be collected via LangGraph interrupt().
+
+    Returns:
+        True when a form is pending on the state or the session and has not yet
+        been submitted; False once a ``form_submission`` is present.
+    """
     if state.get("form_submission"):
         return False
     pending = state.get("pending_form")
@@ -256,7 +300,13 @@ def _needs_human_input(state: AgentState) -> bool:
 
 
 def _route_after_orchestrator(state: AgentState) -> str:
-    """Orchestrator hands off to planner, executor (approved plan), human input, or finalize."""
+    """Orchestrator hands off to planner, executor (approved plan), human input, or finalize.
+
+    Returns:
+        The next node name: ``executor`` for an approved plan, ``planner`` when
+        work was started without one, ``human_input`` when a form is pending,
+        otherwise ``finalize``.
+    """
     if state.get("should_return"):
         if state.get("start_execution") or state.get("start_pev"):
             return "finalize"
@@ -271,7 +321,13 @@ def _route_after_orchestrator(state: AgentState) -> str:
 
 
 def _route_after_planner(state: AgentState) -> str:
-    """Planner sends work to executor, orchestrator, human input, or finalize."""
+    """Planner sends work to executor, orchestrator, human input, or finalize.
+
+    Returns:
+        The next node name: ``executor`` once a plan is approved,
+        ``orchestrator`` for a clarification or a plan awaiting review,
+        ``human_input`` when a form is pending, otherwise ``finalize``.
+    """
     if state.get("should_return"):
         if _needs_human_input(state):
             return "human_input"
@@ -296,7 +352,12 @@ def _route_after_planner(state: AgentState) -> str:
 
 
 def _route_after_executor(state: AgentState) -> str:
-    """Executor hands results to validator, clarification back to orchestrator, or finalize."""
+    """Executor hands results to validator, clarification back to orchestrator, or finalize.
+
+    Returns:
+        The next node name: ``validator`` when there is a result to check,
+        ``orchestrator`` for a clarification, otherwise ``finalize``.
+    """
     if state.get("should_return"):
         return "finalize"
     if state.get("pending_clarification"):
@@ -307,7 +368,13 @@ def _route_after_executor(state: AgentState) -> str:
 
 
 def _route_after_validator(state: AgentState) -> str:
-    """Route to orchestrator on pass/escalate/exhaustion, planner to retry."""
+    """Route to orchestrator on pass/escalate/exhaustion, planner to retry.
+
+    Returns:
+        The next node name: ``orchestrator`` when validation passed, the
+        feedback asks for escalation, or the PEV retry / iteration ceiling is
+        reached; ``planner`` to replan; ``finalize`` when the turn is over.
+    """
     if state.get("should_return"):
         return "finalize"
     validation_result = state.get("validation_result") or {}
@@ -332,12 +399,15 @@ _compiled_graph: Any = None
 _compiled_graph_loop: Any = None
 
 
-async def get_compiled_graph() -> Any:
+async def get_compiled_graph() -> CompiledStateGraph:
     """Return the compiled graph, building it on first call.
 
     Rebuilds when the running event loop changed — the compiled graph holds a
     direct reference to the checkpointer's connection, which is loop-bound
     (see ``_get_checkpointer``).
+
+    Returns:
+        The compiled graph for the running event loop.
     """
     global _compiled_graph, _compiled_graph_loop
     current_loop = asyncio.get_running_loop()

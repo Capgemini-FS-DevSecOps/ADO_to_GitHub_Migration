@@ -269,15 +269,17 @@ async def test_planner_research_loop_requires_min_probes():
             yield MagicMock(content=json.dumps(payload))
 
     session: dict = {}
-    state = {"session": session, "capabilities": MagicMock(supports_thinking=False)}
     accel = AsyncMock(return_value={"id": "1"})
+    state = {
+        "session": session,
+        "capabilities": MagicMock(supports_thinking=False),
+        "accel_get": accel,
+    }
 
     parsed = await _run_planner_research_loop(
         state,
-        session,
-        FakeLLM(),
         [SystemMessage(content="plan"), HumanMessage(content="go")],
-        accel_get=accel,
+        llm=FakeLLM(),
     )
     assert parsed.get("research_complete") is True
     assert calls["n"] >= 3

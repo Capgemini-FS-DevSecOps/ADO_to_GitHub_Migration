@@ -80,11 +80,12 @@ async def session_message(
     orch = await process_user_message(
         session,
         req.message,
-        model_id=session.get("selected_model_id"),
-        accel_get=_accel_get,
-        accel_post=_accel_post,
-        build_plan=_build_migration_plan,
-        session_token=session_token,
+        deps={
+            "accel_get": _accel_get,
+            "accel_post": _accel_post,
+            "build_plan": _build_migration_plan,
+            "session_token": session_token,
+        },
     )
 
     session["status"] = "idle"
@@ -136,11 +137,12 @@ async def session_message_stream(
             async for event in stream_user_message(
                 session,
                 req.message,
-                model_id=session.get("selected_model_id"),
-                accel_get=_accel_get,
-                accel_post=_accel_post,
-                build_plan=_build_migration_plan,
-                session_token=session_token,
+                deps={
+                    "accel_get": _accel_get,
+                    "accel_post": _accel_post,
+                    "build_plan": _build_migration_plan,
+                    "session_token": session_token,
+                },
             ):
                 if event.get("__done__"):
                     reply = event.get("reply", "")

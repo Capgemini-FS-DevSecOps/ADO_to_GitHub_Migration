@@ -24,8 +24,8 @@ def test_build_initial_state_defaults():
 
 
 def test_build_initial_state_with_model_id():
-    session = {"session_id": "ses_test", "messages": []}
-    state = _build_initial_state(session, "hi", model_id="nonexistent")
+    session = {"session_id": "ses_test", "messages": [], "selected_model_id": "nonexistent"}
+    state = _build_initial_state(session, "hi")
     # Should not crash; llm now flows via runtime deps, not state — degrade flag must be set
     assert state["llm_unconfigured"] is True
 

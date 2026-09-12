@@ -1,24 +1,42 @@
-"""streaming.py module."""
+"""Token streaming for LLM calls made from the agent graph nodes."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langgraph.config import get_stream_writer
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
+
+    from ado2gh.agents.migration_agent.runtime.llm_bridge import ModelCapabilities
 
 # ─── Streaming token collection ───────────────────────────────────────
 
 async def _stream_llm_response(
-    llm: Any,
-    messages: list,
+    llm: BaseChatModel,
+    messages: list[Any],
     state: dict[str, Any],
     *,
     subagent: str = "orchestrator",
-    capabilities: Any = None,
+    capabilities: ModelCapabilities | None = None,
 ) -> str:
-    """Stream LLM response, collecting tokens and emitting live SSE events.
+    """Stream an LLM response, collecting tokens and emitting live SSE events.
 
-    Falls back to invoke() if astream() is unavailable or raises.
-    Uses the stream bus (registered by the orchestrator) to push tokens in real-time.
+    Falls back to ``ainvoke()`` if ``astream()`` is unavailable or raises. Uses
+    the stream bus (registered by the orchestrator) to push tokens in real time.
+
+    Args:
+        llm: LangChain chat model to call.
+        messages: Prompt messages passed to the model unchanged.
+        state: Graph state; buffered stream events are appended to it under
+            ``_streaming_tokens`` and the session is read from ``session``.
+        subagent: Role label attached to every emitted event.
+        capabilities: Model capability record; when it reports
+            ``supports_thinking`` the reasoning channel is streamed too.
+
+    Returns:
+        The concatenated response text, or an empty string when both the
+        streaming and the non-streaming call failed.
     """
     import time
 
@@ -37,6 +55,7 @@ async def _stream_llm_response(
         pass
 
     def emit(evt: dict[str, Any]) -> None:
+        """Buffer one stream event on the state and push it to the stream bus."""
         # ponytail: individual tokens are not masked — a secret split across two
         # chunks is unmatchable by any regex, and one scan per token would cost
         # more than the stream. The accumulated text is masked where it lands

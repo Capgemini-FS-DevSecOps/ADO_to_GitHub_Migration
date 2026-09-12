@@ -9,13 +9,14 @@ from ado2gh.agents.migration_agent.hitl.schemas import OperatorMessageAnalysis
 def apply_analysis_guardrails(
     analysis: OperatorMessageAnalysis,
     user_message: str = "",
-    *,
-    from_form: bool = False,
 ) -> OperatorMessageAnalysis:
-    """Re-validate analysis so repository intake matches repository_named_in_message."""
+    """Re-validate analysis so repository intake matches repository_named_in_message.
+
+    Returns:
+        A revalidated copy of ``analysis`` — the model validator clears the
+        repository fields when the operator did not actually name a repository.
+    """
     del user_message  # policy is entirely LLM-structured; message text is not pattern-matched
-    if from_form:
-        return analysis
     return OperatorMessageAnalysis.model_validate(analysis.model_dump())
 
 
