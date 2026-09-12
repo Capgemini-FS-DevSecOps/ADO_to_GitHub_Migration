@@ -36,7 +36,25 @@ def register(cli: click.Group) -> None:
     @click.option("--db", default="migration_state.db", show_default=True,
                   help="Migration state database file.")
     def run(config: str, wave: int | None, db: str, *, dry_run: bool) -> None:
-        """Execute migration wave(s). Idempotent — skips completed scopes."""
+        """Execute migration wave(s). A re-run is not free — read on.
+
+        Nothing is skipped because an earlier run finished it: every scope a
+        repo asks for is executed again. What that costs depends on the scope.
+
+        \b
+          repo         mirror strategy force-pushes over the GitHub repo again,
+                       discarding anything pushed there since; GEI instead
+                       skips when the target's HEAD already matches ADO, and
+                       stops the repo when it exists with a different HEAD
+          pipelines    skips the pipelines this wave already recorded as
+                       completed; re-transforms if the workflows are gone
+                       from the branch, or if you re-run under a new --wave
+          work_items   creates the issues again — one duplicate GitHub issue
+                       per ADO work item, every time
+
+        Only the repo scope runs by default. Use --dry-run first if you are
+        re-running a wave that partly succeeded.
+        """
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.contracts import RunWaveRequest
         from ado2gh.core.config_loader import ConfigLoader

@@ -110,6 +110,15 @@ class MigrationEngine:
     ) -> dict:
         """Migrate one repository across every scope it requests.
 
+        Scope rows are written, never read back as a precondition: a scope
+        already recorded as `MigrationStatus.COMPLETED` is dispatched again on
+        the next call, not skipped. Whether that is safe is each handler's own
+        business — `PipelinesScopeHandler` de-duplicates against the state DB,
+        `GitScopeHandler` re-force-pushes under the mirror strategy, and
+        `WorkItemsScopeHandler` duplicates every issue. The one precondition
+        checked here is the FR-036 in-progress guard, which refuses a repo
+        another live run is holding.
+
         Args:
             wave_id: Wave the migration rows are recorded against.
             repo: Repository to migrate, carrying its own scope list.

@@ -58,6 +58,15 @@ class ScopeHandler(Protocol):
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:
         """Migrate one scope of one repository.
 
+        This protocol imposes no idempotency requirement, and `MigrationEngine`
+        dispatches here whether or not the state store already holds a
+        completed row for the scope. A handler that would do damage on a second
+        run has to guard itself — and they do not agree today: the pipelines
+        handler de-duplicates against the state store, the git handler
+        re-force-pushes under the mirror strategy, and the work-items handler
+        duplicates every issue. Say which one a new handler is in its own
+        docstring (GAP-027).
+
         Args:
             repo: Repository to migrate.
             ctx: Shared clients, state store and execution mode.

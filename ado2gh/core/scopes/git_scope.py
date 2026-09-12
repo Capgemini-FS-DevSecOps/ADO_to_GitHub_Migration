@@ -205,6 +205,14 @@ class GitScopeHandler:
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:
         """Migrate the repository contents to GitHub and map its teams.
 
+        Re-running is not a no-op, and the two strategies differ. Under
+        `mirror` the target is created only if it is missing and the history is
+        then force-pushed again over whatever is on GitHub, so any commit
+        pushed there since the last run is discarded. Under `gei` an existing
+        target whose default-branch HEAD already matches Azure DevOps is
+        reported as already migrated and left alone, and one whose HEAD differs
+        stops the repo with a `RuntimeError` rather than being overwritten.
+
         Args:
             repo: Repository to migrate.
             ctx: Shared clients, state store and execution mode.

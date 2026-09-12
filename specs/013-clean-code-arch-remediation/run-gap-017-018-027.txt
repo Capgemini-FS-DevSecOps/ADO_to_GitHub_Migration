@@ -1,0 +1,60 @@
+.....................                                                    [100%]
+============================== warnings summary ===============================
+ado2gh\reporting\__init__.py:6
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\reporting\__init__.py:6: DeprecationWarning: ServiceConnectionManifest is deprecated and will be removed in v2.0.0. Use the analyze_deps pipeline step instead. See specs/009-pipeline-step-decoupling/spec.md
+    from ado2gh.reporting.service_connection_manifest import ServiceConnectionManifest as ServiceConnectionManifest
+
+ado2gh\core\scopes\registry.py:17
+  D:\GitHub\Work\ADO_to_GitHub_Migration\ado2gh\core\scopes\registry.py:17: DeprecationWarning: SecretsScopeHandler is deprecated. Use analyze_deps step instead. This will be removed in v2.0.0.
+    SecretsScopeHandler(),
+
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\accelerator_api\main.py:178: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+  D:\GitHub\Work\ADO_to_GitHub_Migration\.venv\Lib\site-packages\fastapi\applications.py:4601: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\agent\main.py:54: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\agent\main.py:61: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/contract/test_public_surface_snapshot.py::test_public_surface_matches_snapshot
+  D:\GitHub\Work\ADO_to_GitHub_Migration\services\agent\main.py:68: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+21 passed, 10 warnings in 5.87s

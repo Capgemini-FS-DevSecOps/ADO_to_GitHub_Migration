@@ -102,6 +102,13 @@ class PipelinesScopeHandler:
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:
         """Convert this repository's ADO pipelines and push the workflows to GitHub.
 
+        This is the one scope that de-duplicates its own work: pipelines
+        already recorded as completed **for this wave id** are skipped, and a
+        re-run under a different `--wave` transforms them all over again. When
+        the state store says everything is done but the workflow branch has no
+        files on it, the whole set is re-transformed and pushed rather than
+        trusted.
+
         Args:
             repo: Repository whose pipelines are being converted.
             ctx: Shared clients, state store and execution mode.

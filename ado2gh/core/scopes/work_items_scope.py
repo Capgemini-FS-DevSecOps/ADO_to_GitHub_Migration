@@ -14,6 +14,11 @@ class WorkItemsScopeHandler:
     def migrate(self, repo: RepoConfig, ctx: ScopeContext, **kwargs: object) -> ScopeResult:  # noqa: ARG002 - shared scope-handler signature (FR-011)
         """Create one GitHub issue per work item, plus a label per work-item type.
 
+        There is no de-duplication: nothing here consults the state store or
+        the issues already on the repository, so every run creates the full set
+        again. Running this scope twice leaves one duplicate GitHub issue per
+        Azure DevOps work item, and label creation is retried the same way.
+
         Args:
             repo: Repository whose work items are being migrated.
             ctx: Shared clients, state store and execution mode.
