@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ado2gh.api.contracts import JobRecord, JobStatus, JobTypeEnum, RunWaveResult
+from ado2gh.api.contracts import RunWaveResult
+from ado2gh.models import JobRecord, JobStatus, JobTypeEnum
 from ado2gh.core.orchestration import worker
 
 CONFIG_PATH = "migration.yaml"

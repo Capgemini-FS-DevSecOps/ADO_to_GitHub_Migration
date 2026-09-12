@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import click
 
-from ado2gh.cli.helpers import load_clients, load_repos
+from ado2gh.api.repo_input import load_repos
+from ado2gh.cli.helpers import load_clients
 from ado2gh.logging_config import console
 from ado2gh.output_dirs import output_str
 

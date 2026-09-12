@@ -14,11 +14,10 @@ def test_infra_directory_removed():
     infra_dir = Path("ado2gh/infra")
     assert not infra_dir.exists(), f"ado2gh/infra/ should not exist but found at {infra_dir}"
     
-    # Verify files moved to core/
+    # Verify files moved to core/ (sessions.py moved on to ado2gh/http_utils.py
+    # in T078 so ado2gh/clients/ stops importing ado2gh/core/ — see GAP-021)
     concurrency = Path("ado2gh/core/concurrency.py")
-    sessions = Path("ado2gh/core/sessions.py")
     assert concurrency.exists(), f"ado2gh/core/concurrency.py should exist"
-    assert sessions.exists(), f"ado2gh/core/sessions.py should exist"
 
 
 def test_llm_subpackage_exists():

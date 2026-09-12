@@ -13,7 +13,7 @@ from ado2gh.pipelines.transform.job_graph import build_multi_stage_jobs
 from ado2gh.pipelines.transform.task_registry import lookup_task
 from ado2gh.pipelines.transform.transformer import PipelineTransformer
 from ado2gh.state.job_store import SQLiteJobStore
-from ado2gh.api.contracts import JobTypeEnum as JobType
+from ado2gh.models import JobTypeEnum as JobType
 
 
 SAMPLE_YAML = """

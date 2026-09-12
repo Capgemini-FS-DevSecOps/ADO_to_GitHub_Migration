@@ -8,14 +8,18 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
+from ado2gh.state.scan_payload import (
+    extract_discovery_fields,
+    manual_phase_overrides,
+    pack_scan_summary_json,
+)
+
 
 class ProfileScanMixin:
     """Discovery scan persistence per migration profile; expects ``self._conn()``."""
 
     def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:
         """Persist a scan, keeping operator phase assignments; see :meth:`StateDBBase.save_profile_scan`."""
-        from ado2gh.api.profile_discovery import manual_phase_overrides
-
         overrides = manual_phase_overrides(self.get_profile_scan_repos(profile_id))
         self._write_profile_scan(profile_id, raw, overrides)
 
@@ -30,8 +34,6 @@ class ProfileScanMixin:
         overrides: dict[tuple[str, str], str],
     ) -> None:
         """Replace a profile's scan rows, applying ``overrides`` to ``assigned_phase``."""
-        from ado2gh.api.migration_scan import pack_scan_summary_json
-
         now = raw.get("scanned_at") or datetime.now(timezone.utc).isoformat()
         gh_org = raw.get("gh_org", "")
         summary = pack_scan_summary_json(raw)
@@ -125,8 +127,6 @@ class ProfileScanMixin:
 
     def build_profile_scan_payload(self, profile_id: str) -> dict[str, Any] | None:
         """Rebuild the scan payload the console reads, bucketed by assigned phase."""
-        from ado2gh.api.migration_scan import extract_discovery_fields
-
         meta = self.get_profile_scan_meta(profile_id)
         if not meta:
             return None

@@ -14,8 +14,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from ado2gh.api.contracts import JobRecord, JobStatus
-from ado2gh.api.contracts import JobTypeEnum as JobType
+from ado2gh.models import JobRecord, JobStatus
+from ado2gh.models import JobTypeEnum as JobType
 
 if TYPE_CHECKING:
     from boto3.resources.base import ServiceResource

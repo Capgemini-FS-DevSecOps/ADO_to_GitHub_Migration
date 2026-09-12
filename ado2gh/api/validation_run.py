@@ -8,6 +8,7 @@ from typing import Any
 from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 from ado2gh.api.contracts import ValidateRequest, ValidateResult
 from ado2gh.api.profile_discovery import repo_configs_for_phase, resolve_gh_org
+from ado2gh.api.repo_input import load_repos
 from ado2gh.api.settings_store import AdvancedSettings, MigrationProfile, SettingsStore
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.models import RepoConfig, WaveConfig
@@ -132,7 +133,6 @@ def resolve_validation_repos(
         )
 
     if request.input_path and Path(request.input_path).exists():
-        from ado2gh.cli.helpers import load_repos
         return load_repos(request.input_path, global_cfg, waves)
 
     if profile:
@@ -143,7 +143,6 @@ def resolve_validation_repos(
         if repos:
             return repos
 
-    from ado2gh.cli.helpers import load_repos
     return load_repos("", global_cfg, waves)
 
 

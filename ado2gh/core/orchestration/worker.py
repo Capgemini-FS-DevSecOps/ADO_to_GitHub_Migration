@@ -10,9 +10,10 @@ from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 ensure_gei_dotnet_env()
 
 from ado2gh.api.accelerator import Accelerator
-from ado2gh.api.contracts import JobRecord, RunWaveRequest
-from ado2gh.api.contracts import JobTypeEnum as JobType
+from ado2gh.api.contracts import RunWaveRequest
 from ado2gh.core.redis_queue import RedisJobQueue
+from ado2gh.models import JobRecord
+from ado2gh.models import JobTypeEnum as JobType
 from ado2gh.state.job_store import JobStoreFactory
 
 log = logging.getLogger("ado2gh.worker")

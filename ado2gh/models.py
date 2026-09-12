@@ -1,15 +1,18 @@
-"""Dataclasses and enums shared by every layer of the migration platform.
+"""Dataclasses, enums and job records shared by every layer of the migration platform.
 
 Nothing here talks to ADO, GitHub or the database. These are the plain records
 the CLI, the accelerator API, the state layer and the agent pass between each
 other: repository and wave configuration, phase settings, pipeline metadata,
-risk scores and gate results.
+risk scores, gate results and the background job record the state layer
+persists and the API layer serves.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
 
 
 class MigrationStatus(str, Enum):
@@ -469,3 +472,39 @@ class BatchCheckpoint:
     status: str
     started_at: str
     completed_at: str = ""
+
+
+class JobTypeEnum(str, Enum):
+    """Name the kind of work a queued job performs, as dispatched by the background worker.
+
+    Migration and workflow-push jobs write to GitHub unless their payload asks for a dry run.
+    """
+
+    DISCOVER = "discover"
+    INVENTORY_PROJECT = "inventory_project"
+    MIGRATE_REPO = "migrate_repo"
+    TRANSFORM_PIPELINE = "transform_pipeline"
+    VALIDATE_REPO = "validate_repo"
+    PUSH_WORKFLOWS = "push_workflows"
+
+
+class JobStatus(str, Enum):
+    """Track a queued job from ``pending`` through ``running`` to a terminal status."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class JobRecord(BaseModel):
+    """Describe a queued job; ``result`` is set only when it completed and ``error`` only when it failed."""
+
+    id: str
+    job_type: JobTypeEnum
+    status: JobStatus
+    payload: dict[str, Any] = Field(default_factory=dict)
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+    idempotency_key: Optional[str] = None

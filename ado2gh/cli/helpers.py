@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ado2gh.logging_config import console, log
-from ado2gh.models import DEFAULT_PHASES, PhaseGateResult, RepoConfig, WaveConfig
+from ado2gh.models import DEFAULT_PHASES, PhaseGateResult
 
 if TYPE_CHECKING:  # imported lazily at runtime so `--help` stays fast
     from ado2gh.clients.ado_client import ADOClient
@@ -79,44 +79,6 @@ def load_clients(cfg_global: dict) -> tuple[ADOClient, GHClient]:
         log.info("GitHub App authentication configured")
 
     return ADOClient(ado_url, token_manager=ado_tm), GHClient(tm)
-
-
-def load_repos(
-    input_path: str, global_cfg: dict, waves: list[WaveConfig] | None = None,
-) -> list[RepoConfig]:
-    """Load repos from --input file, or fall back to waves in config.
-
-    Args:
-        input_path: Path of the ``--input`` file naming the repos to act on. An
-            empty value means no file was given and the waves are used instead.
-        global_cfg: The ``global`` block of the migration config, which supplies
-            the target GitHub organisation and the default scope list.
-        waves: The waves parsed from the config, used only when no input file
-            was given.
-
-    Returns:
-        The repositories to act on. An empty list when neither source yielded
-        any, in which case a message has already been printed to the console.
-    """
-    from ado2gh.core.config_loader import ConfigLoader
-
-    if input_path:
-        gh_org = global_cfg.get("gh_org", "")
-        default_scopes = global_cfg.get("default_scopes", ["repo"])
-        repos = ConfigLoader.load_input(input_path, gh_org, default_scopes)
-        if not repos:
-            console.print(f"[red]No repos found in {input_path}[/red]")
-        return repos
-
-    if waves:
-        repos = [r for w in waves for r in w.repos]
-        if repos:
-            return repos
-
-    console.print(
-        "[yellow]No repos specified. Use --input <file> or add waves to config.[/yellow]"
-    )
-    return []
 
 
 def print_gate_result(result: PhaseGateResult, phase: str) -> None:

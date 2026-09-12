@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from ado2gh.api.pipeline_models import PipelineRun, StepStatus
 from ado2gh.api.pipeline_store import PipelineRunStore
+from ado2gh.api.repo_input import load_repos
 from ado2gh.api.repo_lock import REPO_LOCK_MANAGER, RepoLockedException
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -1155,7 +1156,6 @@ class PipelineStepsMixin:
                 run.phase, profile, db_path=adv.db_path, config_path=adv.config_path,
             )
         if not repos:
-            from ado2gh.cli.helpers import load_repos
             repos = load_repos(None, global_cfg, waves)
 
         migrate_step = None

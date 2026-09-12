@@ -18,6 +18,7 @@ from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RiskScore
 from ado2gh.phase.repo_scoring import score_repo
 from ado2gh.phase.risk_scorer import RiskScorer
+from ado2gh.state.scan_payload import DISCOVERY_DETAIL_FIELDS
 
 if TYPE_CHECKING:
     from ado2gh.state.factory import StateStore
@@ -28,49 +29,6 @@ def _scan_results_path(profile_id: str | None = None) -> Path:
     if profile_id:
         return base / f"scan_{profile_id}.json"
     return base / "scan_preview.json"
-
-
-DISCOVERY_DETAIL_KEY = "__discovery_detail__"
-
-DISCOVERY_DETAIL_FIELDS = (
-    "project_details",
-    "org_inventory",
-    "inventory_gaps",
-    "warnings",
-    "status",
-    "pipeline_inventory",
-    "artifacts",
-    "boards",
-    "test_plans",
-)
-
-
-def pack_scan_summary_json(raw: dict[str, Any]) -> dict[str, Any]:
-    """Phase buckets + embedded discovery inventory for profile_scans.summary_json."""
-    summary = {
-        k: {kk: vv for kk, vv in v.items() if kk != "repos"}
-        for k, v in raw.get("recommendations", {}).items()
-    }
-    detail = {k: raw[k] for k in DISCOVERY_DETAIL_FIELDS if raw.get(k) is not None}
-    if detail:
-        summary[DISCOVERY_DETAIL_KEY] = detail
-    return summary
-
-
-def extract_discovery_fields(data: dict[str, Any] | None) -> dict[str, Any]:
-    """Read service-connection inventory and related fields from scan payloads."""
-    if not data:
-        return {}
-    out: dict[str, Any] = {}
-    for key in DISCOVERY_DETAIL_FIELDS:
-        if data.get(key) is not None:
-            out[key] = data[key]
-    nested = data.get(DISCOVERY_DETAIL_KEY)
-    if isinstance(nested, dict):
-        for key, value in nested.items():
-            if value is not None:
-                out[key] = value
-    return out
 
 
 def merge_scan_payload(

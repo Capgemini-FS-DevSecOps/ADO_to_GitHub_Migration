@@ -1,6 +1,6 @@
 """Lightweight mode inline job completion."""
 
-from ado2gh.api.contracts import JobTypeEnum
+from ado2gh.models import JobTypeEnum
 from ado2gh.state.job_store import JobStoreFactory
 
 

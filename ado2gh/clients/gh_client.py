@@ -7,6 +7,7 @@ from urllib.parse import quote
 import requests
 
 from ado2gh.clients.gh_token_manager import TokenManager
+from ado2gh.http_utils import get_thread_session
 from ado2gh.models import RepoConfig
 
 
@@ -33,7 +34,6 @@ class GHClient:
     @property
     def _session(self) -> requests.Session:
         """The calling thread's shared session with the GitHub JSON headers applied."""
-        from ado2gh.core.sessions import get_thread_session
         sess = get_thread_session()
         if "Accept" not in sess.headers:
             sess.headers.update({

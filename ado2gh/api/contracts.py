@@ -1,10 +1,11 @@
 """Pydantic request/response contracts for the Accelerator SDK."""
 from __future__ import annotations
 
-from enum import Enum
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from ado2gh.models import JobRecord, JobTypeEnum
 
 
 class DiscoverRequest(BaseModel):
@@ -121,30 +122,6 @@ class HealthResponse(BaseModel):
     version: str = "5.1.0"
 
 
-class JobTypeEnum(str, Enum):
-    """Name the kind of work a queued job performs, as dispatched by the background worker.
-
-    Migration and workflow-push jobs write to GitHub unless their payload asks for a dry run.
-    """
-
-    DISCOVER = "discover"
-    INVENTORY_PROJECT = "inventory_project"
-    MIGRATE_REPO = "migrate_repo"
-    TRANSFORM_PIPELINE = "transform_pipeline"
-    VALIDATE_REPO = "validate_repo"
-    PUSH_WORKFLOWS = "push_workflows"
-
-
-class JobStatus(str, Enum):
-    """Track a queued job from ``pending`` through ``running`` to a terminal status."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
 class JobEnqueueRequest(BaseModel):
     """Queue a background migration job; body of ``POST /v1/jobs``.
 
@@ -155,18 +132,6 @@ class JobEnqueueRequest(BaseModel):
 
     job_type: JobTypeEnum
     payload: dict[str, Any] = Field(default_factory=dict)
-    idempotency_key: Optional[str] = None
-
-
-class JobRecord(BaseModel):
-    """Describe a queued job; ``result`` is set only when it completed and ``error`` only when it failed."""
-
-    id: str
-    job_type: JobTypeEnum
-    status: JobStatus
-    payload: dict[str, Any] = Field(default_factory=dict)
-    result: Optional[dict[str, Any]] = None
-    error: Optional[str] = None
     idempotency_key: Optional[str] = None
 
 

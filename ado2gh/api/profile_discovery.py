@@ -110,17 +110,6 @@ def risk_score_from_repo_dict(repo: dict[str, Any], gh_org: str = "") -> RiskSco
     )
 
 
-def manual_phase_overrides(repos: list[dict[str, Any]]) -> dict[tuple[str, str], str]:
-    """Detect repos where assigned_phase differs from suggested_phase (manual overrides)."""
-    overrides: dict[tuple[str, str], str] = {}
-    for r in repos:
-        assigned = r.get("assigned_phase")
-        suggested = r.get("suggested_phase")
-        if assigned and suggested and assigned != suggested:
-            overrides[(r.get("project", ""), r.get("repo_name", ""))] = assigned
-    return overrides
-
-
 def iter_scan_repos(scan: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten every repository out of a scan's per-phase recommendations.
 

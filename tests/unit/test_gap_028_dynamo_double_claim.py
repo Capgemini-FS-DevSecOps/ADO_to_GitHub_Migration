@@ -29,8 +29,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ado2gh.api.contracts import JobStatus
-from ado2gh.api.contracts import JobTypeEnum as JobType
+from ado2gh.models import JobStatus
+from ado2gh.models import JobTypeEnum as JobType
 
 # Obviously-fake placeholder, never a real credential (CA-003).
 FAKE_TOKEN = "ghp_000000000000000000000000000000000000"
