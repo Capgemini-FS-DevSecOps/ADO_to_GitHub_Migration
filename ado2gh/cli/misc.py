@@ -42,7 +42,7 @@ def register(cli: click.Group) -> None:
         from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
         from ado2gh.state.factory import create_state_db
         global_cfg, waves = ConfigLoader.load(config)
-        repos = load_repos(input_file, global_cfg, waves) or None
+        repos = load_repos(input_file or "", global_cfg, waves) or None
         report = PipelineReadinessReport(create_state_db(db)).generate(repos=repos, output_path=output)
         console.print(report)
 
@@ -68,8 +68,12 @@ def register(cli: click.Group) -> None:
         from ado2gh.reporting.service_connection_manifest import ServiceConnectionManifest
         global_cfg, waves = ConfigLoader.load(config)
         ado, _ = load_clients(global_cfg)
-        repos = load_repos(input_file, global_cfg, waves)
-        ServiceConnectionManifest(ado).generate(repos, output)
+        repos = load_repos(input_file or "", global_cfg, waves)
+        # generate() scans ADO projects, not repos: list_service_connections()
+        # takes a project name (previously passed RepoConfig objects here,
+        # which would fail encoding into the ADO API URL).
+        projects = sorted({r.ado_project for r in repos})
+        ServiceConnectionManifest(ado).generate(projects, output)
 
     @cli.command("ado-cleanup")
     @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
@@ -100,7 +104,7 @@ def register(cli: click.Group) -> None:
         from ado2gh.models import ExecutionMode
         global_cfg, waves = ConfigLoader.load(config)
         ado, _ = load_clients(global_cfg)
-        repos = load_repos(input_file, global_cfg, waves)
+        repos = load_repos(input_file or "", global_cfg, waves)
         ADOCleanup(
             ado, mode=ExecutionMode.from_dry_run(dry_run=dry_run)
         ).cleanup_repos(repos, archive_repo=archive)
@@ -143,7 +147,7 @@ def register(cli: click.Group) -> None:
 
         global_cfg, waves = ConfigLoader.load(config)
         _, gh = load_clients(global_cfg)
-        repos = load_repos(input_file, global_cfg, waves)
+        repos = load_repos(input_file or "", global_cfg, waves)
         if not repos:
             console.print("[red]No repos. Use --input <file> or configure waves.[/red]")
             return

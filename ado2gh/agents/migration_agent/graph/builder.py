@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
@@ -169,7 +169,7 @@ _LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=0.5, backoff_factor=2.
 
 
 def _with_runtime_deps(
-    node_fn: Callable[[AgentState], Awaitable[dict[str, Any]]],
+    node_fn: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Inject per-invocation callables into node state (not checkpointed).
 
@@ -186,7 +186,7 @@ def _with_runtime_deps(
         strip_runtime_deps,
     )
 
-    async def wrapped(state: AgentState, _config: RunnableConfig | None = None) -> dict[str, Any]:
+    async def wrapped(state: dict[str, Any], _config: RunnableConfig | None = None) -> dict[str, Any]:
         """Run the wrapped node with runtime deps merged in and stripped out.
 
         ``_config`` is the framework's second argument to a node callable. The
@@ -197,7 +197,14 @@ def _with_runtime_deps(
             The node's ``AgentState`` update with the non-serialisable runtime
             deps removed.
         """
-        return strip_runtime_deps(await node_fn(merge_runtime_into_state(state)))
+        # strip_runtime_deps is typed to return object because it also passes
+        # non-dict values (e.g. a LangGraph Command) through unchanged; every
+        # node_fn wrapped here is declared to return dict[str, Any], so the
+        # dict branch is always the one taken.
+        return cast(
+            "dict[str, Any]",
+            strip_runtime_deps(await node_fn(merge_runtime_into_state(state))),
+        )
 
     return wrapped
 

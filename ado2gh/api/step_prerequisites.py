@@ -95,7 +95,10 @@ class StepPrerequisiteChecker:
         for s in run.steps:
             if s.id == step_id:
                 return s.label
-        from ado2gh.api.pipeline_runner import _PIPELINE_STEP_INDEX
+        # _PIPELINE_STEP_INDEX lives in pipeline_models, not pipeline_runner
+        # (which never imports or re-exports it); the old import path here
+        # would raise ImportError the moment this fallback branch ran.
+        from ado2gh.api.pipeline_models import _PIPELINE_STEP_INDEX
 
         meta = _PIPELINE_STEP_INDEX.get(step_id)
         if meta:

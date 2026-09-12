@@ -6,11 +6,22 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Protocol
 
 from ado2gh.models import BatchCheckpoint, PhaseGateResult, PhaseType, RiskScore
 
+if TYPE_CHECKING:
+    import sqlite3
 
-class RiskGatesMixin:
+    class _SQLiteConnHost(Protocol):
+        """Attribute ``RiskGatesMixin`` expects from ``SQLiteStateDB``."""
+
+        def _conn(self) -> sqlite3.Connection: ...
+else:
+    _SQLiteConnHost = object
+
+
+class RiskGatesMixin(_SQLiteConnHost):
     """Risk scores, phase gates and batch checkpoints; expects ``self._conn()``."""
 
     def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:

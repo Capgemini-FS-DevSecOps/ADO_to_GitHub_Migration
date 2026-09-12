@@ -84,7 +84,7 @@ def _result(
     Returns:
         The status, category, message and completion time, plus the capability flags when any were determined.
     """
-    out = {
+    out: dict[str, Any] = {
         "status": status,
         "category": category,
         "message": message,
@@ -724,15 +724,17 @@ def _single_flight_validate(key: str, runner: Callable[[], dict[str, Any]]) -> d
         result = runner()
         with _validate_lock:
             _validate_results[key] = result
-            event = _validate_inflight.pop(key, None)
-            if event:
-                event.set()
+            # Distinct from the function-level `event` (Event, not Event | None) above.
+            finished_event = _validate_inflight.pop(key, None)
+            if finished_event:
+                finished_event.set()
         return result
     except Exception as exc:
         with _validate_lock:
-            event = _validate_inflight.pop(key, None)
-            if event:
-                event.set()
+            # Distinct from the function-level `event` (Event, not Event | None) above.
+            finished_event = _validate_inflight.pop(key, None)
+            if finished_event:
+                finished_event.set()
         category, message = _classify_error(exc)
         return _result("failed", category=category, message=message)
 

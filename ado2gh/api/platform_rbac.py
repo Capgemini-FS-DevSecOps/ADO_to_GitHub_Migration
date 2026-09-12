@@ -76,6 +76,9 @@ def require_capability(request: Request, capability: str) -> PlatformUser | None
     user = _require_authenticated(request)
     if not auth_enabled():
         return user
+    # auth_enabled() is True here, and _require_authenticated's own body
+    # proves it never returns None in that case (it raises 401 instead).
+    assert user is not None
     perms = permissions_for(user.role)
     if not perms.get(capability):
         raise HTTPException(status_code=403, detail=f"Missing capability: {capability}")

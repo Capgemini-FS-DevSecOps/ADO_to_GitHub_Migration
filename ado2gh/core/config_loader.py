@@ -106,7 +106,7 @@ class ConfigLoader:
 
     @staticmethod
     def load_text_input(path: str, gh_org: str,
-                        scopes: list[str] = None) -> list[RepoConfig]:
+                        scopes: list[str] | None = None) -> list[RepoConfig]:
         """Parse a simple text file into RepoConfig list.
 
         Format (one per line):
@@ -173,7 +173,7 @@ class ConfigLoader:
 
     @staticmethod
     def load_csv_input(path: str, gh_org: str,
-                       default_scopes: list[str] = None) -> list[RepoConfig]:
+                       default_scopes: list[str] | None = None) -> list[RepoConfig]:
         """Parse a CSV file with columns: ado_project,ado_repo,gh_org,gh_repo,scopes
 
         The scopes column uses pipe-separated values: repo|pipelines|work_items
@@ -235,7 +235,7 @@ class ConfigLoader:
 
     @staticmethod
     def load_input(path: str, gh_org: str,
-                   default_scopes: list[str] = None) -> list[RepoConfig]:
+                   default_scopes: list[str] | None = None) -> list[RepoConfig]:
         """Auto-detect input format (text or CSV) and load repos.
 
         Args:

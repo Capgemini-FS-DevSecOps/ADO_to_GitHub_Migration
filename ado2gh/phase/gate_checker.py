@@ -1,7 +1,9 @@
 """Phase gate checker — validates success thresholds before advancing."""
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ado2gh.logging_config import log
 from ado2gh.models import (
@@ -11,7 +13,24 @@ from ado2gh.models import (
     PhaseGateResult,
     PhaseType,
 )
-from ado2gh.state.db import StateDB
+
+if TYPE_CHECKING:
+
+    class _GateStateDB(Protocol):
+        """Attributes ``PhaseGateChecker`` expects from a state DB backend.
+
+        Both concrete backends (``SQLiteStateDB``, ``PostgresStateDB``) implement
+        these; ``_conn`` is a private per-backend connection context manager not
+        declared on the shared ``StateDBBase`` ABC, so it is named here instead.
+        """
+
+        def _conn(self) -> AbstractContextManager[Any]: ...
+
+        def get_risk_scores_for_phase(self, phase: PhaseType | str | None) -> list[dict]: ...
+
+        def upsert_phase_gate(self, result: PhaseGateResult) -> None: ...
+
+        def get_phase_gate(self, phase: PhaseType) -> dict | None: ...
 
 
 class PhaseGateChecker:
@@ -22,7 +41,7 @@ class PhaseGateChecker:
     reason so the audit trail names why the gate was forced (CA-002).
     """
 
-    def __init__(self, db: StateDB, phase_configs: dict[PhaseType, PhaseConfig] | None = None) -> None:
+    def __init__(self, db: _GateStateDB, phase_configs: dict[PhaseType, PhaseConfig] | None = None) -> None:
         """Bind the state DB and the per-phase thresholds.
 
         Args:

@@ -5,12 +5,22 @@ Kept separate so ``sqlite_db.py`` stays under the 800-line cap.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
 
+if TYPE_CHECKING:
+    import sqlite3
 
-class AgenticPlatformMixin:
+    class _SQLiteConnHost(Protocol):
+        """Attribute ``AgenticPlatformMixin`` expects from ``SQLiteStateDB``."""
+
+        def _conn(self) -> sqlite3.Connection: ...
+else:
+    _SQLiteConnHost = object
+
+
+class AgenticPlatformMixin(_SQLiteConnHost):
     """Audit events and the in-progress guard; expects ``self._conn()``."""
 
     def insert_audit_event(

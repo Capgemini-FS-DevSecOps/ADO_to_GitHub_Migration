@@ -48,7 +48,7 @@ class SecretsScopeHandler:
         """
         var_groups = ctx.ado.list_variable_groups(repo.ado_project)
         svc_conns = ctx.ado.list_service_connections(repo.ado_project)
-        stats = {
+        stats: dict[str, object] = {
             "variable_groups": len(var_groups),
             "service_connections": len(svc_conns),
         }

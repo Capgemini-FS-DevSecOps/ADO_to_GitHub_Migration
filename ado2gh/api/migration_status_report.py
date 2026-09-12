@@ -27,11 +27,11 @@ def _collect_repo_scope_rows(db: StateStore) -> dict[str, dict[str, Any]]:
 
     repos: dict[str, dict[str, Any]] = {}
     for item in latest.values():
-        key = f"{item['ado_project']}/{item['ado_repo']}"
+        repo_key = f"{item['ado_project']}/{item['ado_repo']}"
         entry = repos.setdefault(
-            key,
+            repo_key,
             {
-                "ado_repo": key,
+                "ado_repo": repo_key,
                 "gh_repo": f"{item.get('gh_org', '')}/{item.get('gh_repo', '')}".strip("/"),
                 "scopes": {},
                 "errors": [],

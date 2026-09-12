@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -341,7 +341,12 @@ async def _gather_validator_baseline_probes(
                         },
                     )
                     entry["github_workflows_probe"] = gh_probe
-                    gh_count = int((gh_probe or {}).get("workflow_count") or 0)
+                    # _invoke_validator_tool is declared -> object (genuinely
+                    # dynamic dispatch); this tool's result is a mapping in
+                    # practice, per its own docstring ("usually a
+                    # JSON-serialisable mapping").
+                    gh_probe_dict = cast("dict[str, Any]", gh_probe or {})
+                    gh_count = int(gh_probe_dict.get("workflow_count") or 0)
                     entry["github_workflow_count"] = gh_count
                     entry["ado_pipeline_count"] = ado_count
                     if ado_count > 0 and gh_count == 0:
@@ -458,9 +463,13 @@ async def _invoke_validator_tool(
     """
     if hasattr(tool, "ainvoke"):
         return await tool.ainvoke(args)
-    if getattr(tool, "coroutine", None):
+    # Direct attribute checks (not getattr-as-condition) so mypy narrows
+    # coroutine/func from Callable | None to Callable for the call below;
+    # both attributes always exist on a StructuredTool, only their value
+    # is optional.
+    if tool.coroutine:
         return await tool.coroutine(**args)
-    if getattr(tool, "func", None):
+    if tool.func:
         return tool.func(**args)
     raise RuntimeError(f"Tool {getattr(tool, 'name', '?')} is not invokable")
 

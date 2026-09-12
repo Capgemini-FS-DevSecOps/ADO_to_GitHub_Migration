@@ -326,7 +326,7 @@ def extract_pipeline_step_warnings(
         if not isinstance(step, dict):
             continue
         status = str(step.get("status") or "").lower()
-        result = step.get("result") if isinstance(step.get("result"), dict) else {}
+        result = raw_result if isinstance(raw_result := step.get("result"), dict) else {}
         structured = [
             normalize_pipeline_warning(w)
             for w in (result.get("warnings") or [])
@@ -566,7 +566,7 @@ def build_executed_scopes_from_pipeline_run(
         default_scope = _PIPELINE_STEP_SCOPES.get(step_id)
         if not default_scope:
             continue
-        result = step.get("result") if isinstance(step.get("result"), dict) else {}
+        result = raw_result if isinstance(raw_result := step.get("result"), dict) else {}
         step_status = str(step.get("status") or "").lower()
         matched_repo = False
         for detail in result.get("repo_details") or []:

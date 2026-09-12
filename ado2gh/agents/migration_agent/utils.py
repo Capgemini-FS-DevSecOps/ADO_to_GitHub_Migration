@@ -118,7 +118,11 @@ def _stream_entry(
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
-        if writer:
+        # langgraph's stub declares get_stream_writer() -> StreamWriter
+        # (non-Optional; a no-op default outside a graph run), so this is
+        # always true today. Kept as a guard against a future langgraph
+        # version returning None here instead of a no-op writer.
+        if writer:  # type: ignore[truthy-function]
             evt: dict[str, Any] = {"kind": kind, "content": entry["content"]}
             if subagent:
                 evt["subagent"] = subagent
@@ -259,7 +263,9 @@ def _emit_tool_result(
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
-        if writer:
+        # See the comment on the sibling guard above: always-truthy today per
+        # langgraph's own stub and runtime default, kept intentionally.
+        if writer:  # type: ignore[truthy-function]
             writer(redact_payload({
                 "kind": "tool_result",
                 "content": summary,
@@ -385,7 +391,7 @@ class IdeAuditBridge:
 
     def __init__(self) -> None:
         """Create the bridge without opening a database connection."""
-        self._writer = None
+        self._writer: AuditWriter | None = None
 
     def _ensure_writer(self) -> AuditWriter:
         """Open the audit writer on first use.

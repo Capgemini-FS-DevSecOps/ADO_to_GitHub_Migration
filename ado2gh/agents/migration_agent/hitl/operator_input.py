@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, cast
 
 from ado2gh.agents.migration_agent.hitl.blockers import (
     apply_skip_blocked_scopes,
@@ -92,7 +92,9 @@ def operator_input_from_blockers(
             label="How should we proceed?",
             field_type="select",
             description="Choose how to handle the blocked scope.",
-            options=resolution_options,
+            # list is invariant; resolution_options is list[dict[str, Any]],
+            # a subset of options' list[str | dict[str, Any]] at runtime.
+            options=cast("list[str | dict[str, Any]]", resolution_options),
             required=True,
         )
     )
@@ -345,7 +347,9 @@ def operator_input_from_probe_failures(
                 description=(
                     "Fix the repository ID, confirm GitHub repo creation intent, skip, or replan."
                 ),
-                options=options,
+                # list is invariant; options is list[dict[str, Any]], a
+                # subset of the field's list[str | dict[str, Any]] at runtime.
+                options=cast("list[str | dict[str, Any]]", options),
                 recommended_value=recommended,
                 required=True,
             ),
@@ -595,7 +599,9 @@ def operator_input_from_validator_failures(
                 label="How should we proceed?",
                 field_type="select",
                 description="Validator recommendation: replan unless you accept the risk.",
-                options=options,
+                # list is invariant; options is list[dict[str, object]], a
+                # subset of the field's list[str | dict[str, Any]] at runtime.
+                options=cast("list[str | dict[str, Any]]", options),
                 recommended_value="replan",
                 required=True,
             ),

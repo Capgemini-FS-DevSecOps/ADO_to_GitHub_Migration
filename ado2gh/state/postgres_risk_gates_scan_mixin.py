@@ -5,8 +5,9 @@ Kept separate so ``postgres_db.py`` stays under the 800-line cap.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, Iterator, Protocol
 
 from ado2gh.models import BatchCheckpoint, PhaseGateResult, PhaseType, RiskScore
 from ado2gh.state.scan_payload import (
@@ -15,8 +16,20 @@ from ado2gh.state.scan_payload import (
     pack_scan_summary_json,
 )
 
+if TYPE_CHECKING:
 
-class PostgresRiskGatesScanMixin:
+    class _PostgresConnHost(Protocol):
+        """Attributes ``PostgresRiskGatesScanMixin`` expects from ``PostgresStateDB``."""
+
+        _extras: Any
+
+        @contextmanager
+        def _conn(self) -> Iterator[Any]: ...
+else:
+    _PostgresConnHost = object
+
+
+class PostgresRiskGatesScanMixin(_PostgresConnHost):
     """Risk scores, phase gates, batch checkpoints and profile scans; expects ``self._conn()``."""
 
     def prune_risk_scores_not_in(self, keys: set[tuple[str, str]]) -> int:

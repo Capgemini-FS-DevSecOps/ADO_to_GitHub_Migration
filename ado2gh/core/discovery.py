@@ -27,7 +27,7 @@ class DiscoveryScanner:
     - repos_template.txt — pre-formatted input file template with all discovered repos
     """
 
-    def __init__(self, ado: ADOClient, db: StateDB = None) -> None:
+    def __init__(self, ado: ADOClient, db: StateDB | None = None) -> None:
         """Store the ADO client and optional state database used by the scan.
 
         Args:
@@ -37,7 +37,7 @@ class DiscoveryScanner:
         self.ado = ado
         self.db = db
 
-    def scan(self, output_dir: str = None) -> dict:
+    def scan(self, output_dir: str | None = None) -> dict:
         """Run full discovery scan and write reports.
 
         Args:

@@ -5,16 +5,27 @@ hashes and session tokens are stored as opaque strings and never logged.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator, Protocol
 
 from ado2gh.state.audit_query import AuditEventFilters, build_audit_filters
 
 if TYPE_CHECKING:
     from ado2gh.auth.models import PlatformUser
 
+    class _PostgresConnHost(Protocol):
+        """Attributes ``PostgresAgenticUsersMixin`` expects from ``PostgresStateDB``."""
 
-class PostgresAgenticUsersMixin:
+        _extras: Any
+
+        @contextmanager
+        def _conn(self) -> Iterator[Any]: ...
+else:
+    _PostgresConnHost = object
+
+
+class PostgresAgenticUsersMixin(_PostgresConnHost):
     """Audit events, platform users, auth sessions and live execution approvals; expects ``self._conn()``."""
 
     def insert_audit_event(

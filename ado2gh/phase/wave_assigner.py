@@ -24,7 +24,7 @@ class WaveAssigner:
         self.phases = phase_configs or DEFAULT_PHASES
 
     def assign(self, scores: list[RiskScore],
-               gh_org: str = "your-github-org") -> dict[PhaseType, list[RiskScore]]:
+               gh_org: str = "your-github-org") -> dict[str, list[RiskScore]]:
         """Assign each score to a phase, lowest risk first, and fill in blank GitHub targets.
 
         Repos that fit no earlier phase land in ``WAVE3``, which has no cap.
@@ -38,7 +38,7 @@ class WaveAssigner:
             Scores grouped by phase value, in every phase of ``PHASE_ORDER``.
         """
         sorted_scores = sorted(scores, key=lambda s: s.total_score)
-        result = {p.value: [] for p in PHASE_ORDER}
+        result: dict[str, list[RiskScore]] = {p.value: [] for p in PHASE_ORDER}
         for score in sorted_scores:
             # Preserve any per-repo override already set on the score
             # (e.g. from the project/repo::gh_org/gh_repo input syntax).

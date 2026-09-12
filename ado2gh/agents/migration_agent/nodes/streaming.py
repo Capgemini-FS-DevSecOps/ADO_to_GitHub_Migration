@@ -1,7 +1,7 @@
 """Token streaming for LLM calls made from the agent graph nodes."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.config import get_stream_writer
 
@@ -70,7 +70,10 @@ async def _stream_llm_response(
     start_time = time.time()
     try:
         async for chunk in llm.astream(messages):
-            token = chunk.content if hasattr(chunk, "content") else str(chunk)
+            # The langchain stub types .content broadly (multimodal content
+            # blocks are possible in principle), but every provider this
+            # bridge drives returns plain text chunks for chat completions.
+            token = cast("str", chunk.content) if hasattr(chunk, "content") else str(chunk)
             if token:
                 full_text += token
                 emit({"kind": "token", "content": token, "subagent": subagent})
@@ -89,9 +92,16 @@ async def _stream_llm_response(
             result = await llm.ainvoke(messages)
             from ado2gh.audit import redact_payload
 
-            full_text = result.content if hasattr(result, "content") else str(result)
+            # See the comment on the streaming branch above: .content is str
+            # in practice for every provider this bridge drives.
+            full_text = cast("str", result.content) if hasattr(result, "content") else str(result)
             # Non-streaming fallback emits one complete string, so it *can* be masked.
-            emit(redact_payload({"kind": "token", "content": full_text, "subagent": subagent}))
+            # redact_payload is a shape-preserving recursive walker (see its
+            # docstring/body): dict in -> dict out.
+            emit(cast(
+                "dict[str, Any]",
+                redact_payload({"kind": "token", "content": full_text, "subagent": subagent}),
+            ))
         except Exception:
             full_text = ""
         else:

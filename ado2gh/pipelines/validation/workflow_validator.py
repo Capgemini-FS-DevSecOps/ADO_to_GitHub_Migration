@@ -127,6 +127,7 @@ class WorkflowValidator:
             The validation result. When actionlint cannot be run the YAML
             fallback is used instead and says so in the errors.
         """
+        assert self._actionlint is not None  # only called after the has_actionlint guard above
         try:
             proc = subprocess.run(
                 [self._actionlint, "-format", "{{json .}}", "-"],

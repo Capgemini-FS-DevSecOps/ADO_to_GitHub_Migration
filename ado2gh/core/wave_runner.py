@@ -6,13 +6,13 @@ from ado2gh.logging_config import log
 from ado2gh.models import ExecutionMode, WaveConfig
 from ado2gh.phase.batch_executor import BatchExecutor
 from ado2gh.phase.progress_tracker import ProgressTracker
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 
 class WaveRunner:
     """Execute all repository migrations within a single wave via BatchExecutor."""
 
-    def __init__(self, engine: MigrationEngine, db: StateDB) -> None:
+    def __init__(self, engine: MigrationEngine, db: StateDBBase) -> None:
         """Build the batch executor this runner delegates every wave to.
 
         Args:

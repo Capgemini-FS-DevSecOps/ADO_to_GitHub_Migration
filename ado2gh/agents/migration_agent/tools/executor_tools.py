@@ -199,6 +199,9 @@ def get_executor_tools(
             wrapped.append(tool)
         else:
             original_func = tool.coroutine
+            # Every tool built above is StructuredTool.from_function(coroutine=...),
+            # never the sync func= form, so .coroutine is always set here.
+            assert original_func is not None
             guarded = wrap_tool_with_guardrail(
                 original_func,
                 agent_role="executor",

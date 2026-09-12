@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ado2gh.state.scan_payload import (
     extract_discovery_fields,
@@ -14,8 +14,18 @@ from ado2gh.state.scan_payload import (
     pack_scan_summary_json,
 )
 
+if TYPE_CHECKING:
+    import sqlite3
 
-class ProfileScanMixin:
+    class _SQLiteConnHost(Protocol):
+        """Attribute ``ProfileScanMixin`` expects from ``SQLiteStateDB``."""
+
+        def _conn(self) -> sqlite3.Connection: ...
+else:
+    _SQLiteConnHost = object
+
+
+class ProfileScanMixin(_SQLiteConnHost):
     """Discovery scan persistence per migration profile; expects ``self._conn()``."""
 
     def save_profile_scan(self, profile_id: str, raw: dict[str, Any]) -> None:

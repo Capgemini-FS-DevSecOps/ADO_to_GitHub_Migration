@@ -2,12 +2,37 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 from ado2gh.api.phase_definitions import PhaseDefinition
 
+if TYPE_CHECKING:
+    from ado2gh.api.settings_models import MigrationProfile, UISettings
 
-class ScanMixin:
+    class _ScanStoreHost(Protocol):
+        """Attributes ``ScanMixin`` expects from the assembled ``SettingsStore``.
+
+        ``load`` and ``get_phases`` are defined on ``SettingsStore`` itself;
+        ``get_profile`` and ``record_scan_summary`` are defined on the sibling
+        ``ProfileMixin``, reachable only once both mixins are combined on the
+        host class. Both are named here since mypy checks this mixin in
+        isolation.
+        """
+
+        def load(self) -> UISettings: ...
+
+        def get_phases(self) -> list[PhaseDefinition]: ...
+
+        def get_profile(self, profile_id: str) -> Optional[MigrationProfile]: ...
+
+        def record_scan_summary(
+            self, profile_id: str, scan: dict[str, Any],
+        ) -> MigrationProfile: ...
+else:
+    _ScanStoreHost = object
+
+
+class ScanMixin(_ScanStoreHost):
     """Async profile scan and rescan methods."""
 
     _rescan_lock = threading.Lock()

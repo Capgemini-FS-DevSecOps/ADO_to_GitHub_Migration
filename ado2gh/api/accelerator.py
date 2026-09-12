@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 from ado2gh.api.contracts import (
     DiscoverRequest,
@@ -185,7 +185,13 @@ class Accelerator:
                 w, mode=ExecutionMode.from_dry_run(dry_run=request.dry_run),
             )
             summary = s
-        return RunWaveResult(**summary)
+        # execute_wave's own return (see its docstring) always carries wave_id,
+        # status, completed, failed, total and dry_run with these exact types;
+        # the two extra keys it also returns (name, repos) are silently
+        # ignored by RunWaveResult. mypy widens summary's static type to
+        # dict[str, object] across the loop reassignment, which it can't
+        # verify against RunWaveResult's per-field types.
+        return RunWaveResult(**cast("dict[str, Any]", summary))
 
     def run_phase(self, request: PhaseRunRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None) -> PhaseRunResult:
         """Execute every repository assigned to a migration phase, in batches.

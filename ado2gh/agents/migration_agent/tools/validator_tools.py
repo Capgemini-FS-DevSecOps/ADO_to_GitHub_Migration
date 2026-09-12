@@ -196,7 +196,7 @@ def get_validator_tools(
         for job in ado.get("jobs") or []:
             if isinstance(job, dict):
                 ado_steps.extend(job.get("steps") or [])
-        gh_steps = []
+        gh_steps: list[Any] = []
         for job in (gh.get("jobs") or {}).values():
             if isinstance(job, dict):
                 gh_steps.extend(job.get("steps") or [])

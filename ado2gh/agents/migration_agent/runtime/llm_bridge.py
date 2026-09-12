@@ -177,7 +177,11 @@ def build_langchain_chat_model(
         if not cfg.api_key:
             return None
         from langchain_anthropic import ChatAnthropic
-        kwargs: dict[str, Any] = {
+        # Same dict[str, Any] shape as the kwargs above; not re-annotated
+        # because every provider branch in this function returns before
+        # falling through, and mypy disallows re-annotating one name twice
+        # in the same function scope.
+        kwargs = {
             "model": cfg.model_id,
             "api_key": cfg.api_key,
             "streaming": streaming,
@@ -195,7 +199,9 @@ def build_langchain_chat_model(
         base_url = cfg.base_url or "http://localhost:11434"
         resolved = resolve_local_service_url(base_url)
         ollama_base_url = f"{resolved}/v1"
-        kwargs: dict[str, Any] = {
+        # Same dict[str, Any] shape as the first kwargs above; see the
+        # comment on the anthropic branch for why this isn't re-annotated.
+        kwargs = {
             "model": cfg.model_id,
             "api_key": cfg.api_key or "ollama",
             "base_url": ollama_base_url,

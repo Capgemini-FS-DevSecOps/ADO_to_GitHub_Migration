@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 if TYPE_CHECKING:
     import redis
@@ -20,7 +20,7 @@ class RedisJobQueue:
             queue_name: Key of the Redis list holding queued job IDs.
         """
         self.queue_name = queue_name
-        self._redis = None
+        self._redis: redis.Redis | None = None
         self._url = redis_url or os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
     @property
@@ -55,7 +55,10 @@ class RedisJobQueue:
         """
         result = self.redis.brpop(self.queue_name, timeout=timeout)
         if result:
-            return result[1]
+            # The redis-py stub types brpop's result as bytes | str because it
+            # cannot express the decode_responses=True passed to from_url()
+            # above; that constructor kwarg makes every response str at runtime.
+            return cast("str", result[1])
         return None
 
     def length(self) -> int:

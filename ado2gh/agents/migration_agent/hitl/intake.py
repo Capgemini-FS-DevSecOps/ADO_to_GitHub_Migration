@@ -440,8 +440,9 @@ async def prepare_form_submission(
 
     intake = apply_form_values_to_intake(session, values)
 
-    if submission.repository_id and intake.resolved_repository_id():
-        validation_error = await ensure_repo_valid(intake.resolved_repository_id())
+    resolved_repo_id = intake.resolved_repository_id()
+    if submission.repository_id and resolved_repo_id and ensure_repo_valid:
+        validation_error = await ensure_repo_valid(resolved_repo_id)
         if validation_error:
             return {
                 "status": "repo_invalid",
@@ -545,6 +546,10 @@ async def resolve_intake_routing(
     )
 
     if planning_from_message:
+        # planning_from_message's own condition requires `analysis is not
+        # None` (see above); this narrows the type for mypy and fails loudly
+        # if that invariant is ever broken by a future edit.
+        assert analysis is not None
         intake = MigrationIntakeSchema(
             dry_run=analysis.dry_run if analysis.dry_run is not None else True,
         )

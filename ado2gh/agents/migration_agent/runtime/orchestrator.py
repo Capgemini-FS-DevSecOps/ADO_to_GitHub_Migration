@@ -12,9 +12,10 @@ the per-invocation runtime dependencies declared by ``_RUNTIME_KEYS`` in
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Literal, cast
 
 from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from ado2gh.agents.migration_agent.constants import (
@@ -140,7 +141,11 @@ async def _merge_checkpoint_state(
     if getattr(graph, "checkpointer", None) is None:
         return turn_state
     try:
-        snapshot = await graph.aget_state(config)
+        # graph_run_config() builds a plain dict with the RunnableConfig keys
+        # LangGraph expects; RunnableConfig is a TypedDict, so this is the same
+        # object at runtime, just typed loosely at the builder so it stays a
+        # general-purpose dict for callers that don't need LangGraph's type.
+        snapshot = await graph.aget_state(cast("RunnableConfig", config))
         if not snapshot or not snapshot.values:
             return turn_state
         prior = snapshot.values
@@ -178,7 +183,7 @@ async def is_graph_interrupted(session_id: str) -> bool:
         return False
     config = graph_run_config(str(session_id), recursion_limit=GRAPH_RECURSION_LIMIT)
     try:
-        snapshot = await graph.aget_state(config)
+        snapshot = await graph.aget_state(cast("RunnableConfig", config))
     except Exception as exc:
         logger.debug("Interrupt check skipped: %s", exc)
         return False
@@ -219,7 +224,9 @@ async def resume_interrupted_graph(
     final_state: dict[str, Any] = {}
     interrupted = False
     try:
-        final_state = await graph.ainvoke(Command(resume=resume_value), config=config)
+        final_state = await graph.ainvoke(
+            Command(resume=resume_value), config=cast("RunnableConfig", config),
+        )
         interrupted = _state_has_interrupt(final_state) or await is_graph_interrupted(thread_id)
     finally:
         clear_runtime_deps()
@@ -321,7 +328,7 @@ async def process_user_message(
     final_state: dict[str, Any] = {}
     interrupted = False
     try:
-        final_state = await graph.ainvoke(initial_state, config=config)
+        final_state = await graph.ainvoke(initial_state, config=cast("RunnableConfig", config))
         interrupted = _state_has_interrupt(final_state) or await is_graph_interrupted(thread_id)
     finally:
         clear_runtime_deps()
@@ -385,11 +392,12 @@ async def _stream_graph_events(
     prev_status = session.get("status", "")
     thread_id = str(session.get("session_id") or "default")
 
+    stream_modes: list[Literal["custom", "updates"]] = ["custom", "updates"]
     try:
         async for stream_mode, event in graph.astream(
             graph_input,
-            config=config,
-            stream_mode=["custom", "updates"],
+            config=cast("RunnableConfig", config),
+            stream_mode=stream_modes,
         ):
             if stream_mode == "custom":
                 if isinstance(event, dict):

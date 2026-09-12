@@ -216,7 +216,7 @@ def register(cli: click.Group) -> None:
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         global_cfg, waves = ConfigLoader.load(config)
         ado, gh = load_clients(global_cfg)
-        all_repos = load_repos(input_file, global_cfg, waves)
+        all_repos = load_repos(input_file or "", global_cfg, waves)
         if not all_repos:
             console.print("[red]No repos to validate. Use --input <file>[/red]")
             sys.exit(1)

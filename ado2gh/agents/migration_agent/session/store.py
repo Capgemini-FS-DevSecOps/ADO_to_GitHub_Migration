@@ -237,7 +237,7 @@ class MigrationSessionStore:
         """
         sid = _uuid()
         now = _now()
-        record = {
+        record: dict[str, Any] = {
             "session_id": sid,
             "profile_id": profile_id,
             "model_id": model_id,

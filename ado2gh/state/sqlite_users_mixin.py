@@ -5,13 +5,22 @@ hashes and session tokens are stored as opaque strings and never logged.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    import sqlite3
+
     from ado2gh.auth.models import PlatformUser
 
+    class _SQLiteConnHost(Protocol):
+        """Attribute ``PlatformUsersMixin`` expects from ``SQLiteStateDB``."""
 
-class PlatformUsersMixin:
+        def _conn(self) -> sqlite3.Connection: ...
+else:
+    _SQLiteConnHost = object
+
+
+class PlatformUsersMixin(_SQLiteConnHost):
     """Platform users, auth sessions and live execution approvals; expects ``self._conn()``."""
 
     def count_platform_users(self) -> int:

@@ -228,7 +228,8 @@ def build_executor_result_from_pipeline(
             continue
         step_status = str(step.get("status") or "")
         mapped = _scope_status_from_step(step_status)
-        result = step.get("result") if isinstance(step.get("result"), dict) else {}
+        raw_result = step.get("result")
+        result = raw_result if isinstance(raw_result, dict) else {}
         scope_detail = ""
         scope_error = ""
         for detail in result.get("repo_details") or []:
@@ -264,7 +265,8 @@ def build_executor_result_from_pipeline(
             if is_fr036_failure(msg) or is_fr036_failure(scope_error):
                 failure["error_code"] = "migration_in_progress"
                 failure["operator_input_required"] = True
-            result_data = step.get("result") if isinstance(step.get("result"), dict) else {}
+            raw_result_data = step.get("result")
+            result_data = raw_result_data if isinstance(raw_result_data, dict) else {}
             holder = result_data.get("holder_run_id")
             if holder:
                 failure["holder_run_id"] = holder

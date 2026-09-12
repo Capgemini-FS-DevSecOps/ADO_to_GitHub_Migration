@@ -1,5 +1,7 @@
 """Shared logging and console setup."""
 import logging
+from collections.abc import Mapping
+from typing import cast
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -22,7 +24,13 @@ class SecretRedactingFilter(logging.Filter):
             if isinstance(record.msg, str):
                 record.msg = redact_payload(record.msg)
             if record.args:
-                record.args = redact_payload(record.args)
+                # redact_payload is a shape-preserving recursive walker (see
+                # its docstring/body): tuple in -> tuple out, dict in -> dict
+                # out. record.args is already guarded non-empty/non-None here.
+                record.args = cast(
+                    "tuple[object, ...] | Mapping[str, object]",
+                    redact_payload(record.args),
+                )
         except Exception:  # fail safe: drop content, keep logging alive
             record.msg = "<log record suppressed: redaction failed>"
             record.args = None

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import posixpath
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional, cast
 
 import yaml
 
@@ -56,8 +56,14 @@ def resolve_templates(
         doc, fetch_template, source_path=source_path, depth=0, max_depth=max_depth,
     )
     if fetch_template:
-        merged = _resolve_template_lists(
-            merged, fetch_template, source_path=source_path, depth=0, max_depth=max_depth,
+        # _resolve_template_lists recurses over arbitrary YAML nodes, so its
+        # signature is `object`; its own dict branch always returns a dict,
+        # and `merged` is a dict going in.
+        merged = cast(
+            "dict",
+            _resolve_template_lists(
+                merged, fetch_template, source_path=source_path, depth=0, max_depth=max_depth,
+            ),
         )
     return yaml.dump(merged, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
@@ -237,10 +243,11 @@ def _merge_extends(
     base = _merge_extends(
         base, fetch_template, template_path, depth + 1, max_depth,
     )
-    if fetch_template:
-        base = _resolve_template_lists(
-            base, fetch_template, template_path, depth + 1, max_depth,
-        )
+    # fetch_template is already guaranteed non-None by the early return above.
+    base = cast(
+        "dict",
+        _resolve_template_lists(base, fetch_template, template_path, depth + 1, max_depth),
+    )
     merged = _deep_merge(base, doc)
     merged.pop("extends", None)
     return merged
@@ -350,8 +357,11 @@ def _expand_template_list(  # noqa: PLR0913
         template_doc = _merge_extends(
             template_doc, fetch_template, template_path, depth + 1, max_depth,
         )
-        template_doc = _resolve_template_lists(
-            template_doc, fetch_template, template_path, depth + 1, max_depth,
+        template_doc = cast(
+            "dict",
+            _resolve_template_lists(
+                template_doc, fetch_template, template_path, depth + 1, max_depth,
+            ),
         )
 
         inlined = _inline_template_body(template_doc, list_kind, item)

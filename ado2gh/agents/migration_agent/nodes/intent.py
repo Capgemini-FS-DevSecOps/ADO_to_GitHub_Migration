@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from ado2gh.agents.migration_agent.constants import NO_LLM_CONFIGURED_MESSAGE
 from ado2gh.agents.migration_agent.nodes._common import _transition_session
@@ -73,7 +73,11 @@ def _build_session_context(session: dict[str, Any]) -> str:
         if repos:
             repo_names = [r.get("repo_name", r.get("name", str(r))) if isinstance(r, dict) else str(r) for r in repos[:10]]
             suffix = " …" if len(repos) > 10 else ""
-            ctx_parts.append(f"- available_repos ({len(repos)} total, profile discovery): {', '.join(repo_names)}{suffix}")
+            # repo_name/name are always non-null strings in a well-formed
+            # discovery snapshot; the None member is an artifact of chaining
+            # .get() defaults on an Any-typed dict, not a real runtime value.
+            joined_names = ", ".join(cast("list[str]", repo_names))
+            ctx_parts.append(f"- available_repos ({len(repos)} total, profile discovery): {joined_names}{suffix}")
     if session.get("migration_plan"):
         from ado2gh.agents.migration_agent.hitl.blockers import sanitize_plan_for_operator_view
 

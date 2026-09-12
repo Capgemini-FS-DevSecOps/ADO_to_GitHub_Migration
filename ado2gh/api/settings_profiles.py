@@ -3,12 +3,26 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Protocol
 
 from ado2gh.api.settings_models import GitHubToken, MigrationProfile
 
+if TYPE_CHECKING:
+    from ado2gh.api.settings_models import UISettings
 
-class ProfileMixin:
+    class _ProfileStoreHost(Protocol):
+        """Attributes ``ProfileMixin`` expects from ``SettingsStore``."""
+
+        def load(self) -> UISettings: ...
+
+        def save(self, settings: UISettings) -> None: ...
+
+        def _normalize_defaults(self, settings: UISettings) -> None: ...
+else:
+    _ProfileStoreHost = object
+
+
+class ProfileMixin(_ProfileStoreHost):
     """Profile CRUD, approval workflow, and query methods."""
 
     def get_profile(self, profile_id: str) -> Optional[MigrationProfile]:

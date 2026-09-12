@@ -1,7 +1,7 @@
 """GitHub REST API client with multi-token support."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 import requests
@@ -164,7 +164,10 @@ class GHClient:
         Raises:
             requests.HTTPError: On a non-2xx response, including 404 when it does not exist.
         """
-        return self._get(f"/repos/{org}/{repo}")
+        # GET /repos/{org}/{repo} always returns a single repository object per
+        # the GitHub REST API; _get()'s return type is a union only because
+        # other endpoints on this client are paginated arrays.
+        return cast("dict[str, Any]", self._get(f"/repos/{org}/{repo}"))
 
     def create_private_repo(self, org: str, repo: str, description: str = "") -> dict:
         """Create a private repository in an organisation.
@@ -352,7 +355,12 @@ class GHClient:
         Raises:
             requests.HTTPError: On a non-2xx response.
         """
-        return self._get(f"/repos/{org}/{repo}/actions/secrets/public-key")
+        # GET .../actions/secrets/public-key always returns a single object
+        # (key_id + key), never a list.
+        return cast(
+            "dict[str, Any]",
+            self._get(f"/repos/{org}/{repo}/actions/secrets/public-key"),
+        )
 
     def create_secret(self, org: str, repo: str, secret_name: str,
                       encrypted_value: str, key_id: str) -> None:
@@ -413,13 +421,18 @@ class GHClient:
         Returns:
             Branch records; the pages fetched so far when a request fails.
         """
-        branches = []
+        branches: list[dict[str, Any]] = []
         page = 1
         while True:
             try:
-                batch = self._get(
-                    f"/repos/{org}/{repo}/branches",
-                    params={"per_page": 100, "page": page},
+                # GET /repos/{org}/{repo}/branches is a paginated array
+                # endpoint, never a single object.
+                batch = cast(
+                    "list[dict[str, Any]]",
+                    self._get(
+                        f"/repos/{org}/{repo}/branches",
+                        params={"per_page": 100, "page": page},
+                    ),
                 )
                 branches.extend(batch)
                 if len(batch) < 100:
@@ -441,9 +454,13 @@ class GHClient:
             Workflow records; empty when the request fails.
         """
         try:
-            return self._get(
-                f"/repos/{org}/{repo}/actions/workflows"
-            ).get("workflows", [])
+            # GET .../actions/workflows returns {"total_count": N, "workflows":
+            # [...]}, a single object, never a bare list.
+            workflows = cast(
+                "dict[str, Any]",
+                self._get(f"/repos/{org}/{repo}/actions/workflows"),
+            )
+            return workflows.get("workflows", [])
         except Exception:
             return []
 
@@ -462,7 +479,9 @@ class GHClient:
         Raises:
             requests.HTTPError: On a non-2xx response.
         """
-        return self._get(f"/repos/{org}/{repo}").get("default_branch", "main")
+        # GET /repos/{org}/{repo} always returns a single repository object.
+        repo_data = cast("dict[str, Any]", self._get(f"/repos/{org}/{repo}"))
+        return repo_data.get("default_branch", "main")
 
     def set_default_branch(self, org: str, repo: str, branch: str) -> dict:
         """Change the repository's default branch.
@@ -495,7 +514,11 @@ class GHClient:
             requests.HTTPError: On a non-2xx response; 404 for an unknown branch,
                 409 for an empty repository.
         """
-        data = self._get(f"/repos/{org}/{repo}/git/ref/heads/{branch}")
+        # GET .../git/ref/heads/{branch} always returns a single ref object.
+        data = cast(
+            "dict[str, Any]",
+            self._get(f"/repos/{org}/{repo}/git/ref/heads/{branch}"),
+        )
         return data["object"]["sha"]
 
     def create_branch(self, org: str, repo: str, branch: str, sha: str) -> dict:

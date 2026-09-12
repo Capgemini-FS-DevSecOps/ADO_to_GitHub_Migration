@@ -140,6 +140,7 @@ def _probe_gcp(source: CloudCredentialSource) -> dict[str, Any]:
         }
     try:
         import google.auth
+        import google.auth.transport.requests
         import httpx
 
         credentials, _ = google.auth.default()

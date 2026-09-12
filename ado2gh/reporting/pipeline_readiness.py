@@ -16,7 +16,6 @@ from ado2gh.models import (
 )
 from ado2gh.pipelines.repo_association import infer_pipeline_repo_name
 from ado2gh.state.base import StateDBBase
-from ado2gh.state.db import StateDB
 
 
 def workflow_push_readiness(db: StateDBBase | None, repo: RepoConfig) -> dict[str, list[str]]:
@@ -100,7 +99,7 @@ class PipelineReadinessReport:
         "PackerBuild@1",
     }
 
-    def __init__(self, db: StateDB) -> None:
+    def __init__(self, db: StateDBBase) -> None:
         """Store the state store the pipeline inventory is read from.
 
         Args:
@@ -150,13 +149,16 @@ class PipelineReadinessReport:
             for row in self.db.get_all_inventory():
                 try:
                     meta = PipelineMetadata.from_dict(json.loads(row["metadata_json"]))
-                    repos = project_repos.get(meta.project, [])
-                    if repos:
+                    # Deliberately not named `repos`: that outer variable is the
+                    # `list[RepoConfig] | None` filter this branch runs without;
+                    # this is unrelated per-project name-inference data.
+                    repo_hints = project_repos.get(meta.project, [])
+                    if repo_hints:
                         inferred = infer_pipeline_repo_name(
                             meta.pipeline_name,
                             meta.repo_name,
                             meta.repo_id,
-                            repos,
+                            repo_hints,
                         )
                         if inferred:
                             meta.repo_name = inferred
@@ -311,9 +313,9 @@ class PipelineReadinessReport:
             ``total_effort_days`` at eight hours to the day.
         """
         total = len(assessments)
-        by_conversion = defaultdict(int)
-        by_type = defaultdict(int)
-        by_complexity = defaultdict(int)
+        by_conversion: defaultdict[str, int] = defaultdict(int)
+        by_type: defaultdict[str, int] = defaultdict(int)
+        by_complexity: defaultdict[str, int] = defaultdict(int)
         total_effort = 0.0
 
         for a in assessments:

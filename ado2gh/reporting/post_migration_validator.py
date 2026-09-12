@@ -16,7 +16,7 @@ from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.gh_client import GHClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import RepoConfig
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 PASS = "PASS"
 WARN = "WARN"
@@ -35,7 +35,7 @@ class PostMigrationValidator:
     6. Branch protection rules applied
     """
 
-    def __init__(self, ado: ADOClient, gh: GHClient, db: StateDB) -> None:
+    def __init__(self, ado: ADOClient, gh: GHClient, db: StateDBBase) -> None:
         """Store the clients and state store the validation reads from.
 
         Args:
@@ -279,7 +279,7 @@ class PostMigrationValidator:
         return {"verdict": FAIL, "ado_count": ado_count, "gh_count": gh_count,
                 "detail": f"{ado_count - gh_count} branches missing"}
 
-    def _check_workflows(self, repo: RepoConfig, workflow_files: list[dict] = None) -> dict:
+    def _check_workflows(self, repo: RepoConfig, workflow_files: list[dict] | None = None) -> dict:
         """Compare inventoried ADO pipelines against workflows at the GitHub target.
 
         When the counts are satisfied and ``workflow_files`` is given, each file the
@@ -315,7 +315,10 @@ class PostMigrationValidator:
             # Workflow integrity check: the count comparison above only proves the
             # target has *some* workflows, so read back each file the migration
             # produced. A file the Contents API cannot return did not land.
-            integrity_result = {"verdict": PASS, "detail": "All pipelines have corresponding workflows"}
+            integrity_result: dict[str, object] = {
+                "verdict": PASS,
+                "detail": "All pipelines have corresponding workflows",
+            }
             if workflow_files:
                 repo_key = f"{repo.ado_project}/{repo.ado_repo}"
                 repo_workflows = [wf for wf in workflow_files if repo_key in str(wf.get("repo", ""))]

@@ -469,27 +469,32 @@ async def _handle_general_chat(
             from langgraph.config import get_stream_writer
 
             w = get_stream_writer()
-            if w:
+            # See the comment on the analogous guard in utils.py: always-truthy
+            # today per langgraph's own stub and runtime default, kept
+            # intentionally rather than removed (no behavior change).
+            if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
                 # _append_event, so the SSE frame must match (CA-003, FR-025).
                 w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
 
     tool_calls = parsed.get("tool_calls", [])
     if tool_calls:
-        reply = parsed.get("reply")
+        # Distinct name from the function-level `reply` (str, assigned above
+        # and below): this one holds whatever `parsed` carries (Any | None).
+        tool_reply = parsed.get("reply")
         has_form_tool = any(tc.get("name") == "request_user_input" for tc in tool_calls)
         has_invoke_planner = any(
             tc.get("name") in ("invoke_planner", "invoke_bulk_planner") for tc in tool_calls
         )
-        if reply and not has_form_tool and not has_invoke_planner:
-            publish_orchestrator_chat(session, reply)
-        elif reply and has_invoke_planner:
-            publish_orchestrator_chat(session, reply)
+        if tool_reply and not has_form_tool and not has_invoke_planner:
+            publish_orchestrator_chat(session, tool_reply)
+        elif tool_reply and has_invoke_planner:
+            publish_orchestrator_chat(session, tool_reply)
         return {
             "tool_calls": tool_calls,
             "thinking": thinking,
             "should_return": False,
-            "reply": reply if not has_form_tool and not has_invoke_planner else None,
+            "reply": tool_reply if not has_form_tool and not has_invoke_planner else None,
         }
 
     reply = publish_orchestrator_chat(session, _safe_reply(parsed, response_text))
@@ -548,7 +553,10 @@ async def _handle_migration_info(
             from langgraph.config import get_stream_writer
 
             w = get_stream_writer()
-            if w:
+            # See the comment on the analogous guard in utils.py: always-truthy
+            # today per langgraph's own stub and runtime default, kept
+            # intentionally rather than removed (no behavior change).
+            if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
                 # _append_event, so the SSE frame must match (CA-003, FR-025).
                 w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
@@ -694,7 +702,10 @@ async def _handle_migration_action(
             from langgraph.config import get_stream_writer
 
             w = get_stream_writer()
-            if w:
+            # See the comment on the analogous guard in utils.py: always-truthy
+            # today per langgraph's own stub and runtime default, kept
+            # intentionally rather than removed (no behavior change).
+            if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
                 # _append_event, so the SSE frame must match (CA-003, FR-025).
                 w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 
 class GuardrailAction(str, Enum):
@@ -349,7 +349,9 @@ def wrap_tool_with_guardrail(
 
         decision = evaluate_guardrail(
             agent_role=agent_role,
-            tool_name=kwargs.get("_tool_name", tool_func.__name__),
+            # `_tool_name`, when a caller passes it, is always a str override
+            # of the wrapped tool's name (see the pop() sites below).
+            tool_name=cast("str", kwargs.get("_tool_name", tool_func.__name__)),
             arguments=kwargs,
             migration_plan=migration_plan,
             plan_approved=plan_approved,

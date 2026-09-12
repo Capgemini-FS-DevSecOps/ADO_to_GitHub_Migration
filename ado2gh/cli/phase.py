@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal, cast
 
 import click
 import yaml
@@ -31,7 +32,7 @@ def _write_phase_config(config_path: str, global_cfg: dict, assigned: dict) -> P
     Returns:
         The path written: ``migration_phase.yaml`` in the config's directory.
     """
-    waves = []
+    waves: list[dict] = []
     for phase in PHASE_ORDER:
         scores = assigned.get(phase.value, [])
         if not scores:
@@ -112,8 +113,13 @@ def register(cli: click.Group) -> None:
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.contracts import PhaseRunRequest
         accel = Accelerator(db_path=db)
+        # click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]) on --phase
+        # above guarantees phase_name is one of these five values.
+        phase_literal = cast(
+            'Literal["poc", "pilot", "wave1", "wave2", "wave3"]', phase_name,
+        )
         result = accel.run_phase(PhaseRunRequest(
-            config_path=config, phase=phase_name, dry_run=dry_run, force=force,
+            config_path=config, phase=phase_literal, dry_run=dry_run, force=force,
             # `phase run` has no --reason flag (frozen CLI surface), so --force
             # past a blocking gate is refused. Escalate via:
             #   phase gate-check --phase <prior> --override --reason "..."

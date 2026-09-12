@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
     from langchain_core.language_models import BaseChatModel
 
+    from ado2gh.agents.migration_agent.hitl.operator_input import OperatorInputRequest
+
 _PLANNER_RESEARCH_TOOLS = frozenset({
     "get_current_profile",
     "ado_api_query",
@@ -267,7 +269,7 @@ def _planner_operator_input_return(
     plan: dict[str, Any],
     migration_queue: dict[str, Any],
     iteration: int,
-    op_req: object,
+    op_req: OperatorInputRequest,
 ) -> dict[str, Any]:
     """Build the planner return that hands an operator decision to the orchestrator.
 

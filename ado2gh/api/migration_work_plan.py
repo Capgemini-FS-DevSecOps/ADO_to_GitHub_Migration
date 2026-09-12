@@ -437,20 +437,20 @@ def apply_scope_results_to_work_items(
         for row in detail.get("scopes") or []:
             scope = row.get("scope", "")
             key = (repo, scope)
-            wi = by_key.get(key)
-            if not wi:
+            matched_wi = by_key.get(key)
+            if not matched_wi:
                 continue
             st = row.get("status", "")
             if st == "completed":
-                wi["status"] = "completed"
-                wi["blocker"] = ""
-                wi["detail"] = row.get("detail") or "Completed"
+                matched_wi["status"] = "completed"
+                matched_wi["blocker"] = ""
+                matched_wi["detail"] = row.get("detail") or "Completed"
             elif st == "failed":
-                wi["status"] = "failed"
-                wi["detail"] = row.get("error") or row.get("detail") or "Failed"
+                matched_wi["status"] = "failed"
+                matched_wi["detail"] = row.get("error") or row.get("detail") or "Failed"
             elif st == "skipped":
-                wi["status"] = "skipped"
-            sync_work_item_wire_keys(wi)
+                matched_wi["status"] = "skipped"
+            sync_work_item_wire_keys(matched_wi)
     return work_items
 
 

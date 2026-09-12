@@ -130,5 +130,11 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 
 [[tool.mypy.overrides]]
-module = ["ado2gh.state.*", "ado2gh.cli.*", "ado2gh.pipelines.*"]
-ignore_errors = true
+# numpy's bundled stub uses the PEP 695 `type` statement (3.12+ syntax);
+# skip following into it rather than raising python_version past what CI
+# actually runs (3.11). follow_imports is ignored for .pyi files unless
+# follow_imports_for_stubs is also set (mypy config docs, follow_imports_for_stubs) —
+# numpy ships an inline __init__.pyi, so both are required together.
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true

@@ -428,7 +428,7 @@ class SQLiteStateDB(AgenticPlatformMixin, PlatformUsersMixin, ProfileScanMixin, 
                     "VALUES (?,?,?,?)",
                     (wave_id, now, "in_progress", int(mode is ExecutionMode.DRY_RUN)),
                 )
-                return cur.lastrowid
+                return cur.lastrowid if cur.lastrowid is not None else -1
             conn.execute(
                 "UPDATE wave_runs SET completed_at=?, status=? "
                 "WHERE wave_id=? AND completed_at IS NULL",

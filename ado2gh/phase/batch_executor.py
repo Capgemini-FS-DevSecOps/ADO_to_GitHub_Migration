@@ -5,7 +5,7 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rich.panel import Panel
 from rich.progress import (
@@ -26,7 +26,7 @@ from ado2gh.models import (
     WaveConfig,
 )
 from ado2gh.phase.progress_tracker import ProgressTracker
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 if TYPE_CHECKING:
     from ado2gh.core.migration_engine import MigrationEngine
@@ -41,7 +41,7 @@ class BatchExecutor:
     dry run never makes a later live run skip work.
     """
 
-    def __init__(self, engine: MigrationEngine, db: StateDB, tracker: ProgressTracker) -> None:
+    def __init__(self, engine: MigrationEngine, db: StateDBBase, tracker: ProgressTracker) -> None:
         """Bind the engine that migrates one repo, the state DB and the velocity tracker.
 
         Args:
@@ -96,7 +96,7 @@ class BatchExecutor:
             border_style="blue", title=f"Phase {phase.value.upper()}",
         ))
 
-        summary = {"phase": phase.value, "completed": 0, "failed": 0,
+        summary: dict[str, Any] = {"phase": phase.value, "completed": 0, "failed": 0,
                    "batches_run": 0, "batches_skipped": last_done + 1}
 
         for batch_num, batch_repos in enumerate(batches):
@@ -223,7 +223,7 @@ class BatchExecutor:
         live = mode is ExecutionMode.LIVE
         if live:
             self.db.mark_wave_run(wave.wave_id, "started", mode)
-        result = {"completed": 0, "failed": 0, "repo_statuses": {}}
+        result: dict[str, Any] = {"completed": 0, "failed": 0, "repo_statuses": {}}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
                       console=console, transient=True) as prog:

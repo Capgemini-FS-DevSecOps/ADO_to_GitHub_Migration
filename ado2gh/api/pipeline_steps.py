@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ado2gh.api.pipeline_models import PipelineRun, StepStatus
 from ado2gh.api.pipeline_store import PipelineRunStore
@@ -10,12 +10,31 @@ from ado2gh.api.repo_input import load_repos
 from ado2gh.api.repo_lock import REPO_LOCK_MANAGER, RepoLockedException
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ado2gh.api.settings_store import SettingsStore
     from ado2gh.clients.ado_client import ADOClient
     from ado2gh.models import RepoConfig
     from ado2gh.state.factory import StateStore
 
+    class _PipelineStepsHost(Protocol):
+        """Attributes ``PipelineStepsMixin`` expects from ``PipelineRunner``."""
 
-class PipelineStepsMixin:
+        settings: SettingsStore
+
+        def _log(self, run: PipelineRun, msg: str) -> None: ...
+
+        def _set_step(
+            self,
+            run: PipelineRun,
+            step_id: str,
+            status: StepStatus,
+            message: str = "",
+            result: dict | None = None,
+        ) -> None: ...
+else:
+    _PipelineStepsHost = object
+
+
+class PipelineStepsMixin(_PipelineStepsHost):
     """Step implementations mixed into :class:`~ado2gh.api.pipeline_runner.PipelineRunner`.
 
     Every step handler deliberately shares one signature —
@@ -311,7 +330,7 @@ class PipelineStepsMixin:
                 repo_ids = []
 
             all_warnings = []
-            dependencies: dict[str, dict[str, Any]] = {}
+            dependencies = {}
             self._log(run, f"Dependency analysis: {len(repo_ids)} repo(s) in phase {run.phase}")
             for rid in repo_ids:
                 repo_warnings, repo_deps = _check_repo_warnings(rid)
@@ -729,7 +748,12 @@ class PipelineStepsMixin:
                 cannot continue past.
         """
         from ado2gh.api.accelerator import Accelerator, _build_ado_client, _build_gh_client
-        from ado2gh.api.contracts import PhaseRunRequest, RunWaveRequest
+        from ado2gh.api.contracts import (
+            PhaseRunRequest,
+            PhaseRunResult,
+            RunWaveRequest,
+            RunWaveResult,
+        )
         from ado2gh.api.migration_work_plan import (
             apply_scope_results_to_work_items,
             build_work_items_for_repos,
@@ -753,17 +777,17 @@ class PipelineStepsMixin:
         # For single-repo runs, create a minimal wave for dry-run validation
         if run.repository_id and run.dry_run:
             from ado2gh.models import RepoConfig, WaveConfig
-            project, repo = run.repository_id.split("/", 1)
+            project, repo_name = run.repository_id.split("/", 1)
             gh_org = profile.gh_org if profile else "ado-to-gh-migration"
-            wave = WaveConfig(
+            wave: WaveConfig | None = WaveConfig(
                 wave_id=9000,
                 name=f"Dry-run validation for {run.repository_id}",
                 description=f"Single-repo dry-run validation for {run.repository_id}",
                 repos=[RepoConfig(
                     ado_project=project,
-                    ado_repo=repo,
+                    ado_repo=repo_name,
                     gh_org=gh_org,
-                    gh_repo=repo,
+                    gh_repo=repo_name,
                     phase="",
                     risk_score=0,
                     scopes=["repo"],
@@ -824,7 +848,8 @@ class PipelineStepsMixin:
 
                 if run.dry_run:
                     global_cfg, _ = ConfigLoader.load(adv.config_path)
-                    global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
+                    if profile:
+                        global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
                     global_cfg["gh_org"] = gh_org
                     validation_errors: list[str] = []
                     try:
@@ -903,6 +928,11 @@ class PipelineStepsMixin:
                     f"{step_label}: {len(wave.repos)} repo(s) phase {run.phase} [{mode}]{dep_note}{scope_note}",
                 )
                 global_cfg, _ = ConfigLoader.load(adv.config_path)
+                # wave is only non-empty here via the profile-driven branch above: the
+                # single-repo branch requires run.dry_run=True (this code only runs when
+                # dry_run is False, per the early return above) and the no-profile branch
+                # leaves wave=None. profile is therefore always set; narrowed for mypy.
+                assert profile is not None
                 global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
                 global_cfg["gh_org"] = gh_org
                 ado = _build_ado_client(global_cfg)
@@ -1030,9 +1060,9 @@ class PipelineStepsMixin:
                                 feasibility_warnings.append(f"{detail['repo']}: {w}")
 
                 if feasibility_warnings:
-                    shown = feasibility_warnings[:3]
+                    shown_warnings = feasibility_warnings[:3]
                     extra = f" (+{len(feasibility_warnings) - 3} more)" if len(feasibility_warnings) > 3 else ""
-                    msg += f"\nFeasibility warnings: {', '.join(shown)}{extra}"
+                    msg += f"\nFeasibility warnings: {', '.join(shown_warnings)}{extra}"
 
                 # Continue-on-error: WARN (not FAILED) when some repos fail or feasibility warnings exist in non-dry-run
                 has_failures = not run.dry_run and result.get("failed", 0) > 0
@@ -1062,15 +1092,16 @@ class PipelineStepsMixin:
                     {"dry_run": True, "skipped_reason": "no_profile"},
                 )
             return
+        outcome: RunWaveResult | PhaseRunResult
         if run.wave_id is not None:
-            result = accel.run_wave(RunWaveRequest(
+            outcome = accel.run_wave(RunWaveRequest(
                 config_path=adv.config_path,
                 wave_id=run.wave_id,
                 dry_run=run.dry_run,
                 db_path=adv.db_path,
             ))
-            msg = f"Wave {result.wave_id}: {result.completed}/{result.total} completed"
-            self._set_step(run, step_id, StepStatus.COMPLETED, msg, result.__dict__)
+            msg = f"Wave {outcome.wave_id}: {outcome.completed}/{outcome.total} completed"
+            self._set_step(run, step_id, StepStatus.COMPLETED, msg, outcome.__dict__)
         else:
             phase_cfg = adv.config_path.replace(".yaml", "_phase.yaml")
             config_for_phase = phase_cfg if _phase_config_exists(adv.config_path) else adv.config_path
@@ -1083,28 +1114,31 @@ class PipelineStepsMixin:
             override_reason = str(
                 redact_payload((getattr(run, "override_reason", "") or "").strip()),
             )
-            result = accel.run_phase(PhaseRunRequest(
+            outcome = accel.run_phase(PhaseRunRequest(
                 config_path=config_for_phase,
-                phase=run.phase,
+                # run.phase is operator-supplied free text (PipelineRunStartRequest.phase:
+                # str); PhaseRunRequest's own pydantic validation rejects anything outside
+                # the 5 known phases at construction, unchanged by this ignore.
+                phase=run.phase,  # type: ignore[arg-type]
                 dry_run=run.dry_run,
                 force=True,
                 override_reason=override_reason,
                 db_path=adv.db_path,
             ))
-            if result.completed == 0 and result.failed == 0:
+            if outcome.completed == 0 and outcome.failed == 0:
                 self._set_step(
                     run, step_id, StepStatus.SKIPPED,
                     f"No repos assigned to phase {run.phase} — assign phases on Discovery tab",
-                    result.__dict__,
+                    outcome.__dict__,
                 )
                 return
-            msg = f"Phase {result.phase}: {result.completed} completed, {result.failed} failed"
+            msg = f"Phase {outcome.phase}: {outcome.completed} completed, {outcome.failed} failed"
             migrate_status = (
                 StepStatus.FAILED
-                if not run.dry_run and result.failed > 0
+                if not run.dry_run and outcome.failed > 0
                 else StepStatus.COMPLETED
             )
-            self._set_step(run, step_id, migrate_status, msg, result.__dict__)
+            self._set_step(run, step_id, migrate_status, msg, outcome.__dict__)
 
     def _step_validate(self, run: PipelineRun) -> None:
         """Verify that migrated repos on GitHub match their ADO sources.
@@ -1156,7 +1190,7 @@ class PipelineStepsMixin:
                 run.phase, profile, db_path=adv.db_path, config_path=adv.config_path,
             )
         if not repos:
-            repos = load_repos(None, global_cfg, waves)
+            repos = load_repos("", global_cfg, waves)
 
         migrate_step = None
         for sid in ("migrate_repos", "migrate"):

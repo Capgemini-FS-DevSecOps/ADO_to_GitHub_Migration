@@ -81,7 +81,11 @@ async def invoke_read_tools(
             {"messages": messages},
             config=RunnableConfig(),
         )
-        out_messages = result.get("messages") if isinstance(result, dict) else []
+        # ToolNode.ainvoke always includes "messages" when it returns a dict;
+        # the `or []` only satisfies the stub's V | None return, and if this
+        # key were ever absent, iterating [] hits the same fallback below as
+        # the TypeError this replaces would have (caught by except below).
+        out_messages = (result.get("messages") or []) if isinstance(result, dict) else []
         tool_messages = [m for m in out_messages if isinstance(m, ToolMessage)]
         if tool_messages:
             return tool_messages
