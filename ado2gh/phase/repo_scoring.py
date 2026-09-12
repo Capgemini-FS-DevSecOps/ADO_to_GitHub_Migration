@@ -17,7 +17,7 @@ from ado2gh.phase.risk_scorer import RiskScorer
 if TYPE_CHECKING:
     from ado2gh.clients.ado_client import ADOClient
     from ado2gh.models import PipelineMetadata
-    from ado2gh.state.db import StateDB
+    from ado2gh.state.base import StateDBBase
 
 
 def score_repo(
@@ -64,7 +64,7 @@ def score_repo(
     return (scorer or RiskScorer()).score(score, pipelines, commits)
 
 
-def score_org_repos(ado: ADOClient, db: StateDB, gh_org: str = "") -> list[RiskScore]:
+def score_org_repos(ado: ADOClient, db: StateDBBase, gh_org: str = "") -> list[RiskScore]:
     """Score every enabled repository in the ADO organisation.
 
     Pipelines come from the state database's inventory, populated by

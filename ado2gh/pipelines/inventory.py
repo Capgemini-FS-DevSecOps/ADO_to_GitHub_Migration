@@ -25,7 +25,7 @@ from ado2gh.pipelines.resolve.template_resolver import (
     resolve_templates,
 )
 from ado2gh.pipelines.task_scanner import enrich_pipeline_readiness
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 
 def summarize_project_inventory(summary: dict[str, dict]) -> dict[str, int]:
@@ -100,7 +100,7 @@ class PipelineInventoryBuilder:
     Handles 1000+ pipelines via pagination + parallel enrichment.
     """
 
-    def __init__(self, ado: ADOClient, db: StateDB,
+    def __init__(self, ado: ADOClient, db: StateDBBase,
                  parallel: int = 12,
                  mode: ExecutionMode = ExecutionMode.LIVE) -> None:
         """Prepare a builder for one scan.

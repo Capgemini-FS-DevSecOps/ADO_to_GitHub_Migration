@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ado2gh.logging_config import console, log
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 _STATUS_COLOURS = {
     "completed":   "green",
@@ -45,7 +45,7 @@ def _colour(status: str, palette: dict) -> str:
 class Reporter:
     """Console and HTML reporting for the migration tool."""
 
-    def __init__(self, db: StateDB) -> None:
+    def __init__(self, db: StateDBBase) -> None:
         """Store the state store every report reads from.
 
         Args:

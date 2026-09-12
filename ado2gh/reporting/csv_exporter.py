@@ -5,7 +5,7 @@ import csv
 from pathlib import Path
 
 from ado2gh.logging_config import log
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 
 class CSVExporter:
@@ -14,7 +14,7 @@ class CSVExporter:
     # ── Repo migrations ──────────────────────────────────────────────────
 
     @staticmethod
-    def export_migrations(db: StateDB, output_path: str,
+    def export_migrations(db: StateDBBase, output_path: str,
                           wave_id: int | None = None) -> str:
         """Export repo migration status to CSV.
 
@@ -55,7 +55,7 @@ class CSVExporter:
     # ── Failed repos (retry list) ────────────────────────────────────────
 
     @staticmethod
-    def export_failed_repos(db: StateDB, output_path: str,
+    def export_failed_repos(db: StateDBBase, output_path: str,
                             phase: str | None = None) -> str:
         """Generate a focused retry list of failed repos.
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from ado2gh.logging_config import log
 
 if TYPE_CHECKING:
-    from ado2gh.state.db import StateDB
+    from ado2gh.state.base import StateDBBase
 
 
 def get_repo_conflict_reason(repo_key: str, current_run_id: str | None = None) -> str | None:
@@ -67,7 +67,7 @@ def other_run_holds_repo(repo_key: str, current_run_id: str | None = None) -> bo
 
 
 def clear_stale_in_progress_migrations(
-    db: StateDB,
+    db: StateDBBase,
     ado_project: str,
     ado_repo: str,
     *,

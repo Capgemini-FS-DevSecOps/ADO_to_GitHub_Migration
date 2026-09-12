@@ -14,7 +14,7 @@ from ado2gh.models import (
     MigrationStatus,
     RepoConfig,
 )
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 if TYPE_CHECKING:
     from rich.progress import Progress, TaskID
@@ -32,7 +32,7 @@ class MigrationEngine:
         global_cfg: dict,
         ado: ADOClient,
         gh: GHClient,
-        db: StateDB,
+        db: StateDBBase,
         mode: ExecutionMode = ExecutionMode.LIVE,
         concurrency: ConcurrencyManager | None = None,
         assignment_id: str | None = None,

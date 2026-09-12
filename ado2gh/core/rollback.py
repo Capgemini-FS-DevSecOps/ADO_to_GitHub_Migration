@@ -14,7 +14,7 @@ from ado2gh.models import (
     RepoConfig,
     WaveConfig,
 )
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 
 class RollbackHandler:
@@ -25,7 +25,7 @@ class RollbackHandler:
     - Scope-targeted rollback (e.g., only rollback branch_policies for a repo)
     """
 
-    def __init__(self, gh: GHClient, db: StateDB, ado: ADOClient | None = None) -> None:
+    def __init__(self, gh: GHClient, db: StateDBBase, ado: ADOClient | None = None) -> None:
         """Wire the handler to the clients and state store it rolls back with.
 
         Args:

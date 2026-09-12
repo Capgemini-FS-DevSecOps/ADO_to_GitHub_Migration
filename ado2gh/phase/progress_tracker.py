@@ -4,7 +4,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 
 class ProgressTracker:
@@ -26,7 +26,7 @@ class ProgressTracker:
         """Note that one repo finished now."""
         self._events.append((time.time(), "repo"))
 
-    def snapshot(self, db: StateDB) -> dict:
+    def snapshot(self, db: StateDBBase) -> dict:
         """Compute the current progress figures from the window and the state DB.
 
         Args:
