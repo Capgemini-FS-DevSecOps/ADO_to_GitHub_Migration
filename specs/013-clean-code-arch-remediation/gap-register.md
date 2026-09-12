@@ -52,7 +52,7 @@ one of the 54 entries carries at least one path:line citation or a reproduction 
 | GAP-017 (GAP-CLI-01) | `phase gate-check` always raises TypeError; no gate row can be written through the CLI | remediated |
 | GAP-018 (GAP-CLI-03) | Migration commands execute live by default with no confirmation, and a declared approval token is discarded | deferred (pending operator decision) |
 | GAP-019 (GAP-AUTH-03) | `/sessions/{id}/provision` and `/remediate` take no `Request` and trust a client-supplied `actor` | open |
-| GAP-020 (GAP-AUTH-07) | Session cookie omits `Secure`; `max_age` hardcoded instead of reading `SESSION_HOURS` | open |
+| GAP-020 (GAP-AUTH-07) | Session cookie omits `Secure`; `max_age` hardcoded instead of reading `SESSION_HOURS` | remediated |
 | GAP-021 (GAP-ARCH-01) | Package layering is inverted in at least nine places, masked by deferred imports (G-seed 3) | remediated (residual recorded) |
 | GAP-022 (GAP-TOOL-01) | Coverage ratchet stands at 56% against a constitutional floor of 85% | deferred |
 | GAP-023 (GAP-TOOL-02) | mypy is configured so that it cannot fail, and never reaches most of the package | remediated |
