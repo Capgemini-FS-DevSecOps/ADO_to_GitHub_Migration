@@ -1,33 +1,23 @@
-"""Migration feature routes — ADO-to-GitHub resource migration endpoints.
+"""Migration feature routes — one POST endpoint per ADO resource type.
 
-Provides:
-  POST /v1/migrate/git-mirror             — Mirror or GEI-migrate a single ADO repo to GitHub
-  POST /v1/migrate/pipeline-convert       — Convert ADO pipelines for a repo to GitHub Actions workflows
-  POST /v1/migrate/secret-provision       — Provision GitHub Actions secrets from ADO service connections
-  POST /v1/migrate/service-connection     — Migrate ADO service connections to GitHub secrets/environments
-  POST /v1/migrate/boards                 — Migrate ADO Boards work items to GitHub Issues
-  POST /v1/migrate/test-plans             — Migrate ADO Test Plans to GitHub Issues + milestones
-  POST /v1/migrate/artifacts              — Publish ADO Artifacts feeds to GitHub Packages
-  POST /v1/migrate/wiki                   — Migrate ADO Wiki pages to GitHub Wiki
-  POST /v1/migrate/branch-policies        — Map ADO branch policies to GitHub branch protection
+Every route under `/v1/migrate` moves a single resource (repository,
+pipelines, secrets, service connections, boards, test plans, artifacts, wiki,
+branch policies) from Azure DevOps to GitHub, and every one accepts `dry_run`
+so the console can preview before it commits. The router carries the
+live-execution guard as a router-level dependency, so no handler can be added
+without it. The shared plumbing lives in `migrate_scope.py`.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any
+from typing import TYPE_CHECKING
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
-from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
-from ado2gh.core.config_loader import ConfigLoader
-from ado2gh.core.scopes.base import ScopeContext, ScopeResult
-from ado2gh.models import DEFAULT_MIGRATION_STRATEGY, ExecutionMode, RepoConfig
+from ado2gh.models import ExecutionMode, RepoConfig
 from ado2gh.state.factory import create_state_db
-from services.accelerator_api.routes._shared import (
-    _settings,
-)
+from services.accelerator_api.routes._shared import _settings
 from services.accelerator_api.routes.migrate_guard import guard_live_migration
 from services.accelerator_api.routes.migrate_routes_models import (
     ArtifactsPublishRequest,
@@ -40,8 +30,36 @@ from services.accelerator_api.routes.migrate_routes_models import (
     TestPlansMigrateRequest,
     WikiMigrateRequest,
 )
+from services.accelerator_api.routes.migrate_scope import (
+    _build_scope_context,
+    _encrypt_secret,
+    _get_clients,
+    _load_global_cfg,
+    _parse_repo_key,
+    _raise_ado_http_error,
+    _run_scope_migrate,
+    _scope_handler_response,
+)
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ado2gh.state.base import StateDBBase
 
 logger = logging.getLogger(__name__)
+
+
+def _state_db() -> StateDBBase:
+    """Open the migration state store named by the advanced settings.
+
+    Kept in this module rather than in `migrate_scope` so the route layer stays
+    the single place that resolves the configured database.
+
+    Returns:
+        A state-database handle on the configured backend (SQLite or Postgres).
+    """
+    db_path = _settings.load().advanced.db_path
+    return create_state_db(db_path)
+
+
 router = APIRouter(
     prefix="/v1/migrate",
     tags=["migration-features"],
@@ -49,148 +67,24 @@ router = APIRouter(
 )
 
 
-# ─── Helpers ───
-
-def _get_clients():
-    """Build ADO and GitHub clients from active profile + config."""
-    active = _settings.get_active_profile()
-    if not active:
-        raise HTTPException(status_code=400, detail="No active migration profile. Create and activate a profile first.")
-    config_path = _settings.load().advanced.config_path or "migration.yaml"
-    try:
-        global_cfg, _ = ConfigLoader.load(config_path)
-    except Exception:
-        global_cfg = {}
-    ado = _build_ado_client(
-        global_cfg,
-        ado_url=active.ado_org_url,
-        ado_pat=active.ado_pat,
-    )
-    gh = _build_gh_client(
-        global_cfg,
-        gh_token=active.github_tokens[0].token if active.github_tokens else None,
-    )
-    gh_org = active.gh_org or global_cfg.get("gh_org", "")
-    return ado, gh, gh_org, active
-
-
-def _load_global_cfg() -> dict[str, Any]:
-    config_path = _settings.load().advanced.config_path or "migration.yaml"
-    try:
-        global_cfg, _ = ConfigLoader.load(config_path)
-        return global_cfg
-    except Exception:
-        return {}
-
-
-def _state_db():
-    db_path = _settings.load().advanced.db_path
-    return create_state_db(db_path)
-
-
-def _parse_repo_key(repo: str) -> tuple[str, str]:
-    normalized = (repo or "").strip().lstrip("/")
-    if "/" not in normalized:
-        raise HTTPException(
-            status_code=400,
-            detail="repo must be formatted as 'project/repo_name'",
-        )
-    project, repo_name = normalized.split("/", 1)
-    if not project.strip() or not repo_name.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="repo must include both ADO project and repository name",
-        )
-    return project.strip(), repo_name.strip()
-
-
-def _build_scope_context(
-    ado: Any,
-    gh: Any,
-    *,
-    dry_run: bool,
-    global_cfg: dict[str, Any] | None = None,
-) -> ScopeContext:
-    cfg = dict(global_cfg or {})
-    active = _settings.get_active_profile()
-    if active:
-        if not cfg.get("ado_org_url") and active.ado_org_url:
-            cfg["ado_org_url"] = active.ado_org_url
-        if not cfg.get("gh_org") and active.gh_org:
-            cfg["gh_org"] = active.gh_org
-    return ScopeContext(
-        global_cfg=cfg,
-        ado=ado,
-        gh=gh,
-        db=_state_db(),
-        mode=ExecutionMode.from_dry_run(dry_run=dry_run),
-        strategy=cfg.get("migration_strategy", DEFAULT_MIGRATION_STRATEGY),
-    )
-
-
-def _scope_handler_response(
-    result: ScopeResult,
-    *,
-    dry_run: bool,
-    extra: dict[str, Any],
-) -> dict[str, Any]:
-    stats = dict(result.stats or {})
-    if dry_run:
-        status = "dry_run"
-    elif result.failed:
-        status = "partial" if int(stats.get("completed", 0)) > 0 else "failed"
-    else:
-        status = "success"
-    return {"status": status, "failed": result.failed, **extra, **stats}
-
-
-async def _run_scope_migrate(handler: Any, repo: RepoConfig, ctx: ScopeContext) -> ScopeResult:
-    """Run scope handler off the event loop (git mirror / GEI can take many minutes)."""
-    return await asyncio.to_thread(handler.migrate, repo, ctx)
-
-
-def _raise_ado_http_error(
-    exc: requests.exceptions.HTTPError,
-    *,
-    project: str,
-    repo_name: str,
-) -> None:
-    """Map ADO REST failures to a client-visible HTTP error instead of an ASGI traceback."""
-    response = exc.response
-    status = response.status_code if response is not None else 400
-    detail = f"ADO repository lookup failed for {project}/{repo_name}"
-    if response is not None:
-        try:
-            body = response.json()
-            if isinstance(body, dict):
-                message = str(body.get("message") or body.get("typeKey") or "").strip()
-                if message:
-                    detail = f"{detail}: {message}"
-        except Exception:
-            pass
-    if status == 404:
-        raise HTTPException(
-            status_code=404,
-            detail=f"{detail}. Verify project and repository names in discovery.",
-        ) from exc
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            f"{detail}. "
-            "Use the full ADO key project/repo_name from discovery (bare repo names need a matching discovery snapshot)."
-        ),
-    ) from exc
-
-
-# ─── Request Models ───
-
-
-
-# ─── Git Mirror / GEI ───
-
 @router.post("/git-mirror")
-async def git_mirror(req: GitMirrorRequest, request: Request):
-    """Mirror or GEI-migrate one ADO repository to GitHub."""
+async def git_mirror(req: GitMirrorRequest) -> dict[str, object]:
+    """Mirror or GEI-migrate one ADO repository to GitHub.
+
+    Copies every branch, tag and LFS object of `project/repo_name` into
+    `github_org/github_repo`, using the migration strategy configured for the
+    deployment (`gei` or `mirror`). The target organisation falls back to the
+    active profile and then to `global.gh_org`; the target repository name
+    falls back to the ADO repository name.
+
+    Returns:
+        `status` (`dry_run`, `success`, `partial` or `failed`), the `failed`
+        list, the resolved `project`, `repo_name`, `github_org`, `github_repo`
+        and `strategy`, plus the mirror statistics. Fails with 400 for a
+        missing repository key or organisation, 404 when ADO does not know the
+        repository, 409 when the GitHub repository already exists, and 500 for
+        any other mirror failure.
+    """
     from ado2gh.core.scopes.git_scope import GitScopeHandler
 
     ado, gh, gh_org, _profile = _get_clients()
@@ -217,7 +111,8 @@ async def git_mirror(req: GitMirrorRequest, request: Request):
         gh_repo=target_repo,
     )
     handler = GitScopeHandler()
-    ctx = _build_scope_context(ado, gh, dry_run=req.dry_run, global_cfg=global_cfg)
+    ctx = _build_scope_context(ado, gh, mode=ExecutionMode.from_dry_run(dry_run=req.dry_run),
+        db=_state_db(), global_cfg=global_cfg)
     try:
         result = await _run_scope_migrate(handler, repo, ctx)
     except requests.exceptions.HTTPError as exc:
@@ -232,7 +127,7 @@ async def git_mirror(req: GitMirrorRequest, request: Request):
 
     return _scope_handler_response(
         result,
-        dry_run=req.dry_run,
+        mode=ExecutionMode.from_dry_run(dry_run=req.dry_run),
         extra={
             "project": project,
             "repo_name": repo_name,
@@ -243,11 +138,22 @@ async def git_mirror(req: GitMirrorRequest, request: Request):
     )
 
 
-# ─── Pipeline Convert ───
-
 @router.post("/pipeline-convert")
-async def pipeline_convert(req: PipelineConvertRequest, request: Request):
-    """Convert ADO pipelines for a repository to GitHub Actions workflows."""
+async def pipeline_convert(req: PipelineConvertRequest) -> dict[str, object]:
+    """Convert ADO pipelines for a repository to GitHub Actions workflows.
+
+    Reads every pipeline attached to the `project/repo_name` given as `repo`,
+    transforms it, and writes the generated workflow files into the target
+    GitHub repository. The target organisation falls back to the active profile
+    and then to `global.gh_org`.
+
+    Returns:
+        `status` (`dry_run`, `success`, `partial` or `failed`), the `failed`
+        list, the `repo` key with its `project`, `repo_name`, `github_org` and
+        `github_repo`, plus the transformer's statistics. Fails with 400 for a
+        malformed repository key or a missing organisation, and 404 when ADO
+        does not know the repository.
+    """
     from ado2gh.core.scopes.pipelines_scope import PipelinesScopeHandler
 
     ado, gh, gh_org, _profile = _get_clients()
@@ -268,7 +174,8 @@ async def pipeline_convert(req: PipelineConvertRequest, request: Request):
         gh_repo=target_repo,
     )
     handler = PipelinesScopeHandler()
-    ctx = _build_scope_context(ado, gh, dry_run=req.dry_run, global_cfg=global_cfg)
+    ctx = _build_scope_context(ado, gh, mode=ExecutionMode.from_dry_run(dry_run=req.dry_run),
+        db=_state_db(), global_cfg=global_cfg)
     try:
         result = await _run_scope_migrate(handler, repo, ctx)
     except requests.exceptions.HTTPError as exc:
@@ -283,7 +190,7 @@ async def pipeline_convert(req: PipelineConvertRequest, request: Request):
 
     return _scope_handler_response(
         result,
-        dry_run=req.dry_run,
+        mode=ExecutionMode.from_dry_run(dry_run=req.dry_run),
         extra={
             "repo": f"{project}/{repo_name}",
             "project": project,
@@ -294,14 +201,21 @@ async def pipeline_convert(req: PipelineConvertRequest, request: Request):
     )
 
 
-# ─── Secret Provision ───
-
 @router.post("/secret-provision")
-async def secret_provision(req: SecretProvisionRequest, request: Request):
+async def secret_provision(req: SecretProvisionRequest) -> dict[str, object]:
     """Provision a GitHub Actions secret from ADO service connection credentials.
 
-    In dry-run mode, validates that the GitHub repo exists and the secret name is valid.
-    In live mode, encrypts and creates the secret in the GitHub repo.
+    A dry run checks only that the target GitHub repository exists and that the
+    secret name is usable. A live run seals the supplied value against the
+    repository's public key and creates the secret. The value is never echoed
+    back, logged, or included in an error message.
+
+    Returns:
+        `status` (`dry_run` or `success`), the `github_org`, `github_repo` and
+        `secret_name` the request addressed, and a `message` describing what was
+        done or would be done — never the secret value. Fails with 404 when the
+        GitHub repository is not reachable and 500 when GitHub rejects the
+        secret.
     """
     ado, gh, gh_org, profile = _get_clients()
 
@@ -339,30 +253,25 @@ async def secret_provision(req: SecretProvisionRequest, request: Request):
         raise HTTPException(status_code=500, detail=f"Secret provision failed: {e}")
 
 
-def _encrypt_secret(public_key_b64: str, secret_value: str) -> str:
-    """Encrypt a secret value using GitHub's public key (libsodium sealed box)."""
-    from base64 import b64decode, b64encode
-    try:
-        from nacl import encoding, public
-    except ImportError:
-        raise HTTPException(
-            status_code=500,
-            detail="PyNaCl not installed. Install with: pip install pynacl",
-        )
-    pk = public.PublicKey(b64decode(public_key_b64), encoding.Base64Encoder())
-    sealed_box = public.SealedBox(pk)
-    encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
-    return b64encode(encrypted).decode("utf-8")
-
-
-# ─── Service Connection Migration ───
 
 @router.post("/service-connection")
-async def service_connection_migrate(req: ServiceConnectionMigrateRequest, request: Request):
+async def service_connection_migrate(req: ServiceConnectionMigrateRequest) -> dict[str, object]:
     """Migrate an ADO service connection to a GitHub secret or environment.
 
-    - Simple credential connections → GitHub repo secret
-    - Deployment-scoped connections → GitHub environment with protection rules
+    A deployment-scoped connection becomes a GitHub environment; a plain
+    credential connection becomes a repository secret. Azure DevOps does not
+    expose connection credential values over its API, so a live run creates the
+    secret with a placeholder and returns a warning: an operator must fill in
+    the real value afterwards.
+
+    Returns:
+        `status` (`dry_run` or `success`), the `project` and `connection_name`
+        addressed, the chosen `target` (`secret` or `environment`) with the
+        `secret_name` or `environment_name` created, the `github_org` and
+        `github_repo`, and on a live secret run the placeholder `warning`. A dry
+        run also reports the `connection_type` and `auth_scheme` it found. Fails
+        with 404 when the connection is not in the project and 500 when GitHub
+        rejects the write.
     """
     ado, gh, gh_org, profile = _get_clients()
 
@@ -430,17 +339,21 @@ async def service_connection_migrate(req: ServiceConnectionMigrateRequest, reque
         raise HTTPException(status_code=500, detail=f"Service connection migration failed: {e}")
 
 
-# ─── Boards Migration ───
-
 @router.post("/boards")
-async def boards_migrate(req: BoardsMigrateRequest, request: Request):
+async def boards_migrate(req: BoardsMigrateRequest) -> dict[str, object]:
     """Migrate ADO Boards work items to GitHub Issues.
 
-    Maps ADO work item types to GitHub labels:
-    - Bug → bug label
-    - User Story → enhancement label
-    - Task → task label
-    - Feature → feature label
+    Every work item in the project becomes an issue, optionally narrowed to the
+    `work_item_types` given. A live run first creates the labels the mapping
+    needs — Bug becomes `bug`, User Story becomes `enhancement`, Task becomes
+    `task`, Feature becomes `feature`, everything else becomes `issue` — then
+    creates one issue per work item.
+
+    Returns:
+        `status` (`dry_run`, `success`, or `partial` when some issues failed),
+        the `project`, `github_org` and `github_repo`, and the counts: a dry run
+        reports `work_item_count` and the distinct `work_item_types` found; a
+        live run reports `total`, `created`, `failed` and up to twenty `errors`.
     """
     ado, gh, gh_org, profile = _get_clients()
 
@@ -519,16 +432,19 @@ async def boards_migrate(req: BoardsMigrateRequest, request: Request):
     }
 
 
-# ─── Test Plans Migration ───
-
 @router.post("/test-plans")
-async def test_plans_migrate(req: TestPlansMigrateRequest, request: Request):
+async def test_plans_migrate(req: TestPlansMigrateRequest) -> dict[str, object]:
     """Migrate ADO Test Plans to GitHub Issues and milestones.
 
-    Maps:
-    - Test Plan → Milestone
-    - Test Suite → Milestone (nested under plan milestone)
-    - Test Case → Issue with 'test-case' label
+    Each test plan becomes a milestone, each suite becomes a milestone named
+    after its parent plan, and each test case becomes an issue carrying the
+    `test-case` label.
+
+    Returns:
+        `status` (`dry_run`, `success`, or `partial` when some writes failed),
+        the `project`, `github_org` and `github_repo`, and the counts: a dry run
+        previews up to ten plans with their id, name and suite count; a live run
+        reports `total_plans`, `created`, `failed` and up to twenty `errors`.
     """
     ado, gh, gh_org, profile = _get_clients()
 
@@ -592,14 +508,20 @@ async def test_plans_migrate(req: TestPlansMigrateRequest, request: Request):
     }
 
 
-# ─── Artifacts Publish ───
-
 @router.post("/artifacts")
-async def artifacts_publish(req: ArtifactsPublishRequest, request: Request):
-    """Publish ADO Artifacts feeds to GitHub Packages.
+async def artifacts_publish(req: ArtifactsPublishRequest) -> dict[str, object]:
+    """Register an ADO Artifacts feed for publishing to GitHub Packages.
 
-    Supported package types: npm, NuGet, Docker, Maven, PyPI.
-    In dry-run mode, validates the feed exists and lists packages.
+    Covers npm, NuGet, Docker, Maven and PyPI feeds. GitHub Packages cannot be
+    populated over the API alone, so this endpoint resolves the feed and returns
+    the command an operator runs locally rather than transferring packages
+    itself. A dry run only confirms the feed exists and lists what it holds.
+
+    Returns:
+        `status` (`dry_run` or `success`), the `project`, `feed_name`, `feed_id`
+        and detected `package_type`, the `github_org`, a `message`, the
+        `publish_instruction` to run, and a `note` stating that local tooling is
+        required. Fails with 404 when the feed is not in the project.
     """
     ado, gh, gh_org, profile = _get_clients()
 
@@ -654,14 +576,22 @@ async def artifacts_publish(req: ArtifactsPublishRequest, request: Request):
     }
 
 
-# ─── Wiki Migration ───
-
 @router.post("/wiki")
-async def wiki_migrate(req: WikiMigrateRequest, request: Request):
-    """Migrate ADO Wiki pages to GitHub Wiki.
+async def wiki_migrate(req: WikiMigrateRequest) -> dict[str, object]:
+    """Extract an ADO Wiki for transfer to GitHub Wiki.
 
-    Fetches wiki pages from ADO, converts to markdown, and pushes to GitHub Wiki.
-    In dry-run mode, lists pages that would be migrated.
+    Resolves `wiki_name` against the project's wikis by id or by name and walks
+    the page tree. A GitHub wiki is a separate git repository that cannot be
+    written over the REST API, so this endpoint counts and extracts the content
+    and returns the `git clone` the operator runs to push it; it does not write
+    to GitHub itself.
+
+    Returns:
+        `status` (`dry_run` or `success`), the `project`, resolved `wiki_name`
+        and `wiki_id`, `total_pages`, the `github_org` and `github_repo`, a
+        `message`, and on a live run a `note` with the clone command. A dry run
+        also lists up to twenty `sample_pages`. Fails with 404 when the project
+        has no wiki under that name.
     """
     ado, gh, gh_org, profile = _get_clients()
 
@@ -722,11 +652,19 @@ async def wiki_migrate(req: WikiMigrateRequest, request: Request):
     }
 
 
-# ─── Branch Policies Migration ───
-
 @router.post("/branch-policies")
-async def branch_policies_migrate(req: BranchPoliciesMigrateRequest, request: Request):
-    """Map ADO branch policies to GitHub branch protection rules."""
+async def branch_policies_migrate(req: BranchPoliciesMigrateRequest) -> dict[str, object]:
+    """Map ADO branch policies to GitHub branch protection rules.
+
+    Reads the policies configured on the ADO repository's branches and applies
+    the equivalent protection rules — required reviewers, required status
+    checks, merge restrictions — to the matching branches on GitHub.
+
+    Returns:
+        `status` (`dry_run`, `success`, `partial` or `failed`), the `failed`
+        list, the `project`, `repo_name`, `github_org` and `github_repo`, plus
+        the handler's per-policy statistics.
+    """
     from ado2gh.core.scopes.branch_policies_scope import BranchPoliciesScopeHandler
 
     ado, gh, _gh_org, _profile = _get_clients()
@@ -738,11 +676,12 @@ async def branch_policies_migrate(req: BranchPoliciesMigrateRequest, request: Re
         gh_repo=req.github_repo,
     )
     handler = BranchPoliciesScopeHandler()
-    ctx = _build_scope_context(ado, gh, dry_run=req.dry_run, global_cfg=global_cfg)
+    ctx = _build_scope_context(ado, gh, mode=ExecutionMode.from_dry_run(dry_run=req.dry_run),
+        db=_state_db(), global_cfg=global_cfg)
     result = await _run_scope_migrate(handler, repo, ctx)
     return _scope_handler_response(
         result,
-        dry_run=req.dry_run,
+        mode=ExecutionMode.from_dry_run(dry_run=req.dry_run),
         extra={
             "project": req.project,
             "repo_name": req.repo_name,

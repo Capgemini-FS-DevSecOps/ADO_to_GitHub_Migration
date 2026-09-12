@@ -1,8 +1,21 @@
-"""FastAPI REST service wrapping the Accelerator SDK."""
+"""FastAPI REST service wrapping the Accelerator SDK.
+
+Hosts the Accelerator's HTTP surface on port 8080: the health and readiness
+probes, the discovery, migrate, validate, readiness, dashboard and job
+endpoints defined here, and the routers mounted from ``ado2gh.api`` and
+``services.accelerator_api.routes``. The Next.js console and the agent service
+are both clients. Requests to ``/v1/`` are gated by
+:func:`platform_auth_middleware`, which resolves the session cookie into a
+platform user before any handler runs.
+
+The module path ``services.accelerator_api.main:app`` is load-bearing — the
+Dockerfile, both compose files, the Kubernetes manifests and CI all name it.
+"""
 # ruff: noqa: E402  -- imports below intentionally follow ensure_gei_dotnet_env()
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 
 from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 
@@ -84,6 +97,11 @@ from services.accelerator_api.routes.profile_routes import router as profile_rou
 from services.accelerator_api.routes.proxy_routes import router as proxy_router
 from services.accelerator_api.routes.settings_routes import router as settings_router
 
+if TYPE_CHECKING:  # pragma: no cover - typing only, keeps these off the runtime path
+    from collections.abc import Awaitable, Callable
+
+    from fastapi import Response
+
 app = FastAPI(title="ADO2GH Accelerator API", version="5.1.0")
 app.include_router(agentic_router)
 app.include_router(auth_router)
@@ -104,7 +122,34 @@ _AUTH_EXEMPT = {
 
 
 @app.middleware("http")
-async def platform_auth_middleware(request, call_next):
+async def platform_auth_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Require a valid platform session on every ``/v1/`` request.
+
+    Anything outside ``/v1/`` passes straight through, as do the exempt
+    endpoints in ``_AUTH_EXEMPT`` — the probes plus the bootstrap, login and
+    register routes, which by definition run before a session exists. Every
+    other ``/v1/`` request must carry a session cookie that resolves to a live
+    session; the resolved account is left on ``request.state.platform_user``
+    for the handlers and the RBAC helpers to read.
+
+    When platform authentication is switched off the middleware short-circuits
+    and lets everything through. That is deliberate — it is the single-user
+    local development mode — and it is why the live-execution guards in
+    ``ado2gh.api.platform_rbac`` are written to hold without an identity
+    (GAP-002, GAP-005). Do not add an identity check here to compensate.
+
+    Args:
+        request: Incoming request.
+        call_next: The rest of the ASGI chain.
+
+    Returns:
+        The downstream response, or a 401 JSON response when the request
+        carries no session cookie or the cookie no longer resolves to a live
+        session.
+    """
     if not auth_enabled():
         return await call_next(request)
     path = request.url.path
@@ -132,12 +177,19 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _sync_platform_supplied_model() -> None:
+    """Reconcile the platform-managed LLM model record when the app starts."""
     from ado2gh.api.llm.platform_managed_model import sync_on_startup
 
     sync_on_startup()
 
 
 def _onboarding_redirect() -> str | None:
+    """Work out whether the console must send the caller through onboarding.
+
+    Returns:
+        The console path to redirect to when no migration profile has been set
+        up yet, otherwise ``None``.
+    """
     from ado2gh.api.profile_governance import needs_profile_setup
 
     profiles = _settings.load().migration_profiles
@@ -147,7 +199,24 @@ def _onboarding_redirect() -> str | None:
 
 
 @app.get("/v1/onboarding/status", response_model=OnboardingStatusResponse)
-def onboarding_status(request: Request):
+def onboarding_status(request: Request) -> OnboardingStatusResponse:
+    """Tell the console where the signed-in user has to go next.
+
+    Combines the configured migration profiles with the caller's role, so a
+    user who is not allowed to create a profile is told to wait for one rather
+    than sent to a form they cannot submit. A caller the middleware did not
+    resolve is treated as an operator, which is the least-privileged answer.
+
+    Args:
+        request: Incoming request; the caller's role is read from the session
+            resolved by the auth middleware.
+
+    Returns:
+        Whether profile setup is still outstanding, how many active profiles
+        exist, the default profile identifier, how many profiles await
+        approval, the caller's role, any blocking message, the console path to
+        redirect to, and whether the caller may submit a profile themselves.
+    """
     user = _platform_user(request)
     role = user.role if user else PlatformRole.OPERATOR
     profiles = _settings.load().migration_profiles
@@ -155,12 +224,37 @@ def onboarding_status(request: Request):
 
 
 @app.get("/health", response_model=HealthResponse)
-def health():
+def health() -> HealthResponse:
+    """Liveness probe: confirm the process is up and serving.
+
+    Deliberately checks nothing else, so a degraded dependency never takes the
+    container down. Use ``GET /ready`` to find out whether a migration could
+    actually run.
+
+    Returns:
+        The static status string and the service version.
+    """
     return HealthResponse()
 
 
 @app.get("/ready")
-def ready():
+def ready() -> dict[str, object]:
+    """Readiness probe: report whether this instance could actually migrate.
+
+    Probes the moving parts a migration needs — the configured storage backend
+    and its database, the ``gh`` CLI and its ``gei`` and ``ado2gh`` extensions,
+    ``git`` on the PATH, and Redis — then judges readiness against only the
+    checks the *active migration strategy* requires, so a mirror deployment is
+    not held back by a missing ``gh`` extension it will never call. Every probe
+    is best-effort: a failure is recorded as a failed check rather than raised,
+    so the endpoint always answers.
+
+    Returns:
+        ``ready`` — whether every check the active strategy requires passed;
+        and ``checks``, the individual probe results, the resolved storage
+        backend and migration strategy, plus a remediation hint for each tool
+        that is missing.
+    """
     import shutil
     import subprocess
 
@@ -233,7 +327,21 @@ def ready():
 
 
 @app.post("/v1/discover", response_model=DiscoverResponse)
-def discover(req: DiscoverRequest):
+def discover(req: DiscoverRequest) -> DiscoverResponse:
+    """Scan the Azure DevOps organisation and write a discovery report.
+
+    Reads projects, repositories and pipelines and writes the wave
+    configuration and inventory files under the requested output directory.
+    Nothing is migrated. Azure DevOps credentials are taken from the active
+    migration profile when one is set, and fall back to the process
+    environment otherwise.
+
+    Args:
+        req: Path to the migration config and the directory to write into.
+
+    Returns:
+        The directory the discovery output landed in.
+    """
     active = _settings.get_active_profile()
     ado_url = active.ado_org_url if active else None
     ado_pat = active.ado_pat if active else None
@@ -242,8 +350,21 @@ def discover(req: DiscoverRequest):
 
 
 @app.post("/v1/plan", response_model=PlanResponse, deprecated=True, tags=["deprecated"])
-def plan(req: PlanRequest):
-    """Deprecated: Use POST /v1/migration/wave for wave creation and management."""
+def plan(req: PlanRequest) -> PlanResponse:
+    """Preview the waves a migration config resolves to, without running them.
+
+    Deprecated: use ``POST /v1/migration/wave`` for wave creation and
+    management. Nothing is migrated and no run is recorded; the state database
+    is only opened so it exists for the later phases.
+
+    Args:
+        req: Path to the migration config, the optional wave to narrow to, and
+            the state database path.
+
+    Returns:
+        One entry per matching wave with its identifier, name, repository
+        count and pipeline count.
+    """
     _, waves = ConfigLoader.load(req.config_path)
     create_state_db(req.db_path)
     items = []
@@ -262,7 +383,36 @@ def plan(req: PlanRequest):
 
 
 @app.post("/v1/migrate", response_model=list[RunWaveResponse])
-def migrate(req: RunWaveRequest, request: Request):
+def migrate(req: RunWaveRequest, request: Request) -> list[RunWaveResponse]:
+    """Run one migration wave, or every wave in the config.
+
+    The request passes three gates before any work starts. The active
+    migration profile must be approved and runnable; a caller who needs
+    approval for live execution must already hold one, either quoted as
+    ``live_approval_id`` or standing for this migrate scope; and the config
+    must actually contain the requested wave. A live run without an approval
+    creates a pending approval request and refuses the call, so the console can
+    poll for the decision and retry. ``dry_run`` decides everything else: the
+    default rehearses, while a live run pushes into GitHub for real.
+
+    Args:
+        req: Wave selection, config and database paths, the dry-run flag and
+            an optional identifier of a previously granted live approval.
+        request: Incoming request; the caller is read from the session the
+            auth middleware resolved.
+
+    Returns:
+        A single-element list holding the wave's identifier, status and the
+        completed, failed and total repository counts. The list shape is kept
+        for callers that expect one entry per wave.
+
+    Raises:
+        HTTPException: 403 when the profile's governance state forbids the run,
+            or ``awaiting_approval`` with the new approval's identifier when a
+            live run needs one; 400 when the wave is unknown, the config is
+            invalid, or the Azure DevOps or GitHub credentials are missing;
+            500 for any other failure, with the underlying message.
+    """
     try:
         active = _settings.get_active_profile()
         if active:
@@ -346,7 +496,26 @@ def migrate(req: RunWaveRequest, request: Request):
 
 
 @app.post("/v1/validate", response_model=ValidateResponse)
-def validate(req: ValidateRequest):
+def validate(req: ValidateRequest) -> ValidateResponse:
+    """Verify migrated repositories against Azure DevOps at commit-SHA level.
+
+    Compares the HEAD commit on each side rather than counting branches, so a
+    pass is evidence the code actually transferred. The repository set comes
+    from the first request field that yields one — inline text, an input file,
+    a phase on the active profile, then the wave config.
+
+    Args:
+        req: Where to read the repository set from, which config and database
+            to use, and where to write the CSV report.
+
+    Returns:
+        The number of repositories checked, how many matched, how many failed,
+        and the normalised per-repository detail rows.
+
+    Raises:
+        HTTPException: 400 when an input path does not exist or the request
+            resolves to no usable repository set.
+    """
     from ado2gh.api.run_reporting import validation_repo_detail
     from ado2gh.api.validation_run import run_validation
 
@@ -366,7 +535,23 @@ def validate(req: ValidateRequest):
     )
 
 
-def _pipeline_readiness_impl(req: ReadinessRequest) -> ReadinessResponse:
+def _assess_pipeline_readiness(req: ReadinessRequest) -> ReadinessResponse:
+    """Assess pipeline conversion effort, refreshing the inventory if needed.
+
+    Shared body of the GET and POST readiness endpoints. Re-scans Azure DevOps
+    when the caller asks for it or when the state database holds no inventory
+    at all, then scores every inventoried pipeline against the latest known
+    pipeline and repository migration outcomes.
+
+    Args:
+        req: Config and database paths, plus whether to force an inventory
+            refresh; empty paths fall back to the stored advanced settings.
+
+    Returns:
+        Automatic, assisted and manual pipeline counts, the pipeline total and
+        estimated effort in hours, whether the inventory was refreshed on this
+        call, and the per-pipeline assessment rows.
+    """
     adv = _settings.load().advanced
     db_path = req.db_path or adv.db_path
     config_path = req.config_path or adv.config_path
@@ -409,18 +594,58 @@ def _pipeline_readiness_impl(req: ReadinessRequest) -> ReadinessResponse:
 
 
 @app.get("/v1/pipeline/readiness")
-def pipeline_readiness(req: ReadinessRequest):
-    return _pipeline_readiness_impl(req)
+def pipeline_readiness(req: ReadinessRequest) -> ReadinessResponse:
+    """Assess how much work converting the inventoried pipelines will take.
+
+    Classifies every pipeline as automatic, assisted or manual and totals the
+    estimated effort, so a team can size the pipeline work before committing to
+    a migration. Identical to ``POST /v1/pipeline-readiness``; both are kept
+    because the console and the CLI call different ones.
+
+    Args:
+        req: Config and database paths, plus whether to re-scan Azure DevOps
+            first; empty paths fall back to the stored advanced settings.
+
+    Returns:
+        Automatic, assisted and manual pipeline counts, the pipeline total and
+        estimated effort in hours, whether the inventory was refreshed, and
+        the per-pipeline assessment rows.
+    """
+    return _assess_pipeline_readiness(req)
 
 
 @app.post("/v1/pipeline-readiness", response_model=ReadinessResponse)
-def pipeline_readiness_post(req: ReadinessRequest):
-    return _pipeline_readiness_impl(req)
+def pipeline_readiness_post(req: ReadinessRequest) -> ReadinessResponse:
+    """Assess how much work converting the inventoried pipelines will take.
+
+    The POST form of ``GET /v1/pipeline/readiness``, for clients that would
+    rather not put a body on a GET. Same inputs, same answer.
+
+    Args:
+        req: Config and database paths, plus whether to re-scan Azure DevOps
+            first; empty paths fall back to the stored advanced settings.
+
+    Returns:
+        Automatic, assisted and manual pipeline counts, the pipeline total and
+        estimated effort in hours, whether the inventory was refreshed, and
+        the per-pipeline assessment rows.
+    """
+    return _assess_pipeline_readiness(req)
 
 
 @app.get("/v1/migration/status")
-def migration_status():
-    """Per-repo migration progress from StateDB and recent pipeline runs."""
+def migration_status() -> dict[str, object]:
+    """Report per-repository migration progress for the status dashboard.
+
+    Merges what the state database knows about each repository with the ten
+    most recent pipeline runs, so a repository shows both its recorded
+    migration outcome and how its last run went. The database path comes from
+    the stored advanced settings.
+
+    Returns:
+        A summary of tracked, git-migrated, failed and partial repository
+        counts alongside the per-repository rows and the recent run outcomes.
+    """
     from ado2gh.api.migration_status_report import build_migration_status_report
     from ado2gh.api.pipeline_runner import PipelineRunStore
 
@@ -432,7 +657,21 @@ def migration_status():
 
 
 @app.get("/v1/dashboard", response_model=DashboardSnapshot)
-def dashboard(db_path: str = "migration_state.db"):
+def dashboard(db_path: str = "migration_state.db") -> DashboardSnapshot:
+    """Return the console's dashboard snapshot in a single call.
+
+    Bundles the repository and pipeline totals, the inventory count, every
+    phase gate and the runs currently in flight, so the dashboard renders
+    without fanning out across several endpoints.
+
+    Args:
+        db_path: State database to read the counts and gates from.
+
+    Returns:
+        Total, completed and failed repository counts, the pipeline total and
+        inventory count, the phase gates, and one entry per active migration
+        carrying its status, phase, wave, current step and who started it.
+    """
     db = create_state_db(db_path)
     counts = db.get_migration_repo_counts()
     active = [
@@ -463,7 +702,24 @@ def dashboard(db_path: str = "migration_state.db"):
 
 
 @app.post("/v1/validate/freshness", response_model=FreshnessResponse)
-def freshness(req: FreshnessRequest):
+def freshness(req: FreshnessRequest) -> FreshnessResponse:
+    """Check whether one migrated repository is still level with its source.
+
+    Reads the HEAD commit of the repository's default branch on both sides and
+    compares them, which is how a team spots commits pushed to Azure DevOps
+    after the migration ran. A GitHub repository that cannot be read is
+    reported as an empty SHA and therefore not fresh, rather than as an error.
+
+    Args:
+        req: The Azure DevOps project and repository to check, plus the config
+            and database paths. Credentials and the GitHub organisation come
+            from the active migration profile, or from the config file when no
+            profile is set.
+
+    Returns:
+        The project and repository, both HEAD commit SHAs, and ``fresh``,
+        which is true only when both were read and match.
+    """
     global_cfg, _ = ConfigLoader.load(req.config_path)
     from ado2gh.api.accelerator import _build_ado_client, _build_gh_client
 
@@ -493,7 +749,22 @@ def freshness(req: FreshnessRequest):
 
 
 @app.post("/v1/jobs", response_model=JobStatusResponse)
-def enqueue_job(req: JobEnqueueRequest):
+def enqueue_job(req: JobEnqueueRequest) -> JobStatusResponse:
+    """Queue a background migration job and return its record.
+
+    In lightweight mode there is no worker, so the job is completed inline and
+    comes back already finished. Otherwise it is pushed onto the Redis queue
+    for a worker to pick up; a queue that cannot be reached is not fatal, since
+    the job is already durable in the job store and a worker will find it.
+
+    Args:
+        req: The job type, its payload, and an optional idempotency key that
+            makes a retry return the job already queued instead of enqueuing a
+            second one.
+
+    Returns:
+        ``job`` — the stored job record, carrying its identifier and status.
+    """
     payload = req.payload or {}
     dry_run = payload.get("dry_run", True)
     store = JobStoreFactory.from_env()
@@ -510,7 +781,18 @@ def enqueue_job(req: JobEnqueueRequest):
 
 
 @app.get("/v1/jobs/{job_id}", response_model=JobStatusResponse)
-def job_status(job_id: str):
+def job_status(job_id: str) -> JobStatusResponse:
+    """Look up a queued background job by identifier.
+
+    Args:
+        job_id: Identifier returned when the job was enqueued.
+
+    Returns:
+        ``job`` — the stored job record, carrying its status and result.
+
+    Raises:
+        HTTPException: 404 when no job carries that identifier.
+    """
     job = JobStoreFactory.from_env().get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")

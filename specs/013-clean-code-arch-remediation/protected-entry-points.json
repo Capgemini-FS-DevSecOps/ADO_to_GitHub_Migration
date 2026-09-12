@@ -328,6 +328,10 @@
     "reason": "cli_command"
   },
   {
+    "id": "ado2gh/core/orchestration/worker.py::_require_config_path",
+    "reason": "orphan_allowlist"
+  },
+  {
     "id": "ado2gh/core/orchestration/worker.py::execute_job",
     "reason": "orphan_allowlist"
   },
@@ -500,11 +504,11 @@
     "reason": "http_route"
   },
   {
-    "id": "services/accelerator_api/main.py::_onboarding_redirect",
+    "id": "services/accelerator_api/main.py::_assess_pipeline_readiness",
     "reason": "orphan_allowlist"
   },
   {
-    "id": "services/accelerator_api/main.py::_pipeline_readiness_impl",
+    "id": "services/accelerator_api/main.py::_onboarding_redirect",
     "reason": "orphan_allowlist"
   },
   {
@@ -628,6 +632,26 @@
     "reason": "orphan_allowlist"
   },
   {
+    "id": "services/accelerator_api/routes/approval_routes.py::approve_live_execution",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::create_live_approval",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::deny_live_execution",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::get_live_approval",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::list_live_approvals",
+    "reason": "http_route"
+  },
+  {
     "id": "services/accelerator_api/routes/migrate_routes.py::artifacts_publish",
     "reason": "http_route"
   },
@@ -664,31 +688,11 @@
     "reason": "http_route"
   },
   {
-    "id": "services/accelerator_api/routes/pipeline_routes.py::approve_live_execution",
-    "reason": "http_route"
-  },
-  {
     "id": "services/accelerator_api/routes/pipeline_routes.py::cancel_pipeline_run",
     "reason": "http_route"
   },
   {
-    "id": "services/accelerator_api/routes/pipeline_routes.py::create_live_approval",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/pipeline_routes.py::deny_live_execution",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/pipeline_routes.py::get_live_approval",
-    "reason": "http_route"
-  },
-  {
     "id": "services/accelerator_api/routes/pipeline_routes.py::get_pipeline_run",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/pipeline_routes.py::list_live_approvals",
     "reason": "http_route"
   },
   {
@@ -708,6 +712,54 @@
     "reason": "http_route"
   },
   {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::create_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::delete_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::list_github_tokens",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::update_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_ado_for_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_ado_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_connection",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_github_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_github_token_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_migration_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_profile_source",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_saved_github_token",
+    "reason": "http_route"
+  },
+  {
     "id": "services/accelerator_api/routes/profile_routes.py::activate_profile",
     "reason": "http_route"
   },
@@ -720,19 +772,11 @@
     "reason": "http_route"
   },
   {
-    "id": "services/accelerator_api/routes/profile_routes.py::create_github_token",
-    "reason": "http_route"
-  },
-  {
     "id": "services/accelerator_api/routes/profile_routes.py::create_profile",
     "reason": "http_route"
   },
   {
     "id": "services/accelerator_api/routes/profile_routes.py::deactivate_profile",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::delete_github_token",
     "reason": "http_route"
   },
   {
@@ -753,10 +797,6 @@
   },
   {
     "id": "services/accelerator_api/routes/profile_routes.py::get_profile_scan",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::list_github_tokens",
     "reason": "http_route"
   },
   {
@@ -788,47 +828,11 @@
     "reason": "http_route"
   },
   {
-    "id": "services/accelerator_api/routes/profile_routes.py::update_github_token",
-    "reason": "http_route"
-  },
-  {
     "id": "services/accelerator_api/routes/profile_routes.py::update_phase_assignments",
     "reason": "http_route"
   },
   {
     "id": "services/accelerator_api/routes/profile_routes.py::update_profile",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_ado_for_profile",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_ado_inline",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_connection",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_github_inline",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_github_token_inline",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_migration_profile",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_profile_source",
-    "reason": "http_route"
-  },
-  {
-    "id": "services/accelerator_api/routes/profile_routes.py::validate_saved_github_token",
     "reason": "http_route"
   },
   {

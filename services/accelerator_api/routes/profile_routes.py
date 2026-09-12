@@ -8,8 +8,6 @@ from ado2gh.api.contracts import (
     DenyProfileRequest,
     DiscoveryRepoItem,
     DiscoveryResponse,
-    GitHubTokenRequest,
-    GitHubTokenResponse,
     MigrationProfileRequest,
     MigrationProfileResponse,
     MigrationScanRequest,
@@ -17,11 +15,6 @@ from ado2gh.api.contracts import (
     PhaseAssignmentRequest,
     PhaseRecommendation,
     ProfileSetupRequest,
-    ValidateAdoPatRequest,
-    ValidateAdoPatResponse,
-    ValidateConnectionResponse,
-    ValidateGitHubTokenRequest,
-    ValidateGitHubTokenResponse,
 )
 from ado2gh.api.platform_rbac import require_manage_settings
 from ado2gh.api.profile_governance import (
@@ -33,16 +26,29 @@ from ado2gh.auth.models import PlatformRole
 from services.accelerator_api.routes import _shared
 from services.accelerator_api.routes._shared import (
     _platform_user,
+    _require_active_profile,
     _require_admin,
     _require_profile,
     _settings,
 )
+from services.accelerator_api.routes.profile_credential_routes import router as _credential_router
 
 router = APIRouter()
 
 
 @router.get("/v1/settings/profiles/pending", response_model=list[MigrationProfileResponse])
-def list_pending_profiles(request: Request):
+def list_pending_profiles(request: Request) -> list[MigrationProfileResponse]:
+    """List every migration profile that is waiting for administrator approval.
+
+    Args:
+        request: Incoming request, used to enforce the administrator role.
+
+    Returns:
+        Public views of all profiles whose status is ``pending_approval``.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller is not an administrator.
+    """
     _require_admin(request)
     pending = [
         p for p in _settings.load().migration_profiles
@@ -52,7 +58,21 @@ def list_pending_profiles(request: Request):
 
 
 @router.get("/v1/settings/profiles/mine/pending", response_model=list[MigrationProfileResponse])
-def list_my_pending_profiles(request: Request):
+def list_my_pending_profiles(request: Request) -> list[MigrationProfileResponse]:
+    """List the calling user's own profile submissions that are pending or denied.
+
+    Lets an operator track their submissions without administrator rights.
+
+    Args:
+        request: Incoming request, used to identify the signed-in user.
+
+    Returns:
+        Public views of the caller's profiles in ``pending_approval`` or ``denied``
+        status; an empty list when they have submitted none.
+
+    Raises:
+        HTTPException: 401 when no authenticated user is attached to the request.
+    """
     user = _platform_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -64,7 +84,18 @@ def list_my_pending_profiles(request: Request):
 
 
 @router.get("/v1/settings/profiles/{profile_id}", response_model=MigrationProfileResponse)
-def get_migration_profile(profile_id: str):
+def get_migration_profile(profile_id: str) -> MigrationProfileResponse:
+    """Fetch a single migration profile by identifier.
+
+    Args:
+        profile_id: Identifier of the migration profile to fetch.
+
+    Returns:
+        The public view of the profile, with all secret material masked.
+
+    Raises:
+        HTTPException: 404 when no profile carries that identifier.
+    """
     p = _settings.get_profile(profile_id)
     if not p:
         raise HTTPException(status_code=404, detail="Migration profile not found")
@@ -72,14 +103,51 @@ def get_migration_profile(profile_id: str):
 
 
 @router.post("/v1/settings/profiles", response_model=MigrationProfileResponse)
-def create_profile(req: MigrationProfileRequest, request: Request):
+def create_profile(req: MigrationProfileRequest, request: Request) -> MigrationProfileResponse:
+    """Create a migration profile, or overwrite one that already exists.
+
+    Administrative counterpart to the guided setup endpoint: it stores the profile
+    as supplied without running any credential validation or discovery scan.
+
+    Args:
+        req: Full profile definition to store.
+        request: Incoming request, used to enforce the settings-management right.
+
+    Returns:
+        The public view of the stored profile, including its assigned identifier.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller may not manage settings.
+    """
     require_manage_settings(request)
     p = _settings.upsert_profile(req.model_dump())
     return MigrationProfileResponse(**p.to_public())
 
 
 @router.post("/v1/settings/profiles/setup", response_model=MigrationProfileResponse)
-def setup_profile(req: ProfileSetupRequest, request: Request):
+def setup_profile(req: ProfileSetupRequest, request: Request) -> MigrationProfileResponse:
+    """Onboard a migration profile through the guided setup flow.
+
+    Both the Azure DevOps and the GitHub credentials in the request are checked
+    against the live services before anything is stored, and each failed check is
+    written to the profile audit log. Whether the new profile becomes active at
+    once or is queued for approval depends on the caller's role: an administrator
+    gets an active profile, an operator gets a submission. When the profile does
+    become active it is applied to the process environment and an initial
+    discovery scan runs; a scan failure is logged and does not fail the request.
+
+    Args:
+        req: Setup payload carrying the organisation URLs and the credentials to verify.
+        request: Incoming request, used to identify the submitting user and their role.
+
+    Returns:
+        The public view of the created profile. Its ``status`` says whether it is
+        active or awaiting approval.
+
+    Raises:
+        HTTPException: 403 when the caller's role is not permitted to submit a
+            profile, or 400 when either credential check fails.
+    """
     user = _platform_user(request)
     role = user.role.value if user else PlatformRole.ADMIN.value
     profiles = _settings.load().migration_profiles
@@ -137,6 +205,18 @@ def setup_profile(req: ProfileSetupRequest, request: Request):
 
 
 def _scan_response(raw: dict) -> MigrationScanResponse:
+    """Convert a raw scan result mapping into the wire response model.
+
+    Every field is read defensively so that a partial or older scan record still
+    produces a well-formed response rather than raising.
+
+    Args:
+        raw: Scan result mapping as produced or persisted by the scan helpers.
+
+    Returns:
+        The scan response model, with per-phase recommendation buckets rebuilt
+        and missing keys replaced by empty defaults.
+    """
     recs = {
         phase: PhaseRecommendation(**bucket)
         for phase, bucket in raw.get("recommendations", {}).items()
@@ -158,7 +238,25 @@ def _scan_response(raw: dict) -> MigrationScanResponse:
 
 
 @router.post("/v1/migration/scan", response_model=MigrationScanResponse)
-def migration_scan_inline(req: MigrationScanRequest):
+def migration_scan_inline(req: MigrationScanRequest) -> MigrationScanResponse:
+    """Scan an Azure DevOps organisation with credentials supplied in the request.
+
+    Used before any profile exists, so nothing is persisted: the credentials are
+    verified, the scan runs inline, and the result is returned to the caller.
+
+    Args:
+        req: Scan request carrying the source organisation URL, its access
+            credential, the target GitHub organisation and an optional cap on
+            how many repositories to walk.
+
+    Returns:
+        The discovery scan result: counts, per-phase recommendations, project and
+        inventory detail, and any warnings raised while scanning.
+
+    Raises:
+        HTTPException: 400 when the organisation URL or credential is missing or
+            rejected by Azure DevOps, or 502 when the scan itself fails.
+    """
     if not req.ado_org_url or not req.ado_pat:
         raise HTTPException(status_code=400, detail="ADO org URL and PAT are required")
     ado_result = _shared.validate_ado_pat(req.ado_org_url, req.ado_pat)
@@ -178,8 +276,32 @@ def migration_scan_profile(
     profile_id: str,
     max_repos: int | None = None,
     sync: bool = False,
-):
-    p = _require_profile(profile_id, require_active=True)
+) -> object:
+    """Scan an existing profile's Azure DevOps organisation, inline or in the background.
+
+    The profile must be active and must already hold source credentials; they are
+    read from the profile rather than sent by the caller.
+
+    Args:
+        profile_id: Identifier of the migration profile to scan.
+        max_repos: Optional cap on how many repositories to walk. Omit to scan all.
+        sync: Selects the execution mode. When ``true`` the scan runs inline and
+            the finished scan results are returned in this response, so the call
+            blocks for as long as the scan takes. When ``false`` (the default) a
+            background scan job is started and the job record is returned
+            immediately; poll the profile scan status endpoint for progress and
+            read the results from the profile scan endpoint once it completes.
+
+    Returns:
+        With ``sync=true``, the full discovery scan result. With ``sync=false``,
+        the background job record describing the scan that was queued.
+
+    Raises:
+        HTTPException: 400 when the profile holds no source credentials or the
+            background job could not be started, 502 when an inline scan fails,
+            or the governance status when the profile is not active.
+    """
+    p = _require_active_profile(profile_id)
     if not p.ado_org_url or not p.ado_pat:
         raise HTTPException(status_code=400, detail="Profile missing ADO credentials")
     if sync:
@@ -195,13 +317,42 @@ def migration_scan_profile(
 
 
 @router.get("/v1/settings/profiles/{profile_id}/scan/status")
-def profile_scan_status(profile_id: str):
+def profile_scan_status(profile_id: str) -> dict[str, object]:
+    """Report the progress of the background scan for a profile.
+
+    Poll this after starting an asynchronous scan to learn when results are ready.
+
+    Args:
+        profile_id: Identifier of the migration profile being scanned.
+
+    Returns:
+        The rescan status record: the job state plus whatever progress counters
+        and timestamps the scan has published so far.
+
+    Raises:
+        HTTPException: 404 when no profile carries that identifier.
+    """
     _require_profile(profile_id)
     return _settings.profile_rescan_status(profile_id)
 
 
 @router.get("/v1/settings/profiles/{profile_id}/scan")
-def get_profile_scan(profile_id: str):
+def get_profile_scan(profile_id: str) -> MigrationScanResponse:
+    """Return the most recently stored discovery scan for a profile.
+
+    Reads the cached scan; it never starts a new one.
+
+    Args:
+        profile_id: Identifier of the migration profile whose scan to read.
+
+    Returns:
+        The stored discovery scan result: counts, per-phase recommendations,
+        project and inventory detail, and any warnings from that scan.
+
+    Raises:
+        HTTPException: 404 when no profile carries that identifier, or when the
+            profile has never been scanned.
+    """
     _require_profile(profile_id)
     data = _shared.load_scan_results(profile_id)
     if not data:
@@ -210,7 +361,21 @@ def get_profile_scan(profile_id: str):
 
 
 @router.put("/v1/settings/profiles/{profile_id}", response_model=MigrationProfileResponse)
-def update_profile(profile_id: str, req: MigrationProfileRequest, request: Request):
+def update_profile(profile_id: str, req: MigrationProfileRequest, request: Request) -> MigrationProfileResponse:
+    """Replace the stored definition of an existing migration profile.
+
+    Args:
+        profile_id: Identifier of the migration profile to update.
+        req: Full replacement definition for the profile.
+        request: Incoming request, used to enforce the settings-management right.
+
+    Returns:
+        The public view of the updated profile.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller may not manage settings, or 404
+            when no profile carries that identifier.
+    """
     require_manage_settings(request)
     try:
         p = _settings.upsert_profile(req.model_dump(), profile_id=profile_id)
@@ -220,7 +385,31 @@ def update_profile(profile_id: str, req: MigrationProfileRequest, request: Reque
 
 
 @router.delete("/v1/settings/profiles/{profile_id}")
-def delete_profile(profile_id: str, request: Request, body: DeleteProfileRequest | None = None):
+def delete_profile(
+    profile_id: str, request: Request, body: DeleteProfileRequest | None = None,
+) -> dict[str, object]:
+    """Permanently delete a migration profile and record the deletion in the audit log.
+
+    Deleting the profile that is currently the default requires naming its
+    replacement in the body, and the last remaining active profile cannot be
+    deleted at all.
+
+    Args:
+        profile_id: Identifier of the migration profile to delete.
+        request: Incoming request, used to enforce the administrator role and
+            attribute the audit entry.
+        body: Optional payload naming the profile that should become the new
+            default. Required only when deleting the current default.
+
+    Returns:
+        A confirmation mapping whose ``deleted`` key echoes the deleted profile's
+        identifier.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller is not an administrator, 409
+            when this is the last active profile, or 400 when a replacement
+            default is missing or does not name a usable profile.
+    """
     _require_admin(request)
     user = _platform_user(request)
     try:
@@ -241,7 +430,22 @@ def delete_profile(profile_id: str, request: Request, body: DeleteProfileRequest
 
 
 @router.post("/v1/settings/profiles/{profile_id}/set-default")
-def set_profile_default(profile_id: str, request: Request):
+def set_profile_default(profile_id: str, request: Request) -> MigrationProfileResponse:
+    """Make a profile the platform default and record the change in the audit log.
+
+    Args:
+        profile_id: Identifier of the migration profile to promote.
+        request: Incoming request, used to enforce the administrator role and
+            attribute the audit entry.
+
+    Returns:
+        The public view of the profile that is now the default.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller is not an administrator, 404
+            when no profile carries that identifier, or 403 when the profile is
+            not in a state that may be made default.
+    """
     _require_admin(request)
     try:
         p = _settings.set_default_profile(profile_id)
@@ -259,7 +463,29 @@ def set_profile_default(profile_id: str, request: Request):
 
 
 @router.post("/v1/settings/profiles/{profile_id}/deactivate", response_model=MigrationProfileResponse)
-def deactivate_profile(profile_id: str, request: Request, body: DeleteProfileRequest | None = None):
+def deactivate_profile(
+    profile_id: str, request: Request, body: DeleteProfileRequest | None = None,
+) -> MigrationProfileResponse:
+    """Retire a migration profile without deleting it, keeping its history intact.
+
+    Deactivating the current default requires naming its replacement in the body,
+    and the last remaining active profile cannot be deactivated.
+
+    Args:
+        profile_id: Identifier of the migration profile to deactivate.
+        request: Incoming request, used to enforce the administrator role and
+            attribute the audit entry.
+        body: Optional payload naming the profile that should become the new
+            default. Required only when deactivating the current default.
+
+    Returns:
+        The public view of the profile in its now-inactive state.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller is not an administrator, 404
+            when no profile carries that identifier, 409 when this is the last
+            active profile, or 400 for any other rejected deactivation.
+    """
     _require_admin(request)
     user = _platform_user(request)
     try:
@@ -280,9 +506,28 @@ def deactivate_profile(profile_id: str, request: Request, body: DeleteProfileReq
 
 
 @router.post("/v1/settings/profiles/{profile_id}/approve", response_model=MigrationProfileResponse)
-def approve_profile(profile_id: str, request: Request):
+def approve_profile(profile_id: str, request: Request) -> MigrationProfileResponse:
+    """Approve a submitted profile after re-checking its stored credentials.
+
+    The profile's Azure DevOps credential, and its first GitHub token when it has
+    one, are verified against the live services first, so a submission whose
+    credentials have expired since it was raised is rejected rather than approved.
+
+    Args:
+        profile_id: Identifier of the migration profile to approve.
+        request: Incoming request, used to enforce the administrator role and
+            attribute the audit entry.
+
+    Returns:
+        The public view of the approved, now-active profile.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller is not an administrator, 404
+            when no profile carries that identifier, or 400 when a stored
+            credential fails validation or the profile is not awaiting approval.
+    """
     _require_admin(request)
-    p = _require_profile(profile_id, require_active=False)
+    p = _require_profile(profile_id)
     ado_result = _shared.validate_ado_pat(p.ado_org_url, p.ado_pat)
     if not ado_result["valid"]:
         raise HTTPException(status_code=400, detail=ado_result["message"])
@@ -306,7 +551,28 @@ def approve_profile(profile_id: str, request: Request):
 
 
 @router.post("/v1/settings/profiles/{profile_id}/deny", response_model=MigrationProfileResponse)
-def deny_profile(profile_id: str, request: Request, body: DenyProfileRequest | None = None):
+def deny_profile(
+    profile_id: str, request: Request, body: DenyProfileRequest | None = None,
+) -> MigrationProfileResponse:
+    """Deny a submitted profile, recording the stated reason in the audit log.
+
+    The submitter can appeal a denied profile through the appeal endpoint.
+
+    Args:
+        profile_id: Identifier of the migration profile to deny.
+        request: Incoming request, used to enforce the administrator role and
+            attribute the audit entry.
+        body: Optional payload carrying the reason shown to the submitter. When
+            omitted the profile is denied with an empty reason.
+
+    Returns:
+        The public view of the profile in its now-denied state.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller is not an administrator, 404
+            when no profile carries that identifier, or 400 when the profile is
+            not awaiting approval.
+    """
     _require_admin(request)
     try:
         denied = _settings.deny_profile(profile_id, body.reason if body else "")
@@ -325,7 +591,23 @@ def deny_profile(profile_id: str, request: Request, body: DenyProfileRequest | N
 
 
 @router.post("/v1/settings/profiles/{profile_id}/appeal", response_model=MigrationProfileResponse)
-def appeal_profile(profile_id: str, request: Request):
+def appeal_profile(profile_id: str, request: Request) -> MigrationProfileResponse:
+    """Return a denied profile to the approval queue on its submitter's request.
+
+    Only the user who originally submitted the profile may appeal it.
+
+    Args:
+        profile_id: Identifier of the denied migration profile to appeal.
+        request: Incoming request, used to identify the signed-in user.
+
+    Returns:
+        The public view of the profile, back in ``pending_approval`` status.
+
+    Raises:
+        HTTPException: 401 when no authenticated user is attached to the request,
+            403 when the caller did not submit this profile, 404 when no profile
+            carries that identifier, or 400 when the profile is not denied.
+    """
     user = _platform_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -346,7 +628,22 @@ def appeal_profile(profile_id: str, request: Request):
 
 
 @router.post("/v1/settings/profiles/{profile_id}/activate")
-def activate_profile(profile_id: str):
+def activate_profile(profile_id: str) -> dict[str, object]:
+    """Select a profile as the active one and apply its settings to the process.
+
+    Subsequent operations that do not name a profile use this one, and its
+    organisation URLs and credentials are pushed into the process environment.
+
+    Args:
+        profile_id: Identifier of the migration profile to activate.
+
+    Returns:
+        A confirmation mapping whose ``active_profile_id`` key echoes the
+        activated profile's identifier.
+
+    Raises:
+        HTTPException: 404 when no profile carries that identifier.
+    """
     try:
         _settings.set_active(profile_id)
     except KeyError:
@@ -355,132 +652,29 @@ def activate_profile(profile_id: str):
     return {"active_profile_id": profile_id}
 
 
-@router.post("/v1/settings/profiles/{profile_id}/validate/source", response_model=ValidateAdoPatResponse)
-def validate_profile_source(profile_id: str):
-    p = _require_profile(profile_id)
-    result = _shared.validate_ado_pat(p.ado_org_url, p.ado_pat)
-    return ValidateAdoPatResponse(**result)
-
-
-@router.post("/v1/settings/profiles/{profile_id}/validate", response_model=ValidateConnectionResponse)
-def validate_migration_profile(profile_id: str):
-    p = _require_profile(profile_id)
-    ado_result = _shared.validate_ado_pat(p.ado_org_url, p.ado_pat)
-    if not ado_result["valid"]:
-        return ValidateConnectionResponse(valid=False, message=ado_result["message"])
-
-    if not p.github_tokens:
-        return ValidateConnectionResponse(
-            valid=False,
-            message="Source ADO OK — add GitHub tokens for this migration profile",
-            ado_projects=ado_result["ado_projects"],
-        )
-
-    gh_result = _shared.validate_github_token(p.github_tokens[0].token, p.gh_org)
-    if not gh_result["valid"]:
-        return ValidateConnectionResponse(
-            valid=False,
-            message=f"ADO OK; GitHub ({p.gh_org}): {gh_result['message']}",
-            ado_projects=ado_result["ado_projects"],
-        )
-
-    return ValidateConnectionResponse(
-        valid=True,
-        ado_projects=ado_result["ado_projects"],
-        gh_token_remaining=gh_result.get("remaining", 0),
-        message=(
-            f"{p.name}: {ado_result['ado_projects']} ADO projects → "
-            f"GitHub org {p.gh_org} as {gh_result.get('login', 'user')}"
-        ),
-    )
-
-
-@router.post("/v1/settings/validate", response_model=ValidateConnectionResponse)
-def validate_connection():
-    profile = _settings.get_active_profile()
-    if not profile:
-        return ValidateConnectionResponse(valid=False, message="No active migration profile")
-    return validate_migration_profile(profile.id)
-
-
-@router.post("/v1/settings/profiles/{profile_id}/validate/ado", response_model=ValidateAdoPatResponse)
-def validate_ado_for_profile(profile_id: str, req: ValidateAdoPatRequest):
-    p = _require_profile(profile_id)
-    ado_org = req.ado_org_url or p.ado_org_url
-    ado_pat = req.ado_pat if req.ado_pat and req.ado_pat != "***" else p.ado_pat
-    result = _shared.validate_ado_pat(ado_org, ado_pat)
-    return ValidateAdoPatResponse(**result)
-
-
-@router.get("/v1/settings/profiles/{profile_id}/tokens", response_model=list[GitHubTokenResponse])
-def list_github_tokens(profile_id: str):
-    p = _require_profile(profile_id)
-    return [GitHubTokenResponse(**t.to_public()) for t in p.github_tokens]
-
-
-@router.post("/v1/settings/profiles/{profile_id}/tokens", response_model=GitHubTokenResponse)
-def create_github_token(profile_id: str, req: GitHubTokenRequest, request: Request):
-    require_manage_settings(request)
-    try:
-        t = _settings.upsert_github_token(profile_id, req.model_dump())
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Migration profile not found")
-    return GitHubTokenResponse(**t.to_public())
-
-
-@router.put("/v1/settings/profiles/{profile_id}/tokens/{token_id}", response_model=GitHubTokenResponse)
-def update_github_token(profile_id: str, token_id: str, req: GitHubTokenRequest, request: Request):
-    require_manage_settings(request)
-    try:
-        t = _settings.upsert_github_token(profile_id, req.model_dump(), token_id=token_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Token or profile not found")
-    return GitHubTokenResponse(**t.to_public())
-
-
-@router.delete("/v1/settings/profiles/{profile_id}/tokens/{token_id}")
-def delete_github_token(profile_id: str, token_id: str, request: Request):
-    require_manage_settings(request)
-    try:
-        _settings.delete_github_token(profile_id, token_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Token or profile not found")
-    return {"deleted": token_id}
-
-
-@router.post("/v1/settings/profiles/{profile_id}/tokens/validate", response_model=ValidateGitHubTokenResponse)
-def validate_github_token_inline(profile_id: str, req: ValidateGitHubTokenRequest):
-    p = _require_profile(profile_id)
-    result = _shared.validate_github_token(req.token, p.gh_org)
-    return ValidateGitHubTokenResponse(**result)
-
-
-@router.post("/v1/settings/profiles/{profile_id}/tokens/{token_id}/validate", response_model=ValidateGitHubTokenResponse)
-def validate_saved_github_token(profile_id: str, token_id: str):
-    p = _require_profile(profile_id)
-    tok = _settings.get_github_token(profile_id, token_id)
-    if not tok:
-        raise HTTPException(status_code=404, detail="Token not found")
-    result = _shared.validate_github_token(tok.token, p.gh_org)
-    _settings.record_token_validation(profile_id, token_id, result)
-    return ValidateGitHubTokenResponse(**result)
-
-
-@router.post("/v1/settings/validate/ado", response_model=ValidateAdoPatResponse)
-def validate_ado_inline(req: ValidateAdoPatRequest):
-    result = _shared.validate_ado_pat(req.ado_org_url, req.ado_pat)
-    return ValidateAdoPatResponse(**result)
-
-
-@router.post("/v1/settings/validate/github", response_model=ValidateGitHubTokenResponse)
-def validate_github_inline(req: ValidateGitHubTokenRequest):
-    result = _shared.validate_github_token(req.token, req.gh_org)
-    return ValidateGitHubTokenResponse(**result)
-
-
 @router.get("/v1/settings/profiles/{profile_id}/discovery", response_model=DiscoveryResponse)
-def get_profile_discovery(profile_id: str):
-    _require_profile(profile_id, require_active=True)
+def get_profile_discovery(profile_id: str) -> DiscoveryResponse:
+    """Return the discovery view of a profile's scan, repository by repository.
+
+    The per-repository rows come from the state database where the scan has been
+    persisted with its phase assignments; when that table holds nothing for this
+    profile the rows are rebuilt from the cached scan's recommendation buckets
+    instead. A profile that has never been scanned yields an empty view with
+    status ``empty`` rather than an error.
+
+    Args:
+        profile_id: Identifier of the migration profile whose discovery to read.
+
+    Returns:
+        The discovery view: the flat repository list with risk scores and phase
+        assignments, plus the scan's counts, recommendations, project and
+        inventory detail, gaps and warnings.
+
+    Raises:
+        HTTPException: 404 when no profile carries that identifier, or the
+            governance status when the profile is not active.
+    """
+    _require_active_profile(profile_id)
     data = _shared.load_scan_results(profile_id)
     from ado2gh.api.state_db import get_state_db
 
@@ -533,7 +727,33 @@ def get_profile_discovery(profile_id: str):
 
 
 @router.put("/v1/settings/profiles/{profile_id}/phase-assignments")
-def update_phase_assignments(profile_id: str, req: PhaseAssignmentRequest, request: Request):
+def update_phase_assignments(
+    profile_id: str, req: PhaseAssignmentRequest, request: Request,
+) -> dict[str, object]:
+    """Move scanned repositories between migration phases and re-sync their risk scores.
+
+    If the state database holds no scan rows for this profile yet, the cached scan
+    is written to it first and the assignments are then applied, so the console can
+    save phases straight after a scan. Applying the assignments also syncs them to
+    the risk-score table that the phase runner reads, and refreshes the cached scan.
+
+    Args:
+        profile_id: Identifier of the migration profile owning the repositories.
+        req: Assignment payload listing each repository and its target phase.
+        request: Incoming request, used to enforce the settings-management right.
+
+    Returns:
+        A mapping with ``updated`` (repositories moved), ``synced_risk_scores``
+        (risk-score rows written), ``scan`` (the refreshed scan results, or null
+        when none are cached) and a ``message`` telling the operator to rebuild
+        the plan or start a new run to pick the changes up.
+
+    Raises:
+        HTTPException: 401 or 403 when the caller may not manage settings, 404
+            when no profile carries that identifier or none of the named
+            repositories matched, or 501 when the configured storage backend does
+            not support phase assignment.
+    """
     require_manage_settings(request)
     _require_profile(profile_id)
     from ado2gh.api.state_db import get_state_db
@@ -567,3 +787,9 @@ def update_phase_assignments(profile_id: str, req: PhaseAssignmentRequest, reque
             "pipeline run to pick up the updated repo list."
         ),
     }
+
+
+# Mounted last so this module's own routes keep the registration order they were
+# written and tested in; it also keeps main.py's single
+# include_router(profile_routes.router) call correct.
+router.include_router(_credential_router)

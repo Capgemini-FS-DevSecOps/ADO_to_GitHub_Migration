@@ -1,18 +1,20 @@
-"""Pipeline run and live approval route handlers."""
+"""Pipeline run endpoints under `/v1/pipeline`.
+
+Covers the step catalogue, the run list and detail views, cancellation, and the
+two ways a run is started. The platform-wide live-execution approval queue those
+starts park in lives in `approval_routes.py` and is mounted onto this router at
+the bottom of this module.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
 from ado2gh.api.contracts import (
     LiveApprovalCreateRequest,
-    LiveApprovalDecisionRequest,
-    LiveApprovalItem,
-    LiveApprovalListResponse,
     PipelineRunResponse,
     PipelineRunStartRequest,
     PipelineStepDefinition,
 )
-from ado2gh.api.live_approval_store import register_migrate_executor, register_pipeline_executor
 from ado2gh.api.pipeline_runner import (
     ACCELERATOR_PIPELINE_STEPS,
     MIGRATE_UI_PIPELINE_STEPS,
@@ -22,8 +24,6 @@ from ado2gh.api.pipeline_runner import (
 )
 from ado2gh.api.platform_rbac import (
     operator_requires_live_approval,
-    require_approve_live_execution,
-    require_operate,
 )
 from ado2gh.api.profile_governance import (
     ProfileGovernanceError,
@@ -32,29 +32,47 @@ from ado2gh.api.profile_governance import (
 from ado2gh.models import ExecutionMode
 from ado2gh.state.factory import create_state_db
 from services.accelerator_api.routes._shared import (
-    _execute_approved_migrate,
-    _execute_approved_pipeline,
     _governance_http_error,
     _live_store,
     _platform_user,
     _runner,
     _settings,
 )
+from services.accelerator_api.routes.approval_routes import router as _approval_router
 
 router = APIRouter()
 
-register_migrate_executor(_execute_approved_migrate)
-register_pipeline_executor(_execute_approved_pipeline)
-
 
 @router.get("/v1/pipeline/steps", response_model=list[PipelineStepDefinition])
-def pipeline_steps(context: str = "migrate"):
+def pipeline_steps(context: str = "migrate") -> list[PipelineStepDefinition]:
+    """List the step definitions a pipeline run executes, in execution order.
+
+    Args:
+        context: Which step catalogue to return. ``migrate`` (the default) gives
+            the steps the migration console drives; any other value gives the
+            accelerator's own step list.
+
+    Returns:
+        The step definitions for that context, in the order they run.
+    """
     steps = MIGRATE_UI_PIPELINE_STEPS if context == "migrate" else ACCELERATOR_PIPELINE_STEPS
     return [PipelineStepDefinition(**s) for s in steps]
 
 
 @router.get("/v1/pipeline/runs")
-def list_pipeline_runs(limit: int = 20, offset: int = 0):
+def list_pipeline_runs(limit: int = 20, offset: int = 0) -> dict[str, object]:
+    """List pipeline runs, newest first, together with the dashboard counts.
+
+    Args:
+        limit: Maximum number of runs on the page.
+        offset: Number of runs to skip from the newest end.
+
+    Returns:
+        ``runs``: the requested page, each run enriched with display-friendly
+        started-by and live-approval labels; ``total``: how many runs exist in
+        all; ``limit`` and ``offset``: the paging values echoed back; and
+        ``summary``: run counts by outcome for the dashboard tiles.
+    """
     runs, total = PipelineRunStore.list_runs(limit=limit, offset=offset)
     db = create_state_db(_settings.load().advanced.db_path)
     return {
@@ -69,7 +87,19 @@ def list_pipeline_runs(limit: int = 20, offset: int = 0):
 
 
 @router.get("/v1/pipeline/runs/{run_id}")
-def get_pipeline_run(run_id: str):
+def get_pipeline_run(run_id: str) -> dict[str, object]:
+    """Fetch a single pipeline run and its per-step progress.
+
+    Args:
+        run_id: Identifier of the run to read.
+
+    Returns:
+        ``run``: the run, enriched with display-friendly started-by and
+        live-approval labels.
+
+    Raises:
+        HTTPException: 404 when no run carries that identifier.
+    """
     run = PipelineRunStore.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -78,7 +108,24 @@ def get_pipeline_run(run_id: str):
 
 
 @router.post("/v1/pipeline/runs/{run_id}/cancel")
-def cancel_pipeline_run(run_id: str):
+def cancel_pipeline_run(run_id: str) -> dict[str, object]:
+    """Cancel an in-flight pipeline run.
+
+    The run stops at its next step boundary; the step already executing is
+    allowed to finish.
+
+    Args:
+        run_id: Identifier of the run to cancel.
+
+    Returns:
+        ``run``: the run as it stood when cancellation was requested, or null if
+        it had disappeared from the registry; ``cancelled``: always true once
+        the request was accepted.
+
+    Raises:
+        HTTPException: 404 when no run carries that identifier, 409 when the run
+            has already reached a status that cannot be cancelled.
+    """
     if not _runner.cancel(run_id):
         run = PipelineRunStore.get(run_id)
         if not run:
@@ -89,7 +136,28 @@ def cancel_pipeline_run(run_id: str):
 
 
 @router.post("/v1/pipeline/runs", response_model=PipelineRunResponse)
-def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
+def start_pipeline_run(req: PipelineRunStartRequest, request: Request) -> PipelineRunResponse:
+    """Create a pipeline run and start it, or park it awaiting live approval.
+
+    Runs are dry by default: when the body leaves ``dry_run`` unset the
+    deployment-wide advanced setting decides. A caller whose role does not carry
+    live-execution authority gets the run parked at ``awaiting_approval`` with an
+    approval request queued for an approver, instead of started.
+
+    Args:
+        req: Run name, optional step selection, phase, wave, repository and
+            dry-run choice.
+        request: Incoming request, used to identify the signed-in caller.
+
+    Returns:
+        ``run``: the created run, either already running or parked awaiting
+        approval, with display-friendly started-by and live-approval labels.
+
+    Raises:
+        HTTPException: 403 when no migration profile is active, or the
+            governance status (403/404/409) when the active profile is not
+            allowed to run migrations.
+    """
     active = _settings.get_active_profile()
     if not active:
         raise HTTPException(status_code=403, detail="profile_not_active")
@@ -148,11 +216,27 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request):
 
 
 @router.post("/v1/pipeline/runs/{run_id}/start", response_model=PipelineRunResponse)
-def start_existing_pipeline_run(run_id: str, request: Request):
+def start_existing_pipeline_run(run_id: str, request: Request) -> PipelineRunResponse:
     """Start a pipeline run that was created but not started (e.g. awaiting approval).
 
     The route takes no request body. Whether a parked run may go live is decided
     entirely from server-side state, so there is nothing for a caller to send.
+
+    Calling it on a run that is already running is a no-op that returns the run
+    as it stands.
+
+    Args:
+        run_id: Identifier of the run to start.
+        request: Incoming request, used to identify the signed-in caller.
+
+    Returns:
+        ``run``: the run after the start attempt, with display-friendly
+        started-by and live-approval labels.
+
+    Raises:
+        HTTPException: 404 when no run carries that identifier, 409 when a
+            parked run still awaits approval or when the run has already reached
+            a status that cannot be started.
     """
     run = PipelineRunStore.get(run_id)
     if not run:
@@ -186,45 +270,6 @@ def start_existing_pipeline_run(run_id: str, request: Request):
     return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
 
 
-@router.get("/v1/platform/approvals", response_model=LiveApprovalListResponse)
-def list_live_approvals(request: Request, status: str = "pending"):
-    require_approve_live_execution(request)
-    store = _live_store()
-    items = [LiveApprovalItem(**row) for row in store.list_approvals(status=status)]
-    return LiveApprovalListResponse(approvals=items)
-
-
-@router.get("/v1/platform/approvals/{approval_id}", response_model=LiveApprovalItem)
-def get_live_approval(approval_id: str, request: Request):
-    user = require_operate(request)
-    store = _live_store()
-    row = store.get_approval(approval_id, requester=user)
-    return LiveApprovalItem(**row)
-
-
-@router.post("/v1/platform/approvals", response_model=LiveApprovalItem)
-def create_live_approval(req: LiveApprovalCreateRequest, request: Request):
-    user = require_operate(request)
-    store = _live_store()
-    row = store.create_or_get_pending(user, req)
-    return LiveApprovalItem(**row)
-
-
-@router.post("/v1/platform/approvals/{approval_id}/approve", response_model=LiveApprovalItem)
-def approve_live_execution(
-    approval_id: str, req: LiveApprovalDecisionRequest, request: Request,
-):
-    approver = require_approve_live_execution(request)
-    store = _live_store()
-    row = store.approve(approval_id, approver, req.reason)
-    return LiveApprovalItem(**row)
-
-
-@router.post("/v1/platform/approvals/{approval_id}/deny", response_model=LiveApprovalItem)
-def deny_live_execution(
-    approval_id: str, req: LiveApprovalDecisionRequest, request: Request,
-):
-    approver = require_approve_live_execution(request)
-    store = _live_store()
-    row = store.deny(approval_id, approver, req.reason)
-    return LiveApprovalItem(**row)
+# Mounted last so this module's own routes keep the registration order they were
+# written and tested in, and main.py keeps one include_router call for both.
+router.include_router(_approval_router)

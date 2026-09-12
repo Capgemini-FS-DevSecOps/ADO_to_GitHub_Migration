@@ -199,8 +199,8 @@
 
 ### Increment 12 — `services/accelerator_api/`
 
-- [ ] T065 [US2] Review-agent decisions for `--package services/accelerator_api`; record
-- [ ] T066 [US2] Clean `services/accelerator_api/` per protocol (142 functions, 118 untyped route handlers: annotate params and `-> ResponseModel`; docstrings per FR-010a; `routes/_shared.py` singletons stay unless a gap fix changed them); verify incl. `tests/contract/`, changelog, commit
+- [X] T065 [US2] Review-agent decisions for `--package services/accelerator_api`; record
+- [X] T066 [US2] Clean `services/accelerator_api/` per protocol (142 functions, 118 untyped route handlers: annotate params and `-> ResponseModel`; docstrings per FR-010a; `routes/_shared.py` singletons stay unless a gap fix changed them); verify incl. `tests/contract/`, changelog, commit
 
 ### Increment 13 — `services/agent/`
 

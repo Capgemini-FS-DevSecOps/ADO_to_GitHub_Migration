@@ -6,7 +6,7 @@ hang this one dependency off their router instead of repeating a check per handl
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, Request
 
@@ -14,6 +14,9 @@ from ado2gh.api.contracts import LiveApprovalCreateRequest
 from ado2gh.api.platform_rbac import operator_requires_live_approval, platform_user
 from ado2gh.models import ExecutionMode
 from services.accelerator_api.routes._shared import _settings
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ado2gh.auth.models import PlatformUser
 
 # The identity fields the nine request models use to name their target. An
 # allowlist rather than a blocklist so no secret-bearing field (notably
@@ -25,6 +28,12 @@ _SCOPE_FIELDS = (
 
 
 def active_profile_id() -> str | None:
+    """Identify the migration profile a live run should be recorded against.
+
+    Returns:
+        The active profile's id, or ``None`` when no profile is active or the
+        settings store cannot be read — callers fall back to the platform scope.
+    """
     try:
         active = _settings.get_active_profile()
     except Exception:
@@ -33,15 +42,30 @@ def active_profile_id() -> str | None:
 
 
 def _live_scope_id(path: str, body: dict[str, Any]) -> str:
-    """Approval scope for one live run: the route plus the target it names."""
+    """Approval scope for one live run: the route plus the target it names.
+
+    Args:
+        path: Request path of the migrate route being guarded.
+        body: Parsed request body; only allowlisted identity fields are read.
+
+    Returns:
+        A colon-joined scope id, stable for the same route and target, so a
+        repeat of the same live request finds the approval already granted.
+    """
     return ":".join([path, *(str(body[f]).strip() for f in _SCOPE_FIELDS if body.get(f))])
 
 
-def audit_live_migration(path: str, user: Any, body: dict[str, Any]) -> None:
+def audit_live_migration(path: str, user: PlatformUser | None, body: dict[str, Any]) -> None:
     """Record a live run before any irreversible work starts (CA-004).
 
     Only allowlisted identity fields go in: an audit row is permanent and the
     request body can carry a secret value (``/v1/migrate/secret-provision``).
+
+    Args:
+        path: Request path of the migrate route about to run live.
+        user: Signed-in platform user, or ``None`` for an unauthenticated
+            deployment; recorded as the actor and the role.
+        body: Parsed request body, filtered to the allowlisted identity fields.
     """
     from ado2gh.api.profile_governance import write_profile_audit
 
