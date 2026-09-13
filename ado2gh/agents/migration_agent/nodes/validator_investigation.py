@@ -463,14 +463,16 @@ async def _invoke_validator_tool(
     """
     if hasattr(tool, "ainvoke"):
         return await tool.ainvoke(args)
-    # Direct attribute checks (not getattr-as-condition) so mypy narrows
-    # coroutine/func from Callable | None to Callable for the call below;
-    # both attributes always exist on a StructuredTool, only their value
-    # is optional.
-    if tool.coroutine:
-        return await tool.coroutine(**args)
-    if tool.func:
-        return tool.func(**args)
+    # getattr, not attribute access: the caller resolves tools out of a
+    # dict[str, Any], so an object that is not a StructuredTool does reach this
+    # helper — and the RuntimeError below is the documented outcome for it.
+    # Reading tool.coroutine directly turned that into an AttributeError.
+    coroutine = getattr(tool, "coroutine", None)
+    if coroutine:
+        return await coroutine(**args)
+    func = getattr(tool, "func", None)
+    if func:
+        return func(**args)
     raise RuntimeError(f"Tool {getattr(tool, 'name', '?')} is not invokable")
 
 

@@ -22,6 +22,20 @@ if TYPE_CHECKING:
         Both concrete backends (``SQLiteStateDB``, ``PostgresStateDB``) implement
         these; ``_conn`` is a private per-backend connection context manager not
         declared on the shared ``StateDBBase`` ABC, so it is named here instead.
+
+        ``_conn`` is deliberately wider than the sibling Protocols in
+        ``ado2gh/state/``: those describe one backend's own mixin host, so they
+        can name that backend's exact type (``sqlite3.Connection`` for the
+        SQLite mixins, the generator signature for the Postgres ones). This one
+        spans both, because ``PhaseGateChecker`` is constructed from
+        ``create_state_db()``, whose ``StateStore`` is the union of the two.
+        ``SQLiteStateDB._conn`` returns a bare ``sqlite3.Connection`` and
+        ``PostgresStateDB._conn`` is a ``@contextmanager``; the one call pattern
+        here, ``with self.db._conn() as conn``, is what both satisfy, and
+        ``AbstractContextManager`` is the only declaration that covers them
+        both. Narrowing it to ``sqlite3.Connection`` was measured against mypy
+        and fails: `Argument 1 to "PhaseGateChecker" has incompatible type
+        "SQLiteStateDB | PostgresStateDB"` at ``ado2gh/api/accelerator.py``.
         """
 
         def _conn(self) -> AbstractContextManager[Any]: ...
@@ -31,6 +45,10 @@ if TYPE_CHECKING:
         def upsert_phase_gate(self, result: PhaseGateResult) -> None: ...
 
         def get_phase_gate(self, phase: PhaseType) -> dict | None: ...
+else:
+    # Parity with every other Protocol host in the package: without it the
+    # annotation would raise NameError under typing.get_type_hints at runtime.
+    _GateStateDB = object
 
 
 class PhaseGateChecker:

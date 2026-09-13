@@ -53,3 +53,20 @@ async def test_classify_user_intent_requires_llm():
     assert result["should_return"] is True
     assert result["intent"] == "general_chat"
     assert result.get("reply")
+
+
+def test_session_context_survives_a_null_repo_name():
+    """A discovery row carrying `repo_name: None` must not break the context block.
+
+    T077 cast the list to `list[str]` instead of coercing it, and `.get`'s
+    default does not fire for a key that is present with a null value, so the
+    join raised TypeError and took the whole prompt build down with it.
+    """
+    from ado2gh.agents.migration_agent.nodes.intent import _build_session_context
+
+    ctx = _build_session_context({
+        "discovery_snapshot": {"repos": [{"repo_name": None, "name": "payments"}, {"repo_name": "billing"}]},
+    })
+
+    assert "payments" in ctx
+    assert "billing" in ctx

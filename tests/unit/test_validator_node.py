@@ -461,3 +461,22 @@ async def test_validator_baseline_probe_escalates_operator_input(monkeypatch):
     assert result["validation_result"]["passed"] is False
     assert result.get("pending_operator_input")
     assert result["validation_feedback"]["escalate"] is True
+
+
+@pytest.mark.asyncio
+async def test_invoke_validator_tool_rejects_a_non_tool_object():
+    """An object with no call convention raises the documented RuntimeError.
+
+    T077 replaced `getattr(tool, "coroutine", None)` with direct attribute
+    access, so a non-StructuredTool died with AttributeError before reaching
+    the error the helper documents.
+    """
+    from ado2gh.agents.migration_agent.nodes.validator_investigation import (
+        _invoke_validator_tool,
+    )
+
+    class _NotATool:
+        name = "not-a-tool"
+
+    with pytest.raises(RuntimeError, match="not invokable"):
+        await _invoke_validator_tool(_NotATool(), {})

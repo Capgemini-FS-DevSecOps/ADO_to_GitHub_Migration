@@ -12,6 +12,11 @@ or passed on ambient environment values, and the step could report COMPLETED on
 credentials nothing had checked (CA-001). These tests pin the two honest
 outcomes: with a profile the merged credentials reach the probes, without one
 the step fails loudly.
+
+The last two tests cover the same step's other T077 review findings: the
+credential merge rejects a missing profile at the choke point, and an unknown
+``run.phase`` fails the step with a readable message instead of reaching
+``PhaseRunRequest`` and raising pydantic's ValidationError mid-migration.
 """
 from __future__ import annotations
 
@@ -158,6 +163,33 @@ def test_single_repo_dry_run_with_profile_merges_credentials(runner_env, probe_r
         assert cfg["ado_pat"] == FAKE_PAT
         assert cfg["gh_token"] == FAKE_GH_TOKEN
         assert cfg["ado_org_url"] == "https://dev.azure.com/fake-org"
+
+
+def test_unknown_phase_fails_the_step_before_the_phase_request(runner_env, probe_recorder, monkeypatch):
+    """An unknown ``run.phase`` fails the step, not pydantic mid-migration.
+
+    ``PipelineRunStartRequest.phase`` is free text and ``PhaseRunRequest.phase``
+    is a Literal of the five known phases; T077 bridged the two with a
+    ``type: ignore``, so a typo surfaced as a ValidationError raised inside the
+    migration step.
+    """
+    runner = _runner(runner_env, None, monkeypatch)
+    run = PipelineRunStore.create(
+        "bogus phase",
+        dry_run=False,
+        phase="wave9",
+        wave_id=None,
+        step_defs=STEP_DEFS,
+    )
+    try:
+        runner._execute(run.id, ["migrate_repos"])
+    finally:
+        PipelineRunStore.clear_cancel(run.id)
+
+    step = run.steps[0]
+    assert step.status is StepStatus.FAILED
+    assert "wave9" in step.message
+    assert "poc" in step.message, "the message should name the phases that are accepted"
 
 
 def test_merge_profile_credentials_rejects_a_missing_profile():

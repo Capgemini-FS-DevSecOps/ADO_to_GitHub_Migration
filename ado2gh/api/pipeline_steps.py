@@ -2,12 +2,26 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from ado2gh.api.pipeline_models import PipelineRun, StepStatus
 from ado2gh.api.pipeline_store import PipelineRunStore
 from ado2gh.api.repo_input import load_repos
 from ado2gh.api.repo_lock import REPO_LOCK_MANAGER, RepoLockedException
+
+# A run's phase is operator-supplied free text (``PipelineRunStartRequest.phase:
+# str``) while ``PhaseRunRequest.phase`` is a Literal of the five known phases,
+# so an unknown value raised a pydantic ValidationError halfway through the
+# migration step. This maps the one to the other; mypy checks these values
+# against that Literal, so a change to the phase set fails here rather than at
+# runtime.
+_PHASE_REQUEST_VALUES: dict[str, Literal["poc", "pilot", "wave1", "wave2", "wave3"]] = {
+    "poc": "poc",
+    "pilot": "pilot",
+    "wave1": "wave1",
+    "wave2": "wave2",
+    "wave3": "wave3",
+}
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ado2gh.api.settings_store import SettingsStore
@@ -1119,12 +1133,18 @@ class PipelineStepsMixin(_PipelineStepsHost):
             override_reason = str(
                 redact_payload((getattr(run, "override_reason", "") or "").strip()),
             )
+            phase_value = _PHASE_REQUEST_VALUES.get(run.phase)
+            if phase_value is None:
+                msg = (
+                    f"{step_label}: unknown phase {run.phase!r} — expected one of "
+                    f"{', '.join(_PHASE_REQUEST_VALUES)}"
+                )
+                self._log(run, f"  FAIL: {msg}")
+                self._set_step(run, step_id, StepStatus.FAILED, msg, {"phase": run.phase})
+                return
             outcome = accel.run_phase(PhaseRunRequest(
                 config_path=config_for_phase,
-                # run.phase is operator-supplied free text (PipelineRunStartRequest.phase:
-                # str); PhaseRunRequest's own pydantic validation rejects anything outside
-                # the 5 known phases at construction, unchanged by this ignore.
-                phase=run.phase,  # type: ignore[arg-type]
+                phase=phase_value,
                 dry_run=run.dry_run,
                 force=True,
                 override_reason=override_reason,
