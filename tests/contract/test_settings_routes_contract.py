@@ -103,13 +103,31 @@ CONNECTIVITY_KEYS = {
 
 
 def test_get_connectivity_returns_the_documented_shape(admin):
+    # The connectivity store is a session-wide singleton, so the shape is
+    # asserted against a state this test establishes rather than against a
+    # pristine one.
+    admin.put(
+        "/v1/settings/connectivity",
+        json={
+            "proxy_enabled": False,
+            "proxy_host": "shape.internal",
+            "proxy_port": 3128,
+            "proxy_username": "shape-user",
+        },
+    )
     resp = admin.get("/v1/settings/connectivity")
     assert resp.status_code == 200
     body = resp.json()
     assert CONNECTIVITY_KEYS <= set(body)
-    # Nothing is configured yet, so the password mask is the empty string.
-    assert body["proxy_password"] == ""
-    assert body["custom_ca_configured"] is False
+    assert body["proxy_enabled"] is False
+    assert body["proxy_host"] == "shape.internal"
+    assert body["proxy_port"] == 3128
+    assert body["proxy_username"] == "shape-user"
+    # The password is write-only: it comes back as a fixed mask or as empty,
+    # never as the stored value.
+    assert body["proxy_password"] in ("", "***")
+    assert isinstance(body["custom_ca_configured"], bool)
+    assert isinstance(body["allow_custom_model_id"], bool)
 
 
 def test_put_connectivity_masks_the_password_and_never_echoes_it(admin):
@@ -370,17 +388,24 @@ def test_settings_payload_carries_profiles_and_advanced_defaults(admin):
 
 
 def test_advanced_settings_update_applies_only_the_fields_sent(admin):
+    # The settings store is a session-wide singleton: establish the baseline
+    # rather than assuming it, and restore the shipped default afterwards so no
+    # other test inherits a live-by-default deployment.
+    admin.put("/v1/settings/advanced", json={"dry_run_default": True})
     before = admin.get("/v1/settings").json()["advanced"]
     assert before["dry_run_default"] is True
-    resp = admin.put("/v1/settings/advanced", json={"dry_run_default": False})
-    assert resp.status_code == 200
-    after = resp.json()
-    assert after["dry_run_default"] is False
-    # Scalar defaults that were not sent must survive the partial update.
-    for key in ("migration_strategy", "config_path", "max_workers"):
-        if key in before and key in after:
-            assert after[key] == before[key], f"{key} changed although it was not sent"
-    assert admin.get("/v1/settings").json()["advanced"]["dry_run_default"] is False
+    try:
+        resp = admin.put("/v1/settings/advanced", json={"dry_run_default": False})
+        assert resp.status_code == 200
+        after = resp.json()
+        assert after["dry_run_default"] is False
+        # Scalar defaults that were not sent must survive the partial update.
+        for key in ("migration_strategy", "config_path", "max_workers"):
+            if key in before and key in after:
+                assert after[key] == before[key], f"{key} changed although it was not sent"
+        assert admin.get("/v1/settings").json()["advanced"]["dry_run_default"] is False
+    finally:
+        admin.put("/v1/settings/advanced", json={"dry_run_default": True})
 
 
 def test_phases_payload_reports_coverage_and_counts(admin):
@@ -394,18 +419,36 @@ def test_phases_payload_reports_coverage_and_counts(admin):
 
 
 def test_phase_update_replaces_the_whole_set(admin):
-    resp = admin.put(
-        "/v1/settings/phases",
-        json={
-            "phases": [
-                {"id": "poc", "name": "POC", "risk_max": 100.0, "repo_cap": 10, "order": 0},
-            ],
-            "removals": [],
-            "span_to_scan": False,
-        },
-    )
-    assert resp.status_code == 200, resp.text
-    assert [p["id"] for p in resp.json()["phases"]] == ["poc"]
+    """The phase set is deployment-wide state, so it is put back afterwards."""
+    original = [
+        {
+            "id": phase["id"],
+            "name": phase["name"],
+            "risk_max": phase["risk_max"],
+            "repo_cap": phase.get("repo_cap", 9999),
+            "order": phase.get("order", index),
+        }
+        for index, phase in enumerate(admin.get("/v1/settings/phases").json()["phases"])
+    ]
+    try:
+        resp = admin.put(
+            "/v1/settings/phases",
+            json={
+                "phases": [
+                    {"id": "poc", "name": "POC", "risk_max": 100.0,
+                     "repo_cap": 10, "order": 0},
+                ],
+                "removals": [],
+                "span_to_scan": False,
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert [phase["id"] for phase in resp.json()["phases"]] == ["poc"]
+    finally:
+        admin.put(
+            "/v1/settings/phases",
+            json={"phases": original, "removals": [], "span_to_scan": False},
+        )
 
 
 def test_phase_update_rejects_an_inconsistent_set_with_400(admin):
