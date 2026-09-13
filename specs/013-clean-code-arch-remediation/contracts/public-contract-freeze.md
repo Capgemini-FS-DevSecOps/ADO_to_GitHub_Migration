@@ -73,8 +73,9 @@ No default flips: wherever `dry_run=True` was the default, `ExecutionMode.DRY_RU
 
 Any gap fix needing a public-contract change is appended here **and** to `plan.md`
 § Approved contract changes before it is applied (FR-024). A change is listed in this
-section only once the operator has approved it explicitly; everything else waiting on a
-decision belongs in § Contract changes awaiting operator sign-off below.
+section only once the operator has approved it explicitly; the changes the operator signed off
+by instruction on 2026-09-13 are recorded in § Contract changes approved by operator
+instruction, 2026-09-13 below.
 
 ### 1. Live execution requires an authenticated approver — GAP-002, GAP-005
 
@@ -258,23 +259,28 @@ persist path, not on the response path; nothing in the type system enforces it.
 are not among the four frozen keys, and no route path, method, CLI command, environment
 variable or table name changed. Confirmed by the snapshot test.
 
-## Contract changes awaiting operator sign-off
+## Contract changes approved by operator instruction, 2026-09-13
 
-Everything in this section is present in the working tree but has **not** been approved by
-the operator. It is recorded here so that nothing ships unrecorded, and so the T040
-snapshot update can be justified line by line. Nothing here may be treated as approved.
+Everything in this section is present in the working tree and was **approved by operator
+instruction on 2026-09-13** — the operator's "Remediate all findings" answer, recorded in
+`operator-decisions.md` § 13 (entries 5–8), § 1 (entry 9) and § 6 (entry 12). These entries keep
+a section of their own only so the sign-off date stays visible; they carry exactly the same
+weight as § Approved contract changes above, and each carries the number of the matching
+`plan.md` § Approved contract changes entry — except entry 9, which the GAP-018 batch has still
+to append to `plan.md` under that number.
 
 | # | Change | GAP | Frozen key affected | Snapshot drifts? | Operator sign-off |
 |---|--------|-----|---------------------|------------------|-------------------|
-| 5 | Nine `/v1/migrate/*` routes gain a live-execution guard | GAP-007 | none (paths unchanged) | No | **No — needs sign-off** |
-| 6 | GitHub write proxy requires `can_approve_live_execution` | GAP-008 | none (paths unchanged) | No | **No — needs sign-off** |
-| 7 | Agent `/v1/internal/` fails closed without `ADO2GH_INTERNAL_TOKEN` | GAP-003 | `env_vars` — already frozen, no drift | No | **No — needs sign-off** |
-| 8 | `phase gate-check --override` rejects an empty `--reason` | GAP-017 | `cli_commands` — flags unchanged, no drift | No | **No — needs sign-off** |
+| 5 | Nine `/v1/migrate/*` routes gain a live-execution guard | GAP-007 | none (paths unchanged) | No | **Yes — 2026-09-13** |
+| 6 | GitHub write proxy requires `can_approve_live_execution` | GAP-008 | none (paths unchanged) | No | **Yes — 2026-09-13** |
+| 7 | Agent `/v1/internal/` fails closed without `ADO2GH_INTERNAL_TOKEN` | GAP-003 | `env_vars` — already frozen, no drift | No | **Yes — 2026-09-13** |
+| 8 | `phase gate-check --override` rejects an empty `--reason` | GAP-017 | `cli_commands` — flags unchanged, no drift | No | **Yes — 2026-09-13** |
+| 9 | `run`, `phase run` and `ado-cleanup` default to dry-run; live needs `--live` | GAP-018 | `cli_commands` — three option lines retyped | Yes | **Yes — 2026-09-13** |
+| 12 | `GET /v1/settings/cloud-credentials` no longer accepts `scan` | CA-004 | none (path and method unchanged) | No | **Yes — 2026-09-13** |
 
-Items 5, 6 and 7 are security fixes at the heart of this feature, so reverting them is not
-on the table. They are listed here because they are as operator-visible as the approved
-live-gate change, and each needs a migration note as good as the approved ones — which is
-what the entries below give them.
+Items 5, 6 and 7 are security fixes at the heart of this feature, so reverting them was never
+on the table. They are as operator-visible as the approved live-gate change, and each needs a
+migration note as good as the approved ones — which is what the entries below give them.
 
 ### 5. Nine `/v1/migrate/*` routes gain a live-execution guard — GAP-007
 
@@ -304,7 +310,7 @@ COORDINATOR keeps working but becomes asynchronous: it must now expect the 403
 the approval is granted. Treating that 403 as a hard failure is the most likely way this
 change breaks an existing integration.
 
-**Status: awaiting operator sign-off.**
+**Status: approved by operator instruction, 2026-09-13.**
 
 ### 6. GitHub write proxy requires `can_approve_live_execution` — GAP-008
 
@@ -332,7 +338,7 @@ OPERATOR identity must be re-run under an ADMIN or APPROVER identity, or moved o
 event records the verb, the endpoint and the actor only — never the forwarded body or the
 platform's own `Authorization` header (CA-003).
 
-**Status: awaiting operator sign-off.**
+**Status: approved by operator instruction, 2026-09-13.**
 
 ### 7. Agent `/v1/internal/` fails closed without `ADO2GH_INTERNAL_TOKEN` — GAP-003
 
@@ -367,7 +373,7 @@ refuses to start without the variable and `deploy/kubernetes/secret.yaml.example
 it; the development `docker-compose.yml` leaves it empty, which is harmless there because
 that stack also turns authentication off, so the middleware never reaches the check.
 
-**Status: awaiting operator sign-off.**
+**Status: approved by operator instruction, 2026-09-13.**
 
 ### 8. `phase gate-check --override` rejects an empty `--reason` — GAP-017
 
@@ -377,7 +383,59 @@ a `click.UsageError` when `--reason` is empty. No option was added, removed or r
 `--override` with no reason, which previously raised a `TypeError` and wrote no gate row at
 all, is now a clean usage error.
 
-**Status: awaiting operator sign-off.**
+**Status: approved by operator instruction, 2026-09-13.**
+
+### 9. `run`, `phase run` and `ado-cleanup` default to dry-run — GAP-018
+
+`ado2gh/cli/migration.py`, `ado2gh/cli/phase.py` and `ado2gh/cli/misc.py` declared `--dry-run` as
+`is_flag=True, default=False`, so each of the three commands migrated for real unless the
+operator opted out, and none of them prompted for confirmation. On the CLI path that default was
+the only guard there was: the approval-token check in `ado2gh/api/accelerator.py` fires only when
+a request quotes a `live_approval_id`, and the CLI never sends one. Each option is now the
+boolean pair `--dry-run/--live` with `default=True`. `--dry-run` keeps its name and its meaning
+and `ExecutionMode.from_dry_run(dry_run=...)` still converts at the boundary, so no handler body
+changed. Applied in `b9eb89c`.
+
+*Migration note.* Any unattended script that invokes `ado2gh run`, `ado2gh phase run` or
+`ado2gh ado-cleanup` without `--dry-run` and expected a real migration now performs a dry run and
+writes nothing. It must be changed to pass `--live`. The failure mode is safe — nothing migrates
+halfway — but the run does not happen. A script that already passes `--dry-run` is unaffected: the
+flag still parses and still means what it meant.
+
+**Snapshot impact: yes — three retyped `cli_commands` lines.** For each of `run`, `phase run` and
+`ado-cleanup`, `param dry_run` moves from `opts=--dry-run :: type=boolean :: default=False` to
+`opts=--dry-run/--live :: type=boolean :: default=True`. No entry is added or removed, so
+`cli_commands` stays at **96** and the other three frozen keys are untouched. The snapshot edit
+landed in `b9eb89c`, the same commit as the fix, per the snapshot-test contract above. It is a
+second authorised drift, later than and independent of the GAP-012 one; § Snapshot edit
+authorised for T040 below describes the GAP-012 edit only and is not a statement about the tree
+after `b9eb89c`.
+
+**Status: approved by operator instruction, 2026-09-13** (`operator-decisions.md` § 1, option A).
+
+### 12. `GET /v1/settings/cloud-credentials` no longer accepts `scan` — CA-004
+
+The listing endpoint accepted `?scan=true` to re-probe the host for cloud credential sources
+before answering. It performed exactly the probe that `POST /v1/settings/cloud-credentials/scan`
+performs, but wrote no audit record — so the console's page load, `fetchCloudCredentials(true)`
+on every render and every refetch, was probing the host outside the audit trail (CA-004). The
+parameter and its branch are removed from `services/accelerator_api/routes/settings_routes.py`
+with no shim (FR-006a); `apps/migration-ui/src/lib/cloudCredentials.ts` drops the argument, and
+the console's existing Rescan button, already wired to the audited POST, becomes the only way to
+re-probe.
+
+*Migration note.* A client still sending `?scan=true` gets the listing without a probe — FastAPI
+ignores an undeclared query parameter, so nothing errors, but the response reflects the last
+recorded detection rather than a fresh one. Any caller that relied on the flag must issue
+`POST /v1/settings/cloud-credentials/scan` first, which needs the same `can_manage_models`
+capability and additionally writes a `cloud_credentials.scanned` audit event.
+
+**Snapshot impact: none.** The route path and method are unchanged; query parameters are not
+recorded in `http_routes` and are not among the four frozen keys. Verified by
+`tests/contract/test_public_surface_snapshot.py`; the removal is covered by
+`tests/contract/test_cloud_credentials_contracts.py::test_listing_never_probes_the_host`.
+
+**Status: approved by operator instruction, 2026-09-13** (`operator-decisions.md` § 6).
 
 ## Snapshot edit authorised for T040
 
