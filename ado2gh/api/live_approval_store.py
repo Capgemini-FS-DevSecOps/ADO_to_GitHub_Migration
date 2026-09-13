@@ -731,5 +731,13 @@ def migrate_scope_id(profile_id: str | None, wave_id: int | None, config_path: s
         A stable ``migrate:<profile>:<wave>:<config>`` identifier, so repeated
         requests for the same profile, wave and config resolve to one approval row
         instead of queueing duplicates.
+
+        Absence is tested, not falsiness. ``wave_id or 'all'`` made wave ``0`` — a
+        wave a config may legitimately declare — indistinguishable from "every
+        wave", so an approval for the narrowest live migration released the widest
+        one; ``profile_id or 'default'`` did the same to a profile named ``""``
+        (GAP-072, CA-002).
     """
-    return f"migrate:{profile_id or 'default'}:{wave_id or 'all'}:{config_path}"
+    wave = "all" if wave_id is None else wave_id
+    profile = "default" if profile_id is None else profile_id
+    return f"migrate:{profile}:{wave}:{config_path}"

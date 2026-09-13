@@ -70,6 +70,24 @@ def _dry_run_flag(body: dict[str, Any]) -> bool:
         ) from exc
 
 
+def _scope_fields(body: dict[str, Any]) -> dict[str, Any]:
+    """Read the allowlisted identity fields a request body actually carries.
+
+    Presence is tested, not truth. Filtering on ``body.get(f)`` dropped a field
+    named as an empty string, so a body that names a target as ``""`` built the
+    scope — and the audit target — of a body that did not name it at all
+    (GAP-072). An explicit JSON ``null`` still counts as absent, which is what it
+    means to every request model on this router.
+
+    Args:
+        body: Parsed request body.
+
+    Returns:
+        The allowlisted fields present in the body, in allowlist order.
+    """
+    return {f: body[f] for f in _SCOPE_FIELDS if body.get(f) is not None}
+
+
 def _live_scope_id(path: str, body: dict[str, Any]) -> str:
     """Approval scope for one live run: the route plus the target it names.
 
@@ -81,7 +99,7 @@ def _live_scope_id(path: str, body: dict[str, Any]) -> str:
         A colon-joined scope id, stable for the same route and target, so a
         repeat of the same live request finds the approval already granted.
     """
-    return ":".join([path, *(str(body[f]).strip() for f in _SCOPE_FIELDS if body.get(f))])
+    return ":".join([path, *(str(v).strip() for v in _scope_fields(body).values())])
 
 
 def audit_live_migration(path: str, user: PlatformUser | None, body: dict[str, Any]) -> None:
@@ -105,7 +123,7 @@ def audit_live_migration(path: str, user: PlatformUser | None, body: dict[str, A
         payload={
             "route": path,
             "role": user.role.value if user else None,
-            "target": {f: body[f] for f in _SCOPE_FIELDS if body.get(f)},
+            "target": _scope_fields(body),
         },
     )
 
