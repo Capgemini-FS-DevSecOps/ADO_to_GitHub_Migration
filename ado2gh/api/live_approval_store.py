@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
 from ado2gh.api.profile_governance import write_profile_audit
+from ado2gh.audit import redact_payload
 from ado2gh.auth.models import PlatformUser
 from ado2gh.state.factory import create_state_db
 
@@ -105,6 +106,28 @@ def _public_row(row: dict) -> dict:
         "decided_at": row.get("decided_at"),
         "approver_username": row.get("approver_username"),
     }
+
+
+def _redacted_context(context: dict | None) -> dict:
+    """Mask recognised secret shapes in an executor context before it is stored.
+
+    The context is client-supplied, the approver never sees it, and the queue
+    never consumes or expires a row — so a credential posted into it outlives the
+    run it released with nothing to warn anyone it is there. Every other
+    persistence path in the platform already goes through the same choke point
+    (CA-003, GAP-073).
+
+    Args:
+        context: The context as the caller supplied it, or ``None``.
+
+    Returns:
+        The same mapping with every recognised secret masked. The fields an
+        approval executes are unaffected: ``config_path``, ``db_path`` and
+        ``route`` are paths, ``wave_id`` is an integer, and none of them is a
+        shape ``redact_text`` recognises.
+    """
+    masked = redact_payload(dict(context or {}))
+    return masked if isinstance(masked, dict) else {}
 
 
 def _migrate_job_params(context: dict) -> dict | None:
@@ -204,6 +227,10 @@ class LiveApprovalStore:
         created row is recorded as a ``platform.live_execution.requested`` audit
         event naming the requester (CA-004).
 
+        The context is masked before it is stored *and* before the scope check
+        reads it, so the bytes checked at creation are the bytes the executor
+        reads back (CA-003, GAP-073).
+
         Args:
             requester: The signed-in user asking to execute live. Comes from the
                 server-side session, never from a request body.
@@ -221,7 +248,7 @@ class LiveApprovalStore:
                 id does not — the approver only ever sees the scope, so the two
                 must say the same thing (GAP-071, CA-002).
         """
-        context = dict(request.context or {})
+        context = _redacted_context(request.context)
         _assert_migrate_context_matches(request, context)
         existing = self.db.find_pending_live_execution_approval(
             request.scope_type, request.scope_id,
