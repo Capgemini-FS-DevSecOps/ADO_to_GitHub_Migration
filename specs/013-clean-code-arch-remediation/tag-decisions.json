@@ -5027,8 +5027,8 @@
     "id": "services/agent/routes/form_routes.py::_continue_graph_after_form",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Name accurately describes resuming an interrupted graph or continuing it after a form submission.",
-    "state_hash": "6a074dc9943e39af9cbe5e87d953ce155378b5aa",
+    "rationale": "Name accurately describes what it does: continues the session graph (resume interrupted or start a fresh turn) after a form submission, mirroring the callee continue_session_graph with the form resume payload and deps added; nothing hidden or misleading.",
+    "state_hash": "9277198fda633f900c50bc35045ee00c70e3ef2a",
     "decided_by": "cavecrew-reviewer"
   },
   {

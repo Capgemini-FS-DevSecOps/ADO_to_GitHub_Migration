@@ -25,6 +25,77 @@ that a name appearing as a string anywhere in the repository counts as a referen
 docstrings that render as `--help` or OpenAPI text keep their operator-facing prose and
 document parameters through option help and response models instead (FR-010a, R14).
 
+### Completion summary (2026-09-13, T095)
+
+Final measured state at the completion commit. Every figure below was re-measured on the
+branch tip; the raw logs are the `run-t09*.txt` files in this directory.
+
+**Inventory (`inventory-summary.md`, git head `9a24b38`).** Python: 1,493 inventoried
+functions, 1,459 clean (no tags, no proposals), 2 rows carrying an open proposal. Tag
+counts: `bool_data` 14, `bool_flag` 1, `gt5_params` 20, `proposed_bool_flag` 2. Module
+rename proposals (FR-013): 220 decided, 1 open. TypeScript console: 204 exports, 196 clean,
+29 protected as `next_route_export`; tags `bool_data` 7, `bool_flag` 1. Nothing is suppressed
+under FR-003b (0 definitions excluded), so the zero-tag denominator is the whole inventoried
+surface.
+
+**Exception register (FR-005a / SC-001).** 27 rows against a cap of 29
+(`floor(1493 x 0.02)`). The SC-001 check reports `tagged-not-excepted: 0` — every remaining
+tagged row is a registered exception and none is silent.
+
+**Guards at completion.** `ruff check ado2gh/ services/` — 4 findings, all FBT001/FBT002 on
+the two route parameters held back for the operator's FR-024 decision
+(`services/accelerator_api/routes/profile_routes.py:278` `sync: bool = False`;
+`services/accelerator_api/routes/settings_routes.py:443` `scan: bool = False`). The `E9,F821`
+hard gate passes clean. `mypy ado2gh/ --ignore-missing-imports` — **0 errors across 195 source
+files**, so mypy is a real gate now rather than an advisory run.
+`pytest --cov=ado2gh --cov-fail-under=61` — 1,019 passed, 30 skipped, **coverage 61.49 %**
+against the ratchet of **61**. The one local failure,
+`tests/unit/test_scripts_cleanup.py::test_only_scripts_dev_remains`, is caused by four
+untracked developer scratch files in `scripts/dev/`; a clean checkout has only the three
+tracked files, so it cannot fail in CI.
+
+**Docstring quality (SC-008).** 40 / 40 on the final seeded sample (`sc-008-sample.md`), up
+from 33 / 40 before the round-2 docstring fixes.
+
+**Safeguard-preservation gate (CA-001…CA-004).** All seven checks PASS (`safeguard-gate.md`);
+two carry a documented note rather than a bare numeric pass.
+
+**Gap register.** 54 gaps: 16 critical, 22 high, 11 medium, 5 low. **All 16 critical gaps are
+remediated.** Of the 22 high gaps, 16 are remediated, 2 are deferred by decision (GAP-018 —
+CLI migration commands live by default; GAP-022 — coverage tooling) and 4 remain **open**
+pending an operator decision: GAP-019 (`/sessions/{id}/provision` and `/remediate` trust a
+client-supplied `actor`), GAP-024 (boolean `recommended_value` stringified server-side inverts
+the `confirm_execute` safe default in the browser), GAP-031 (ADO variable-group variables never
+reach the generated workflow) and GAP-054 (`DynamoDBJobStore.complete()`/`.fail()` assign
+`updated_at` on a `JobRecord` that declares no such field). The "zero critical or high gaps
+open" bar is therefore **not** met, and `spec.md` § Status says so explicitly.
+
+**Outstanding operator decisions carried past completion.**
+
+1. The four FR-024 contract changes still awaiting sign-off — GAP-007, GAP-008, GAP-003 and
+   GAP-017, detailed in § Approved contract changes above. None drifts the four frozen
+   snapshot keys.
+2. The two `bool_flag` route parameters named above: convert them, or register them as
+   permanent exceptions.
+3. GAP-054: whether `JobRecord` gains `created_at`/`updated_at` fields or the DynamoDB job
+   store stops writing them.
+4. `services/accelerator_api/routes/_shared.py` — module rename proposal still open, no
+   reviewer decision recorded.
+5. `services/agent/routes/_helpers.py` — rename **confirmed** by the review agent (the module
+   mixes trivial accessors with plan-building and live-approval logic, contradicting its own
+   docstring). The rename itself was deliberately not performed at T095 so it does not land
+   unreviewed in the completion commit.
+
+**CI.** `.github/workflows/ci.yml` triggers only on `push` to `main`/`master` and on
+`pull_request`, so pushing `feature/ado-agentic-ai` produces no workflow run and none could be
+watched (`run-t095-ci-1.txt`); the file is not yet on `origin/main` and no pull request exists
+for the branch. Both jobs were therefore run locally with the identical commands, recorded in
+`run-t095-local-ci.txt`. That stands in for the Python 3.11 requirement honestly rather than
+replacing it: `ruff` is pinned to `target-version = "py311"` and `mypy` to
+`python_version = "3.11"` in `pyproject.toml`, so both analyses already evaluate the added
+annotations under 3.11 semantics whatever interpreter runs them. Firing the workflow itself
+still requires opening a pull request.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
