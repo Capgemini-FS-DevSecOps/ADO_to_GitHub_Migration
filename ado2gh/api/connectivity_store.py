@@ -85,10 +85,24 @@ class ConnectivityStore:
         """Bind the store to a profile file.
 
         Args:
-            path: Profile file to read and write. Defaults to the location
-                derived from ``ADO2GH_DATA_DIR``.
+            path: Profile file to read and write. When omitted the location is
+                derived from ``ADO2GH_DATA_DIR`` on every access, not here —
+                the route layer keeps one store for the process lifetime
+                (``services/accelerator_api/routes/_shared.py``), so resolving
+                the directory in the constructor froze it at import time and
+                every later change to the variable was ignored.
         """
-        self.path = path or _path()
+        self._path = path
+
+    @property
+    def path(self) -> Path:
+        """Profile file this store reads and writes, resolved on every access.
+
+        Returns:
+            The explicit path this store was constructed with, or the current
+            location derived from ``ADO2GH_DATA_DIR``.
+        """
+        return self._path or _path()
 
     def load(self) -> ConnectivityProfile:
         """Read the stored connectivity profile.
