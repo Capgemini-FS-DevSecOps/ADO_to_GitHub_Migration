@@ -133,6 +133,43 @@ against the operator's untracked `scripts/dev/` scratch files, which cannot fail
 checkout), so `--cov-fail-under` in
 `.github/workflows/ci.yml` is raised 61 → **62** under FR-027a.
 
+**Addendum (2026-09-13) — the Astra branch review appended eight more entries.** The figures
+in the previous addendum are superseded: the register now holds **70 gaps: 19 critical, 30
+high, 13 medium, 8 low**, counted from its own `- severity:` and `- status:` lines (70 of
+each, one per entry). Three review passes since that addendum added `10b1250` GAP-063
+(GAP-AUTH-08, a client-quoted `live_approval_id` verified by status alone), `e57eecb`
+GAP-064 (GAP-TOKEN-06, exception objects and tracebacks reaching the log handler unmasked) —
+neither of which had reached this section — and, from the Astra branch review closed out on
+2026-09-13, six more:
+
+| Id | Title | Severity | Status |
+|----|-------|----------|--------|
+| GAP-065 (GAP-ACC-10) | The `/v1/migrate/*` live guard reads `dry_run` with `bool()`, so a string-spelled `false` is a dry run to the guard and a live migration to the handler | critical | remediated |
+| GAP-066 (GAP-AUTH-09) | A refused live pipeline run is persisted before it is authorized, and `/start` takes the orphan live with no operate check | critical | remediated |
+| GAP-067 (GAP-AUTH-10) | Approving a `/v1/migrate/*` live run raises `ValidationError` after the decision is committed and before it is audited | high | remediated |
+| GAP-068 (GAP-ENG-09) | `MigrationEngine` and `rollback_wave` default their `ExecutionMode` parameter to `LIVE` | high | open |
+| GAP-069 (GAP-STATE-06) | The DynamoDB claim-conflict audit can never be written: its writer is built from a factory that raises for that backend | high | open |
+| GAP-070 (GAP-AGT-06) | A dead `approved_plan` backward-compatibility alias in the agent guardrails sets `plan_approved = True`, kept alive only by its own tests | low | open |
+
+GAP-065 and GAP-066 are the register's first new criticals since T095; both are remediated,
+so **all 19 critical entries remain remediated**. Of the 30 high entries, 22 are remediated,
+2 are deferred by decision (GAP-018, GAP-022) and **6 are open**: the four operator-blocked
+gaps named throughout this section — GAP-019, GAP-024, GAP-031, GAP-054 — plus GAP-068 and
+GAP-069. Both new ones are open for the same reason as the original four rather than a new
+one: GAP-068 is the same default-execution-mode policy question the operator already holds
+for GAP-018, and GAP-069 turns on where a DynamoDB deployment's audit database should live.
+The **"zero critical or high gaps open" bar is still not met**, and for the same cause it has
+never been met — an operator decision, not an unfixed defect. The verdict recorded at T095
+and in `spec.md` § Status is unchanged.
+
+Measured at the close-out commit: `ruff check ado2gh/ services/` — the same 4 FBT001/FBT002
+findings on the two route parameters held for the FR-024 decision, nothing new;
+`mypy ado2gh/ --ignore-missing-imports` — `Success: no issues found in 195 source files`;
+`pytest --cov=ado2gh --cov-fail-under=62` — **1,056 passed, 30 skipped, coverage 62.47 %**
+(`run-close-full.txt`) against the ratchet of 62, with the same single local-only failure,
+`tests/unit/test_scripts_cleanup.py::test_only_scripts_dev_remains`, against the operator's
+untracked `scripts/dev/` scratch files. The ratchet is left at 62.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
