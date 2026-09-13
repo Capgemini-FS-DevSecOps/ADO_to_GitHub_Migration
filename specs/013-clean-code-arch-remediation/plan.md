@@ -39,8 +39,12 @@ under FR-003b (0 definitions excluded), so the zero-tag denominator is the whole
 surface.
 
 **Exception register (FR-005a / SC-001).** 27 rows against a cap of 29
-(`floor(1493 x 0.02)`). The SC-001 check reports `tagged-not-excepted: 0` — every remaining
-tagged row is a registered exception and none is silent.
+(`floor(1493 x 0.02)`) when the cap is taken over the Python inventory alone; the SC-001
+script in `quickstart.md` § 5 counts every `inventory.json` row — Python plus the 204
+TypeScript exports — and so prints `cap: 33` (`floor(1697 x 0.02)`,
+`run-t094-sc001-check.txt`); the 27 rows sit under both caps. The SC-001 check reports
+`tagged-not-excepted: 0` — every remaining tagged row is a registered exception and none is
+silent.
 
 **Guards at completion.** `ruff check ado2gh/ services/` — 4 findings, all FBT001/FBT002 on
 the two route parameters held back for the operator's FR-024 decision
@@ -97,13 +101,14 @@ annotations under 3.11 semantics whatever interpreter runs them. Firing the work
 still requires opening a pull request.
 
 **Addendum (2026-09-13) — the register grew after T095 measured it.** The gap-register figures
-above were accurate at the completion commit and are left as measured; two later review passes
-appended seven entries, so the register now holds **61 gaps: 16 critical, 26 high, 13 medium,
-6 low**. `902f27e` registered GAP-055…GAP-058 from the T077 behaviour review and `aa6d17a`
-registered GAP-059…GAP-061 from the console safeguard review. Counted from the register's own
+above were accurate at the completion commit and are left as measured; three later review
+passes appended eight entries, so the register now holds **62 gaps: 16 critical, 26 high,
+13 medium, 7 low**. `902f27e` registered GAP-055…GAP-058 from the T077 behaviour review,
+`aa6d17a` registered GAP-059…GAP-061 from the console safeguard review and `493b325`
+registered GAP-062 from the T090 and T077-review test runs. Counted from the register's own
 `status:` lines, the **26 high** entries are **20 remediated, 2 deferred** (GAP-018, GAP-022)
 **and 4 open** (GAP-019, GAP-024, GAP-031, GAP-054) — the same four operator-blocked gaps named
-above; all 16 critical entries remain remediated. The seven additions:
+above; all 16 critical entries remain remediated. The eight additions:
 
 | Id | Title | Severity | Status |
 |----|-------|----------|--------|
@@ -114,14 +119,18 @@ above; all 16 critical entries remain remediated. The seven additions:
 | GAP-059 (GAP-UI-04) | Live and destructive console actions fire on a single click, three of them recording no reason | high | remediated |
 | GAP-060 (GAP-UI-05) | Agent chat transcripts and thinking events persist in localStorage and are never purged on logout | medium | remediated |
 | GAP-061 (GAP-UI-06) | A stored proxy password cannot be cleared from the console: a blank field always re-sends the keep sentinel | medium | open |
+| GAP-062 (GAP-TOOL-08) | Agent-service tests can deadlock in the Starlette test client under concurrent suite runs | low | open |
 
-No addition opens a new critical or high gap — the only one of the seven still `open`,
-GAP-061, is medium. The **"zero critical or high gaps open" bar is therefore still not met**,
-for exactly the four operator-blocked gaps already listed: GAP-019, GAP-024, GAP-031 and
-GAP-054.
+No addition opens a new critical or high gap — the two of the eight still `open` are
+GAP-061 (medium) and GAP-062 (low). The **"zero critical or high gaps open" bar is therefore
+still not met**, for exactly the four operator-blocked gaps already listed: GAP-019, GAP-024,
+GAP-031 and GAP-054.
 
 The ratchet moved with them: the 14 tests added by the T077 review lift whole-package coverage
-to **62.39 %** (`run-ratchet-62.txt`, 1,033 passed / 30 skipped), so `--cov-fail-under` in
+to **62.39 %** (`run-ratchet-62.txt`, 1,033 passed / 30 skipped and, as at T095, 1 failed —
+the same local-only `tests/unit/test_scripts_cleanup.py::test_only_scripts_dev_remains`
+against the operator's untracked `scripts/dev/` scratch files, which cannot fail in a clean
+checkout), so `--cov-fail-under` in
 `.github/workflows/ci.yml` is raised 61 → **62** under FR-027a.
 
 ## Technical Context
