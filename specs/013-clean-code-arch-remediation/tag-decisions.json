@@ -1528,6 +1528,14 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/utils.py::coerce_dry_run",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`coerce` is a verb and the docstring and body agree: it reads a dry_run field strictly and returns the coerced value or the caller's default (GAP-076). Recorded at R4, the function is new since the last regeneration.",
+    "state_hash": "d6b3aa0fc9b0c920cfe88f809e1b48926717777a",
+    "decided_by": "review-agent"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/utils.py::discovery_repo_names",
     "tag": "name_review",
     "decision": "reject",
@@ -1787,9 +1795,9 @@
     "id": "ado2gh/api/live_approval_store.py::LiveApprovalStore.approve",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "`approve` is a verb and the domain term paired with `deny`.",
-    "state_hash": "072f41408963a4acc750eafdd10c6cbe81e6c76e",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "`approve` is a verb and the domain term paired with `deny`. (Re-recorded at R4: the state_hash moved when the GAP-067 fix changed the signature; the name is unchanged.)",
+    "state_hash": "cdb265ad9ca8048fe4a9e6367e661e9b8a298966",
+    "decided_by": "cavecrew-reviewer"
   },
   {
     "id": "ado2gh/api/live_approval_store.py::_db_path",
@@ -1814,6 +1822,14 @@
     "rationale": "pure projection whose name is the row it returns.",
     "state_hash": "3521041a1ec80d087c6f2f8053c9ede6aa53df92",
     "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/api/live_approval_store.py::_redacted_context",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private projection whose name is exactly the value it returns, the redacted copy of the executor context (GAP-073, CA-003); return-naming is the established idiom for the sibling _public_row and _context rows. Recorded at R4, the function is new since the last regeneration.",
+    "state_hash": "946dce131d27e6c2ceee9a77c4a156de47633616",
+    "decided_by": "review-agent"
   },
   {
     "id": "ado2gh/api/llm/",
@@ -3240,22 +3256,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/phase/batch_executor.py::BatchExecutor.execute_phase",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "dry_run controls checkpoint writes and display; replace bool with ExecutionMode",
-    "state_hash": "fac89b1aef9b6cf6caaf56e47407ad067a9eca4c",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
-    "id": "ado2gh/phase/batch_executor.py::BatchExecutor.execute_wave",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "dry_run is a behaviour switch passed to _run_batch and displayed as mode indicator; replace bool with ExecutionMode",
-    "state_hash": "3d607cbb68eb81b8dfc8de66acee5d832fd39876",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/phase/gate_checker.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -4176,11 +4176,19 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "apps/migration-ui/src/lib/agentChat.ts::initialFormValues",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "requiresLiveApproval is session state read off the server (whether this session still needs a platform live-execution approval), not a behaviour the caller selects: it decides only whether the confirm_execute default is forced off (CA-001/CA-002). Splitting it into two functions would duplicate the whole field loop for one defaulted value. Recorded at R4, the row is new since the TS inventory was last regenerated.",
+    "state_hash": "91d1fcb2e686e9affe127c0a4f7ce4d723bf3123",
+    "decided_by": "review-agent"
+  },
+  {
     "id": "apps/migration-ui/src/lib/agentChat.ts::isAgentInterruptible",
     "tag": "bool_flag",
     "decision": "confirm",
-    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08.",
-    "state_hash": "8d3662bd97b705a671225884aebd31d73f6eb32b",
+    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08. (Re-recorded at R4: the state_hash moved when the TS inventory was regenerated; the signature is unchanged.)",
+    "state_hash": "c3ad53575c5633cc02e4f94755ab6bed8bfe0a41",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -4214,6 +4222,14 @@
     "rationale": "dryRun selects between two processing paths: discard the reason parameter (when true) vs trim and return it (when false). Reviewed separately from the review-precheck run - the function was added by GAP-009 later in the same session, so it is a post-precheck row. Recorded by hand with the pre-split state_hash: it is now liveRunOverrideReason and dryRunOverrideReason.",
     "state_hash": "9e385f725fe78976cdcc0b173af8b5ec6efd31de",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::liveStartNeedsConfirm",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "Both parameters are observed state the caller already holds - whether the run is a dry run and whether the confirm step is already armed - and the function is a pure predicate OR-ing them into one answer, the shape FR-012 prescribes rather than a mode selector. Neither is derivable inside the function. Recorded at R4, the row is new since the TS inventory was last regenerated.",
+    "state_hash": "749db5f8ed230a2579055f3f99be6c3e29f8b9d6",
+    "decided_by": "review-agent"
   },
   {
     "id": "services/accelerator_api/auth_routes.py",
@@ -4392,6 +4408,14 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "services/accelerator_api/routes/_shared.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Operator decision 2026-09-13 (operator-decisions.md section 7, recommended option B applied as instructed): keep the name. The docstring - shared state and helpers for accelerator API route modules - matches the contents, no reviewer contested the name, and a rename churns 14 import sites for zero behaviour change. The separate GAP-036 follow-up on this module's __import__-based singletons is unaffected.",
+    "state_hash": "c61cac2d64dee3a207f38b03d7775b4d5e5ad7ce",
+    "decided_by": "operator"
+  },
+  {
     "id": "services/accelerator_api/routes/_shared.py::_accel",
     "tag": "name_review",
     "decision": "reject",
@@ -4512,12 +4536,28 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "services/accelerator_api/routes/migrate_guard.py::_dry_run_flag",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor naming the value it returns, the dry_run flag read from a raw body the way the route's model reads it (GAP-065). Same accessor idiom as the _live_scope_id and _scope_fields siblings. Recorded at R4, the function is new since the last regeneration.",
+    "state_hash": "3b54bf19ff6211af5d666f6a66a357ba3371e079",
+    "decided_by": "review-agent"
+  },
+  {
     "id": "services/accelerator_api/routes/migrate_guard.py::_live_scope_id",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "names the scope-id string it builds; the docstring and body agree.",
-    "state_hash": "3c465caab133b4edcdd66751276ca2d7adfdd54f",
+    "rationale": "names the scope-id string it builds; the docstring and body agree. (Re-recorded at R4: the state_hash moved when the GAP-075 fix added the profile_id parameter; the name is unchanged.)",
+    "state_hash": "c4b29c338331f273410621364a61878aa6f0e3a5",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_guard.py::_scope_fields",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "private accessor naming the value it returns, the allowlisted identity fields a request body carries (GAP-072). Same accessor idiom as the _live_scope_id sibling. Recorded at R4, the function is new since the last regeneration.",
+    "state_hash": "6878186145a5ab693bdead0a17d286d520f23ee1",
+    "decided_by": "review-agent"
   },
   {
     "id": "services/accelerator_api/routes/migrate_guard.py::active_profile_id",
@@ -4648,6 +4688,14 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::_park_for_approval",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "`park` is a verb and the docstring and body agree: it is the single place a live pipeline run enters the approval queue and is parked there (GAP-066, CA-004). Recorded at R4, the function is new since the last regeneration.",
+    "state_hash": "72264a636508657ffd64dccf9bae675a7c09b474",
+    "decided_by": "review-agent"
+  },
+  {
     "id": "services/accelerator_api/routes/pipeline_routes.py::pipeline_steps",
     "tag": "name_review",
     "decision": "reject",
@@ -4713,10 +4761,18 @@
   },
   {
     "id": "services/accelerator_api/routes/profile_routes.py::migration_scan_profile",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "Operator decision 2026-09-13 (operator-decisions.md section 5, recommended option A applied as instructed): caller-supplied wire data selecting inline versus background execution of a read-only discovery scan, not a control flag. Three live callers send ?sync=true (services/agent/routes/form_routes.py:157 and :443, tests/profile/test_profile_approval_flow.py:70) and the docstring documents both modes. A mode enum would change the query schema for every caller, and profile_routes.py sits at 795 of the 800-line cap, so it cannot land without a module split that is out of scope. Recorded as bool_data with # noqa: FBT001,FBT002 and an exception-register row.",
+    "state_hash": "fe0744ee8afdb540699505340546060c0b2ee98f",
+    "decided_by": "operator"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::migration_scan_profile",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "handler name mirrors the path (scan a profile's org) and is wire-frozen; the noun-first token is the only reason the heuristic fired.",
-    "state_hash": "56a81449ca41404817daed79fd054008d0fa6af3",
+    "rationale": "handler name mirrors the path (scan a profile's org) and is wire-frozen; the noun-first token is the only reason the heuristic fired. (Re-recorded at R4: the state_hash moved when the FBT noqa was added to the signature line; the name is unchanged.)",
+    "state_hash": "fe0744ee8afdb540699505340546060c0b2ee98f",
     "decided_by": "cavecrew-reviewer"
   },
   {
@@ -4890,10 +4946,10 @@
   {
     "id": "services/agent/routes/_helpers.py",
     "tag": "module_name_review",
-    "decision": "confirm",
-    "rationale": "file mixes trivial accessors with substantial migration-plan-building and live-approval/PEV-start business logic, contradicting its own docstring claim of being generic and not specific to LangGraph agent logic; the helpers name undersells what a reader needs to know here.",
+    "decision": "reject",
+    "rationale": "Operator decision 2026-09-13 (operator-decisions.md section 9, recommended option B applied as instructed), superseding the reviewer's confirm: keep the name and file the extraction as a follow-up. T079 prescribed _helpers.py deliberately when it moved the module out of ado2gh/agents/migration_agent/route_helpers.py, and a rename does not fix what the reviewer objected to - _build_migration_plan, _enqueue_session_live_approval and _try_start_pev_run being business logic in a helpers module. Tracked as GAP-080; session_runtime.py becomes the right name only once those three have moved out.",
     "state_hash": "3be6269ee9c8cb283a4f9760fcec5c5a8b483c5c",
-    "decided_by": "cavecrew-reviewer"
+    "decided_by": "operator"
   },
   {
     "id": "services/agent/routes/_helpers.py::_accel_get",

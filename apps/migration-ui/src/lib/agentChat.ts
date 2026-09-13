@@ -232,7 +232,7 @@ export function fieldInitialValue(field: AgentFormField): unknown {
  */
 export function initialFormValues(
   fields: AgentFormField[],
-  requiresLiveApproval = false,
+  requiresLiveApproval: boolean = false,
 ): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const field of fields) {

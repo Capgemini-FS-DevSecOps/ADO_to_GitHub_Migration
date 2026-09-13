@@ -72,11 +72,41 @@ def test_scan_redacts_secrets(accel_client, monkeypatch):
         "ado2gh.api.credentials.cloud_credential_detector._imds_reachable",
         lambda: False,
     )
-    r = accel_client.get("/v1/settings/cloud-credentials", params={"scan": "true"})
+    r = accel_client.post("/v1/settings/cloud-credentials/scan")
     assert r.status_code == 200
     data = r.json()
     _assert_no_secrets(data, forbidden_literal="supersecret")
     assert "AWS_SECRET_ACCESS_KEY" not in json.dumps(data)
+
+
+def test_listing_never_probes_the_host(accel_client, monkeypatch):
+    """The audited POST is the only probe: the GET reports the last detection (CA-004)."""
+    _bootstrap_admin(accel_client)
+    monkeypatch.setattr(
+        "ado2gh.api.credentials.cloud_credential_detector._imds_reachable",
+        lambda: False,
+    )
+    from ado2gh.api.credentials import cloud_credentials_store
+
+    # Spy on the host probe itself, not on the store method the removed branch called, so
+    # the test still fails if a probe is reintroduced anywhere under the listing route.
+    probes: list[int] = []
+    real_probe = cloud_credentials_store.scan_all_presence
+    monkeypatch.setattr(
+        cloud_credentials_store,
+        "scan_all_presence",
+        lambda: (probes.append(1), real_probe())[1],
+    )
+
+    # `?scan=true` is no longer a parameter; FastAPI ignores it and nothing is probed.
+    assert accel_client.get("/v1/settings/cloud-credentials").status_code == 200
+    assert accel_client.get(
+        "/v1/settings/cloud-credentials", params={"scan": "true"}
+    ).status_code == 200
+    assert probes == []
+
+    assert accel_client.post("/v1/settings/cloud-credentials/scan").status_code == 200
+    assert probes, "the audited POST is the one that probes the host"
 
 
 def test_approve_flow_contract(accel_client, monkeypatch):
@@ -85,7 +115,7 @@ def test_approve_flow_contract(accel_client, monkeypatch):
         "ado2gh.api.credentials.cloud_credential_detector._imds_reachable",
         lambda: False,
     )
-    accel_client.get("/v1/settings/cloud-credentials", params={"scan": "true"})
+    accel_client.post("/v1/settings/cloud-credentials/scan")
     monkeypatch.setattr(
         "ado2gh.api.credentials.cloud_credential_probe.probe_provider",
         lambda *_: {"status": "passed", "category": None, "message": "ok"},

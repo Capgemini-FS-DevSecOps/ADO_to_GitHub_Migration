@@ -275,7 +275,7 @@ def migration_scan_inline(req: MigrationScanRequest) -> MigrationScanResponse:
 def migration_scan_profile(
     profile_id: str,
     max_repos: int | None = None,
-    sync: bool = False,
+    sync: bool = False,  # noqa: FBT001,FBT002
 ) -> object:
     """Scan an existing profile's Azure DevOps organisation, inline or in the background.
 

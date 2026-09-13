@@ -10,15 +10,14 @@ describe('cloudCredentials API helpers', () => {
     vi.restoreAllMocks();
   });
 
-  it('fetchCloudCredentials requests the scan query parameter', async () => {
+  it('fetchCloudCredentials lists without asking the host to be re-probed', async () => {
     const fetchMock = vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ sources: [] }), { status: 200 }),
     );
-    await fetchCloudCredentials(true);
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/v1/settings/cloud-credentials?scan=true'),
-      expect.objectContaining({ credentials: 'include' }),
-    );
+    await fetchCloudCredentials();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/v1\/settings\/cloud-credentials$/);
+    expect(init).toEqual(expect.objectContaining({ credentials: 'include' }));
   });
 
   it('rejectCloudCredential sends the operator reason the server records', async () => {

@@ -69,14 +69,12 @@ async function cloudApi<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Read the cloud credential sources from `GET /v1/settings/cloud-credentials`, asking the
- * accelerator to re-probe each provider first unless scanning is disabled. Returns the source list
- * plus the platform model summary.
+ * Read the last recorded cloud credential sources from `GET /v1/settings/cloud-credentials`.
+ * Returns the source list plus the platform model summary. It never re-probes the host —
+ * that is `rescanCloudCredentials`, which is audited.
  */
-export async function fetchCloudCredentials(scan: boolean = true): Promise<CloudCredentialsResponse> {
-  return cloudApi<CloudCredentialsResponse>(
-    `/v1/settings/cloud-credentials${scan ? '?scan=true' : ''}`,
-  );
+export async function fetchCloudCredentials(): Promise<CloudCredentialsResponse> {
+  return cloudApi<CloudCredentialsResponse>('/v1/settings/cloud-credentials');
 }
 
 /**

@@ -219,7 +219,7 @@ export default function CloudCredentialsPage() {
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['cloud-credentials'],
-    queryFn: () => fetchCloudCredentials(true),
+    queryFn: fetchCloudCredentials,
     enabled: sessionReady && allowed,
   });
 

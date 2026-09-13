@@ -440,7 +440,7 @@ def delete_llm_model(model_id: str, request: Request) -> dict[str, object]:
 
 
 @router.get("/v1/settings/cloud-credentials")
-def list_cloud_credentials(request: Request, scan: bool = False) -> dict[str, object]:
+def list_cloud_credentials(request: Request) -> dict[str, object]:
     """List the cloud credential sources the host offers, and their approval state.
 
     These are the ambient credentials a cloud LLM provider can run on — an
@@ -448,16 +448,12 @@ def list_cloud_credentials(request: Request, scan: bool = False) -> dict[str, ob
     platform stores. Only their presence and shape is ever reported; no
     credential value is read, held or returned (CA-003).
 
-    Passing ``scan=true`` re-probes the host for credential sources first, so the
-    listing reflects the machine as it is now rather than the last recorded
-    detection. The same probe is available on its own as
-    ``POST /v1/settings/cloud-credentials/scan``, which is the one to use when
-    the probe itself is the point — unlike this flag, it writes an audit record.
+    This reports the last recorded detection and never probes the host itself.
+    Re-probing is ``POST /v1/settings/cloud-credentials/scan``, which runs the
+    same probe and writes an audit record for it (CA-004).
 
     Args:
         request: The incoming request, used for the capability check.
-        scan: Re-probe the host before listing. Defaults to returning the
-            previously detected sources unchanged.
 
     Returns:
         A mapping with a ``sources`` array: per provider, the service name,
@@ -470,8 +466,6 @@ def list_cloud_credentials(request: Request, scan: bool = False) -> dict[str, ob
         HTTPException: 401 without an identity, 403 without ``can_manage_models``.
     """
     require_manage_models(request)
-    if scan:
-        _cloud_credentials.scan()
     sources = _cloud_credentials.list_sources()
     return {"sources": [s.to_public() for s in sources]}
 
@@ -481,9 +475,9 @@ def scan_cloud_credentials(request: Request) -> dict[str, object]:
     """Re-probe the host for cloud credential sources and return what was found.
 
     Detection only: it records which providers the machine can authenticate to
-    and how complete each one is, never a credential value (CA-003). Unlike the
-    ``scan=true`` flag on the listing endpoint, this writes an audit record
-    naming the providers detected.
+    and how complete each one is, never a credential value (CA-003). This is the
+    only way to re-probe the host, and it writes an audit record naming the
+    providers detected.
 
     Args:
         request: The incoming request, used for the capability check and to
