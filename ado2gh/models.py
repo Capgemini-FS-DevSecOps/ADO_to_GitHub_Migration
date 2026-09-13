@@ -9,6 +9,7 @@ persists and the API layer serves.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
@@ -499,7 +500,11 @@ class JobStatus(str, Enum):
 
 
 class JobRecord(BaseModel):
-    """Describe a queued job; ``result`` is set only when it completed and ``error`` only when it failed."""
+    """Describe a queued job; ``result`` is set only when it completed and ``error`` only when it failed.
+
+    ``created_at`` and ``updated_at`` are UTC and default to now, so every store
+    writes and reads the same two timestamps the ``jobs`` tables already carry.
+    """
 
     id: str
     job_type: JobTypeEnum
@@ -508,3 +513,5 @@ class JobRecord(BaseModel):
     result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
     idempotency_key: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

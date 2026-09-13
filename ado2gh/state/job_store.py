@@ -106,7 +106,7 @@ class SQLiteJobStore(JobStore):
                 return existing
 
         job_id = str(uuid.uuid4())
-        record = JobRecord(  # type: ignore[call-arg]  # JobRecord has no created_at/updated_at fields yet (pre-existing gap, GAP-023 T077 finding, not fixed here)
+        record = JobRecord(
             id=job_id,
             job_type=job_type,
             status=JobStatus.PENDING,
@@ -159,6 +159,7 @@ class SQLiteJobStore(JobStore):
             )
         rec = self._row_to_record(row)
         rec.status = JobStatus.RUNNING
+        rec.updated_at = datetime.fromisoformat(now)
         return rec
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
@@ -182,7 +183,7 @@ class SQLiteJobStore(JobStore):
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> JobRecord:
         """Build a ``JobRecord`` from a ``jobs`` row, decoding the JSON columns."""
-        return JobRecord(  # type: ignore[call-arg]  # JobRecord has no created_at/updated_at fields yet (pre-existing gap, GAP-023 T077 finding, not fixed here)
+        return JobRecord(
             id=row["id"],
             job_type=JobType(row["job_type"]),
             status=JobStatus(row["status"]),
@@ -254,7 +255,7 @@ class PostgresJobStore(JobStore):
                      json.dumps(payload), idempotency_key, now, now),
                 )
             conn.commit()
-        return JobRecord(  # type: ignore[call-arg]  # JobRecord has no created_at/updated_at fields yet (pre-existing gap, GAP-023 T077 finding, not fixed here)
+        return JobRecord(
             id=job_id, job_type=job_type, status=JobStatus.PENDING,
             payload=payload, idempotency_key=idempotency_key,
             created_at=now, updated_at=now,
@@ -300,6 +301,7 @@ class PostgresJobStore(JobStore):
             conn.commit()
         rec = self._row_to_record(row)
         rec.status = JobStatus.RUNNING
+        rec.updated_at = now
         return rec
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
@@ -327,7 +329,7 @@ class PostgresJobStore(JobStore):
     @staticmethod
     def _row_to_record(row: dict) -> JobRecord:
         """Build a ``JobRecord`` from a ``jobs`` row; JSONB columns may already be decoded."""
-        return JobRecord(  # type: ignore[call-arg]  # JobRecord has no created_at/updated_at fields yet (pre-existing gap, GAP-023 T077 finding, not fixed here)
+        return JobRecord(
             id=row["id"],
             job_type=JobType(row["job_type"]),
             status=JobStatus(row["status"]),
@@ -393,8 +395,8 @@ class DynamoDBJobStore(JobStore):
             "result": json.dumps(record.result) if record.result else None,
             "error": record.error,
             "idempotency_key": record.idempotency_key,
-            "created_at": record.created_at.isoformat(),  # type: ignore[attr-defined]  # pre-existing gap, GAP-023 T077 finding, not fixed here
-            "updated_at": record.updated_at.isoformat(),  # type: ignore[attr-defined]  # pre-existing gap, GAP-023 T077 finding, not fixed here
+            "created_at": record.created_at.isoformat(),
+            "updated_at": record.updated_at.isoformat(),
         })
         return record
 
@@ -404,7 +406,7 @@ class DynamoDBJobStore(JobStore):
         item = resp.get("Item")
         if not item:
             return None
-        return JobRecord(  # type: ignore[call-arg]  # JobRecord has no created_at/updated_at fields yet (pre-existing gap, GAP-023 T077 finding, not fixed here)
+        return JobRecord(
             id=item["id"],
             job_type=JobType(item["job_type"]),
             status=JobStatus(item["status"]),
@@ -429,7 +431,7 @@ class DynamoDBJobStore(JobStore):
             if existing:
                 return existing
         now = datetime.now(timezone.utc)
-        record = JobRecord(  # type: ignore[call-arg]  # JobRecord has no created_at/updated_at fields yet (pre-existing gap, GAP-023 T077 finding, not fixed here)
+        record = JobRecord(
             id=str(uuid.uuid4()),
             job_type=job_type,
             status=JobStatus.PENDING,
@@ -482,6 +484,7 @@ class DynamoDBJobStore(JobStore):
         rec = self._load(items[0]["id"])
         if not rec:
             return None
+        now = datetime.now(timezone.utc)
         try:
             self._table().update_item(
                 Key={"id": rec.id},
@@ -489,7 +492,7 @@ class DynamoDBJobStore(JobStore):
                 ExpressionAttributeNames={"#status": "status"},
                 ExpressionAttributeValues={
                     ":running": JobStatus.RUNNING.value,
-                    ":now": datetime.now(timezone.utc).isoformat(),
+                    ":now": now.isoformat(),
                 },
                 ConditionExpression=Attr("status").eq(JobStatus.PENDING.value),
             )
@@ -499,6 +502,7 @@ class DynamoDBJobStore(JobStore):
             self._record_claim_conflict(rec)
             return None
         rec.status = JobStatus.RUNNING
+        rec.updated_at = now
         return rec
 
     def _record_claim_conflict(self, record: JobRecord) -> None:
@@ -541,7 +545,7 @@ class DynamoDBJobStore(JobStore):
             return
         rec.status = JobStatus.COMPLETED
         rec.result = result or {}
-        rec.updated_at = datetime.now(timezone.utc)  # type: ignore[attr-defined]  # pre-existing gap, GAP-023 T077 finding, not fixed here
+        rec.updated_at = datetime.now(timezone.utc)
         self._save(rec)
 
     def fail(self, job_id: str, error: str) -> None:
@@ -551,7 +555,7 @@ class DynamoDBJobStore(JobStore):
             return
         rec.status = JobStatus.FAILED
         rec.error = error
-        rec.updated_at = datetime.now(timezone.utc)  # type: ignore[attr-defined]  # pre-existing gap, GAP-023 T077 finding, not fixed here
+        rec.updated_at = datetime.now(timezone.utc)
         self._save(rec)
 
 
