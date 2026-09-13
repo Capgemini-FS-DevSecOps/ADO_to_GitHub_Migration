@@ -59,7 +59,10 @@ export default function ConnectivitySettingsPage() {
         allow_custom_model_id: allowCustomModelId,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['connectivity-settings', 'connectivity-readonly'] });
+      // Two separate keys: react-query matches a filter key as a PREFIX of the query key,
+      // so the composite ['connectivity-settings', 'connectivity-readonly'] matched neither.
+      qc.invalidateQueries({ queryKey: ['connectivity-settings'] });
+      qc.invalidateQueries({ queryKey: ['connectivity-readonly'] });
       setNotice('Re-validate models before enabling — connectivity changes reset validation status.');
       setError('');
       setProxyPassword('');
@@ -71,8 +74,9 @@ export default function ConnectivitySettingsPage() {
   const clearPasswordMut = useMutation({
     mutationFn: () => updateConnectivity({ proxy_password: proxyPasswordUpdate('', { clear: true }) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['connectivity-settings', 'connectivity-readonly'] });
-      setNotice('Stored proxy password cleared. Proxy calls are now unauthenticated until you save a new one.');
+      qc.invalidateQueries({ queryKey: ['connectivity-settings'] });
+      qc.invalidateQueries({ queryKey: ['connectivity-readonly'] });
+      setNotice('Stored proxy password removed. The proxy username is kept — clear it too if the proxy needs no credentials.');
       setError('');
       setProxyPassword('');
     },
@@ -149,7 +153,7 @@ export default function ConnectivitySettingsPage() {
               className="oai-button confirm-delete-btn"
               disabled={clearPasswordMut.isPending}
               onClick={() => {
-                if (window.confirm('Clear the stored proxy password? Proxy calls stay unauthenticated until a new one is saved.')) {
+                if (window.confirm('Remove the stored proxy password? The username is kept, so proxy calls carry it with an empty password until you save a new one.')) {
                   clearPasswordMut.mutate();
                 }
               }}
