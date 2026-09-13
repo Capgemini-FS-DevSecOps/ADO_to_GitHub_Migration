@@ -106,3 +106,203 @@ def test_bind_tools_integration():
     llm_with_tools = llm.bind_tools(tools)
     assert hasattr(llm_with_tools, "_bound_tools")
     assert len(llm_with_tools._bound_tools) >= 4
+
+
+# --- R10b threat-model remediations -----------------------------------------
+# THR-05-001 path traversal, THR-05-002 query encoding, THR-02-003 raw
+# exception text, THR-06-007 mutating default, THR-01-002 unbounded file
+# content. See specs/013-clean-code-arch-remediation/threat-model-2026-09-13-001.md
+
+
+def _recorder():
+    seen = []
+
+    async def accel_get(path, session_token=None):
+        seen.append(path)
+        return {"ok": True}
+
+    return seen, accel_get
+
+
+def test_join_api_path_keeps_a_legitimate_endpoint_byte_for_byte():
+    from ado2gh.agents.migration_agent.tools.shared_tools import join_api_path
+
+    assert join_api_path("/v1/ado", "projects/P/repos/R") == "/v1/ado/projects/P/repos/R"
+    assert join_api_path("/v1/ado", "/projects/P") == "/v1/ado/projects/P"
+    assert join_api_path("/v1/github", "repos/o/r?ref=main") == "/v1/github/repos/o/r?ref=main"
+    assert join_api_path("/v1/ado", "") == "/v1/ado/"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "../../v1/migrate/git-mirror",
+        "/../v1/migrate/git-mirror",
+        "..%2f..%2fv1/migrate/git-mirror",
+        "./a/../../b",
+        r"..\..\v1\migrate",
+        "../v1/adox/evil",
+        "x" * 4000,
+    ],
+)
+def test_join_api_path_rejects_prefix_escapes(endpoint):
+    from ado2gh.agents.migration_agent.tools.shared_tools import ApiPathError, join_api_path
+
+    with pytest.raises(ApiPathError):
+        join_api_path("/v1/ado", endpoint)
+
+
+@pytest.mark.asyncio
+async def test_ado_api_query_never_leaves_the_ado_prefix():
+    seen, accel_get = _recorder()
+    tools = get_executor_tools({"accel_get": accel_get})
+    tool = next(t for t in tools if t.name == "ado_api_query")
+
+    result = await tool.ainvoke({"endpoint": "../../v1/migrate/git-mirror"})
+
+    assert result["error"] == "ApiPathError"
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_planner_and_validator_queries_never_leave_their_prefix():
+    for getter, name in (
+        (get_planner_tools, "github_api_query"),
+        (get_validator_tools, "github_api_query"),
+        (get_planner_tools, "ado_api_query"),
+        (get_validator_tools, "ado_api_query"),
+    ):
+        seen, accel_get = _recorder()
+        tool = next(t for t in getter(accel_get=accel_get) if t.name == name)
+        result = await tool.ainvoke({"endpoint": "../../v1/migrate/git-mirror"})
+        assert result["error"] == "ApiPathError", (getter, name)
+        assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_tool_error_keeps_the_raw_exception_out_of_the_result():
+    async def boom(path, session_token=None):
+        raise RuntimeError("GET https://accel/v1/ado/x?pat=abcdefghijklmnop failed")
+
+    tools = get_planner_tools(accel_get=boom)
+    tool = next(t for t in tools if t.name == "ado_api_query")
+
+    result = await tool.ainvoke({"endpoint": "projects/P"})
+
+    assert result["error"] == "RuntimeError"
+    assert "abcdefghijklmnop" not in result["detail"]
+    assert "***" in result["detail"]
+
+
+@pytest.mark.asyncio
+async def test_tool_error_reports_the_http_status_code():
+    class Resp:
+        status_code = 503
+
+    class Failed(Exception):
+        response = Resp()
+
+    async def boom(path, session_token=None):
+        raise Failed("upstream down")
+
+    tools = get_planner_tools(accel_get=boom)
+    tool = next(t for t in tools if t.name == "ado_api_query")
+
+    result = await tool.ainvoke({"endpoint": "projects/P"})
+
+    assert result["error"] == "Failed"
+    assert result["status_code"] == 503
+
+
+@pytest.mark.asyncio
+async def test_list_github_workflows_encodes_the_ref():
+    seen, accel_get = _recorder()
+    tools = get_validator_tools(accel_get=accel_get)
+    tool = next(t for t in tools if t.name == "list_github_workflows")
+
+    await tool.ainvoke({"github_org": "o", "github_repo": "r", "ref": "main&admin=1#x"})
+
+    assert seen == ["/v1/github/repos/o/r/contents/.github/workflows?ref=main%26admin%3D1%23x"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_github_workflow_encodes_ref_and_path():
+    seen = []
+
+    async def accel_get(path, session_token=None):
+        seen.append(path)
+        return {"encoding": "base64", "content": ""}
+
+    tools = get_validator_tools(accel_get=accel_get)
+    tool = next(t for t in tools if t.name == "fetch_github_workflow")
+
+    await tool.ainvoke({
+        "github_org": "o",
+        "github_repo": "r",
+        "workflow_path": ".github/workflows/ci.yml?x=1",
+        "ref": "main&y=2",
+    })
+
+    assert seen == [
+        "/v1/github/repos/o/r/contents/.github/workflows/ci.yml%3Fx%3D1?ref=main%26y%3D2"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_github_workflow_caps_repository_file_content():
+    import base64
+
+    from ado2gh.agents.migration_agent.tools.validator_tools import MAX_WORKFLOW_CONTENT_CHARS
+
+    payload = base64.b64encode(b"A" * (MAX_WORKFLOW_CONTENT_CHARS + 5000)).decode()
+
+    async def accel_get(path, session_token=None):
+        return {"encoding": "base64", "content": payload}
+
+    tools = get_validator_tools(accel_get=accel_get)
+    tool = next(t for t in tools if t.name == "fetch_github_workflow")
+
+    result = await tool.ainvoke({
+        "github_org": "o",
+        "github_repo": "r",
+        "workflow_path": ".github/workflows/ci.yml",
+    })
+
+    assert len(result["content"]) == MAX_WORKFLOW_CONTENT_CHARS
+    assert result["truncated"] is True
+    assert result["size"] == MAX_WORKFLOW_CONTENT_CHARS + 5000
+
+
+@pytest.mark.asyncio
+async def test_executor_github_api_never_leaves_the_github_prefix():
+    """THR-05-001: the guardrail authorises repository_id, the URL must match it."""
+    seen, accel_get = _recorder()
+    tools = get_executor_tools({"accel_get": accel_get})
+    tool = next(t for t in tools if t.name == "github_api")
+
+    result = await tool.ainvoke({
+        "endpoint": "../../v1/migrate/git-mirror",
+        "method": "GET",
+        "repository_id": "P/R",
+    })
+
+    assert result["error"] in {"ApiPathError", "guardrail_blocked"}
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_tool_error_drops_url_userinfo_and_query_credentials():
+    """redact_text names secret shapes; a URL can carry one it does not name."""
+    async def boom(path, session_token=None):
+        raise RuntimeError(
+            "GET https://alice:hunter2@accel/v1/ado/x?sig=Zm9vYmFyYmF6 - connect failed"
+        )
+
+    tools = get_planner_tools(accel_get=boom)
+    tool = next(t for t in tools if t.name == "ado_api_query")
+
+    result = await tool.ainvoke({"endpoint": "projects/P"})
+
+    assert "hunter2" not in result["detail"]
+    assert "Zm9vYmFyYmF6" not in result["detail"]
+    assert "/v1/ado/x" in result["detail"]

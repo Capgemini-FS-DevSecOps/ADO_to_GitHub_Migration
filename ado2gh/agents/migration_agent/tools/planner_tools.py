@@ -19,7 +19,11 @@ from ado2gh.agents.migration_agent.tools.orchestrator_tools import (
     AdoApiQueryArgs,
     GitHubApiQueryArgs,
 )
-from ado2gh.agents.migration_agent.tools.shared_tools import append_shared_tools
+from ado2gh.agents.migration_agent.tools.shared_tools import (
+    append_shared_tools,
+    join_api_path,
+    tool_error,
+)
 
 
 class PlannerCallAcceleratorArgs(BaseModel):
@@ -54,32 +58,29 @@ def get_planner_tools(
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            path = endpoint.lstrip("/")
-            return await accel_get(f"/v1/ado/{path}", session_token=session_token)
+            return await accel_get(join_api_path("/v1/ado", endpoint), session_token=session_token)
         except Exception as e:
-            return {"error": str(e)}
+            return tool_error(e)
 
     async def github_api_query(endpoint: str) -> dict[str, Any]:
         """Query the GitHub API (read-only). Pass an endpoint path like 'repos/{org}/{repo}'."""
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            path = endpoint.lstrip("/")
-            return await accel_get(f"/v1/github/{path}", session_token=session_token)
+            return await accel_get(join_api_path("/v1/github", endpoint), session_token=session_token)
         except Exception as e:
-            return {"error": str(e)}
+            return tool_error(e)
 
     async def call_accelerator(endpoint: str) -> dict[str, Any]:
         """Call an accelerator API endpoint (GET only, read-only)."""
-        ep = endpoint.lstrip("/")
-        if not ep:
+        if not endpoint.lstrip("/"):
             return {"error": "endpoint_required"}
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            return await accel_get(f"/{ep}", session_token=session_token)
+            return await accel_get(join_api_path("/", endpoint), session_token=session_token)
         except Exception as e:
-            return {"error": str(e)}
+            return tool_error(e)
 
     tools = [
         StructuredTool.from_function(

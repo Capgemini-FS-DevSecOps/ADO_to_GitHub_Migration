@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+from urllib.parse import quote, urlencode
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
@@ -10,8 +11,17 @@ from ado2gh.agents.migration_agent.tools.orchestrator_tools import (
     AdoApiQueryArgs,
     GitHubApiQueryArgs,
 )
-from ado2gh.agents.migration_agent.tools.shared_tools import append_shared_tools
+from ado2gh.agents.migration_agent.tools.shared_tools import (
+    append_shared_tools,
+    join_api_path,
+    tool_error,
+)
 from ado2gh.pipelines.validation import WorkflowValidator
+
+# Repository file content is attacker-controllable and lands in the validator's
+# prompt (THR-01-002), so the tool caps it rather than trusting the prompt
+# builder's own truncation.
+MAX_WORKFLOW_CONTENT_CHARS = 20000
 
 
 class ValidateWorkflowConversionArgs(BaseModel):
@@ -67,31 +77,34 @@ def get_validator_tools(
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            return await accel_get(f"/v1/ado/{endpoint.lstrip('/')}", session_token=session_token)
+            return await accel_get(join_api_path("/v1/ado", endpoint), session_token=session_token)
         except Exception as e:
-            return {"error": str(e)}
+            return tool_error(e)
 
     async def github_api_query(endpoint: str) -> dict[str, Any]:
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            return await accel_get(f"/v1/github/{endpoint.lstrip('/')}", session_token=session_token)
+            return await accel_get(join_api_path("/v1/github", endpoint), session_token=session_token)
         except Exception as e:
-            return {"error": str(e)}
+            return tool_error(e)
 
     async def list_ado_pipelines(project: str, repo_name: str) -> dict[str, Any]:
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            encoded_project = project.replace(" ", "%20")
-            encoded_repo = repo_name.replace(" ", "%20")
+            encoded_project = quote(project, safe="")
+            encoded_repo = quote(repo_name, safe="")
             repo_resp = await accel_get(
-                f"/v1/ado/{encoded_project}/_apis/git/repositories/{encoded_repo}?api-version=7.0",
+                join_api_path(
+                    "/v1/ado",
+                    f"{encoded_project}/_apis/git/repositories/{encoded_repo}?api-version=7.0",
+                ),
                 session_token=session_token,
             )
             repo_id = str(repo_resp.get("id") or "") if isinstance(repo_resp, dict) else ""
             pipelines_resp = await accel_get(
-                f"/v1/ado/{encoded_project}/_apis/pipelines?api-version=7.0",
+                join_api_path("/v1/ado", f"{encoded_project}/_apis/pipelines?api-version=7.0"),
                 session_token=session_token,
             )
             pipelines: list[dict[str, Any]] = []
@@ -117,7 +130,7 @@ def get_validator_tools(
                 "pipelines": pipelines[:50],
             }
         except Exception as e:
-            return {"error": str(e), "project": project, "repo_name": repo_name}
+            return tool_error(e, project=project, repo_name=repo_name)
 
     async def list_github_workflows(
         github_org: str,
@@ -127,8 +140,11 @@ def get_validator_tools(
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            path = f"repos/{github_org}/{github_repo}/contents/.github/workflows?ref={ref}"
-            resp = await accel_get(f"/v1/github/{path}", session_token=session_token)
+            path = (
+                f"repos/{quote(github_org, safe='')}/{quote(github_repo, safe='')}"
+                f"/contents/.github/workflows?{urlencode({'ref': ref})}"
+            )
+            resp = await accel_get(join_api_path("/v1/github", path), session_token=session_token)
             files: list[dict[str, Any]] = []
             if isinstance(resp, list):
                 for item in resp:
@@ -145,7 +161,7 @@ def get_validator_tools(
                 "workflows": files,
             }
         except Exception as e:
-            return {"error": str(e)}
+            return tool_error(e)
 
     async def fetch_github_workflow(
         github_org: str,
@@ -159,8 +175,11 @@ def get_validator_tools(
             import base64
 
             normalized = workflow_path.lstrip("/")
-            path = f"repos/{github_org}/{github_repo}/contents/{normalized}?ref={ref}"
-            resp = await accel_get(f"/v1/github/{path}", session_token=session_token)
+            path = (
+                f"repos/{quote(github_org, safe='')}/{quote(github_repo, safe='')}"
+                f"/contents/{quote(normalized)}?{urlencode({'ref': ref})}"
+            )
+            resp = await accel_get(join_api_path("/v1/github", path), session_token=session_token)
             content = ""
             if isinstance(resp, dict):
                 raw = resp.get("content") or ""
@@ -168,13 +187,15 @@ def get_validator_tools(
                     content = base64.b64decode(raw).decode("utf-8", errors="replace")
                 elif raw:
                     content = str(raw)
+            size = len(content)
             return {
                 "workflow_path": normalized,
-                "content": content,
-                "size": len(content),
+                "content": content[:MAX_WORKFLOW_CONTENT_CHARS],
+                "size": size,
+                "truncated": size > MAX_WORKFLOW_CONTENT_CHARS,
             }
         except Exception as e:
-            return {"error": str(e), "workflow_path": workflow_path}
+            return tool_error(e, workflow_path=workflow_path)
 
     def validate_workflow_conversion(
         ado_pipeline_yaml: str,

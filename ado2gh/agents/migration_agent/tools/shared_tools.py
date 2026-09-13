@@ -1,10 +1,94 @@
-"""Shared tools available to every migration agent role."""
+"""Shared tools available to every migration agent role.
+
+Also the one place a model-chosen endpoint is joined onto a fixed API prefix
+(:func:`join_api_path`) and the one place a caught exception becomes a tool
+result (:func:`tool_error`).
+"""
 from __future__ import annotations
 
+import posixpath
+import re
 from typing import Any, Callable
+from urllib.parse import unquote
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
+
+from ado2gh.audit.redaction import redact_text
+
+_MAX_ENDPOINT_CHARS = 2048
+_MAX_ERROR_DETAIL_CHARS = 500
+# redact_text catches named secret shapes; a URL can carry a credential in forms
+# it does not name — basic-auth userinfo, or an opaque `sig=`/`code=` query
+# value. Both are dropped wholesale from an error detail (THR-02-003).
+_URL_USERINFO_RE = re.compile(r"(?<=://)[^/\s@]+(?=@)")
+_URL_QUERY_RE = re.compile(r"(?<=\?)[^\s\"'<>]+")
+
+
+class ApiPathError(ValueError):
+    """A model-chosen endpoint did not stay inside its fixed API prefix."""
+
+
+def join_api_path(prefix: str, endpoint: str) -> str:
+    """Join a model-chosen endpoint onto a fixed API prefix without letting it escape.
+
+    httpx resolves dot-segments when it merges a path onto ``base_url``
+    (measured on httpx 0.28.1: ``/v1/ado/../../v1/migrate/git-mirror`` reaches
+    ``/v1/migrate/git-mirror``), and uvicorn percent-decodes the path before it
+    routes, so ``..%2f`` is traversal too. The candidate is normalised the same
+    way here and the prefix re-checked afterwards. What is returned is the
+    unmodified join, so a legitimate endpoint still reaches the accelerator byte
+    for byte as it did before.
+
+    Args:
+        prefix: The prefix the request must stay under, e.g. ``/v1/ado``.
+        endpoint: The model-supplied endpoint, with or without a leading slash.
+            Any query string is carried through untouched.
+
+    Returns:
+        The joined request path, verified to still resolve under ``prefix``.
+
+    Raises:
+        ApiPathError: When the endpoint is over-long, or normalises to a path
+            outside ``prefix``.
+    """
+    if len(endpoint) > _MAX_ENDPOINT_CHARS:
+        raise ApiPathError("endpoint_too_long")
+    trimmed = prefix.strip("/")
+    base = f"/{trimmed}/" if trimmed else "/"
+    candidate = base + endpoint.lstrip("/")
+    probe = posixpath.normpath(unquote(candidate.split("?", 1)[0]).replace("\\", "/"))
+    if not f"{probe}/".startswith(base):
+        raise ApiPathError(f"endpoint_escapes_prefix:{base}")
+    return candidate
+
+
+def tool_error(exc: Exception, **extra: object) -> dict[str, Any]:
+    """Describe a failed tool call without handing the raw exception to the model.
+
+    httpx exception strings carry the full request URL, and a tool result is both
+    persisted to the LangGraph checkpoint and replayed into the prompt, so the
+    raw text is not a safe payload.
+
+    Args:
+        exc: The caught exception.
+        **extra: Extra keys merged into the result, e.g. ``project``.
+
+    Returns:
+        ``error`` (the exception class name) and ``detail`` (the message with
+        secret shapes, URL userinfo and URL query strings masked, then capped),
+        plus ``status_code`` when the exception carries an HTTP response.
+    """
+    detail = _URL_QUERY_RE.sub("***", _URL_USERINFO_RE.sub("***", redact_text(str(exc))))
+    out: dict[str, Any] = {
+        "error": type(exc).__name__,
+        "detail": detail[:_MAX_ERROR_DETAIL_CHARS],
+    }
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status, int):
+        out["status_code"] = status
+    out.update(extra)
+    return out
 
 
 class GetCurrentProfileArgs(BaseModel):
@@ -37,10 +121,7 @@ async def fetch_current_profile(
     try:
         settings = await accel_get("/v1/settings", session_token=session_token)
     except Exception as exc:
-        return {
-            "error": str(exc),
-            "deployment_profile_id": deployment_profile_id,
-        }
+        return tool_error(exc, deployment_profile_id=deployment_profile_id)
 
     if not isinstance(settings, dict):
         return {
