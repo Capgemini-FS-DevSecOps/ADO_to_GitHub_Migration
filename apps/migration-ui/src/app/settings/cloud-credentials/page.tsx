@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import {
   approveCloudCredential,
+  credentialDecisionReady,
   fetchCloudCredentials,
   patchCloudCredential,
   rejectCloudCredential,
@@ -50,18 +51,31 @@ function SourceCard({
   const [project, setProject] = useState(source.project ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Armed decision — CA-002 keeps approve, reject and revoke off a single click. */
+  const [decision, setDecision] = useState<'approve' | 'reject' | 'revoke' | null>(null);
+  const [reason, setReason] = useState('');
 
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
       await action();
+      setDecision(null);
+      setReason('');
       onRefresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed');
     } finally {
       setBusy(false);
     }
+  };
+
+  const commit = () => {
+    if (decision === 'approve') return run(() => approveCloudCredential(source.provider));
+    if (decision === 'reject') {
+      return run(() => rejectCloudCredential(source.provider, reason.trim()));
+    }
+    return run(() => revokeCloudCredential(source.provider));
   };
 
   return (
@@ -120,32 +134,75 @@ function SourceCard({
           </button>
         </div>
       )}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-        <button
-          type="button"
-          disabled={busy || source.completeness !== 'complete'}
-          className="oai-button oai-button-primary"
-          onClick={() => run(() => approveCloudCredential(source.provider))}
-        >
-          Approve
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          className="oai-button oai-button-secondary"
-          onClick={() => run(() => rejectCloudCredential(source.provider))}
-        >
-          Reject
-        </button>
-        <button
-          type="button"
-          disabled={busy || source.status !== 'approved'}
-          className="oai-button confirm-delete-btn"
-          onClick={() => run(() => revokeCloudCredential(source.provider))}
-        >
-          Revoke
-        </button>
-      </div>
+      {decision ? (
+        <div style={{ marginTop: 12 }}>
+          {decision === 'reject' && (
+            <textarea
+              className="oai-input"
+              rows={2}
+              placeholder="Reason (required)"
+              aria-label={`Reason for rejecting ${source.provider} credentials`}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
+          <p className="form-hint" style={{ margin: '8px 0' }}>
+            {decision === 'approve'
+              ? `Approving lets agents run models on the ambient ${source.provider} credentials.`
+              : decision === 'revoke'
+                ? `Revoking stops agents using the ${source.provider} credentials.`
+                : `Rejecting records the reason against the ${source.provider} source.`}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button
+              type="button"
+              disabled={busy || !credentialDecisionReady(decision, reason)}
+              className={`oai-button ${decision === 'approve' ? 'oai-button-primary' : 'confirm-delete-btn'}`}
+              onClick={commit}
+            >
+              Confirm {decision}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="oai-button oai-button-secondary"
+              onClick={() => {
+                setDecision(null);
+                setReason('');
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            disabled={busy || source.completeness !== 'complete'}
+            className="oai-button oai-button-primary"
+            onClick={() => setDecision('approve')}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            className="oai-button oai-button-secondary"
+            onClick={() => setDecision('reject')}
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            disabled={busy || source.status !== 'approved'}
+            className="oai-button confirm-delete-btn"
+            onClick={() => setDecision('revoke')}
+          >
+            Revoke
+          </button>
+        </div>
+      )}
       {error && <p className="oai-error">{error}</p>}
     </div>
   );

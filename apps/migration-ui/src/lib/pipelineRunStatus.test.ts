@@ -4,6 +4,7 @@ import {
   mapPipelineRunStatus,
   pipelineRunNeedsApproval,
   liveRunOverrideReason,
+  liveStartNeedsConfirm,
   pipelineRunStatusLabel,
 } from './pipelineRunStatus';
 
@@ -33,5 +34,20 @@ describe('gate override reason', () => {
 
   it('sends nothing on a dry run, which never reaches the gate', () => {
     expect(dryRunOverrideReason()).toBe('');
+  });
+});
+
+describe('live start confirmation', () => {
+  it('arms a confirmation instead of launching an unconfirmed live run', () => {
+    expect(liveStartNeedsConfirm(false, false)).toBe(true);
+  });
+
+  it('launches once the live run is confirmed', () => {
+    expect(liveStartNeedsConfirm(false, true)).toBe(false);
+  });
+
+  it('keeps a dry run on a single click', () => {
+    expect(liveStartNeedsConfirm(true, false)).toBe(false);
+    expect(liveStartNeedsConfirm(true, true)).toBe(false);
   });
 });

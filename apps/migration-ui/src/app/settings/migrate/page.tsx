@@ -11,7 +11,11 @@ import {
   fetchSettings,
   startPipelineRun,
 } from '@/lib/api';
-import { dryRunOverrideReason, liveRunOverrideReason } from '@/lib/pipelineRunStatus';
+import {
+  dryRunOverrideReason,
+  liveRunOverrideReason,
+  liveStartNeedsConfirm,
+} from '@/lib/pipelineRunStatus';
 import type { DiscoveryRepoItem, PipelineStep } from '@/lib/types';
 
 /** Migration page: choose repositories, start a pipeline run, and follow step progress. */
@@ -43,6 +47,9 @@ function MigrationView() {
 
   // Justification recorded when a live run forces past a blocking phase gate
   const [overrideReason, setOverrideReason] = useState('');
+
+  // CA-002: a live run is armed by a first click and only launched by a second
+  const [confirmLive, setConfirmLive] = useState(false);
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const profileId = settings?.active_profile_id;
@@ -212,7 +219,10 @@ function MigrationView() {
                     id="run-dry-run"
                     type="checkbox"
                     checked={dryRun}
-                    onChange={(e) => setDryRun(e.target.checked)}
+                    onChange={(e) => {
+                      setDryRun(e.target.checked);
+                      setConfirmLive(false);
+                    }}
                   />
                   Dry run
                 </label>
@@ -257,13 +267,31 @@ function MigrationView() {
 
             <button
               type="button"
-              className="oai-button oai-button-primary"
+              className={`oai-button ${confirmLive ? 'confirm-delete-btn' : 'oai-button-primary'}`}
               style={{ marginTop: 16, width: '100%' }}
               disabled={startRunMut.isPending || !selectedSteps.length || !settings?.active_profile_id || !hasTarget}
-              onClick={() => startRunMut.mutate()}
+              onClick={() =>
+                liveStartNeedsConfirm(dryRun, confirmLive)
+                  ? setConfirmLive(true)
+                  : startRunMut.mutate()
+              }
             >
-              {startRunMut.isPending ? 'Starting…' : 'Start migration'}
+              {startRunMut.isPending
+                ? 'Starting…'
+                : confirmLive
+                  ? 'Confirm live migration'
+                  : 'Start migration'}
             </button>
+            {confirmLive && !startRunMut.isPending && (
+              <button
+                type="button"
+                className="oai-button oai-button-secondary"
+                style={{ marginTop: 8, width: '100%' }}
+                onClick={() => setConfirmLive(false)}
+              >
+                Cancel
+              </button>
+            )}
             {runError && (
               <p className="badge-manual" style={{ marginTop: 8 }}>{runError}</p>
             )}

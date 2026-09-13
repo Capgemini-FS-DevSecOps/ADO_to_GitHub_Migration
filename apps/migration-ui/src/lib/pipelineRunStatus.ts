@@ -44,3 +44,14 @@ export function liveRunOverrideReason(reason: string): string {
 export function dryRunOverrideReason(): string {
   return '';
 }
+
+/**
+ * Whether a Start-migration click should only arm a confirmation rather than launch.
+ *
+ * CA-002: a live run rewrites real ADO and GitHub state, so unticking "Dry run" and
+ * clicking once must not start it — the first click arms the confirm step and only the
+ * second launches. A dry run changes nothing and keeps its single click.
+ */
+export function liveStartNeedsConfirm(dryRun: boolean, confirmArmed: boolean): boolean {
+  return !dryRun && !confirmArmed;
+}

@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest';
 
+import { credentialDecisionReady } from '@/lib/cloudCredentials';
 import { modelsAccessDeniedMessage } from '@/lib/permissions';
 import { renderMarkup, textOf } from '@/__tests__/renderMarkup';
 
@@ -17,5 +18,16 @@ describe('/settings/cloud-credentials', () => {
     expect(textOf(html)).toBe(modelsAccessDeniedMessage());
     expect(html).not.toContain('Cloud credentials');
     expect(html).not.toContain('<table');
+  });
+
+  it('offers no armed credential decision on first paint', () => {
+    // CA-002: approve, reject and revoke each take a second click, so no "Confirm …"
+    // control can exist before one is armed. The per-action rule (only reject records a
+    // reason server-side) is covered by `credentialDecisionReady`.
+    const text = textOf(renderMarkup(<CloudCredentialsPage />));
+
+    expect(text).not.toContain('Confirm approve');
+    expect(text).not.toContain('Confirm revoke');
+    expect(credentialDecisionReady('reject', '')).toBe(false);
   });
 });

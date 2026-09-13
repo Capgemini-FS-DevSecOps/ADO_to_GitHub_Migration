@@ -4,8 +4,11 @@ import {
   fieldInitialValue,
   formatFormSubmissionSummary,
   formOptionLabel,
+  initialFormValues,
   isAgentInterruptible,
+  liveDecisionReady,
   mergeThinkingEvents,
+  parseBooleanValue,
   pendingOptimisticUserMessages,
   sessionIsBusy,
   thinkingEventsFromSession,
@@ -137,9 +140,46 @@ describe('HITL form defaults', () => {
     expect(fieldInitialValue(field({ type: 'select' }))).toBe('');
   });
 
-  it('pre-ticks only the confirm_execute checkbox', () => {
-    expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox' }))).toBe(true);
+  it('pre-ticks no checkbox, confirm_execute included (CA-001 dry-run default)', () => {
+    expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox' }))).toBe(false);
     expect(fieldInitialValue(field({ name: 'archive_ado', type: 'checkbox' }))).toBe(false);
+  });
+
+  it('reads the stringified booleans the agent service sends for recommended_value', () => {
+    // The server stringifies recommendations, so a recommended `False` arrives as "False";
+    // Boolean("False") would pre-tick "start migration immediately" (GAP-024).
+    expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: 'False' }))).toBe(false);
+    expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: 'True' }))).toBe(true);
+  });
+
+  it('parses wire booleans without treating "False" as truthy', () => {
+    for (const off of ['False', 'false', ' FALSE ', '0', 'no', 'off', '', undefined, null, false]) {
+      expect(parseBooleanValue(off)).toBe(false);
+    }
+    for (const on of ['True', 'true', '1', 'yes', 'on', true]) {
+      expect(parseBooleanValue(on)).toBe(true);
+    }
+  });
+
+  it('forces confirm_execute off when the session needs live approval', () => {
+    const fields = [
+      field({ name: 'plan_confirmed', type: 'checkbox', recommended_value: 'True' }),
+      field({ name: 'confirm_execute', type: 'checkbox', recommended_value: 'True' }),
+    ];
+    expect(initialFormValues(fields, true)).toEqual({
+      plan_confirmed: true,
+      confirm_execute: false,
+    });
+    expect(initialFormValues(fields, false)).toEqual({
+      plan_confirmed: true,
+      confirm_execute: true,
+    });
+  });
+
+  it('requires a written reason before a live decision can be submitted', () => {
+    expect(liveDecisionReady('')).toBe(false);
+    expect(liveDecisionReady('   ')).toBe(false);
+    expect(liveDecisionReady('change window approved')).toBe(true);
   });
 
   it('labels recommended options', () => {
@@ -166,6 +206,8 @@ describe('form submission summary', () => {
   it('normalises dry_run from the select strings the form uses', () => {
     expect(formatFormSubmissionSummary({ dry_run: 'live' })).toBe('dry_run: false');
     expect(formatFormSubmissionSummary({ dry_run: 'dry-run' })).toBe('dry_run: true');
+    // The agent service also accepts the underscored spelling (hitl/schemas.py `_coerce_dry_run`).
+    expect(formatFormSubmissionSummary({ dry_run: 'dry_run' })).toBe('dry_run: true');
     expect(formatFormSubmissionSummary({ dry_run: false })).toBe('dry_run: false');
     expect(formatFormSubmissionSummary({ dry_run: '' })).toBe('');
   });

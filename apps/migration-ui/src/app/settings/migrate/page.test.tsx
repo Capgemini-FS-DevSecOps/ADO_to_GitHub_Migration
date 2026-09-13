@@ -36,6 +36,16 @@ describe('/settings/migrate', () => {
     expect(textOf(html)).not.toContain('Live migration will make actual changes');
   });
 
+  it('shows the plain start button, not a live confirmation, on first paint', () => {
+    // CA-002: the live confirm step is armed by a first click, so it must never be the
+    // control a freshly loaded page offers. Arming it needs a DOM; the decision itself is
+    // covered by `liveStartNeedsConfirm` in src/lib/pipelineRunStatus.test.ts.
+    const text = textOf(renderMarkup(<MigratePage />));
+
+    expect(text).toContain('Start migration');
+    expect(text).not.toContain('Confirm live migration');
+  });
+
   it('cannot start a run before a profile and a target are chosen', () => {
     const html = renderMarkup(<MigratePage />);
     const text = textOf(html);

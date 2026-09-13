@@ -24,6 +24,22 @@ export const ACTIVE_AGENT_STATUSES = new Set([
 
 const SETTLED_STATUSES = ['completed', 'failed', 'cancelled', 'idle'];
 
+/** Wire values that mean "off" — the agent server stringifies form recommendations. */
+const FALSY_WIRE_VALUES = ['false', '0', 'no', 'off', ''];
+
+/**
+ * Coerce a HITL form value to a boolean, reading the strings the agent service sends.
+ *
+ * `recommended_value` is stringified server-side, so a recommended `False` arrives as the
+ * string `"False"`, which `Boolean()` reports as true. Every boolean form field goes
+ * through here so a recommendation to *not* do something can never read as a yes.
+ */
+export function parseBooleanValue(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === null || value === undefined) return false;
+  return !FALSY_WIRE_VALUES.includes(String(value).trim().toLowerCase());
+}
+
 /** Report whether a session is mid-turn, either by status or by an unsettled pipeline run. */
 export function sessionIsBusy(s: AgentSession | null | undefined): boolean {
   if (!s) return false;
@@ -118,8 +134,8 @@ export function formatFormSubmissionSummary(
   formId?: string,
 ): string {
   if (formId === 'intake_plan_review' || formId === 'plan_confirmation') {
-    const confirmed = Boolean(values.plan_confirmed);
-    const execute = Boolean(values.confirm_execute);
+    const confirmed = parseBooleanValue(values.plan_confirmed);
+    const execute = parseBooleanValue(values.confirm_execute);
     const notes = String(values.plan_notes ?? '').trim();
     if (confirmed) {
       const parts = ['Plan confirmed'];
@@ -142,7 +158,13 @@ export function formatFormSubmissionSummary(
       const raw = String(value ?? '').toLowerCase();
       if (raw === 'live' || raw === 'false' || raw === '0') {
         parts.push('dry_run: false');
-      } else if (raw === 'dry-run' || raw === 'dryrun' || raw === 'true' || raw === '1') {
+      } else if (
+        raw === 'dry-run' ||
+        raw === 'dryrun' ||
+        raw === 'dry_run' ||
+        raw === 'true' ||
+        raw === '1'
+      ) {
         parts.push('dry_run: true');
       }
       continue;
@@ -174,11 +196,15 @@ export function formOptionLabel(opt: string | AgentFormFieldOption): string {
 /**
  * Pick the initial value for a HITL form field, preferring the agent's recommended value,
  * then the recommended or first select option, and otherwise an empty or unchecked value.
+ *
+ * Checkboxes default to unchecked, `confirm_execute` included: CA-001 makes dry run the
+ * default, so starting a migration is something the operator ticks, never something a
+ * pre-ticked box does for them.
  */
 export function fieldInitialValue(field: AgentFormField): unknown {
   if (field.recommended_value !== undefined && field.recommended_value !== null && field.recommended_value !== '') {
     if (field.type === 'checkbox') {
-      return Boolean(field.recommended_value);
+      return parseBooleanValue(field.recommended_value);
     }
     return field.recommended_value;
   }
@@ -192,9 +218,41 @@ export function fieldInitialValue(field: AgentFormField): unknown {
     return formOptionValue(field.options[0]);
   }
   if (field.type === 'checkbox') {
-    return field.name === 'confirm_execute';
+    return false;
   }
   return '';
+}
+
+/**
+ * Build the starting values for a HITL form's fields.
+ *
+ * When the session needs platform approval before it may run live, `confirm_execute` is
+ * forced off rather than only disabled: a disabled box still submits whatever value it
+ * holds, and an execute intent the operator cannot legally give must not reach the agent.
+ */
+export function initialFormValues(
+  fields: AgentFormField[],
+  requiresLiveApproval = false,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const field of fields) {
+    values[field.name] = fieldInitialValue(field);
+  }
+  if (requiresLiveApproval && 'confirm_execute' in values) {
+    values.confirm_execute = false;
+  }
+  return values;
+}
+
+/**
+ * Whether a live-execution approval or denial may be submitted.
+ *
+ * CA-002: approving a live run is a one-way escalation, so it takes a second, deliberate
+ * click and a written reason that lands in the audit record — never a bare click with an
+ * empty justification.
+ */
+export function liveDecisionReady(reason: string): boolean {
+  return reason.trim().length > 0;
 }
 
 /** Report whether a chat message is a transient status line rather than chat content. */

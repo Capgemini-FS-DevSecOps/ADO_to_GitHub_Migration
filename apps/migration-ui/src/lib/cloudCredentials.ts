@@ -102,6 +102,21 @@ export async function patchCloudCredential(
 }
 
 /**
+ * Whether an armed credential decision may be committed.
+ *
+ * CA-002: approving a source lets agents authenticate to a cloud provider and revoking one
+ * cuts running models off, so both take a second, deliberate click. Only `reject` records a
+ * reason server-side (`POST .../reject` reads `body.reason`), so only `reject` demands one —
+ * asking for a justification the API drops would be theatre, not an audit trail.
+ */
+export function credentialDecisionReady(
+  action: 'approve' | 'reject' | 'revoke',
+  reason: string,
+): boolean {
+  return action !== 'reject' || reason.trim().length > 0;
+}
+
+/**
  * Approve a provider's credentials via `POST /v1/settings/cloud-credentials/{provider}/approve`.
  * Returns the updated source.
  */

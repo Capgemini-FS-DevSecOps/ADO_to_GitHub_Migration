@@ -9,13 +9,16 @@
  * service through an effect, so they stay out of reach until a DOM test environment is
  * approved (see the note in `@/__tests__/renderMarkup`).
  *
- * The GAP-024 form-field defect (boolean `recommended_value`) is covered on the browser
- * side by `src/lib/agentChat.test.ts` — `fieldInitialValue`, which this component's private
- * `AgentFormPanel` calls. The panel itself is not exported and only renders once a session
- * has a `pending_form`, so it is not reachable from a render test.
+ * The GAP-024 form-field defect (stringified `recommended_value`) is covered on the browser
+ * side by `src/lib/agentChat.test.ts` — `parseBooleanValue`, `fieldInitialValue` and
+ * `initialFormValues`, which this component's private `AgentFormPanel` calls. The panel
+ * itself is not exported and only renders once a session has a `pending_form`, so it is not
+ * reachable from a render test; the same goes for arming the live-decision confirm step,
+ * whose submit rule is pinned by `liveDecisionReady`.
  */
 import { describe, it, expect } from 'vitest';
 
+import { liveDecisionReady } from '@/lib/agentChat';
 import { renderMarkup, textOf } from '@/__tests__/renderMarkup';
 
 import { AgentChat } from './AgentChat';
@@ -43,5 +46,16 @@ describe('AgentChat', () => {
     expect(text).not.toContain('Deny');
     expect(text).not.toContain('Request live execution');
     expect(text).not.toContain('Live execution pending platform approval');
+  });
+
+  it('never offers an armed live decision, and needs a reason to submit one', () => {
+    // CA-002: "Approve live run" arms a confirm step rather than approving, so the
+    // committing control cannot be on screen before the operator asks for it.
+    const text = textOf(renderMarkup(<AgentChat />));
+
+    expect(text).not.toContain('Confirm approve');
+    expect(text).not.toContain('Confirm deny');
+    expect(liveDecisionReady('')).toBe(false);
+    expect(liveDecisionReady('approved in CAB-4821')).toBe(true);
   });
 });

@@ -32,13 +32,15 @@ import {
 import {
   ACTIVE_AGENT_STATUSES,
   appendThinkingEvent,
-  fieldInitialValue,
   formatFormSubmissionSummary,
   formOptionLabel,
   formOptionValue,
+  initialFormValues,
   isAgentInterruptible,
   isStatusMessage,
+  liveDecisionReady,
   mergeThinkingEvents,
+  parseBooleanValue,
   pendingOptimisticUserMessages,
   sessionIsBusy,
   thinkingEventsFromSession,
@@ -355,19 +357,17 @@ function AgentFormPanel({
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [localError, setLocalError] = useState<string | null>(null);
 
+  const liveApprovalRequired = Boolean(executionPolicy?.requires_live_approval);
+
   useEffect(() => {
-    const initial: Record<string, unknown> = {};
-    for (const field of form.fields) {
-      initial[field.name] = fieldInitialValue(field);
-    }
-    setValues(initial);
+    setValues(initialFormValues(form.fields, liveApprovalRequired));
     setLocalError(null);
-  }, [form.form_id, form.fields]);
+  }, [form.form_id, form.fields, liveApprovalRequired]);
 
   const handleSubmit = () => {
     if (form.form_id === 'plan_confirmation' || form.form_id === 'intake_plan_review') {
       const notes = String(values.plan_notes ?? '').trim();
-      const confirmed = Boolean(values.plan_confirmed);
+      const confirmed = parseBooleanValue(values.plan_confirmed);
       if (!confirmed && !notes) {
         setLocalError('Confirm the plan is correct, or describe changes in Notes.');
         return;
@@ -408,8 +408,8 @@ function AgentFormPanel({
             <>
               <input
                 type="checkbox"
-                disabled={executionPolicy?.requires_live_approval && field.name === 'confirm_execute'}
-                checked={Boolean(values[field.name])}
+                disabled={liveApprovalRequired && field.name === 'confirm_execute'}
+                checked={parseBooleanValue(values[field.name])}
                 onChange={(e) => setValues((v) => ({ ...v, [field.name]: e.target.checked }))}
               />
               <span>{field.label}</span>
@@ -493,7 +493,7 @@ export function AgentChat() {
   const models = llmData?.models ?? [];
   const noModelsConfigured = !modelsError && models.length === 0;
   const canApproveLive = canApproveLiveExecution(session?.permissions);
-  const canOperateAgent = canOperate(session?.permissions) !== false;
+  const canOperateAgent = canOperate(session?.permissions);
   const accountKey = session?.user?.username ?? 'anonymous';
 
   const [profileId, setProfileId] = useState('');
@@ -510,7 +510,11 @@ export function AgentChat() {
   const [archivedThinking, setArchivedThinking] = useState<Record<number, StreamEvent[]>>({});
   const [streaming, setStreaming] = useState(false);
   const [thinkingComplete, setThinkingComplete] = useState(false);
+  /** Armed live-execution decision — CA-002 keeps approve/deny off a single click. */
+  const [liveDecision, setLiveDecision] = useState<'approve' | 'deny' | null>(null);
+  const [liveReason, setLiveReason] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
+  const focusedSessionId = agentSession?.session_id ?? null;
   const stickToBottomRef = useRef(true);
   const SCROLL_STICK_THRESHOLD_PX = 80;
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -563,6 +567,13 @@ export function AgentChat() {
       return next;
     });
   };
+
+  // An armed approve/deny belongs to the session it was armed in — never carry it across a
+  // session switch, where the next click would decide a live run the operator never read.
+  useEffect(() => {
+    setLiveDecision(null);
+    setLiveReason('');
+  }, [focusedSessionId]);
 
   const handleMessagesScroll = () => {
     const el = listRef.current;
@@ -1771,30 +1782,66 @@ export function AgentChat() {
       )}
 
       {agentSession?.live_approval_status === 'pending' && canApproveLive && (
-        <div style={{ marginBottom: 12, display: 'flex', gap: 8, padding: '0 16px' }}>
-          <button
-            type="button"
-            className="oai-button oai-button-primary"
-            onClick={() =>
-              approveAgentSession(agentSession.session_id, true).then((s) => {
-                setAgentSession(s);
-                pollSession(s.session_id);
-              })
-            }
-          >
-            Approve live run
-          </button>
-          <button
-            type="button"
-            className="oai-button oai-button-secondary"
-            onClick={() =>
-              approveAgentSession(agentSession.session_id, false, 'Denied').then((s) => {
-                setAgentSession(s);
-              })
-            }
-          >
-            Deny
-          </button>
+        <div style={{ marginBottom: 12, padding: '0 16px' }}>
+          {liveDecision ? (
+            <>
+              <textarea
+                className="oai-input"
+                rows={2}
+                placeholder="Reason (required)"
+                aria-label={`Reason for ${liveDecision === 'approve' ? 'approving' : 'denying'} the live run`}
+                value={liveReason}
+                onChange={(e) => setLiveReason(e.target.value)}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="oai-button oai-button-primary"
+                  disabled={!liveDecisionReady(liveReason)}
+                  onClick={() => {
+                    const approved = liveDecision === 'approve';
+                    approveAgentSession(agentSession.session_id, approved, liveReason.trim()).then(
+                      (s) => {
+                        setAgentSession(s);
+                        setLiveDecision(null);
+                        setLiveReason('');
+                        if (approved) pollSession(s.session_id);
+                      },
+                    );
+                  }}
+                >
+                  Confirm {liveDecision}
+                </button>
+                <button
+                  type="button"
+                  className="oai-button oai-button-secondary"
+                  onClick={() => {
+                    setLiveDecision(null);
+                    setLiveReason('');
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="oai-button oai-button-primary"
+                onClick={() => setLiveDecision('approve')}
+              >
+                Approve live run
+              </button>
+              <button
+                type="button"
+                className="oai-button oai-button-secondary"
+                onClick={() => setLiveDecision('deny')}
+              >
+                Deny
+              </button>
+            </div>
+          )}
         </div>
       )}
 
