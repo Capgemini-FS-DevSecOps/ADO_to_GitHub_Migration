@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-62 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, and GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, each with the next free id); the per-component placeholder each id
+63 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, and GAP-063 on 2026-09-13 from the live-approval replay review, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -22,13 +22,13 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 16 |
-| high | 26 |
+| high | 27 |
 | medium | 13 |
 | low | 7 |
-| **total** | **62** |
+| **total** | **63** |
 
 All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 62 entries carries at least one path:line citation or a reproduction command
+one of the 63 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -75,6 +75,7 @@ one of the 62 entries carries at least one path:line citation or a reproduction 
 | GAP-057 (GAP-ACC-08) | The Vertex credential probe could never pass: `google.auth.transport.requests` used without importing it | remediated |
 | GAP-058 (GAP-ACC-09) | T077 regression: the single-repo dry run probes credentials that were never merged and can report COMPLETED | remediated |
 | GAP-059 (GAP-UI-04) | Live and destructive console actions fire on a single click, three of them recording no reason | remediated |
+| GAP-063 (GAP-AUTH-08) | A client-quoted `live_approval_id` is verified by status alone, so an approval granted for one wave releases a live migration of any other | remediated |
 
 Zero critical or high entries remain in `open` or `disputed` except four: GAP-019
 (GAP-AUTH-03), GAP-024 (GAP-UI-02) and GAP-031 (GAP-PIPE-01) stay `open`, each awaiting an
@@ -1280,6 +1281,27 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - contract_change: false
 - follow_up: reproduce under load, then either give the agent `/health` route a bounded timeout around graph compilation or move the compile out of the request path entirely. No successor task filed.
 - closed_on: —
+
+### GAP-063 (GAP-AUTH-08) A client-quoted `live_approval_id` is verified by status alone, so an approval granted for one wave releases a live migration of any other
+
+- components: auth & RBAC, migration engine
+- violates: Principle V (Enterprise Migration Safeguards — CA-002, individual confirmation of a destructive/live operation: the confirmation an approver gave for one target releases a different one)
+- evidence (paths at `e250d0e`):
+  - `services/accelerator_api/main.py:429-433` — the route computes the correct scope one line earlier (`scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)`, `:425`) and then throws it away for the quoted-token branch: `row = store.db.get_live_execution_approval(req.live_approval_id)` followed by `approved = bool(row and row.get("status") == "approved")`. Neither `row["scope_type"]` nor `row["scope_id"]` is read, so any approved row in the table releases this run
+  - `ado2gh/api/accelerator.py:186-193` — the same check at the SDK choke point every migrate caller routes through (`Accelerator.run_wave`, the GAP-018 remediation): `if not row or row.get("status") != "approved"` and nothing else. Both call sites are status-only
+  - the sibling paths do check the scope, because they never take a client-supplied id: `services/accelerator_api/routes/migrate_guard.py:118` and `services/accelerator_api/routes/pipeline_routes.py:255` both call `LiveApprovalStore.has_approved(scope_type, scope_id)`, which is keyed on both columns (`ado2gh/api/live_approval_store.py:209-221` → `find_approved_live_execution_approval`, `ado2gh/state/sqlite_users_mixin.py:206-218`: `WHERE scope_type=? AND scope_id=? AND status='approved'`). The scope-bound query already existed; the quoted-token branch simply bypassed it
+  - the id is readable by the caller who would replay it: `services/accelerator_api/routes/approval_routes.py:56-77` (`GET /v1/platform/approvals/{approval_id}`) is gated by `require_operate` and lets a non-approver read any approval they opened themselves, returning `scope_type`, `scope_id` and `status` (`ado2gh/api/live_approval_store.py:72-96`, `_public_row`)
+  - reproduction: an authenticated OPERATOR posts `POST /v1/migrate {dry_run: false, wave_id: 1}`, is parked with `awaiting_approval` and an approval id, an approver approves it, and the operator then posts the same call with `wave_id: 2` (or a different `config_path`) quoting the granted `live_approval_id`. Wave 2 migrates live. The same row also satisfies a `pipeline_run`-scoped approval quoted against a migrate job, because `scope_type` is unread
+  - approvals are never consumed or expired, so `status == "approved"` stays true forever — the replay window is unbounded once one approval exists
+- severity: high (critical_test: — ). Critical test (a) is met on its face: a destructive, irreversible migration of a wave no-one confirmed proceeds on a confirmation given for a different target. It is rated high rather than critical under US3 scenario 3 ("meets critical test only in non-default configuration") because the branch is unreachable in the shipped default. `auth_enabled()` is false when `ADO2GH_AUTH_ENABLED` is unset (`ado2gh/auth/service.py:21-29`, and that is the value in `docker-compose.yml`), the accelerator middleware then attaches no identity (`services/accelerator_api/main.py:153-154`), and `operator_requires_live_approval` refuses an identity-less live run with 401 before any token is read (`ado2gh/api/platform_rbac.py:189-194`). Reaching line 431 at all requires `ADO2GH_AUTH_ENABLED=true` plus a signed-in role that can operate and cannot approve.
+- blast_radius: every hardened deployment (`ADO2GH_AUTH_ENABLED=true`) with at least one OPERATOR or COORDINATOR account. One approval, granted once for the smallest possible scope, becomes a standing licence to migrate any wave in any config against the active profile, for as long as the row exists. The approval record then misstates what was approved, so the audit trail reads as a correctly approved migration of wave 1 while wave 2 is what reached GitHub.
+- status: remediated
+- resolution: `LiveApprovalStore.is_approved_for(approval_id, *, scope_type, scope_id, actor)` (`ado2gh/api/live_approval_store.py`) is the single check both quoted-token callers now make: it matches `status`, `scope_type` and `scope_id` together, the same three columns `find_approved_live_execution_approval` already keyed on, and records a refusal as a `platform.live_execution.scope_mismatch` audit event through `write_profile_audit` — at the choke point rather than at each call site, so every caller that accepts a quoted token is audited by construction (CA-004, FR-025). Only scope identifiers reach the payload (CA-003). The route half of the gate moved out of `services/accelerator_api/main.py` into `require_migrate_live_approval` in `services/accelerator_api/routes/_shared.py`, beside `_execute_approved_migrate` which releases the same approvals; `main.py` was at 799 lines against the hard 800-line cap and is now 766. That gate builds the profile-aware scope with `migrate_scope_id(profile_id, wave_id, config_path)` and, once it has verified a quoted token, returns the request with `live_approval_id` cleared: `Accelerator.run_wave` re-checks a token against `migrate_scope_id(None, wave_id, config_path)` — the SDK has no settings store to resolve the active profile from — so leaving a verified token in place would let the profile-blind check overrule the profile-aware one. That mirrors `_execute_approved_migrate`, which already runs an approved request with the token excluded. `DRY_RUN` stays the default everywhere (CA-001). `is_approved_for` itself was swept into commit `ea028e5` by a concurrent agent editing the same file; the two call sites and the tests are in `3db1a4e`.
+- regression_check: `tests/auth/test_gap_063_live_approval_scope_match.py` — seven tests over both call sites. At the SDK choke point: a wave-1 approval refused for wave 2, the same wave refused under a different config, a `pipeline_run` approval refused for a migrate job, and the matching approval still running the wave. Over `POST /v1/migrate` with `ADO2GH_AUTH_ENABLED=true` and a signed-in OPERATOR (the only configuration in which the branch is reachable at all): the wave-2 replay and the `pipeline_run` replay both answered 403 `awaiting_approval` with `Accelerator.run_wave` never called, and the matching approval answered 200. `tests/unit/test_gap_018_live_approval_id.py` keeps its four cases, with its placeholder scope id replaced by the scope `run_wave` now rebuilds. Obvious fake ids only, no credential literal (CA-003).
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-063). `git stash push -- ado2gh/api/live_approval_store.py ado2gh/api/accelerator.py services/accelerator_api/main.py services/accelerator_api/routes/_shared.py`, then `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_063_live_approval_scope_match.py -q` → `5 failed, 2 passed` (the two that pass either way are the "matching approval is still accepted" cases, which the unfixed code accepts for the wrong reason). `git stash pop` restored the fix and the same command then reported `7 passed`.
+- contract_change: false — no route, request field, CLI command, table or environment variable changes. `live_approval_id` keeps its declared meaning; it simply has to be true.
+- follow_up: approvals are still neither consumed nor expired, so one granted approval remains replayable against its own scope indefinitely. Consuming an approval on use, or giving it a TTL, is a behaviour change for any deployment that reruns the same wave against one approval, so it needs an FR-024 decision rather than a quiet fix. Raised with this entry on 2026-09-13; no successor task filed.
+- closed_on: 2026-09-13
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 
