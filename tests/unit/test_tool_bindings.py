@@ -306,3 +306,31 @@ async def test_tool_error_drops_url_userinfo_and_query_credentials():
     assert "hunter2" not in result["detail"]
     assert "Zm9vYmFyYmF6" not in result["detail"]
     assert "/v1/ado/x" in result["detail"]
+
+
+# --- THR-06-007: call_accelerator defaulted to the mutating verb --------------
+
+
+def test_call_accelerator_schema_defaults_to_get():
+    """The schema the model sees is what actually supplies the default."""
+    from ado2gh.agents.migration_agent.tools.orchestrator_tools import CallAcceleratorArgs
+
+    assert CallAcceleratorArgs(endpoint="/v1/migrate/git-mirror").method == "GET"
+
+
+@pytest.mark.asyncio
+async def test_call_accelerator_without_a_method_does_not_write():
+    posted = []
+    seen, accel_get = _recorder()
+
+    async def accel_post(path, body, session_token=None):
+        posted.append(path)
+        return {"ok": True}
+
+    tools = get_executor_tools({"accel_get": accel_get, "accel_post": accel_post})
+    tool = next(t for t in tools if t.name == "call_accelerator")
+
+    await tool.ainvoke({"endpoint": "/v1/migrate/git-mirror"})
+
+    assert posted == []
+    assert seen == ["/v1/migrate/git-mirror"]

@@ -75,8 +75,8 @@ class CallAcceleratorArgs(BaseModel):
     """Arguments for an accelerator API call."""
 
     method: str = Field(
-        default="POST",
-        description="HTTP method: GET or POST",
+        default="GET",
+        description="HTTP method: GET or POST. Defaults to GET — pass POST explicitly to write.",
     )
     endpoint: str = Field(
         description=(
