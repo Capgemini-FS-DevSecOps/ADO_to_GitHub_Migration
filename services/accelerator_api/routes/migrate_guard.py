@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, Request
+from pydantic import TypeAdapter, ValidationError
 
 from ado2gh.api.contracts import LiveApprovalCreateRequest
 from ado2gh.api.platform_rbac import operator_requires_live_approval, platform_user
@@ -26,6 +27,12 @@ _SCOPE_FIELDS = (
     "connection_name", "feed_name", "wiki_name", "secret_name",
 )
 
+# Every request model on this router declares ``dry_run: bool``, so this adapter is
+# the parse the handler will apply to the same value. Reading the raw body with
+# ``bool()`` instead made ``"false"``, ``"0"`` and ``"off"`` dry runs to the guard
+# and live runs to the handler (GAP-065).
+_DRY_RUN = TypeAdapter(bool)
+
 
 def active_profile_id() -> str | None:
     """Identify the migration profile a live run should be recorded against.
@@ -39,6 +46,28 @@ def active_profile_id() -> str | None:
     except Exception:
         return None
     return active.id if active else None
+
+
+def _dry_run_flag(body: dict[str, Any]) -> bool:
+    """Read ``dry_run`` from a raw body exactly as the route's model will read it.
+
+    Args:
+        body: Parsed request body. A body that omits ``dry_run`` is a dry run —
+            every request model on this router defaults it to ``True``.
+
+    Returns:
+        The parsed flag: ``True`` for a dry run, ``False`` for a live migration.
+
+    Raises:
+        HTTPException: 422 when the value is one neither this guard nor the
+            request model can read. Guessing would mean the two disagree again.
+    """
+    try:
+        return _DRY_RUN.validate_python(body.get("dry_run", True))
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422, detail="dry_run must be a boolean",
+        ) from exc
 
 
 def _live_scope_id(path: str, body: dict[str, Any]) -> str:
@@ -97,9 +126,7 @@ async def guard_live_migration(request: Request) -> None:
         body = {}
     if not isinstance(body, dict):
         body = {}
-    # Every request model on this router defaults dry_run to True; a body that
-    # omits it is a dry run, not a live one.
-    dry_run = bool(body.get("dry_run", True))
+    dry_run = _dry_run_flag(body)
     user = platform_user(request)
     path = request.url.path
 
