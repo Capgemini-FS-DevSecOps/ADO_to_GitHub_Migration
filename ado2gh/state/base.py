@@ -101,7 +101,7 @@ class StateDBBase(ABC):
 
     @abstractmethod
     def mark_wave_run(
-        self, wave_id: int, status: str, mode: ExecutionMode = ExecutionMode.LIVE,
+        self, wave_id: int, status: str, mode: ExecutionMode = ExecutionMode.DRY_RUN,
     ) -> int:
         """Record the start or end of a wave run in ``wave_runs``.
 
@@ -110,7 +110,8 @@ class StateDBBase(ABC):
             status: ``"started"`` opens a new run; any other value closes the
                 open run with that status.
             mode: Whether the run is a preview; persisted as the boolean
-                ``dry_run`` column.
+                ``dry_run`` column. Defaults to ``DRY_RUN``, so a caller
+                recording a live run must say so (CA-001).
 
         Returns:
             The new run's row id when opening, ``-1`` when closing.

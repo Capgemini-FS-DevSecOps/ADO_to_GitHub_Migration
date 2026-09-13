@@ -368,7 +368,11 @@ class Accelerator:
         db = create_state_db(self.db_path)
         if not projects:
             projects = [p["name"] for p in ado.list_projects()]
-        project_summary = PipelineInventoryBuilder(ado, db, parallel=parallel).build_for_projects(
+        # The point of this scan is the persisted inventory the caller then reads,
+        # so it asks for LIVE rather than inheriting the dry-run default (GAP-078).
+        project_summary = PipelineInventoryBuilder(
+            ado, db, parallel=parallel, mode=ExecutionMode.LIVE,
+        ).build_for_projects(
             projects,
         )
         totals = summarize_project_inventory(project_summary)

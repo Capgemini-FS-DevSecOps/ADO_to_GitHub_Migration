@@ -369,7 +369,7 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
         return result
 
     def mark_wave_run(
-        self, wave_id: int, status: str, mode: ExecutionMode = ExecutionMode.LIVE,
+        self, wave_id: int, status: str, mode: ExecutionMode = ExecutionMode.DRY_RUN,
     ) -> int:
         """Open or close a ``wave_runs`` row; see :meth:`StateDBBase.mark_wave_run`.
 

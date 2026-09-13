@@ -20,7 +20,7 @@ class ScopeContext:
         ado: Azure DevOps client for the source organisation.
         gh: GitHub client for the target organisation.
         db: State store the handler records its rows against.
-        mode: `ExecutionMode.DRY_RUN` previews without writing to either side;
+        mode: `ExecutionMode.DRY_RUN` (the default) previews without writing to either side;
             `ExecutionMode.LIVE` performs the migration (CA-001).
         strategy: Repository migration strategy, `mirror` or `gei`.
         wave_id: Wave the resulting rows belong to.
@@ -31,7 +31,7 @@ class ScopeContext:
     ado: ADOClient
     gh: GHClient
     db: StateDBBase
-    mode: ExecutionMode = ExecutionMode.LIVE
+    mode: ExecutionMode = ExecutionMode.DRY_RUN
     strategy: str = DEFAULT_MIGRATION_STRATEGY
     wave_id: int = 0
     pipeline_parallel: int = 8

@@ -26,12 +26,12 @@ class WaveRunner:
         )
 
     def run_wave(self, wave: WaveConfig,
-                 mode: ExecutionMode = ExecutionMode.LIVE) -> dict:
+                 mode: ExecutionMode = ExecutionMode.DRY_RUN) -> dict:
         """Run every repository in one wave through the batch executor.
 
         Args:
             wave: Wave to execute.
-            mode: `ExecutionMode.DRY_RUN` simulates the wave;
+            mode: `ExecutionMode.DRY_RUN` (the default) simulates the wave;
                 `ExecutionMode.LIVE` performs it (CA-001).
 
         Returns:

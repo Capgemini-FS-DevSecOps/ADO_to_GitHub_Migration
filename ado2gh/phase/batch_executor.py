@@ -57,14 +57,14 @@ class BatchExecutor:
         self,
         phase: PhaseType,
         waves: list[WaveConfig],
-        mode: ExecutionMode = ExecutionMode.LIVE,
+        mode: ExecutionMode = ExecutionMode.DRY_RUN,
     ) -> dict:
         """Migrate every repo assigned to ``phase``, batch by batch, resuming from checkpoints.
 
         Args:
             phase: The phase whose waves are executed.
             waves: All configured waves; only those whose ``phase`` matches are run.
-            mode: ``DRY_RUN`` previews without checkpointing; ``LIVE`` migrates
+            mode: ``DRY_RUN`` (the default) previews without checkpointing; ``LIVE`` migrates
                 and checkpoints each batch.
 
         Returns:
@@ -151,7 +151,7 @@ class BatchExecutor:
     def execute_wave(
         self,
         wave: WaveConfig,
-        mode: ExecutionMode = ExecutionMode.LIVE,
+        mode: ExecutionMode = ExecutionMode.DRY_RUN,
         cancel_event: threading.Event | None = None,
         on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
     ) -> dict:
@@ -159,7 +159,8 @@ class BatchExecutor:
 
         Args:
             wave: The wave to run.
-            mode: ``DRY_RUN`` previews; ``LIVE`` migrates and records the wave run.
+            mode: ``DRY_RUN`` (the default) previews; ``LIVE`` migrates and records
+                the wave run.
             cancel_event: When set, no further repos are submitted and pending
                 ones are cancelled.
             on_repo_done: Called with ``"project/repo"``, the repo's result dict
@@ -269,5 +270,6 @@ class BatchExecutor:
             self.db.mark_wave_run(
                 wave.wave_id,
                 "completed" if result["failed"] == 0 else "partial",
+                mode,
             )
         return result

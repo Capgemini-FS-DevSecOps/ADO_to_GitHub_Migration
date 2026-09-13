@@ -124,13 +124,18 @@ def run_pipeline_inventory_scan(
 ) -> dict[str, Any]:
     """Deep pipeline inventory stored in StateDB for conversion and secrets mapping."""
     from ado2gh.api.state_db import create_state_db
+    from ado2gh.models import ExecutionMode
     from ado2gh.pipelines.inventory import PipelineInventoryBuilder
 
     ado = _build_ado_client(ado_org_url, ado_pat)
     db = create_state_db(db_path)
     if not projects:
         projects = [p["name"] for p in ado.list_projects() if p.get("name")]
-    summary = PipelineInventoryBuilder(ado, db, parallel=parallel).build_for_projects(
+    # The scan's whole product is the persisted inventory this function counts
+    # below, so it asks for LIVE rather than inheriting the dry-run default (GAP-078).
+    summary = PipelineInventoryBuilder(
+        ado, db, parallel=parallel, mode=ExecutionMode.LIVE,
+    ).build_for_projects(
         projects,
     )
     return {

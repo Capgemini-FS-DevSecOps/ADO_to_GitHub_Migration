@@ -21,6 +21,7 @@ def test_run_gei_uses_ado2gh_extension():
         ado=MagicMock(pat="ado-pat"),
         gh=MagicMock(),
         db=MagicMock(),
+        mode=ExecutionMode.LIVE,
         strategy="gei",
     )
     ctx.gh.token_manager.get_token.return_value = "gh-pat"
@@ -54,6 +55,7 @@ def test_run_gei_fails_when_target_repo_already_exists():
         ado=MagicMock(pat="ado-pat"),
         gh=MagicMock(),
         db=MagicMock(),
+        mode=ExecutionMode.LIVE,
         strategy="gei",
     )
     ctx.gh.token_manager.get_token.return_value = "gh-pat"

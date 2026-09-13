@@ -114,7 +114,7 @@ class RollbackHandler:
 
         elapsed = round(time.monotonic() - start, 2)
         if mode is ExecutionMode.LIVE:
-            self.db.mark_wave_run(wave.wave_id, "rolled_back")
+            self.db.mark_wave_run(wave.wave_id, "rolled_back", mode)
 
         log.info("Rollback wave %d done: %d scopes, %d repos deleted, "
                  "%d errors in %.1fs",

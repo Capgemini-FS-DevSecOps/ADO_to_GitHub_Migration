@@ -178,7 +178,8 @@ def test_phase_with_no_waves_runs_nothing(executor_env):
 def test_a_checkpoint_is_written_for_every_batch(executor_env):
     """Each batch leaves one completed checkpoint row, and the resume cursor moves with it."""
     repos = _repos(REPO_COUNT)
-    executor_env.executor.execute_phase(PhaseType.POC, [_wave(1, PhaseType.POC, repos)])
+    executor_env.executor.execute_phase(
+        PhaseType.POC, [_wave(1, PhaseType.POC, repos)], mode=ExecutionMode.LIVE)
 
     rows = _checkpoints(executor_env.db, PhaseType.POC)
     assert [row["batch_num"] for row in rows] == list(range(EXPECTED_BATCHES))
@@ -200,7 +201,7 @@ def test_resume_skips_the_batches_already_checkpointed(executor_env):
     ))
 
     summary = executor_env.executor.execute_phase(
-        PhaseType.POC, [_wave(1, PhaseType.POC, repos)])
+        PhaseType.POC, [_wave(1, PhaseType.POC, repos)], mode=ExecutionMode.LIVE)
 
     assert summary["batches_skipped"] == 1
     assert summary["batches_run"] == EXPECTED_BATCHES - 1
@@ -214,7 +215,7 @@ def test_resume_skips_the_batches_already_checkpointed(executor_env):
     # Re-running a phase whose every batch is checkpointed does no work at all.
     executor_env.calls.clear()
     again = executor_env.executor.execute_phase(
-        PhaseType.POC, [_wave(1, PhaseType.POC, repos)])
+        PhaseType.POC, [_wave(1, PhaseType.POC, repos)], mode=ExecutionMode.LIVE)
     assert again["batches_run"] == 0
     assert again["batches_skipped"] == EXPECTED_BATCHES
     assert executor_env.calls == []

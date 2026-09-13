@@ -19,12 +19,12 @@ class ADOCleanup:
     3. Archive (disable) the ADO repo to prevent further commits
     """
 
-    def __init__(self, ado: ADOClient, mode: ExecutionMode = ExecutionMode.LIVE) -> None:
+    def __init__(self, ado: ADOClient, mode: ExecutionMode = ExecutionMode.DRY_RUN) -> None:
         """Wire the cleanup to an ADO client and an execution mode.
 
         Args:
             ado: Azure DevOps client for the source organisation.
-            mode: `ExecutionMode.DRY_RUN` reports what each action would do and
+            mode: `ExecutionMode.DRY_RUN` (the default) reports what each action would do and
                 changes nothing; `ExecutionMode.LIVE` performs it (CA-001).
         """
         self.ado = ado

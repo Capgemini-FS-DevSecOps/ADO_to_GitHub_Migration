@@ -102,15 +102,15 @@ class PipelineInventoryBuilder:
 
     def __init__(self, ado: ADOClient, db: StateDBBase,
                  parallel: int = 12,
-                 mode: ExecutionMode = ExecutionMode.LIVE) -> None:
+                 mode: ExecutionMode = ExecutionMode.DRY_RUN) -> None:
         """Prepare a builder for one scan.
 
         Args:
             ado: Client used to read pipelines from Azure DevOps.
             db: State store the inventory rows are written to.
             parallel: Number of worker threads used to enrich pipelines.
-            mode: ``LIVE`` writes each pipeline to the state store,
-                ``DRY_RUN`` scans and reports without writing.
+            mode: ``DRY_RUN`` (the default) scans and reports without writing;
+                ``LIVE`` writes each pipeline to the state store.
         """
         self.ado       = ado
         self.db        = db

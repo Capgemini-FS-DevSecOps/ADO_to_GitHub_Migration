@@ -54,7 +54,7 @@ def push_repo_workflows(  # noqa: PLR0913
     branch: str = "ado2gh/migrated-workflows",
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
-    mode: ExecutionMode = ExecutionMode.LIVE,
+    mode: ExecutionMode = ExecutionMode.DRY_RUN,
     db: StateDBBase | None = None,
 ) -> dict[str, Any]:
     """Push the locally generated workflow YAML for one repository.
@@ -74,8 +74,8 @@ def push_repo_workflows(  # noqa: PLR0913
         base: Base branch for the pull request; the repository default when
             omitted.
         pr_title: Title of the pull request that carries the workflows.
-        mode: ``LIVE`` pushes to GitHub, ``DRY_RUN`` only lists what would be
-            pushed.
+        mode: ``DRY_RUN`` (the default) only lists what would be pushed;
+            ``LIVE`` pushes to GitHub.
         db: State store the readiness assessment is read from. A live push with
             no store fails closed, because readiness cannot be established.
 
@@ -200,7 +200,7 @@ def push_workflows_for_repos(  # noqa: PLR0913
     branch: str = "ado2gh/migrated-workflows",
     base: str | None = None,
     pr_title: str = "Add migrated GitHub Actions workflows",
-    mode: ExecutionMode = ExecutionMode.LIVE,
+    mode: ExecutionMode = ExecutionMode.DRY_RUN,
     db: StateDBBase | None = None,
 ) -> int:
     """Commit the local workflow YAML to every destination repository.
@@ -213,8 +213,8 @@ def push_workflows_for_repos(  # noqa: PLR0913
         base: Base branch for each pull request; the repository default when
             omitted.
         pr_title: Title of the pull requests that carry the workflows.
-        mode: ``LIVE`` pushes to GitHub, ``DRY_RUN`` only lists what would be
-            pushed.
+        mode: ``DRY_RUN`` (the default) only lists what would be pushed;
+            ``LIVE`` pushes to GitHub.
         db: State store supplying the readiness assessment that gates each live
             push.
 

@@ -117,4 +117,4 @@ def test_rollback_wave_mode_is_still_settable():
     RollbackHandler(gh, db).rollback_wave(wave, mode=ExecutionMode.LIVE)
 
     assert gh.delete_repo.called
-    db.mark_wave_run.assert_called_once_with(1, "rolled_back")
+    db.mark_wave_run.assert_called_once_with(1, "rolled_back", ExecutionMode.LIVE)
