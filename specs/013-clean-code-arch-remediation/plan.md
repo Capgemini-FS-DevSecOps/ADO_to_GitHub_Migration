@@ -345,6 +345,45 @@ session-local control tools' read classification) and one is recorded as a resid
 (context-window trimming preserves system messages unconditionally but non-system ones only
 from the tail).
 
+**2026-09-13 — batch R10b, the agent's tool package and its prompt-building nodes.** Nine
+findings from the same threat-model hook artefact, remediated across
+`ado2gh/agents/migration_agent/tools/*.py`, `nodes/planner_research.py`,
+`nodes/validator_investigation.py` and `nodes/intent.py`. Registered as GAP-089 through
+GAP-096, all `remediated`; GAP-086, which R10a had to leave `open` because the file belongs
+to this batch, is closed here. Three fix commits: `4b154ba` puts every join of a fixed API
+prefix and a model-chosen endpoint through one `join_api_path` helper that normalises the
+path the way httpx and uvicorn will and refuses anything that no longer resolves under the
+prefix (THR-05-001, reproduced against the installed httpx 0.28.1), encodes `ref`,
+`workflow_path` and ADO project names (THR-05-002), replaces every `return {"error":
+str(e)}` with a typed, redacted error (THR-02-003) and caps decoded repository file content
+(THR-01-002, tool half). `ad218c5` adds
+`ado2gh/agents/migration_agent/untrusted.py`, the single envelope that redacts through
+`ado2gh.audit.redaction`, caps and fences externally-sourced data before it enters a prompt,
+and applies it at the planner research loop, the validator investigation context and loop,
+and the discovery repo-name line (THR-02-001, THR-01-001 data half, THR-01-002 prompt half,
+THR-01-004); it also replaces the `/discovery` substring test that seeded durable session
+state with an exact, percent-decoded route match plus a response-shape check (THR-04-001).
+`3fb44df` flips the `call_accelerator` schema default from POST to GET (THR-06-007). Each
+fix has a failing-then-passing test and a path-limited stash revert proof
+(`run-r10b-revert-tools.txt` 18 failed/10 passed, `run-r10b-revert-nodes.txt` 18 failed/33
+passed, `run-r10b-revert-get.txt` 2 failed). Verification on the post-fix tree:
+`run-r10b-targeted.txt` (`tests/agent tests/unit -k "tool or planner or validator or intent
+or untrusted"`, 191 passed / 4 skipped), `run-r10b-regression.txt` (executor, guardrail,
+validator and PEV-loop suites, 81 passed / 2 skipped), ruff clean on `ado2gh/` and
+`services/`, mypy `ado2gh/` Success, and the snapshot, 800-line and orphan guards all pass
+(`run-r10b-guards.txt`). No full-suite run was taken in this pass. Two read-only Codex
+`gpt-5.6-terra` reviews ran before the first commit (`run-r10b-codex.txt`,
+`run-r10b-codex2.txt`); four findings were applied — URL userinfo and opaque query
+credentials that `redact_text` does not name, a `%2F` mismatch in the discovery gate, the
+raw `str(exc)` still left in the validator's tool loop, and the same three defects in
+`_execute_planner_tool_call`'s dormant duplicate branches — and one was accepted as a
+documented residual on GAP-089 (a reverse proxy performing a second percent-decode would
+invalidate the containment check, since the returned path is deliberately left encoded).
+Three halves stay open for the batches that own those files and are recorded as follow-ups:
+`nodes/orchestrator_tools.py`'s duplicate prefix joins and `/discovery` substring test,
+`nodes/planner.py`'s unfenced first-turn prompt, and the agent routes' raw exception
+returns.
+
 
 ## Technical Context
 

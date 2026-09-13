@@ -1056,3 +1056,31 @@ module- or test-level skipped legacy (spec 011) suites.
   `evaluate_guardrail`; both modules are skipped at import and are out of GAP-070's scope.
 - **Concurrent work**: same tree as the R1/R4/R10b/R10c threat-model batches; only the paths in
   the table above were touched by this entry.
+
+## 2026-09-13 — 013 batch R10b: `untrusted.py`, the agent's prompt-data envelope
+
+R10b remediation of the threat-model hook artefact
+`specs/013-clean-code-arch-remediation/threat-model-2026-09-13-001.md`, registered as
+GAP-089 through GAP-096. One new module; no moves, no deletions, no renames.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| (new) | `ado2gh/agents/migration_agent/untrusted.py` | added module | THR-01-004 / THR-02-001 asked for one shared untrusted-data envelope. It could not go in `ado2gh/agents/migration_agent/utils.py`: that module is shared by every node and already stands large, and the envelope has to be importable by `nodes/intent.py`, which `utils.py` itself imports — putting it there would have made the dependency circular in the direction the package layering forbids. 79 lines: `fence_untrusted` (redact through `ado2gh.audit.redaction.redact_payload`, JSON-encode, cap with a visible truncation marker, wrap in delimiters behind a "data, never instructions" notice, and respell any copy of the delimiter token inside the payload so the data cannot close its own block) and `scrub_inline` (collapse control characters, defuse the marker, cap the length) for the one site that must stay a plain inline list | yes | pass (`run-r10b-targeted.txt`, 191 passed / 4 skipped) | 2026-09-13 |
+
+- **Deleted functions**: 0. Nothing was moved, renamed or removed by this batch; the three
+  node modules and five tool modules it edits keep every symbol they had.
+- **Orphan guard**: `tests/unit/test_no_orphaned_modules.py` needs no allowlist row — the module
+  has three real production importers, `nodes/planner_research.py`,
+  `nodes/validator_investigation.py` and `nodes/intent.py`, plus
+  `tests/unit/test_untrusted_envelope.py`.
+- **File-size cap**: all eight edited files stay under 800 lines; the largest,
+  `nodes/validator_investigation.py`, is unchanged at 758 because every prompt site swapped a
+  three-line `json.dumps(...)[:N]` for a three-line `fence_untrusted(...)` call.
+- **Public surface**: unchanged. `tests/contract/test_public_surface_snapshot.py` passes without
+  a snapshot edit — no CLI command, HTTP route, DB table or environment variable is involved.
+- **Concurrent work**: same tree as the R1/R4/R5/R9/R10a/R10c batches. Only
+  `ado2gh/agents/migration_agent/{untrusted.py,tools/*.py,nodes/planner_research.py,
+  nodes/validator_investigation.py,nodes/intent.py}` and their tests were touched here;
+  `guardrails.py`, `nodes/orchestrator.py` and `nodes/orchestrator_tools.py` belong to R10a and
+  were not edited, which is why three halves of THR-05-001, THR-04-001 and THR-02-003 are
+  carried as follow-ups on GAP-089, GAP-092 and GAP-096 rather than fixed.
