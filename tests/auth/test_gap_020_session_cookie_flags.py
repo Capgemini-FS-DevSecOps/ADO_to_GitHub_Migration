@@ -12,9 +12,10 @@ place it is revoked. The register records two defects in that block:
    copy and the server copy of the session can drift apart.
 
 These tests assert both properties end to end through the accelerator's ``/v1/auth``
-routes: the cookie carries ``Secure`` exactly when the deployment is HTTPS (directly or
-via ``X-Forwarded-Proto``) and never over plain local HTTP, its ``Max-Age`` tracks the
-expiry the service issued, and logout clears it with matching attributes.
+routes: the cookie carries ``Secure`` exactly when the deployment is HTTPS (directly,
+or via ``X-Forwarded-Proto`` where ``ADO2GH_TRUSTED_PROXY`` declares a proxy — GAP-074)
+and never over plain local HTTP, its ``Max-Age`` tracks the expiry the service issued,
+and logout clears it with matching attributes.
 
 CA-003: no test here reads or records the cookie *value*; every assertion is on the
 attributes of the ``Set-Cookie`` header. Credentials below are obvious fakes.
@@ -39,6 +40,7 @@ def accel(tmp_path, monkeypatch):
     """Accelerator app with an isolated auth store and a bootstrapped admin."""
     monkeypatch.setenv("ADO2GH_AUTH_ENABLED", "true")
     monkeypatch.setenv("ADO2GH_STORAGE_BACKEND", "sqlite")
+    monkeypatch.delenv("ADO2GH_TRUSTED_PROXY", raising=False)
     db_path = tmp_path / "gap020_auth.db"
     monkeypatch.setenv("ADO2GH_SQLITE_PATH", str(db_path))
     monkeypatch.setenv("ADO2GH_DATA_DIR", str(tmp_path))
@@ -88,7 +90,9 @@ def test_login_cookie_is_secure_over_https(accel):
     assert morsel["secure"], "session cookie must carry Secure on an HTTPS deployment"
 
 
-def test_login_cookie_is_secure_behind_a_tls_terminating_proxy(accel):
+def test_login_cookie_is_secure_behind_a_tls_terminating_proxy(accel, monkeypatch):
+    """GAP-074 narrowed this: the header counts only where a proxy has been declared."""
+    monkeypatch.setenv("ADO2GH_TRUSTED_PROXY", "true")
     client = _client(accel)
     _bootstrap(client)
 

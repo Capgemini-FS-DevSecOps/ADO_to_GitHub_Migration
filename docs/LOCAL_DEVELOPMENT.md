@@ -212,6 +212,7 @@ For local testing without cloud APIs:
 | Backend | `ADO2GH_STORAGE_BACKEND=sqlite` | `postgres` |
 | Auth | Off by default | `ADO2GH_AUTH_ENABLED=true` |
 | Internal token | Not needed while auth is off | `ADO2GH_INTERNAL_TOKEN=<random secret>`, the same value on the accelerator and the agent |
+| TLS at the edge | Not applicable — plain HTTP | `ADO2GH_TRUSTED_PROXY=true` when a reverse proxy terminates TLS, so the session cookie takes `Secure` from that proxy's `X-Forwarded-Proto` (last hop); left unset, forwarding headers are ignored |
 | Bootstrap | Optional | `/login?bootstrap=1` for first admin |
 
 `ADO2GH_INTERNAL_TOKEN` is required whenever `ADO2GH_AUTH_ENABLED=true`. It is the shared

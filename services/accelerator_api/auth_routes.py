@@ -7,11 +7,14 @@ admin-only user administration endpoints.
 Sessions are carried in an HTTP-only, same-site cookie rather than in the
 response body, so no token value is ever readable from JavaScript or visible in
 a payload. The cookie is additionally marked ``Secure`` whenever the request
-arrived over HTTPS, and expires exactly when the server-side session does. Passwords are accepted only on the way in and are stored hashed;
+arrived over HTTPS — or, behind a proxy declared with ``ADO2GH_TRUSTED_PROXY``,
+whenever that proxy says it did — and expires exactly when the server-side
+session does. Passwords are accepted only on the way in and are stored hashed;
 neither a password nor a session token appears in any response documented here.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -127,21 +130,87 @@ def _onboarding_redirect() -> str | None:
     return None
 
 
+def _trusted_proxy() -> bool:
+    """Report whether a trusted reverse proxy fronts this service (GAP-074).
+
+    Returns:
+        True when ``ADO2GH_TRUSTED_PROXY`` is set to ``1``, ``true`` or ``yes``.
+        Only then is any forwarding header believed; unset — the shipped
+        default — means the service is assumed to be reachable directly.
+    """
+    return os.environ.get("ADO2GH_TRUSTED_PROXY", "").lower() in ("1", "true", "yes")
+
+
+def _last_hop(request: Request, header: str) -> str:
+    """Read what the closest hop wrote into a forwarding header.
+
+    A hop may extend the comma list in an existing field or append a whole
+    second field of the same name, so the last element of the last field is the
+    only value the declared proxy is answerable for. ``Headers.get`` would
+    return the *first* field, which is the one a client can plant.
+
+    Args:
+        request: Incoming request the response is being built for.
+        header: Lower-case name of the forwarding header to read.
+
+    Returns:
+        The last element, stripped, or ``""`` when the header is absent or blank.
+    """
+    values = [value for value in request.headers.getlist(header) if value.strip()]
+    return values[-1].rsplit(",", 1)[-1].strip() if values else ""
+
+
+def _forwarded_proto(request: Request) -> str:
+    """Read the protocol the closest proxy reported, lower-cased.
+
+    Only the last hop counts — see :func:`_last_hop`; everything before it was
+    supplied by whatever called that proxy. ``X-Forwarded-Proto`` is preferred;
+    RFC 7239 ``Forwarded`` is read as a fallback for proxies that emit only the
+    standard header.
+
+    Args:
+        request: Incoming request the response is being built for.
+
+    Returns:
+        ``"https"``, ``"http"`` or whatever the proxy wrote, and ``""`` when no
+        forwarding header carried a protocol.
+    """
+    xfp = _last_hop(request, "x-forwarded-proto")
+    if xfp:
+        return xfp.lower()
+    for param in _last_hop(request, "forwarded").split(";"):
+        name, _, value = param.partition("=")
+        if name.strip().lower() == "proto":
+            return value.strip().strip('"').lower()
+    return ""
+
+
 def _is_https_deployment(request: Request) -> bool:
     """Decide whether this request reached the platform over HTTPS (GAP-020).
 
-    The deployment is treated as HTTPS when the request scheme says so, or when
-    a TLS-terminating proxy in front of the service says so via
-    ``X-Forwarded-Proto`` — the repo ships no manifest that terminates TLS
-    itself, so the forwarded header is the only signal such a deployment has.
-    No new environment variable gates this: the transport the caller actually
-    used is a better answer than a flag someone has to remember to set.
+    The transport the request actually arrived on decides, because a forwarding
+    header is just a request header: any client can send one. Without
+    ``ADO2GH_TRUSTED_PROXY`` the header is therefore ignored outright, so a
+    caller can neither drop ``Secure`` off its session cookie over real HTTPS
+    nor claim HTTPS it does not have (GAP-074).
 
-    Plain HTTP therefore stays plain on purpose. ``docker compose up`` serves
-    the console on ``:3000`` against the API on ``:8080`` over HTTP, and a
-    browser silently drops a ``Secure`` cookie on such an origin, so marking it
-    ``Secure`` there would lock every local operator out. A client that forges
-    the header over HTTP only makes its own cookie unusable.
+    A deployment that terminates TLS at a reverse proxy sets
+    ``ADO2GH_TRUSTED_PROXY=true``; the proxy's own value — the last hop, see
+    :func:`_forwarded_proto` — is then believed in both directions, since that
+    operator has declared the hop trustworthy and stands behind it stripping or
+    overwriting whatever the client sent.
+
+    Plain HTTP stays plain on purpose. ``docker compose up`` serves the console
+    on ``:3000`` against the API on ``:8080`` over HTTP, and a browser silently
+    drops a ``Secure`` cookie on such an origin, so marking it ``Secure`` there
+    would lock every local operator out.
+
+    One caveat this function cannot cover: uvicorn's own proxy-header middleware
+    is on by default and rewrites ``scope["scheme"]`` from ``X-Forwarded-Proto``
+    for clients it considers trusted (``127.0.0.1`` unless ``FORWARDED_ALLOW_IPS``
+    says otherwise), which happens before any route runs. A deployment that
+    serves TLS from uvicorn directly should launch it with ``--no-proxy-headers``
+    so this flag stays the only switch.
 
     Args:
         request: Incoming request the response is being built for.
@@ -149,9 +218,11 @@ def _is_https_deployment(request: Request) -> bool:
     Returns:
         True when the session cookie may be marked ``Secure``.
     """
-    forwarded = request.headers.get("x-forwarded-proto", "")
-    proto = forwarded.split(",")[0].strip() if forwarded else request.url.scheme
-    return proto.lower() == "https"
+    if _trusted_proxy():
+        proto = _forwarded_proto(request)
+        if proto:
+            return proto == "https"
+    return request.url.scheme.lower() == "https"
 
 
 def _set_session_cookie(response: Response, request: Request, session: AuthSession) -> None:
