@@ -355,8 +355,9 @@ class DynamoDBJobStore(JobStore):
             table_name: DynamoDB table holding the jobs.
             region: AWS region of the table.
             endpoint_url: Override for a local DynamoDB endpoint.
-            audit_writer: Where claim conflicts are audited; the default writer
-                is built from the configured state store on first conflict.
+            audit_writer: Where claim conflicts are audited. ``JobStoreFactory``
+                injects the writer over the configured state store; without one
+                a conflict is logged as ``job.audit_unavailable`` instead.
         """
         import boto3
 
@@ -509,14 +510,22 @@ class DynamoDBJobStore(JobStore):
         """Log and audit a job another worker claimed first (CA-004).
 
         The audit payload names the job only — never its payload or any
-        credential inside it (CA-003).
+        credential inside it (CA-003). Without a writer the conflict is still
+        logged, under ``job.audit_unavailable`` so the missing row is visible.
         """
         logger.warning(
             "DynamoDB job claim conflict: job %s was already claimed by another worker",
             record.id,
         )
+        if self._audit_writer is None:
+            logger.warning(
+                "job.audit_unavailable: no audit writer was injected into the dynamodb job "
+                "store, so the claim conflict for job %s is logged and not audited",
+                record.id,
+            )
+            return
         try:
-            self._audit().write(
+            self._audit_writer.write(
                 event_type="job.claim_conflict",
                 profile_id="",
                 actor="job-worker",
@@ -528,15 +537,6 @@ class DynamoDBJobStore(JobStore):
             )
         except Exception:  # a lost audit must not fail the worker; the warning above stands
             logger.exception("Could not audit the job claim conflict for %s", record.id)
-
-    def _audit(self) -> AuditWriter:
-        """Return the audit writer, building the default one on first use."""
-        if self._audit_writer is None:
-            from ado2gh.audit import AuditWriter as _AuditWriter
-            from ado2gh.state.factory import create_state_db
-
-            self._audit_writer = _AuditWriter(create_state_db())
-        return self._audit_writer
 
     def complete(self, job_id: str, result: dict | None = None) -> None:
         """Mark a job ``completed`` and store its result; unknown ids are ignored."""
@@ -557,6 +557,33 @@ class DynamoDBJobStore(JobStore):
         rec.error = error
         rec.updated_at = datetime.now(timezone.utc)
         self._save(rec)
+
+
+def _configured_audit_writer() -> AuditWriter | None:
+    """Return an audit writer over the configured state store, or ``None``.
+
+    ``ADO2GH_STORAGE_BACKEND`` picks the job store and the state store together,
+    so the deployment that reaches here has asked for a DynamoDB state store,
+    which does not exist: the factory refuses it and there is nowhere to audit.
+    That refusal is reported once, at construction, rather than swallowed per
+    conflict — the job store then logs each conflict it cannot audit.
+
+    Returns:
+        An ``AuditWriter`` over the configured state store, or ``None`` when the
+        configured backend has no state store to write to.
+    """
+    from ado2gh.audit import AuditWriter as _AuditWriter
+    from ado2gh.state.factory import create_state_db
+
+    try:
+        return _AuditWriter(create_state_db())
+    except ValueError as exc:
+        logger.warning(
+            "job.audit_unavailable: the configured storage backend has no state store "
+            "(%s), so dynamodb job claim conflicts will be logged and not audited",
+            exc,
+        )
+        return None
 
 
 class JobStoreFactory:
@@ -580,7 +607,9 @@ class JobStoreFactory:
 
         if cfg.backend == StorageBackend.DYNAMODB:
             jobs_table = os.environ.get("ADO2GH_DYNAMODB_JOBS_TABLE", f"{cfg.dynamodb_table}-jobs")
-            return DynamoDBJobStore(jobs_table, cfg.aws_region, endpoint)
+            return DynamoDBJobStore(
+                jobs_table, cfg.aws_region, endpoint, audit_writer=_configured_audit_writer(),
+            )
 
         job_path = os.environ.get("ADO2GH_JOB_DB", cfg.sqlite_path)
         return SQLiteJobStore(job_path)
