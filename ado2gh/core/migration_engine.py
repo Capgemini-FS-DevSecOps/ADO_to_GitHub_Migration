@@ -33,7 +33,7 @@ class MigrationEngine:
         ado: ADOClient,
         gh: GHClient,
         db: StateDBBase,
-        mode: ExecutionMode = ExecutionMode.LIVE,
+        mode: ExecutionMode = ExecutionMode.DRY_RUN,
         concurrency: ConcurrencyManager | None = None,
         assignment_id: str | None = None,
         allowed_repo_keys: set[str] | None = None,
@@ -46,8 +46,9 @@ class MigrationEngine:
             ado: Azure DevOps client used to read the source repositories.
             gh: GitHub client used to create and populate the targets.
             db: State store recording per-scope migration rows.
-            mode: `ExecutionMode.DRY_RUN` previews without writing anything;
-                `ExecutionMode.LIVE` performs the migration (CA-001).
+            mode: `ExecutionMode.DRY_RUN` (the default) previews without
+                writing anything; `ExecutionMode.LIVE` performs the
+                migration and must be asked for explicitly (CA-001).
             concurrency: Shared slot manager; built from `global_cfg` when omitted.
             assignment_id: Cohort assignment this run belongs to, if any.
             allowed_repo_keys: When set, only these `project/repo` keys may be

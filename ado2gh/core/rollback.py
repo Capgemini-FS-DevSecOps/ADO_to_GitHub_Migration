@@ -39,14 +39,15 @@ class RollbackHandler:
         self.ado = ado
 
     def rollback_wave(self, wave: WaveConfig,
-                      mode: ExecutionMode = ExecutionMode.LIVE,
+                      mode: ExecutionMode = ExecutionMode.DRY_RUN,
                       scopes: list[str] | None = None) -> dict:
         """Roll back a wave, optionally limited to specific scopes.
 
         Args:
             wave: Wave to roll back.
-            mode: `ExecutionMode.DRY_RUN` logs what would happen and touches
-                nothing; `ExecutionMode.LIVE` performs the rollback (CA-001).
+            mode: `ExecutionMode.DRY_RUN` (the default) logs what would happen
+                and touches nothing; `ExecutionMode.LIVE` performs the
+                rollback and must be asked for explicitly (CA-001).
             scopes: If set, only rollback these scopes (e.g., ["branch_policies", "pipelines"]).
                     If None, rollback everything including repo deletion.
 
