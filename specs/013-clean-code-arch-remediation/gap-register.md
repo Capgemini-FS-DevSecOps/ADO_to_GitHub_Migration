@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-75 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, and GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, each with the next free id); the per-component placeholder each id
+79 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, and GAP-076 through GAP-079 on 2026-09-13 from the Sol `ExecutionMode` review, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -22,13 +22,13 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 20 |
-| high | 33 |
-| medium | 14 |
-| low | 8 |
-| **total** | **75** |
+| high | 34 |
+| medium | 16 |
+| low | 9 |
+| **total** | **79** |
 
 All 20 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 75 entries carries at least one path:line citation or a reproduction command
+one of the 79 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -86,6 +86,7 @@ one of the 75 entries carries at least one path:line citation or a reproduction 
 | GAP-072 (GAP-AUTH-12) | Approval scopes dropped falsy identifiers, so wave 0 was every wave and an empty profile was the default one | remediated |
 | GAP-073 (GAP-TOKEN-07) | The live-approval context was persisted without masking, so a credential posted into the queue survived verbatim | remediated |
 | GAP-075 (GAP-ACC-11) | Feature-route live approvals were profile-blind, so a grant under one profile released the same route under every other | remediated |
+| GAP-076 (GAP-AGT-07) | A plan whose `dry_run` key was present and null read as a request to run live, and the value came from the planner model | remediated |
 
 Zero critical or high entries remain in `open` or `disputed` except six: GAP-019
 (GAP-AUTH-03), GAP-024 (GAP-UI-02) and GAP-031 (GAP-PIPE-01) stay `open`, each awaiting an
@@ -107,6 +108,12 @@ the obvious shape is a new environment variable, which is an FR-024 contract cha
 GAP-075 carries one residual left open inside a remediated entry: `POST
 /v1/platform/approvals` still takes `profile_id` from the client, which steers attribution
 and the scope label but not the executor.
+
+The four entries opened on 2026-09-13 from the Sol `ExecutionMode` review do not change it
+either. GAP-076 (high) and GAP-077 (medium) are `remediated` in the same pass; GAP-078 is
+`medium` and `open`, held against the same FR-024 default-execution-mode decision as GAP-018
+and GAP-068, and GAP-079 is `low` and `open`. The open critical-and-high set is still the
+same six.
 
 ## Disputes
 
@@ -1559,6 +1566,80 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-071..073), evidence at `run-gap-075-revert.txt`. With `services/accelerator_api/routes/migrate_guard.py` stashed, `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_075_feature_route_scope_includes_profile.py -q` reported `3 failed` in 4.63s. `git stash pop` restored the tree; `git stash list` held only `stash@{0}: a5fbb01 test(GAP-012)`.
 - contract_change: false — `_live_scope_id` is module-private and the scope id is an internal identifier, not a frozen name. No route, request field, CLI command, table or environment variable moved; `tests/contract/public_surface_snapshot.json` is unchanged.
 - closed_on: 2026-09-13 (remediated with the residual above left open)
+
+### GAP-076 (GAP-AGT-07) A plan whose `dry_run` key was present and null read as a request to run live, and the value came from the planner model
+
+- components: agent service
+- violates: Principle V (Enterprise Migration Safeguards, NON-NEGOTIABLE — CA-001, dry run is the default and live execution requires an explicit decision); Principle IV (a field that carries "no decision" being read as a decision)
+- evidence:
+  - `ado2gh/agents/migration_agent/policies.py:328` at the time of the finding — `plan_dry = bool((migration_plan or {}).get("dry_run", session_dry))`. The two-argument `get` falls back only when the key is *absent*, so a key present with value `None` skips the session fallback entirely, and `bool(None)` is `False` — which in this codebase means live.
+  - measured before the fix: with session `{"dry_run": True, "permissions": {"can_approve_live_execution": True}}`, `resolve_execution_dry_run(session, {"dry_run": None})` returned `False` (live) while `resolve_execution_dry_run(session, {})` returned `True`.
+  - the null originates in the planner model's own JSON: `ado2gh/agents/migration_agent/nodes/planner_plan_builders.py:239` copied `parsed["dry_run"]` into the plan unvalidated, and `finalize_agent_migration_plan` (`ado2gh/agents/migration_agent/nodes/executor/plan.py:234`) computed `bool(plan.get("dry_run", ...))` into a local it never wrote back, so the plan went on carrying the raw model value.
+  - `ado2gh/agents/migration_agent/nodes/executor/node.py:145` resolves the mode once here and `:179` assigns the result to `session["dry_run"]`, so one null flag disarms every downstream guardrail — all of which key off that field — for the rest of the session. That is the mechanism GAP-006 (GAP-AGT-01) recorded for plan-level `dry_run`, and `resolve_execution_dry_run` is the function written to close it.
+  - the same coercion read as authority in three more places, found by the Codex `gpt-5.6-terra` review of the fix diff and confirmed by reading: `ado2gh/agents/migration_agent/guardrails.py:196` and `:218` (`if session and session.get("dry_run", True):` — a present `None` is falsy, so the accelerator-write and GitHub-write blocks do not fire); `ado2gh/agents/migration_agent/session/store.py:275` and the `update_session` column adapter at `:46` (`1 if value else 0`), which persist a falsy non-boolean as `dry_run=0`; and `ado2gh/agents/migration_agent/session/lifecycle.py:183` (`dry_run=bool(session.get("dry_run", True))`), which runs immediately after `register_http_session` inside `persist_session_snapshot` and would have re-written a corrected row back to live.
+  - guard: taking the run live still needs a session that already holds live authority — `resolve_execution_dry_run` ends at `can_execute_live_without_approval` — so the plan value alone cannot escalate an operator who has no live rights. Measured: the same null plan against `{"dry_run": True, "permissions": {}}` stayed `True`.
+- severity: high. It violates CA-001 — a NON-NEGOTIABLE principle — in the default configuration, which is the FR-019 definition of high. Not critical: the null flag alone does not reach a live migration, because the session must already carry `can_approve_live_execution`; what it removes for that operator is the per-run decision, not the approval gate. Rated above GAP-077, which is the same coercion on the validator's copy of the field, because this is the value the executor runs on and writes back to the session, and because its input is model output rather than platform state.
+- blast_radius: every agent session whose operator may take runs live without a second approver. From the moment a plan carries a null flag the resolved value is written onto the session, and the session stays live for every later cycle — repository mirroring, secret provisioning and workflow pushes included — with no operator confirmation recorded for the change of mode.
+- status: remediated
+- resolution: applied 2026-09-13 by Claude (opus subagent, GAP-076), commit `7d53d9a`. `coerce_dry_run` (`ado2gh/agents/migration_agent/utils.py:23`) is now the single reader of the field: only a real `True`/`False` counts as a decision and anything else yields the caller's safe default, so `None`, `"false"` and `0` can no longer be coerced into "live". `resolve_execution_dry_run` (`ado2gh/agents/migration_agent/policies.py:329`) coalesces an unspecified plan flag to the session's mode and leaves the live-authority check untouched; `_plan_dry_run_from_llm` (`ado2gh/agents/migration_agent/nodes/planner_plan_builders.py:182`) pins the plan to a dry run and logs when the model returns a non-boolean, and inherits the session's mode when the key is absent; `finalize_agent_migration_plan` (`ado2gh/agents/migration_agent/nodes/executor/plan.py:241`) writes the normalised boolean back, so every later reader sees a real bool on the plan. The three authority reads found in review were fixed in the same commit and the same way — `guardrails.py:198`/`:220`, `session/store.py:46`/`:275` and `session/lifecycle.py:183` now treat only an explicit `False` as live. Fixed rather than deferred because it is contract-neutral — no signature, route, column or default changed shape — and the direction of the fix is the one CA-001 already mandates.
+- regression_check: `tests/unit/test_gap_076_plan_dry_run_none.py` — 24 tests across the whole chain: a null and a `"false"` plan flag keep an approve-permissioned session dry; `False` with that permission still goes live and `False` without it still does not; the validator resolver falls through a malformed flag to the next source instead of coercing it; the planner normalises what the model returned and `finalize_agent_migration_plan` writes a real boolean back; the accelerator and GitHub write guards still block on `None`, `0`, `""` and `"false"`; and both persistence paths keep a malformed flag as `dry_run=1` while an explicit `False` still persists as `0`.
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-076), evidence at `run-gap-076-revert.txt`. With the seven source files stashed, `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_076_plan_dry_run_none.py -q` reported `13 failed, 11 passed` in 4.37s; the 11 that pass either way are the existing-behaviour guards — a real boolean still decides, in both directions — which is what makes them the no-regression half. `git stash pop` restored the tree; `git stash list` held only `stash@{0}: a5fbb01 test(GAP-012)`.
+- contract_change: false — `coerce_dry_run` is a new internal helper inside the agent package and no public signature changed. No route, request field, CLI command, table or environment variable moved; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-077 (GAP-AGT-08) `resolve_dry_run` read a present-but-null flag as live, so a dry run could be validated as though it had written to GitHub
+
+- components: agent service
+- violates: Principle V (CA-001 — the same unsafe coercion as GAP-076, on the validator's copy of the flag); Principle IV (two readers of one field disagreeing about what "unset" means)
+- evidence:
+  - `ado2gh/agents/migration_agent/utils.py:31` at the time of the finding — `if isinstance(executor_result, dict) and "dry_run" in executor_result: return bool(executor_result.get("dry_run"))`, and the same shape for the plan at `:33`. Presence of the key is taken as a decision, so a present `None` returns `False`.
+  - measured before the fix: `resolve_dry_run({"dry_run": True}, migration_plan={"dry_run": None})` returned `False`, and the same with `executor_result={"dry_run": None}`.
+  - callers are `ado2gh/agents/migration_agent/nodes/validator.py:67`/`:101` and `nodes/validator_investigation.py:216`/`:379`/`:588` — the validator's own view of the run. No live write follows the value, which is what separates this entry from GAP-076.
+- severity: medium. The consequence is a wrong validation, not a wrong migration: `_build_validator_investigation_context` switches to the "LIVE RUN" framing and drops the executor's simulated per-repo results as non-evidentiary, so the validator reports on evidence it does not have and an operator reads a live-run verdict for a dry run. Rated medium rather than high because nothing destructive, no approval and no persisted artefact keys off this value; the FR-019 "violates a principle in the default configuration" clause would otherwise argue high, and a reviewer who weighs the misleading verdict more heavily should contest it through the Disputes table rather than by re-rating here.
+- blast_radius: every PEV cycle's validation step, in both dry-run and live sessions, whenever the plan or the executor result carries a malformed flag. Bounded to the validator's narrative and findings; the executor's own mode is resolved separately by `resolve_execution_dry_run` (GAP-076).
+- status: remediated
+- resolution: applied 2026-09-13 by Claude (opus subagent, GAP-076), commit `7d53d9a`, in the same change as GAP-076 because it is the same coercion. `resolve_dry_run` (`ado2gh/agents/migration_agent/utils.py:43`) now walks executor result → plan → session and returns the first source carrying a real boolean, skipping a malformed flag instead of coercing it; the default with no usable source anywhere is still `True`.
+- regression_check: `tests/unit/test_gap_076_plan_dry_run_none.py` — a null plan flag, a null executor flag, a `"false"` string and a session with no flag at all all resolve to dry-run, while a real `False` in the executor result still wins over a `True` plan, which is the precedence `tests/unit/test_validator_dry_run.py::test_resolve_dry_run_prefers_executor_result` pins.
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-076); same run as GAP-076 (`run-gap-076-revert.txt`), in which the three `resolve_dry_run` tests are among the 13 failures with the fix stashed.
+- contract_change: false — `resolve_dry_run` keeps its name, parameters and return type. No route, request field, CLI command, table or environment variable moved; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-078 (GAP-ENG-10) Ten more `ExecutionMode` parameters still default to `LIVE`, beyond the two GAP-068 records
+
+- components: migration engine, phase orchestration, pipeline transformation, state persistence
+- violates: Principle V (CA-001 — dry run is the default and live execution requires an explicit decision)
+- evidence:
+  - `mode: ExecutionMode = ExecutionMode.LIVE`, verified at each line in this tree: `ado2gh/core/ado_cleanup.py:22` (`ADOCleanup.__init__`), `ado2gh/core/scopes/base.py:34` (`ScopeContext.mode`), `ado2gh/core/wave_runner.py:29` (`run_wave`), `ado2gh/phase/batch_executor.py:60` (`execute_phase`) and `:154` (`execute_wave`), `ado2gh/pipelines/inventory.py:105` (`PipelineInventoryBuilder.__init__`), `ado2gh/pipelines/push_workflows.py:57` and `:203` (single-repo and multi-repo workflow push), `ado2gh/state/base.py:104`, `ado2gh/state/sqlite_db.py:416` and `ado2gh/state/postgres_db.py:372` (`record_wave_run` in the abstract base and both backends).
+  - the two entries GAP-068 (GAP-ENG-09) already records — `ado2gh/core/migration_engine.py:36` and `ado2gh/core/rollback.py:42` — are excluded here; together the twelve are every `ExecutionMode` parameter default in the package.
+  - shipped call sites: every one passes `mode=` explicitly except `PipelineInventoryBuilder(ado, db, parallel=parallel)` at `ado2gh/api/accelerator.py:371` and `ado2gh/api/migration_scan.py:133`, which therefore run with `LIVE`. Both were read: the mode gates a local StateDB write in the inventory builder, not an ADO or GitHub mutation, so no shipped path performs an unconfirmed remote write through these defaults today.
+  - the `wave_runs.dry_run` column is declared `INTEGER NOT NULL DEFAULT 0` in both schemas (`ado2gh/state/sqlite_db.py:54`, `ado2gh/state/postgres_db.py:51`) — a schema-level default of "live" for a safety column. It is unexercised, because every `INSERT` supplies the value (`sqlite_db.py:429`, `postgres_db.py:386`, both serialising `int(mode is ExecutionMode.DRY_RUN)`), so it is recorded here as evidence of the same polarity choice rather than as a defect of its own; the same FR-024 decision should settle it.
+  - raised by the Codex `gpt-5.6-terra` `ExecutionMode` review (`run-codex-sol-executionmode.txt`), which rated the four live-capable ones — `wave_runner`, both `batch_executor` entry points, `push_workflows` and `scopes/base` — blockers.
+- severity: medium. Held below GAP-068's high on the driver's rating: unlike `MigrationEngine.__init__` and `rollback_wave`, these are not the package's public migrate and rollback entry points, no shipped caller omits the argument, and the fix is gated on the same operator decision that already holds GAP-018 and GAP-068 open, so re-rating would add nothing actionable. Recorded plainly: on GAP-068's own reasoning — "the gap is the unsafe default, not a present unconfirmed migration" — the four live-capable defaults above would rate high, and a reviewer who wants them re-rated should use the Disputes table rather than edit this line.
+- blast_radius: future call sites and external SDK consumers, not the current tree. A new caller that omits the argument gets a live wave run, a live phase or wave batch, a live workflow push to GitHub or a live ADO cleanup, with nothing at the signature to make the omission visible in review.
+- status: open
+- resolution: none applied. Flipping all ten to `ExecutionMode.DRY_RUN` is one line each, but it inverts the behaviour of any out-of-tree caller that relies on the current default — the same FR-024 contract change already put to the operator for GAP-018 (GAP-CLI-03) and GAP-068 (GAP-ENG-09). Deciding these ten separately from those would be deciding one policy three times, so they are recorded against the same decision.
+- regression_check: none yet. Whichever way the decision goes the check is the same shape for each signature — call it with no mode argument and assert the resulting mode — and it should be written with the fix.
+- revert_proof: not applicable; no fix applied.
+- contract_change: true (proposed, not applied) — changing the default of public constructor and method parameters. To be put to the operator together with GAP-018 and GAP-068, under `plan.md` § Approved contract changes.
+- follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-076) from the Sol `ExecutionMode` review. Extends GAP-068 to the rest of the package; no separate successor task filed, because the fix is gated on the same operator decision.
+
+### GAP-079 (GAP-ACC-12) Two request models pin `dry_run` to a boolean, so the configured `dry_run_default` behind them can never apply
+
+- components: agent service, accelerator service
+- violates: Principle IV (a setting the console presents as governing the default has no path to the value it governs)
+- evidence:
+  - `services/agent/routes/session_routes.py:59` — `dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default`, but `SessionRequest.dry_run` is declared `bool = True` at `services/agent/routes/_helpers.py:75`, so the field is never `None` and the `else` branch is unreachable. A request that omits `dry_run` gets the model's `True`, not the profile's `dry_run_default`.
+  - `services/accelerator_api/routes/pipeline_routes.py:212` — the same shape: `dry = req.dry_run if req.dry_run is not None else adv.dry_run_default`, with `PipelineRunStartRequest.dry_run` declared `bool = True` at `ado2gh/api/contracts.py:557`.
+  - both were verified by reading the two models and the two routes in this tree. Both fail *safe*: the unreachable branch would have supplied a configured default that may be either value, and what actually applies is `True`, which is dry-run. What is lost is the setting, not the safeguard.
+  - raised by the Codex `gpt-5.6-terra` `ExecutionMode` review (`run-codex-sol-executionmode.txt`), which rated both major on the strength of the dead branch.
+- severity: low. No safety consequence in either direction — the effective value is dry-run, which is what CA-001 asks for — and no caller is misled about what ran, because the resolved value is echoed back in the response and persisted. The defect is that an operator who sets `dry_run_default: false` on a profile or in advanced settings sees it silently ignored by clients that omit the field, and that two routes carry a branch that cannot execute.
+- blast_radius: profile `dry_run_default` and the advanced `dry_run_default` setting, for any client that omits `dry_run` — the console always sends it, so this is API consumers and future callers.
+- status: open
+- resolution: none applied. The fix is to declare both fields `bool | None = None` and keep the boundary fallback that is already written, which is two lines. It is recorded rather than applied because changing the declared type and default of a request field is a change to the shipped HTTP contract (FR-024), and because the same edit changes what an omitted field means for every existing client of `POST /v1/sessions` and the pipeline-run start route — from "dry run" to "whatever this deployment configured".
+- regression_check: none yet. The check is a request with `dry_run` omitted against a profile configured `dry_run_default: false`, asserting the session is created live, plus the converse for the pipeline route.
+- revert_proof: not applicable; no fix applied.
+- contract_change: true (proposed, not applied) — the declared type and default of two request fields.
+- follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-076) from the Sol `ExecutionMode` review. No successor task filed.
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 

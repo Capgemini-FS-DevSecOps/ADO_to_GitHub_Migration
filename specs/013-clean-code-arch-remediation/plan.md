@@ -213,6 +213,42 @@ untracked `scripts/dev/` scratch files. The public-surface snapshot, the 800-lin
 and the orphan-module guard all pass (`run-gap-071-guards.txt`). The ratchet is left at 62:
 62.61 % is the same rounded point it already names.
 
+**Addendum (2026-09-13) — the Sol `ExecutionMode` review appended four more entries.** The
+figures above are superseded: the register now holds **79 gaps: 20 critical, 34 high, 16
+medium, 9 low**, counted from its own `- severity:` and `- status:` lines (79 of each, one
+per entry). The review classified 433 `ExecutionMode` sites — 114 boundary conversions, 98
+plumbing, 176 persistence and 45 defaults — and cleared all but the four below; its one
+pre-merge blocker was a null `dry_run` reaching the agent's live/dry-run reconciliation:
+
+| Id | Title | Severity | Status |
+|----|-------|----------|--------|
+| GAP-076 (GAP-AGT-07) | A plan whose `dry_run` key was present and null read as a request to run live, and the value came from the planner model | high | remediated |
+| GAP-077 (GAP-AGT-08) | `resolve_dry_run` read a present-but-null flag as live, so a dry run could be validated as though it had written to GitHub | medium | remediated |
+| GAP-078 (GAP-ENG-10) | Ten more `ExecutionMode` parameters still default to `LIVE`, beyond the two GAP-068 records | medium | open |
+| GAP-079 (GAP-ACC-12) | Two request models pin `dry_run` to a boolean, so the configured `dry_run_default` behind them can never apply | low | open |
+
+GAP-076 is remediated, so **all 20 critical entries remain remediated**. Of the 34 high
+entries, 27 are remediated, 2 are deferred by decision (GAP-018, GAP-022) and **6 are open**
+— the same six as the previous addendum: GAP-019, GAP-024, GAP-031, GAP-054, GAP-068,
+GAP-069. GAP-078 and GAP-079 are medium and low, so the open-high set is unchanged and the
+**"zero critical or high gaps open" bar is still not met for the same cause it has never
+been met** — operator decisions on FR-024 contract changes, not unfixed defects. GAP-078 is
+held against that same decision: it extends GAP-068 from `MigrationEngine` and
+`rollback_wave` to the other ten `ExecutionMode` parameter defaults, and deciding it
+separately would be deciding one policy three times. Its evidence also records the
+`wave_runs.dry_run` column's schema default of `0` (live) in both backends, unexercised
+because every `INSERT` supplies the value.
+
+Measured at the GAP-076 fix commit `7d53d9a`: `ruff check ado2gh/ services/` — the same 4
+FBT001/FBT002 findings on the two route parameters held for the FR-024 decision, nothing
+new; `mypy ado2gh/` — `Success: no issues found in 195 source files`; the targeted run over
+`tests/agent` and `tests/unit` for the touched areas — **281 passed, 6 skipped**
+(`run-gap-076-targeted.txt`); the public-surface snapshot, the 800-line file cap and the
+orphan-module guard all pass (`run-gap-076-guards.txt`). No full-suite run was taken in this
+pass — the concurrent GAP-071…GAP-075 pass ran one at `run-gap-071-full.txt` and two
+full runs against the same tree deadlock — so the coverage figure and the ratchet are
+unchanged from the addendum above.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
