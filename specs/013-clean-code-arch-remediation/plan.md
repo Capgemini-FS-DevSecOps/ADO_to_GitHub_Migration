@@ -96,6 +96,30 @@ replacing it: `ruff` is pinned to `target-version = "py311"` and `mypy` to
 annotations under 3.11 semantics whatever interpreter runs them. Firing the workflow itself
 still requires opening a pull request.
 
+**Addendum (2026-09-13) — the register grew after T095 measured it.** The gap-register figures
+above were accurate at the completion commit and are left as measured; two later review passes
+appended seven entries, so the register now holds **61 gaps: 16 critical, 26 high, 13 medium,
+6 low**. `902f27e` registered GAP-055…GAP-058 from the T077 behaviour review and `aa6d17a`
+registered GAP-059…GAP-061 from the console safeguard review. Counted from the register's own
+`status:` lines, the **26 high** entries are **20 remediated, 2 deferred** (GAP-018, GAP-022)
+**and 4 open** (GAP-019, GAP-024, GAP-031, GAP-054) — the same four operator-blocked gaps named
+above; all 16 critical entries remain remediated. The seven additions:
+
+| Id | Title | Severity | Status |
+|----|-------|----------|--------|
+| GAP-055 (GAP-CLI-06) | `ado2gh service-connections` writes an empty manifest: the generator is handed repo objects, not project names | high | remediated |
+| GAP-056 (GAP-ACC-07) | The step-label fallback imports `_PIPELINE_STEP_INDEX` from a module that does not have it | low | remediated |
+| GAP-057 (GAP-ACC-08) | The Vertex credential probe could never pass: `google.auth.transport.requests` used without importing it | high | remediated |
+| GAP-058 (GAP-ACC-09) | T077 regression: the single-repo dry run probes credentials that were never merged and can report COMPLETED | high | remediated |
+| GAP-059 (GAP-UI-04) | Live and destructive console actions fire on a single click, three of them recording no reason | high | remediated |
+| GAP-060 (GAP-UI-05) | Agent chat transcripts and thinking events persist in localStorage and are never purged on logout | medium | remediated |
+| GAP-061 (GAP-UI-06) | A stored proxy password cannot be cleared from the console: a blank field always re-sends the keep sentinel | medium | open |
+
+No addition opens a new critical or high gap — the only one of the seven still `open`,
+GAP-061, is medium. The **"zero critical or high gaps open" bar is therefore still not met**,
+for exactly the four operator-blocked gaps already listed: GAP-019, GAP-024, GAP-031 and
+GAP-054.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
