@@ -110,6 +110,23 @@ export function clearSessionTurnThinking(
   keys.forEach((key) => localStorage.removeItem(key));
 }
 
+/**
+ * Drop every cached agent artefact this browser holds, for all profiles and accounts.
+ *
+ * Chat transcripts and thinking events carry tool-call metadata about the operator's ADO
+ * and GitHub estate (CA-003), so they must not outlive the session that produced them —
+ * call this on logout, before the next operator can reach the same browser profile.
+ */
+export function clearAgentStorage() {
+  if (typeof localStorage === 'undefined') return;
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('ado2gh-agent-')) keys.push(key);
+  }
+  keys.forEach((key) => localStorage.removeItem(key));
+}
+
 /** Read a session's cached thinking events; empty array when missing or unparseable. */
 export function loadCachedThinking(
   profileId: string,

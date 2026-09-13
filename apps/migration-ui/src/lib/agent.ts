@@ -114,7 +114,8 @@ export type AgentFormField = {
   required?: boolean;
   description?: string;
   placeholder?: string;
-  recommended_value?: string | boolean;
+  /** Always a string on the wire — the agent service stringifies it, so `False` arrives as `"False"`. */
+  recommended_value?: string;
 };
 
 export type AgentPendingForm = {

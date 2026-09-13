@@ -32,6 +32,16 @@ describe('platformLoginRequired', () => {
     };
     expect(platformLoginRequired(status, null)).toBe(true);
   });
+
+  it('requires sign-in whatever the platform reports for auth_enabled', () => {
+    // Both branches land on the same answer, which is why the `auth_enabled` test was
+    // removed as dead; this pins that removing it changed nothing.
+    for (const auth_enabled of [true, false]) {
+      expect(
+        platformLoginRequired({ needs_bootstrap: false, auth_enabled, message: '' }, null),
+      ).toBe(true);
+    }
+  });
 });
 
 describe('platformLoginPath', () => {

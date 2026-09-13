@@ -163,8 +163,8 @@ export function platformLoginRequired(
 ): boolean {
   if (session?.authenticated) return false;
   if (status.needs_bootstrap) return true;
-  if (REQUIRE_AUTH || status.auth_enabled) return true;
-  // Users exist in the platform store — protected routes need a session even in open-dev API mode.
+  // Users exist in the platform store — protected routes need a session even in open-dev
+  // API mode, so neither REQUIRE_AUTH nor status.auth_enabled can relax this.
   return true;
 }
 

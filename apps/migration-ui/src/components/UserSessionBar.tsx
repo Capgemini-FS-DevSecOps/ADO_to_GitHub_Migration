@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { clearAgentStorage } from '@/lib/agentSessions';
 import {
   fetchBootstrapStatus,
   fetchSession,
@@ -38,6 +39,8 @@ export function UserSessionBar() {
 
   const handleLogout = async () => {
     await logout();
+    // CA-003: cached transcripts and thinking events must not survive for the next operator.
+    clearAgentStorage();
     window.location.href = '/login';
   };
 
