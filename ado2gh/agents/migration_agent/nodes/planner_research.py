@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import unquote
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -21,6 +21,7 @@ from ado2gh.agents.migration_agent.utils import (
     _parse_llm_json,
     canonical_repo_id,
 )
+from ado2gh.audit.redaction import redact_payload
 from ado2gh.models import ExecutionMode
 
 if TYPE_CHECKING:
@@ -52,9 +53,9 @@ def _discovery_snapshot(endpoint: str, result: object) -> dict[str, Any] | None:
         result: The decoded tool result.
 
     Returns:
-        The result when the endpoint is exactly the profile discovery route and
-        the body has the shape the snapshot readers expect (a ``repos`` list),
-        otherwise ``None``.
+        A masked copy of the result when the endpoint is exactly the profile
+        discovery route and the body has the shape the snapshot readers expect
+        (a ``repos`` list), otherwise ``None``.
     """
     # Matched against the decoded path, because that is what the accelerator
     # routes on: `profiles/a%2Fb/discovery` is two segments there, not one.
@@ -63,7 +64,10 @@ def _discovery_snapshot(endpoint: str, result: object) -> dict[str, Any] | None:
         return None
     if not isinstance(result, dict) or not isinstance(result.get("repos"), list):
         return None
-    return result
+    # Masked here, not at the prompt: the snapshot is durable session state that
+    # the graph checkpointer persists (`graph/state.py`, `graph/builder.py`), so
+    # the fence on the model's copy never sees these bytes (THR-02-001).
+    return cast("dict[str, Any]", redact_payload(result))
 
 
 async def _execute_planner_tool_call(

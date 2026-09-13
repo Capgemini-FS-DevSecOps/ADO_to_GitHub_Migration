@@ -451,3 +451,27 @@ async def test_execute_planner_tool_call_rejects_a_forged_discovery_path():
         None,
     )
     assert session["discovery_snapshot"] == {"repos": [{"name": "poisoned"}]}
+
+
+@pytest.mark.asyncio
+async def test_discovery_snapshot_is_redacted_before_it_enters_session_state():
+    """The snapshot is checkpointed, so the fence on the prompt copy is not enough."""
+    from ado2gh.agents.migration_agent.nodes.planner_research import _execute_planner_tool_call
+
+    pat = "z" * 52
+
+    async def accel(path, session_token=None):
+        return {"repos": [{"name": "a"}], "ado_pat": pat, "note": f"token={pat}"}
+
+    session: dict = {}
+    await _execute_planner_tool_call(
+        {"name": "call_accelerator", "arguments": {"endpoint": "/v1/settings/profiles/p1/discovery"}},
+        session,
+        accel,
+        None,
+    )
+
+    stored = json.dumps(session["discovery_snapshot"])
+    assert pat not in stored
+    assert "***" in stored
+    assert session["discovery_snapshot"]["repos"] == [{"name": "a"}]
