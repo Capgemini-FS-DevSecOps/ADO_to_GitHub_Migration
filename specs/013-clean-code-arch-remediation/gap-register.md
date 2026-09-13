@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-63 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, and GAP-063 on 2026-09-13 from the live-approval replay review, each with the next free id); the per-component placeholder each id
+64 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, and GAP-064 on 2026-09-13 from the log-handler masking review, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -21,14 +21,14 @@ table below rather than by re-rating an entry here.
 
 | Severity | Count |
 |----------|-------|
-| critical | 16 |
+| critical | 17 |
 | high | 27 |
 | medium | 13 |
 | low | 7 |
-| **total** | **63** |
+| **total** | **64** |
 
-All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 63 entries carries at least one path:line citation or a reproduction command
+All 17 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
+one of the 64 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -76,6 +76,7 @@ one of the 63 entries carries at least one path:line citation or a reproduction 
 | GAP-058 (GAP-ACC-09) | T077 regression: the single-repo dry run probes credentials that were never merged and can report COMPLETED | remediated |
 | GAP-059 (GAP-UI-04) | Live and destructive console actions fire on a single click, three of them recording no reason | remediated |
 | GAP-063 (GAP-AUTH-08) | A client-quoted `live_approval_id` is verified by status alone, so an approval granted for one wave releases a live migration of any other | remediated |
+| GAP-064 (GAP-TOKEN-06) | Exception objects and tracebacks reach the log handler unmasked | remediated |
 
 Zero critical or high entries remain in `open` or `disputed` except four: GAP-019
 (GAP-AUTH-03), GAP-024 (GAP-UI-02) and GAP-031 (GAP-PIPE-01) stay `open`, each awaiting an
@@ -1301,6 +1302,24 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-063). `git stash push -- ado2gh/api/live_approval_store.py ado2gh/api/accelerator.py services/accelerator_api/main.py services/accelerator_api/routes/_shared.py`, then `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_063_live_approval_scope_match.py -q` → `5 failed, 2 passed` (the two that pass either way are the "matching approval is still accepted" cases, which the unfixed code accepts for the wrong reason). `git stash pop` restored the fix and the same command then reported `7 passed`.
 - contract_change: false — no route, request field, CLI command, table or environment variable changes. `live_approval_id` keeps its declared meaning; it simply has to be true.
 - follow_up: approvals are still neither consumed nor expired, so one granted approval remains replayable against its own scope indefinitely. Consuming an approval on use, or giving it a TTL, is a behaviour change for any deployment that reruns the same wave against one approval, so it needs an FR-024 decision rather than a quiet fix. Raised with this entry on 2026-09-13; no successor task filed.
+- closed_on: 2026-09-13
+
+### GAP-064 (GAP-TOKEN-06) Exception objects and tracebacks reach the log handler unmasked
+
+- components: token management & audit writing, tooling & guards
+- violates: Principle V (Enterprise Migration Safeguards, NON-NEGOTIABLE — CA-003: secret values masked in all messages, logs and audit records; FR-025: one masking choke point)
+- evidence:
+  - `ado2gh/logging_config.py:32` (pre-fix, commit `e250d0e`) — the filter's entire treatment of a record's arguments is `redact_payload(record.args)`, and the choke point's own docstring states the property that defeats it: "Types the walker does not recognise pass through untouched" (`ado2gh/audit/redaction.py`, `redact_payload`). An exception object is such a type. Reproduction on that tree: `redact_payload(('x', Exception('...ghp_AAAA…')))` returns the exception unchanged, and the handler then renders it with `%s`
+  - `ado2gh/core/migration_engine.py:205-207` — the live call site: `log.error("scope %s failed for %s/%s: %s", scope, repo.ado_project, repo.ado_repo, exc)`. Every scope failure in a wave run logs the exception object itself; a `requests` transport error carries the failing URL in its message, and the remote URLs this platform builds put the PAT in the userinfo or the query string
+  - the filter never read `record.exc_info` at all, and the root handler installed in the same module is `RichHandler(rich_tracebacks=True)`. `rich.logging.RichHandler.emit` (rich 14.3.3, the version in `.venv`) rebuilds the traceback from `record.exc_info` via `Traceback.from_exception(exc_type, exc_value, exc_traceback, ...)` whenever it is set, so `log.exception(...)` printed the live exception's own arguments with no masking pass anywhere in that path
+  - measured 2026-09-13 on `e250d0e`, the filter followed by `logging.Formatter("%(message)s")`: a record built from `("scope %s failed: %s", ("git", ValueError("push rejected: https://ghp_AAAA…@github.com/o/r.git")))` rendered the fake token in clear, and the same exception passed as `exc_info` printed it again inside the traceback. Obvious fake token (CA-003)
+- severity: critical (critical_test: b). Same rule and same reading as GAP-010 (GAP-TOKEN-01) and GAP-011 (GAP-AGT-02), which this register already rates critical under (b) for the identical shape — a recognised secret value reaching a sink unmasked. (b) is met directly: the sink is the process's default console log, reached in the default configuration by any wave run whose scope raises. (a), (c) and (e) are not met — nothing destructive runs, no migration state is written or lost, and no two components disagree on a contract. (d) was considered and rejected: the filter's `except` branch does fail safe; the defect is that the ordinary path never saw the secret at all.
+- blast_radius: every process that imports `ado2gh.logging_config` — CLI, accelerator, agent and the queue worker all log through the single root handler it installs. Two shapes reach it: an exception logged as a `%s` argument (the engine's per-scope failure handler is the one live example, but any `except ... as exc: log.*(..., exc)` in the tree has the same property) and any `log.exception` / `exc_info=True` traceback. Whether a token is actually disclosed depends on the exception carrying one — a `requests`, `subprocess` or `git` error quoting a remote URL is the realistic case, and that is exactly the failure the engine's handler catches. Bounded to log output: the audit writer was already masked through `redact_payload` and is unaffected.
+- status: remediated
+- resolution: fixed in the filter, the one place every record passes through, rather than at the engine's call site. `SecretRedactingFilter` now (1) renders the message itself with `record.getMessage()` and redacts the resulting text, which catches a secret whatever the argument's type, rewriting `msg` and clearing `args` only when the redaction changed something; and (2) pre-formats `record.exc_info` with `logging.Formatter().formatException`, redacts it, and hands it on as `record.exc_text` with `record.exc_info` cleared. Clearing `exc_info` is required rather than incidental: RichHandler re-renders from it whenever it is set and would reach the unmasked exception objects, so masking those objects in place is not available — the cost is the rich traceback rendering, and only for the records that carry a secret, which the function's docstring records. The pre-existing `redact_payload` walk over `record.args` stays: a secret *key name* inside a structured argument (`{"gh_token": ...}`) is invisible once the message is rendered, so the two passes are complementary. `redact_text(str) -> str` was lifted out of `redact_payload`'s string branch in `ado2gh/audit/redaction.py` so the choke point stays single and callers holding rendered text get a `str` back instead of `object`; `redact_payload` delegates to it and its behaviour is unchanged.
+- regression_check: `tests/unit/test_gap_064_logging_masks_exceptions.py` — five tests over the real filter and a real `logging.Formatter`: an exception passed as a `%s` argument renders masked; a record with `exc_info` gets a masked traceback and a cleared `exc_info`, with `ValueError` still visible so redaction is not swallowing the traceback; plain string arguments and a secret-named mapping key stay masked (the two pre-existing behaviours); and a record with no secret keeps its `args`, its `msg` format string and its `exc_info`, so the rich traceback survives. Obvious fake credentials only (CA-003).
+- revert_proof: `git stash push -- ado2gh/logging_config.py ado2gh/audit/redaction.py ado2gh/audit/__init__.py` from commit `ba5cc5a`, then `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_064_logging_masks_exceptions.py -p no:cacheprovider -q` → `2 failed, 3 passed in 3.80s`, the failures being `test_exception_passed_as_a_log_argument_is_masked` and `test_traceback_from_exc_info_is_masked`, each on the assertion that the fake token is absent from the rendered output; then `git stash pop`. `git stash list` afterwards holds only the unrelated pre-existing `stash@{0}: a5fbb01 test(GAP-012)` entry, which was not touched. With the fix in place: `5 passed`. Taken 2026-09-13 (UTC) by Claude (opus subagent, GAP-064).
+- contract_change: false — no route, CLI command, table or environment variable changed; `tests/contract/public_surface_snapshot.json` is unchanged and its guard passes. `redact_text` is an addition to `ado2gh.audit`, not a change to anything already exported.
 - closed_on: 2026-09-13
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
