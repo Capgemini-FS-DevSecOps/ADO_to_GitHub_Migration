@@ -166,6 +166,50 @@ def test_client_supplied_agent_live_approved_cannot_release_a_pending_run(operat
     start_async.assert_called_once()
 
 
+def test_pending_live_run_is_queued_not_started_by_start(operator_client, tmp_path):
+    """``/start`` routes an unapproved live run into the queue, and says so (GAP-066).
+
+    ``awaiting_approval`` was the only status ``/start`` questioned, so a live run
+    sitting at ``pending`` — the status ``PipelineRunStore.create`` assigns before
+    anything decides whether it may go live — went straight to the runner. The
+    refusal also has to leave a record an operator can act on (CA-004), which is
+    the same approval-queue entry the create route raises.
+    """
+    from ado2gh.api.pipeline_runner import PipelineRunStore
+    from ado2gh.state.audit_query import AuditEventFilters
+
+    client, start_async = operator_client
+    run = PipelineRunStore.create(
+        "GAP-066 operator pending run", dry_run=False, phase="", wave_id=None,
+    )
+
+    refused = client.post(f"/v1/pipeline/runs/{run.id}/start")
+
+    assert refused.status_code in (401, 403, 409), (
+        f"an OPERATOR started a live run no approver released (HTTP "
+        f"{refused.status_code})"
+    )
+    start_async.assert_not_called()
+    events = create_state_db(str(tmp_path / "gap004.db")).search_audit_events(
+        AuditEventFilters(event_type="platform.live_execution.requested"), limit=10,
+    )
+    assert any(run.id in (e["payload_json"] or "") for e in events), (
+        "the refused live start left no audit record, so nothing tells an approver "
+        "a run is waiting"
+    )
+
+    # The positive half: the approver's decision releases exactly this run.
+    admin = _admin_client()
+    pending = admin.get("/v1/platform/approvals?status=pending")
+    approval = next(a for a in pending.json()["approvals"] if a["scope_id"] == run.id)
+    decided = admin.post(
+        f"/v1/platform/approvals/{approval['id']}/approve",
+        json={"reason": "GAP-066: approver releases the pending live run"},
+    )
+    assert decided.status_code == 200
+    start_async.assert_called_once()
+
+
 def test_console_pipeline_run_body_is_accepted_in_full(operator_client):
     """``extra="forbid"`` makes every console body field a breaking change.
 

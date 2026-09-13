@@ -7,6 +7,8 @@ the bottom of this module.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException, Request
 
 from ado2gh.api.contracts import (
@@ -24,6 +26,7 @@ from ado2gh.api.pipeline_runner import (
 )
 from ado2gh.api.platform_rbac import (
     operator_requires_live_approval,
+    require_operate,
 )
 from ado2gh.api.profile_governance import (
     ProfileGovernanceError,
@@ -40,7 +43,47 @@ from services.accelerator_api.routes._shared import (
 )
 from services.accelerator_api.routes.approval_routes import router as _approval_router
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ado2gh.api.pipeline_models import PipelineRun
+    from ado2gh.auth.models import PlatformUser
+
 router = APIRouter()
+
+
+def _park_for_approval(
+    run: PipelineRun, user: PlatformUser | None, step_ids: list[str],
+) -> None:
+    """Queue a live run for an approver's decision and park it until one arrives.
+
+    The one place a pipeline run enters the approval queue, so the create route
+    and the start route cannot drift on what parking means (GAP-066). The queue
+    entry is itself the record that a live run was asked for (CA-004), and the
+    parked status is one no runner picks up.
+
+    Args:
+        run: The live run to park. Mutated in place — the registry hands out the
+            live object, so the caller's copy is the parked one.
+        user: The signed-in caller asking to execute live, read from the session
+            rather than from the request body.
+        step_ids: Steps the run executes once released; stored on the approval so
+            the registered executor can start it without the caller posting again.
+    """
+    active = _settings.get_active_profile()
+    _live_store().create_or_get_pending(
+        user,
+        LiveApprovalCreateRequest(
+            scope_type="pipeline_run",
+            scope_id=run.id,
+            profile_id=active.id if active else None,
+            reason_request=f"Pipeline live run: {run.name}",
+            context={"run_id": run.id, "steps": step_ids},
+        ),
+    )
+    run.live_approval_status = "pending"
+    run.status = "awaiting_approval"
+    run.updated_at = run.created_at
+    if run.steps:
+        run.steps[0].message = "Waiting for live execution approval"
 
 
 @router.get("/v1/pipeline/steps", response_model=list[PipelineStepDefinition])
@@ -171,6 +214,15 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request) -> Pipeli
     default_step_ids = [s["id"] for s in MIGRATE_UI_PIPELINE_STEPS]
     step_ids = req.steps or default_step_ids
     user = _platform_user(request)
+    # Live authority comes only from server-side state — the authenticated user's role
+    # here, or an approved LiveApprovalStore row on the /start route. The request body
+    # cannot influence it: PipelineRunStartRequest declares no live-approval field and
+    # forbids extras, so the old self-certifying agent_live_approved is a 422 (GAP-004).
+    # Asked before the run is persisted: a refusal must leave nothing behind for
+    # /start to pick up (GAP-066).
+    needs_approval = operator_requires_live_approval(
+        user, ExecutionMode.from_dry_run(dry_run=dry),
+    )
     run = PipelineRunStore.create(
         req.name,
         dry_run=dry,
@@ -186,27 +238,8 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request) -> Pipeli
         migrate_deps_only=req.migrate_deps_only,
         override_reason=req.override_reason,
     )
-    # Live authority comes only from server-side state — the authenticated user's role
-    # here, or an approved LiveApprovalStore row on the /start route. The request body
-    # cannot influence it: PipelineRunStartRequest declares no live-approval field and
-    # forbids extras, so the old self-certifying agent_live_approved is a 422 (GAP-004).
-    if operator_requires_live_approval(user, ExecutionMode.from_dry_run(dry_run=dry)):
-        store = _live_store()
-        store.create_or_get_pending(
-            user,
-            LiveApprovalCreateRequest(
-                scope_type="pipeline_run",
-                scope_id=run.id,
-                profile_id=active.id,
-                reason_request=f"Pipeline live run: {req.name}",
-                context={"run_id": run.id, "steps": step_ids},
-            ),
-        )
-        run.live_approval_status = "pending"
-        run.status = "awaiting_approval"
-        run.updated_at = run.created_at
-        if run.steps:
-            run.steps[0].message = "Waiting for live execution approval"
+    if needs_approval:
+        _park_for_approval(run, user, step_ids)
         db = create_state_db(adv.db_path)
         return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
     run.live_approval_status = "auto_approved" if not dry else "not_required"
@@ -234,9 +267,10 @@ def start_existing_pipeline_run(run_id: str, request: Request) -> PipelineRunRes
         started-by and live-approval labels.
 
     Raises:
-        HTTPException: 404 when no run carries that identifier, 409 when a
-            parked run still awaits approval or when the run has already reached
-            a status that cannot be started.
+        HTTPException: 401 or 403 when the caller may not operate or may not
+            execute live, 404 when no run carries that identifier, 409 when a
+            live run still awaits approval or when the run has already reached a
+            status that cannot be started.
     """
     run = PipelineRunStore.get(run_id)
     if not run:
@@ -245,24 +279,27 @@ def start_existing_pipeline_run(run_id: str, request: Request) -> PipelineRunRes
         db = create_state_db(_settings.load().advanced.db_path)
         return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
 
-    user = _platform_user(request)
-    if run.status == "awaiting_approval":
-        # A parked run is released either by a caller who can approve live execution,
-        # or by LiveApprovalStore itself once an approver decides — which calls the
-        # registered executor directly and never comes back through this route. Since
-        # the handler reads no body, a caller posting its own approval claim (the old
-        # agent_live_approved, GAP-004) changes nothing here.
-        approved = _live_store().has_approved("pipeline_run", run_id)
-        if not approved and operator_requires_live_approval(
-            user, ExecutionMode.from_dry_run(dry_run=run.dry_run),
-        ):
-            raise HTTPException(status_code=409, detail="awaiting_approval")
-        if not approved:
-            run.live_approval_status = "auto_approved"
-    elif run.status not in ("pending", "awaiting_approval"):
+    user = require_operate(request)
+    if run.status not in ("pending", "awaiting_approval"):
         raise HTTPException(status_code=409, detail=f"Run is already {run.status}")
 
+    # A live run is released either by a caller who can approve live execution, or by
+    # LiveApprovalStore itself once an approver decides — which calls the registered
+    # executor directly and never comes back through this route. Since the handler
+    # reads no body, a caller posting its own approval claim (the old
+    # agent_live_approved, GAP-004) changes nothing here. `pending` is gated the same
+    # way as `awaiting_approval`: a live run that was never parked has not been
+    # approved either, whoever created it (GAP-066).
     step_ids = [s.id for s in run.steps]
+    approved = _live_store().has_approved("pipeline_run", run_id)
+    if not approved:
+        if operator_requires_live_approval(
+            user, ExecutionMode.from_dry_run(dry_run=run.dry_run),
+        ):
+            _park_for_approval(run, user, step_ids)
+            raise HTTPException(status_code=409, detail="awaiting_approval")
+        run.live_approval_status = "auto_approved" if not run.dry_run else "not_required"
+
     run.status = "pending"
     run.updated_at = run.created_at
     _runner.start_async(run_id, step_ids)

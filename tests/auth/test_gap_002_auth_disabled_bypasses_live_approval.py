@@ -129,3 +129,50 @@ def test_anonymous_caller_cannot_start_a_live_pipeline_run(anon_accel_client):
     assert run.get("live_approval_status") != "approved", (
         "a live pipeline run started by an unauthenticated caller was recorded as approved"
     )
+
+
+def test_refused_live_run_is_not_persisted_at_all(anon_accel_client):
+    """The refusal must happen before the run exists, not after (GAP-066).
+
+    ``POST /v1/pipeline/runs`` persisted the run and only then asked whether the
+    caller may execute live, so the 401 left a ``pending`` row behind — and
+    ``/start`` would then take that row live, because it only ever questioned a run
+    parked at ``awaiting_approval``.
+    """
+    from ado2gh.api.pipeline_runner import PipelineRunStore
+
+    client, start_async = anon_accel_client
+
+    resp = client.post(
+        "/v1/pipeline/runs", json={"name": "GAP-066 refused run", "dry_run": False},
+    )
+
+    assert resp.status_code == 401, (
+        f"an anonymous live run must be refused outright; got {resp.status_code}"
+    )
+    _, total = PipelineRunStore.list_runs()
+    assert total == 0, (
+        "the refused live run was persisted anyway; a startable run now exists that "
+        "no one was ever authorised to create"
+    )
+    start_async.assert_not_called()
+
+
+def test_anonymous_caller_cannot_start_a_pending_live_run(anon_accel_client):
+    """``/start`` gates a live run whatever status it is sitting in (GAP-066)."""
+    from ado2gh.api.pipeline_runner import PipelineRunStore
+
+    client, start_async = anon_accel_client
+    run = PipelineRunStore.create(
+        "GAP-066 pending live run", dry_run=False, phase="", wave_id=None,
+    )
+    assert run.status == "pending"
+
+    resp = client.post(f"/v1/pipeline/runs/{run.id}/start")
+
+    assert resp.status_code in (401, 403, 409), (
+        f"a caller with no credentials started a live pipeline run that no approver "
+        f"ever released (HTTP {resp.status_code})"
+    )
+    start_async.assert_not_called()
+    assert PipelineRunStore.get(run.id).live_approval_status != "approved"
