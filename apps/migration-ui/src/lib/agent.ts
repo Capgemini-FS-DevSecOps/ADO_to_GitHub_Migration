@@ -114,8 +114,12 @@ export type AgentFormField = {
   required?: boolean;
   description?: string;
   placeholder?: string;
-  /** Always a string on the wire — the agent service stringifies it, so `False` arrives as `"False"`. */
-  recommended_value?: string;
+  /**
+   * Boolean fields carry a real JSON boolean (GAP-024); everything else is a string.
+   * Older payloads stringified booleans, so `"False"` can still arrive and is parsed
+   * by `parseBooleanValue`.
+   */
+  recommended_value?: string | boolean;
 };
 
 export type AgentPendingForm = {

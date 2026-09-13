@@ -5,11 +5,48 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
+from ado2gh.agents.migration_agent.utils import coerce_dry_run
+
 if TYPE_CHECKING:
     from ado2gh.agents.migration_agent.hitl.schemas import (
         IntakeFieldSpec,
         OperatorInputFieldSpec,
     )
+
+#: Field types whose empty state is itself a valid answer, so "unanswered" is not a
+#: thing the operator can leave behind: an unticked checkbox means no, and a notes
+#: box is a place to say something extra rather than a question (THR-09-003).
+OPTIONAL_BY_DEFAULT_FIELD_TYPES = frozenset({"checkbox", "textarea"})
+
+MAX_RECOMMENDED_VALUE_LEN = 120
+
+
+def default_required_for_type(field_type: object) -> bool:
+    """Decide whether a field of this type must be answered when nobody said.
+
+    Returns:
+        False for checkboxes and textareas, True for every other field type.
+    """
+    return str(field_type or "text") not in OPTIONAL_BY_DEFAULT_FIELD_TYPES
+
+
+def normalize_recommended_value(value: object) -> str | bool | None:
+    """Carry a recommendation to the console without flattening its type.
+
+    A boolean recommendation stays a JSON boolean: ``str(False)`` is ``"False"``,
+    which every browser reads as truthy, so stringifying a "do not do this"
+    recommendation turned it into "do this" (GAP-024).
+
+    Returns:
+        The boolean unchanged, a trimmed and length-limited string, or None when
+        the recommendation is absent or blank.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text[:MAX_RECOMMENDED_VALUE_LEN] if text else None
 
 
 class FormFieldOption(BaseModel):
@@ -75,11 +112,17 @@ def field_dict_from_spec(
         ``planner_context['field_recommendations']`` win over the spec.
     """
     name = str(getattr(spec, "name", "field") or "field")
+    field_type = getattr(spec, "field_type", None) or "text"
+    explicit_required = "required" in getattr(spec, "model_fields_set", ())
     field: dict[str, Any] = {
         "name": name[:40],
         "label": str(getattr(spec, "label", name) or name)[:60],
-        "type": getattr(spec, "field_type", None) or "text",
-        "required": bool(getattr(spec, "required", False)),
+        "type": field_type,
+        "required": (
+            bool(getattr(spec, "required", False))
+            if explicit_required
+            else default_required_for_type(field_type)
+        ),
     }
     desc = str(getattr(spec, "description", "") or "").strip()
     if desc:
@@ -96,8 +139,9 @@ def field_dict_from_spec(
     recommended_value = hints.get("recommended_value")
     if recommended_value is None:
         recommended_value = getattr(spec, "recommended_value", None)
-    if recommended_value is not None and str(recommended_value).strip() != "":
-        field["recommended_value"] = str(recommended_value).strip()[:120]
+    normalized_recommendation = normalize_recommended_value(recommended_value)
+    if normalized_recommendation is not None:
+        field["recommended_value"] = normalized_recommendation
 
     raw_options = hints.get("options")
     if raw_options is None:
@@ -140,9 +184,10 @@ def build_field_recommendations(
             }
 
     if "dry_run" in missing:
-        prefer_dry = bool(session.get("dry_run", True))
+        # A malformed session flag is not a decision to go live (GAP-076, CA-001).
+        prefer_dry = coerce_dry_run(session.get("dry_run"), default=True)
         recs["dry_run"] = {
-            "recommended_value": "true" if prefer_dry else "false",
+            "recommended_value": prefer_dry,
             "options": [
                 {
                     "value": "true",

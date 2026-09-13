@@ -145,11 +145,27 @@ describe('HITL form defaults', () => {
     expect(fieldInitialValue(field({ name: 'archive_ado', type: 'checkbox' }))).toBe(false);
   });
 
-  it('reads the stringified booleans the agent service sends for recommended_value', () => {
-    // The server stringifies recommendations, so a recommended `False` arrives as "False";
+  it('reads the JSON booleans the agent service now sends for recommended_value', () => {
+    // GAP-024: a boolean recommendation stays a boolean end to end, so "do not start
+    // the migration" can no longer pre-tick "start migration immediately".
+    expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: false }))).toBe(false);
+    expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: true }))).toBe(true);
+  });
+
+  it('still reads the stringified booleans older payloads sent (defence in depth)', () => {
     // Boolean("False") would pre-tick "start migration immediately" (GAP-024).
     expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: 'False' }))).toBe(false);
     expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: 'True' }))).toBe(true);
+  });
+
+  it('renders a boolean recommendation for a select as its string option value', () => {
+    // dry_run is a boolean field drawn as a select whose option values are strings.
+    const options = [
+      { value: 'true', label: 'Dry-run' },
+      { value: 'false', label: 'Live' },
+    ];
+    expect(fieldInitialValue(field({ name: 'dry_run', type: 'select', options, recommended_value: true }))).toBe('true');
+    expect(fieldInitialValue(field({ name: 'dry_run', type: 'select', options, recommended_value: false }))).toBe('false');
   });
 
   it('parses wire booleans without treating "False" as truthy', () => {

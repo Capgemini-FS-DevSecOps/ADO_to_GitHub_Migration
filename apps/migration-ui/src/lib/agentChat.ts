@@ -24,15 +24,17 @@ export const ACTIVE_AGENT_STATUSES = new Set([
 
 const SETTLED_STATUSES = ['completed', 'failed', 'cancelled', 'idle'];
 
-/** Wire values that mean "off" — the agent server stringifies form recommendations. */
+/** Wire values that mean "off", for payloads that still stringify form recommendations. */
 const FALSY_WIRE_VALUES = ['false', '0', 'no', 'off', ''];
 
 /**
- * Coerce a HITL form value to a boolean, reading the strings the agent service sends.
+ * Coerce a HITL form value to a boolean, reading both booleans and the strings
+ * older agent payloads sent.
  *
- * `recommended_value` is stringified server-side, so a recommended `False` arrives as the
- * string `"False"`, which `Boolean()` reports as true. Every boolean form field goes
- * through here so a recommendation to *not* do something can never read as a yes.
+ * Since GAP-024 the agent service sends a real JSON boolean for boolean fields. This
+ * stays as defence in depth: a stringified `False` reads as truthy to `Boolean()`, so
+ * every boolean form field goes through here and a recommendation to *not* do
+ * something can never read as a yes.
  */
 export function parseBooleanValue(value: unknown): boolean {
   if (typeof value === 'boolean') return value;
@@ -206,7 +208,11 @@ export function fieldInitialValue(field: AgentFormField): unknown {
     if (field.type === 'checkbox') {
       return parseBooleanValue(field.recommended_value);
     }
-    return field.recommended_value;
+    // A boolean field rendered as a select (dry_run) carries a real boolean since
+    // GAP-024; its option values are strings, so match them.
+    return typeof field.recommended_value === 'boolean'
+      ? String(field.recommended_value)
+      : field.recommended_value;
   }
   if (field.type === 'select' && field.options?.length) {
     const recommended = field.options.find(

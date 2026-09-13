@@ -9,7 +9,8 @@
  * service through an effect, so they stay out of reach until a DOM test environment is
  * approved (see the note in `@/__tests__/renderMarkup`).
  *
- * The GAP-024 form-field defect (stringified `recommended_value`) is covered on the browser
+ * The GAP-024 form-field defect (`recommended_value` now carries a real JSON boolean, with
+ * the string parse kept as defence in depth) is covered on the browser
  * side by `src/lib/agentChat.test.ts` — `parseBooleanValue`, `fieldInitialValue` and
  * `initialFormValues`, which this component's private `AgentFormPanel` calls. The panel
  * itself is not exported and only renders once a session has a `pending_form`, so it is not
