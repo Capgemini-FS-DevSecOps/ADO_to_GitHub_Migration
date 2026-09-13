@@ -43,7 +43,7 @@ _SESSION_PATCH_COLUMNS: dict[str, tuple[str, Callable[[Any], Any]]] = {
     "migration_plan": ("migration_plan_json", json.dumps),
     "iteration_count": ("iteration_count", int),
     "pev_retry_count": ("pev_retry_count", int),
-    "dry_run": ("dry_run", lambda value: 1 if value else 0),
+    "dry_run": ("dry_run", lambda value: 0 if value is False else 1),  # GAP-076: only explicit live
 }
 
 
@@ -272,7 +272,7 @@ class MigrationSessionStore:
         profile_id = str(session.get("profile_id") or "lightweight")
         model_id = str(session.get("selected_model_id") or "")
         status = str(session.get("status") or "idle")
-        dry_run = 1 if session.get("dry_run", True) else 0
+        dry_run = 0 if session.get("dry_run") is False else 1  # only explicit live persists live (GAP-076)
         messages_json = _messages_json(session.get("messages"))
         pending_form = session.get("pending_form")
         migration_plan = session.get("migration_plan")

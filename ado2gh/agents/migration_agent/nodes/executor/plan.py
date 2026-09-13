@@ -230,8 +230,15 @@ def finalize_agent_migration_plan(
     """Attach migrate-tab pipeline metadata and operator-facing narrative to a plan."""
     import re
 
+    from ado2gh.agents.migration_agent.utils import coerce_dry_run
+
     phase = resolve_migration_phase(session, plan)
-    dry_run = bool(plan.get("dry_run", session.get("dry_run", True)))
+    # A plan flag that is not a real boolean is no decision at all: fall back to the
+    # session, never to bool(None) == "live" (GAP-076). The normalised value is written
+    # back so everything downstream reads a real boolean off the plan.
+    plan_dry = coerce_dry_run(plan.get("dry_run"), default=coerce_dry_run(session.get("dry_run")))
+    dry_run = True if plan_dry is None else plan_dry
+    plan["dry_run"] = dry_run
     repository_id = (
         session.get("plan_repository_id")
         or plan.get("repository_id")

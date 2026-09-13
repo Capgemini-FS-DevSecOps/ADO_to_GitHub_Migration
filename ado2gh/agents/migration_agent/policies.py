@@ -324,8 +324,10 @@ def resolve_execution_dry_run(
         plan asks for live and the session holds no live authority. ``False`` only when
         both agree the run may write.
     """
-    session_dry = bool(session.get("dry_run", True))
-    plan_dry = bool((migration_plan or {}).get("dry_run", session_dry))
+    from ado2gh.agents.migration_agent.utils import coerce_dry_run
+
+    session_dry = coerce_dry_run(session.get("dry_run"), default=True)
+    plan_dry = coerce_dry_run((migration_plan or {}).get("dry_run"), default=session_dry)
     if plan_dry:
         return True
     if not session_dry:

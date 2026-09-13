@@ -193,7 +193,9 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
                 target_resource=str(target_resource),
                 reason="Read-only accelerator GET",
             )
-        if session and session.get("dry_run", True):
+        # Only an explicit `False` is live authority: a missing or malformed flag must
+        # keep blocking writes rather than be coerced into "live" (GAP-076, CA-001).
+        if session and session.get("dry_run") is not False:
             return GuardrailDecision(
                 action=GuardrailAction.BLOCK,
                 agent_role=agent_role,
@@ -215,7 +217,7 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
                 target_resource=str(target_resource),
                 reason="Read-only GitHub GET",
             )
-        if session and session.get("dry_run", True):
+        if session and session.get("dry_run") is not False:  # see the note above
             return GuardrailDecision(
                 action=GuardrailAction.BLOCK,
                 agent_role=agent_role,

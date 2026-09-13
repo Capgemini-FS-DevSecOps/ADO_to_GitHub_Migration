@@ -20,19 +20,42 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def coerce_dry_run(value: object, *, default: bool | None = None) -> bool | None:
+    """Read a ``dry_run`` field strictly, so only a real boolean counts as a decision.
+
+    ``bool()`` maps ``None`` to ``False`` and ``False`` means *live*, so coercing an
+    absent or malformed flag reads a missing decision as a request to write to GitHub
+    (GAP-076, CA-001). Plan flags originate in LLM JSON, so anything other than
+    ``True``/``False`` — ``None``, ``"false"``, ``0`` — is treated as unspecified and
+    the caller's safe default applies instead.
+
+    Args:
+        value: The raw ``dry_run`` field, from a plan, session or executor result.
+        default: What "unspecified" means to this caller; ``None`` lets the caller
+            fall through to another source.
+
+    Returns:
+        The boolean the field carries, else ``default``.
+    """
+    return value if isinstance(value, bool) else default
+
+
 def resolve_dry_run(
     session: dict[str, Any] | None,
     *,
     migration_plan: dict[str, Any] | None = None,
     executor_result: dict[str, Any] | None = None,
 ) -> bool:
-    """Resolve whether the current PEV cycle is dry-run (default True)."""
-    if isinstance(executor_result, dict) and "dry_run" in executor_result:
-        return bool(executor_result.get("dry_run"))
-    if isinstance(migration_plan, dict) and "dry_run" in migration_plan:
-        return bool(migration_plan.get("dry_run"))
-    if isinstance(session, dict):
-        return bool(session.get("dry_run", True))
+    """Resolve whether the current PEV cycle is dry-run (default True).
+
+    The first source carrying a real boolean wins; a present-but-malformed flag is
+    skipped rather than coerced, so it can never turn a dry run into a live one.
+    """
+    for source in (executor_result, migration_plan, session):
+        if isinstance(source, dict):
+            decided = coerce_dry_run(source.get("dry_run"))
+            if decided is not None:
+                return decided
     return True
 
 

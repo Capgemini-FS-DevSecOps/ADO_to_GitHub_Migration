@@ -180,7 +180,7 @@ def persist_session_snapshot(session: dict[str, Any]) -> None:
             migration_plan=session.get("migration_plan"),
             iteration_count=int(session.get("iteration", 0) or 0),
             pev_retry_count=int(session.get("pev_retry_count", 0) or 0),
-            dry_run=bool(session.get("dry_run", True)),
+            dry_run=session.get("dry_run") is not False,  # GAP-076: only explicit live is live
         )
     except Exception:
         pass

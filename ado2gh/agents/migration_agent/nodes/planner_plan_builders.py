@@ -1,10 +1,13 @@
 """planner_plan_builders.py module — migration queue and plan construction helpers."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
-from ado2gh.agents.migration_agent.utils import canonical_repo_id
+from ado2gh.agents.migration_agent.utils import canonical_repo_id, coerce_dry_run
 from ado2gh.models import MigrationScope
+
+logger = logging.getLogger(__name__)
 
 
 def _build_migration_queue_from_plan(plan: dict[str, Any]) -> dict[str, Any]:
@@ -176,6 +179,34 @@ def _build_heuristic_plan(
     return finalize_agent_migration_plan(plan, session)
 
 
+def _plan_dry_run_from_llm(parsed: dict[str, Any], session: dict[str, Any]) -> bool:
+    """Read the planner model's ``dry_run`` claim, refusing anything but a real boolean.
+
+    The model's JSON reaches the executor's live/dry-run reconciliation, so a
+    malformed value must never be coerced: a present-but-not-boolean flag pins the
+    plan to a dry run (CA-001) and is logged, while a missing flag inherits the
+    session's own mode (GAP-076).
+
+    Args:
+        parsed: The JSON object the planner model produced.
+        session: Session dict supplying the fallback mode.
+
+    Returns:
+        ``True`` when the plan must stay a dry run.
+    """
+    raw = parsed.get("dry_run")
+    if raw is None:
+        session_dry = coerce_dry_run(session.get("dry_run"))
+        return True if session_dry is None else session_dry
+    if not isinstance(raw, bool):
+        logger.warning(
+            "Planner returned a non-boolean dry_run (%r); pinning the plan to a dry run.",
+            raw,
+        )
+        return True
+    return raw
+
+
 def _build_migration_plan_from_llm(
     parsed: dict[str, Any],
     session: dict[str, Any],
@@ -236,7 +267,7 @@ def _build_migration_plan_from_llm(
     plan = {
         "repos": repos,
         "work_items": work_items,
-        "dry_run": parsed.get("dry_run", session.get("dry_run", True)),
+        "dry_run": _plan_dry_run_from_llm(parsed, session),
         "assumptions": parsed.get("assumptions", []),
         "blocked_items": parsed.get("blocked_items", []),
         "revision": revision,
