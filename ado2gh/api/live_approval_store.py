@@ -220,6 +220,64 @@ class LiveApprovalStore:
         """
         return self.db.find_approved_live_execution_approval(scope_type, scope_id) is not None
 
+    def is_approved_for(
+        self,
+        approval_id: str,
+        *,
+        scope_type: ScopeType,
+        scope_id: str,
+        actor: str = "_system",
+    ) -> bool:
+        """Report whether a quoted approval id was granted for exactly this scope.
+
+        ``has_approved`` looks an approval up *by* its scope and so cannot match the
+        wrong one. A caller that quotes an identifier instead — ``live_approval_id``
+        on a run-wave request — has to be checked the other way round, and checking
+        only ``status`` made any granted approval a licence to run any scope live: an
+        approval for wave 1 released wave 2, and a ``pipeline_run`` approval released
+        a migrate job (GAP-063, CA-002).
+
+        A refusal is recorded as ``platform.live_execution.scope_mismatch`` here
+        rather than at each call site, so every caller that accepts a quoted token is
+        audited by construction (CA-004). Only scope identifiers reach the payload;
+        none of them can carry a credential (CA-003).
+
+        Args:
+            approval_id: The approval identifier the caller quoted.
+            scope_type: Kind of scope about to execute — ``agent_session``,
+                ``migrate_job`` or ``pipeline_run``.
+            scope_id: Identifier of that scope; for a dashboard migrate run, the
+                value ``migrate_scope_id`` builds.
+            actor: Username recorded against a refusal. Defaults to ``_system`` for
+                callers below the HTTP layer, which have no signed-in user.
+
+        Returns:
+            ``True`` only when the row exists, was approved, and names this exact
+            scope; ``False`` otherwise, having recorded the refusal.
+        """
+        row = self.db.get_live_execution_approval(approval_id) or {}
+        if (
+            row.get("status") == "approved"
+            and row.get("scope_type") == scope_type
+            and row.get("scope_id") == scope_id
+        ):
+            return True
+        write_profile_audit(
+            "platform.live_execution.scope_mismatch",
+            profile_id=row.get("profile_id") or "_platform",
+            actor=actor,
+            payload={
+                "approval_id": approval_id,
+                "requested_scope_type": scope_type,
+                "requested_scope_id": scope_id,
+                "approval_scope_type": row.get("scope_type"),
+                "approval_scope_id": row.get("scope_id"),
+                "approval_status": row.get("status"),
+            },
+            db_path=self.db_path,
+        )
+        return False
+
     def approve(
         self,
         approval_id: str,
@@ -244,7 +302,8 @@ class LiveApprovalStore:
 
         Raises:
             HTTPException: 404 when no such approval exists, 409 when it has already
-                been approved or denied.
+                been approved or denied, 500 when the decision is recorded but the
+                scope could not be resumed.
         """
         row = self.db.get_live_execution_approval(approval_id)
         if not row:
@@ -261,7 +320,9 @@ class LiveApprovalStore:
         assert updated is not None
         if updated["scope_type"] == "pipeline_run":
             self._stamp_pipeline_approval(updated, "approved", approver)
-        self._resume_scope(updated)
+        # Audited before the scope resumes, not after: the decision row is already
+        # committed, so an executor that raises must not be able to take the record
+        # of who granted it down with it (CA-004, GAP-067).
         write_profile_audit(
             "platform.live_execution.approved",
             profile_id=updated.get("profile_id") or "_platform",
@@ -275,7 +336,56 @@ class LiveApprovalStore:
             },
             db_path=self.db_path,
         )
+        self._resume_approved_scope(updated)
         return _public_row(updated)
+
+    def _resume_approved_scope(self, row: dict) -> None:
+        """Resume a decided scope, turning a failure into a record rather than a stack trace.
+
+        Args:
+            row: The approved approval row to hand to its executor.
+
+        Raises:
+            HTTPException: 500 naming the approval and its scope, once the failure
+                has been logged and recorded as
+                ``platform.live_execution.resume_failed``. The decision itself
+                stands — it is committed and audited before this runs — so the
+                approver is being told the work did not start, not that the
+                approval failed.
+        """
+        try:
+            self._resume_scope(row)
+        except Exception as exc:
+            error = type(exc).__name__
+            logger.exception(
+                "Live-execution resume failed for %s %s (approval %s). The approval is "
+                "recorded and stands; the work it released did not start.",
+                row["scope_type"], row["scope_id"], row["id"],
+            )
+            try:
+                write_profile_audit(
+                    "platform.live_execution.resume_failed",
+                    profile_id=row.get("profile_id") or "_platform",
+                    actor=row.get("approver_username") or "_system",
+                    payload={
+                        "approval_id": row["id"],
+                        "scope_type": row["scope_type"],
+                        "scope_id": row["scope_id"],
+                        "error": error,
+                    },
+                    db_path=self.db_path,
+                )
+            except Exception:  # reporting a failure must not become one
+                logger.exception("Could not record the live-execution resume failure")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "resume_failed",
+                    "approval_id": row["id"],
+                    "scope_type": row["scope_type"],
+                    "error": error,
+                },
+            ) from exc
 
     def deny(
         self,
@@ -366,14 +476,21 @@ class LiveApprovalStore:
             return {}
 
     def _execute_migrate(self, row: dict) -> None:
-        """Run an approved migrate job, if a migrate executor was registered.
+        """Run an approved migrate job, if there is one and an executor was registered.
+
+        A ``/v1/migrate/*`` feature route queues its approval under this same scope
+        type, but with a context naming the route rather than a wave (see
+        ``services/accelerator_api/routes/migrate_guard.py``). What that approval
+        grants is the caller's retry of that one route, which the guard admits once
+        the approval stands — there is no wave to replay, and handing the context to
+        the wave executor anyway only raised on the approver (GAP-067).
 
         Args:
             row: The approved approval row carrying the migrate context.
         """
-        if not _migrate_executor:
-            return
         ctx = self._context(row)
+        if not _migrate_executor or ctx.get("route"):
+            return
         _migrate_executor(ctx)
 
     def _execute_pipeline(self, row: dict) -> None:

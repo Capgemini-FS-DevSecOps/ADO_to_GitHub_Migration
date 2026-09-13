@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch
 
 from ado2gh.auth.service import AuthService
+from ado2gh.core.scopes.base import ScopeResult
 from ado2gh.state.audit_query import AuditEventFilters
 from ado2gh.state.factory import create_state_db
 
@@ -159,6 +160,81 @@ def test_failed_agent_notify_is_recorded_not_swallowed(client, tmp_path, monkeyp
     # CA-003: the shared secret never reaches a log line or an audit payload.
     assert "shared-secret-value" not in caplog.text
     assert "shared-secret-value" not in events[0]["payload_json"]
+
+
+_GIT_MIRROR_LIVE = {
+    "project": "Proj", "repo_name": "repo",
+    "github_org": "acme", "github_repo": "repo", "dry_run": False,
+}
+
+
+def test_feature_route_approval_is_executable_and_audited(client, tmp_path):
+    """Approving a ``/v1/migrate/*`` live run must decide it, not 500 (GAP-067).
+
+    ``migrate_guard`` queues these under ``scope_type="migrate_job"`` with a context
+    naming the route, while the registered migrate executor builds a
+    ``RunWaveRequest`` from whatever context it is handed. For a feature route that
+    context has no ``config_path``, so approving raised ``ValidationError`` out of
+    ``_resume_scope`` — after the decision row was committed and before the
+    ``platform.live_execution.approved`` audit was written. The approver saw a 500,
+    the approval stood, and nothing recorded who granted it (CA-004).
+
+    What a feature-route approval buys is the grant: the guard admits the caller's
+    retry of that one route. So the round trip below is approve, then replay.
+    """
+    _bootstrap(client)
+    _create_user(client, "op2", "operator")
+    client.post("/v1/auth/logout")
+    client.post("/v1/auth/login", json={"username": "op2", "password": "twelve-char-pass"})
+
+    parked = client.post("/v1/migrate/git-mirror", json=_GIT_MIRROR_LIVE)
+    assert parked.status_code == 403, (
+        f"the live feature route was not parked for approval (HTTP {parked.status_code})"
+    )
+    approval_id = parked.json()["detail"]["approval_id"]
+
+    client.post("/v1/auth/logout")
+    client.post("/v1/auth/login", json={"username": "admin", "password": "twelve-char-pass"})
+    approved = client.post(
+        f"/v1/platform/approvals/{approval_id}/approve",
+        json={"reason": "GAP-067: release the feature-route migration"},
+    )
+
+    assert approved.status_code == 200, (
+        f"approving a feature-route live migration failed with HTTP "
+        f"{approved.status_code}; the decision is already committed, so the approver "
+        f"cannot retry and cannot tell whether it took"
+    )
+    events = create_state_db(str(tmp_path / "approvals.db")).search_audit_events(
+        AuditEventFilters(event_type="platform.live_execution.approved"), limit=10,
+    )
+    assert any(approval_id in (e["payload_json"] or "") for e in events), (
+        "the approval was granted with no platform.live_execution.approved record; "
+        "nothing names who released the live migration"
+    )
+
+    client.post("/v1/auth/logout")
+    client.post("/v1/auth/login", json={"username": "op2", "password": "twelve-char-pass"})
+    with patch("services.accelerator_api.routes.migrate_routes._get_clients") as clients:
+        clients.side_effect = lambda: (MagicMock(), MagicMock(), "acme", MagicMock())
+        with patch(
+            "services.accelerator_api.routes.migrate_routes._load_global_cfg",
+            return_value={"migration_strategy": "mirror"},
+        ):
+            with patch(
+                "services.accelerator_api.routes.migrate_routes._state_db",
+                return_value=MagicMock(),
+            ):
+                with patch("ado2gh.core.scopes.git_scope.GitScopeHandler") as handler:
+                    handler.return_value.migrate.return_value = ScopeResult(
+                        stats={"dry_run": False, "strategy": "mirror"}, failed=0,
+                    )
+                    replayed = client.post("/v1/migrate/git-mirror", json=_GIT_MIRROR_LIVE)
+
+    assert replayed.status_code == 200, (
+        f"the approved caller was still refused its own live migration (HTTP "
+        f"{replayed.status_code}); the approval bought nothing"
+    )
 
 
 def test_approve_idempotent_conflict(client):
