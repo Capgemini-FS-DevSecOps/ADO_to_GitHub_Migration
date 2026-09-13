@@ -235,38 +235,6 @@ def test_planner_revised_plan_contract():
 import pytest as _pytest
 
 @_pytest.mark.skip(reason="Legacy guardrail API (spec 011) — rewrite for spec 012 operation types")
-def test_guardrail_blocks_unauthorized_delete_contract():
-    """Guardrail blocks deletion without explicit authorization."""
-    from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
-
-    plan = {"work_items": [{"repo": "Project/RepoA"}]}
-    d = evaluate_guardrail(
-        "executor", "ado2gh_enqueue_job",
-        {"operation_type": "delete", "target_resource": "Project/RepoA"},
-        approved_plan=plan,
-    )
-    assert d.decision == "block"
-    assert d.tool_name == "ado2gh_enqueue_job"
-    assert d.operation_type == "delete"
-    assert d.target_resource == "Project/RepoA"
-
-
-@_pytest.mark.skip(reason="Legacy guardrail API (spec 011) — rewrite for spec 012 operation types")
-def test_guardrail_blocks_repo_not_in_plan_contract():
-    """Guardrail blocks operations on repos not in the approved plan."""
-    from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
-
-    plan = {"work_items": [{"repo": "Project/RepoA"}]}
-    d = evaluate_guardrail(
-        "executor", "ado2gh_enqueue_job",
-        {"target_resource": "Project/RepoEVIL"},
-        approved_plan=plan,
-    )
-    assert d.decision == "block"
-    assert "not found in approved plan" in d.reason
-
-
-@_pytest.mark.skip(reason="Legacy guardrail API (spec 011) — rewrite for spec 012 operation types")
 def test_guardrail_blocks_wrong_role_contract():
     """Guardrail blocks tool access for wrong role."""
     from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
@@ -287,20 +255,6 @@ def test_guardrail_blocks_ado_write_without_cleanup_contract():
     )
     assert d.decision == "block"
     assert "ADO write" in d.reason
-
-
-@_pytest.mark.skip(reason="Legacy guardrail API (spec 011) — rewrite for spec 012 operation types")
-def test_guardrail_allows_ado_write_with_cleanup_contract():
-    """Guardrail allows ADO write operations with migration cleanup approval (T034)."""
-    from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
-
-    plan = {"work_items": [{"repo": "Project/RepoA"}]}
-    d = evaluate_guardrail(
-        "executor", "ado2gh_migrate_boards",
-        {"operation_type": "create", "migration_cleanup_approved": True},
-        approved_plan=plan,
-    )
-    assert d.decision == "allow"
 
 
 @_pytest.mark.skip(reason="Legacy guardrail API (spec 011) — rewrite for spec 012 operation types")

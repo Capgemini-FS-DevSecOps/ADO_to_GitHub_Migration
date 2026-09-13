@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, cast
 
+from ado2gh.agents.migration_agent.utils import coerce_dry_run
+
 
 class GuardrailAction(str, Enum):
     """What a guardrail evaluation tells the tool wrapper to do.
@@ -98,13 +100,60 @@ _DELETION_OPERATIONS = frozenset({
     "secret_delete", "environment_delete",
 })
 
-# Read-only operations that always pass guardrails
+# Read-only operations that always pass guardrails.
+# Every tool name any agent binds must appear in one of the three sets above or here:
+# `evaluate_guardrail` ends in BLOCK, and
+# tests/unit/test_guardrails.py::test_every_bound_tool_has_a_guardrail_classification
+# ties these sets to the tool builders so a new tool fails the test, not production.
 _READ_OPERATIONS = frozenset({
     "fetch_migration_status",
     "get_current_profile",
     "ado_api_query", "github_api_query",
     "generate_plan", "validate_workflow_conversion", "validate_workflow_syntax",
+    "fetch_github_workflow", "list_ado_pipelines", "list_github_workflows",
+    # Session-local control tools: they hand the turn to another agent or to the
+    # operator and reach no external system themselves. They do start work whose
+    # later steps write, but those steps are the executor's tools, each evaluated
+    # here in their own right under CA-001 and the plan-approval check.
+    "invoke_planner", "invoke_bulk_planner", "run_migration_pev", "request_user_input",
 })
+
+
+def plan_scope(migration_plan: dict[str, Any] | None) -> set[str] | None:
+    """Read the set of repository ids an approved plan authorises writes for.
+
+    The check this feeds is an authorization boundary, so the shape is validated
+    rather than best-effort parsed: only a non-empty ``repos`` list of entries that
+    each yield a non-empty id counts. A plan that omits the key, spells it
+    differently or carries an unusable entry returns ``None``, and the caller must
+    refuse the write — an unreadable scope is not an empty scope (THR-06-001).
+
+    Args:
+        migration_plan: The plan to read, as the planner produced it.
+
+    Returns:
+        The authorised repository ids, or ``None`` when the plan declares no scope
+        that can be validated against.
+    """
+    if not isinstance(migration_plan, dict):
+        return None
+    repos = migration_plan.get("repos")
+    if not isinstance(repos, list) or not repos:
+        return None
+    scope: set[str] = set()
+    for entry in repos:
+        if isinstance(entry, dict):
+            ident = entry.get("id") or entry.get("name") or ""
+        elif isinstance(entry, str):
+            ident = entry
+        else:
+            # Not stringified: `repos: [None]` would otherwise authorise the literal
+            # target "None" instead of refusing an entry nothing can be matched to.
+            return None
+        if not isinstance(ident, str) or not ident.strip():
+            return None
+        scope.add(ident.strip())
+    return scope or None
 
 
 def _now() -> str:
@@ -124,7 +173,6 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
     migration_plan: dict[str, Any] | None = None,
     plan_approved: bool = False,
     session: dict[str, Any] | None = None,
-    approved_plan: dict[str, Any] | None = None,  # backward compat alias
 ) -> GuardrailDecision:
     """Decide whether one tool call may run, in order of severity.
 
@@ -132,7 +180,8 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
     ``GET`` calls pass as reads; accelerator and GitHub *writes* are blocked while the
     session is in dry-run (CA-001); a GitHub ``DELETE`` needs operator confirmation;
     remaining write operations need an approved plan whose repo list contains the
-    target resource; and the deletion operations need confirmation (CA-002).
+    target resource; and the deletion operations need confirmation (CA-002). A tool
+    in none of the three classification sets is blocked, not allowed.
 
     ``operation_type`` is derived from ``tool_name`` and never from the arguments, so a
     tool call cannot name itself read-only to skip the write checks.
@@ -147,13 +196,11 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
             approval state on record, not an execution mode, so it stays a boolean
             (operator decision, spec 013 increment 10).
         session: The live session, read only for its ``dry_run`` flag.
-        approved_plan: Backward-compatible alias for passing an already-approved plan;
-            supplying it implies ``plan_approved=True``.
 
     Returns:
         A :class:`GuardrailDecision` carrying the action, the operation identity, the
         target resource, a human-readable reason and, for plan-scoped decisions, the
-        plan id. Unknown operations are allowed and say so in the reason.
+        plan id. Unclassified tools are blocked and say so in the reason.
     """
     # operation_type is derived from tool_name, never from LLM-supplied arguments —
     # otherwise a tool call could set operation_type to a read-only value to bypass
@@ -164,11 +211,6 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
         or arguments.get("repository_id")
         or ""
     )
-
-    # Backward compat: approved_plan alias
-    if approved_plan is not None and migration_plan is None:
-        migration_plan = approved_plan
-        plan_approved = True
 
     # Read-only operations always pass
     if tool_name in _READ_OPERATIONS or operation_type in _READ_OPERATIONS:
@@ -193,9 +235,10 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
                 target_resource=str(target_resource),
                 reason="Read-only accelerator GET",
             )
-        # Only an explicit `False` is live authority: a missing or malformed flag must
-        # keep blocking writes rather than be coerced into "live" (GAP-076, CA-001).
-        if session and session.get("dry_run") is not False:
+        # Only an explicit `False` is live authority: a missing session, a missing flag
+        # or a malformed one must keep blocking writes rather than be coerced into
+        # "live" (GAP-076, CA-001, THR-06-005).
+        if coerce_dry_run((session or {}).get("dry_run"), default=True):
             return GuardrailDecision(
                 action=GuardrailAction.BLOCK,
                 agent_role=agent_role,
@@ -217,7 +260,7 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
                 target_resource=str(target_resource),
                 reason="Read-only GitHub GET",
             )
-        if session and session.get("dry_run") is not False:  # see the note above
+        if coerce_dry_run((session or {}).get("dry_run"), default=True):  # see the note above
             return GuardrailDecision(
                 action=GuardrailAction.BLOCK,
                 agent_role=agent_role,
@@ -259,29 +302,39 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
                 plan_reference=str(migration_plan.get("plan_id", "")),
             )
 
-        # Validate target resource exists in plan
-        plan_repos = {r.get("id", r.get("name", "")) for r in migration_plan.get("repos", [])}
-        if plan_repos:
-            if not target_resource:
-                return GuardrailDecision(
-                    action=GuardrailAction.BLOCK,
-                    agent_role=agent_role,
-                    tool_name=tool_name,
-                    operation_type=operation_type,
-                    target_resource=str(target_resource),
-                    reason="Write operation missing target_resource — cannot verify against approved plan scope",
-                    plan_reference=str(migration_plan.get("plan_id", "")),
-                )
-            if str(target_resource) not in plan_repos:
-                return GuardrailDecision(
-                    action=GuardrailAction.BLOCK,
-                    agent_role=agent_role,
-                    tool_name=tool_name,
-                    operation_type=operation_type,
-                    target_resource=str(target_resource),
-                    reason=f"Resource '{target_resource}' not in approved plan",
-                    plan_reference=str(migration_plan.get("plan_id", "")),
-                )
+        # Validate target resource exists in plan. An unreadable scope blocks: the
+        # plan is model output, so a drifted key name must not disarm the check.
+        plan_repos = plan_scope(migration_plan)
+        if plan_repos is None:
+            return GuardrailDecision(
+                action=GuardrailAction.BLOCK,
+                agent_role=agent_role,
+                tool_name=tool_name,
+                operation_type=operation_type,
+                target_resource=str(target_resource),
+                reason="Approved plan declares no usable repo scope — writes need a 'repos' list of identified repositories",
+                plan_reference=str(migration_plan.get("plan_id", "")),
+            )
+        if not target_resource:
+            return GuardrailDecision(
+                action=GuardrailAction.BLOCK,
+                agent_role=agent_role,
+                tool_name=tool_name,
+                operation_type=operation_type,
+                target_resource=str(target_resource),
+                reason="Write operation missing target_resource — cannot verify against approved plan scope",
+                plan_reference=str(migration_plan.get("plan_id", "")),
+            )
+        if str(target_resource) not in plan_repos:
+            return GuardrailDecision(
+                action=GuardrailAction.BLOCK,
+                agent_role=agent_role,
+                tool_name=tool_name,
+                operation_type=operation_type,
+                target_resource=str(target_resource),
+                reason=f"Resource '{target_resource}' not in approved plan",
+                plan_reference=str(migration_plan.get("plan_id", "")),
+            )
 
         return GuardrailDecision(
             action=GuardrailAction.ALLOW,
@@ -304,14 +357,15 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
             reason="Deletion operations require explicit operator confirmation",
         )
 
-    # Default: allow unknown operations (they'll be caught by other checks)
+    # Default: block. An allowlist whose fall-through is "permit" leaves every tool
+    # registered later unguarded until someone remembers to classify it (THR-06-002).
     return GuardrailDecision(
-        action=GuardrailAction.ALLOW,
+        action=GuardrailAction.BLOCK,
         agent_role=agent_role,
         tool_name=tool_name,
         operation_type=operation_type,
         target_resource=str(target_resource),
-        reason="Unknown operation — allowed by default",
+        reason=f"Unknown tool '{tool_name}' — no guardrail classification, blocked by default",
     )
 
 
@@ -345,7 +399,7 @@ def wrap_tool_with_guardrail(
     import asyncio
 
     def _evaluate(**kwargs: object) -> GuardrailDecision | None:
-        session = session_getter() if session_getter else {}
+        session = (session_getter() if session_getter else {}) or {}
         migration_plan = session.get("migration_plan")
         plan_approved = session.get("plan_approved", False)
 

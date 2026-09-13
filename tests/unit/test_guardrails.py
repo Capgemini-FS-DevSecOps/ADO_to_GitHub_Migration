@@ -75,7 +75,11 @@ def test_read_only_operation_allowed():
 
 
 def test_write_operation_no_plan_blocked():
-    decision = evaluate_guardrail("executor", "call_accelerator", {"target_resource": "Proj/RepoA"})
+    # A live session, so the CA-001 dry-run block is not what blocks this (THR-06-005).
+    decision = evaluate_guardrail(
+        "executor", "call_accelerator", {"target_resource": "Proj/RepoA"},
+        session={"dry_run": False},
+    )
     assert decision.blocked
     assert "plan" in decision.reason.lower()
 
@@ -87,6 +91,7 @@ def test_write_operation_plan_not_approved_blocked():
         {"target_resource": "Proj/RepoA"},
         migration_plan=plan,
         plan_approved=False,
+        session={"dry_run": False},
     )
     assert decision.blocked
     assert "approved" in decision.reason.lower()
@@ -99,6 +104,7 @@ def test_write_operation_plan_approved_allowed():
         {"target_resource": "Proj/RepoA"},
         migration_plan=plan,
         plan_approved=True,
+        session={"dry_run": False},
     )
     assert decision.allowed
 
@@ -140,6 +146,7 @@ def test_write_operation_resource_not_in_plan_blocked():
         {"target_resource": "Proj/RepoB"},
         migration_plan=plan,
         plan_approved=True,
+        session={"dry_run": False},
     )
     assert decision.blocked
     assert "not in approved plan" in decision.reason.lower()
@@ -150,9 +157,9 @@ def test_deletion_operation_requires_confirmation():
     assert decision.needs_confirmation
 
 
-def test_unknown_operation_allowed_by_default():
+def test_unknown_operation_is_not_allowed_by_default():
     decision = evaluate_guardrail("executor", "unknown_tool", {})
-    assert decision.allowed
+    assert decision.blocked
 
 
 # ─── wrap_tool_with_guardrail ─────────────────────────────────────────
@@ -221,3 +228,153 @@ async def test_wrap_tool_logs_decision():
     assert len(logged) == 1
     assert logged[0][0] == "ses1"
     assert logged[0][1]["action"] == "allow"
+
+
+# ─── THR-06-001: the approved-plan scope check must fail closed ───────
+
+_LIVE_SESSION = {"dry_run": False}
+
+
+def test_write_blocked_when_plan_declares_no_repo_scope():
+    """An approved plan with no `repos` key authorises nothing (THR-06-001)."""
+    decision = evaluate_guardrail(
+        "executor", "call_accelerator",
+        {"method": "POST", "endpoint": "/v1/migrate/secret-provision"},
+        migration_plan={"plan_id": "p1"}, plan_approved=True, session=_LIVE_SESSION,
+    )
+    assert decision.blocked
+    assert "scope" in decision.reason
+
+
+def test_write_blocked_when_plan_scope_key_drifts():
+    """A plan that spells the key `repositories` must not disarm the check."""
+    decision = evaluate_guardrail(
+        "executor", "github_api",
+        {"method": "PUT", "repository_id": "Evil/NotInPlan"},
+        migration_plan={"plan_id": "p1", "repositories": [{"id": "Proj/A"}]},
+        plan_approved=True, session=_LIVE_SESSION,
+    )
+    assert decision.blocked
+
+
+@pytest.mark.parametrize("repos", [[], [{}], [{"id": ""}], [{"id": "Proj/A"}, {}], "Proj/A", None])
+def test_write_blocked_when_plan_scope_is_unusable(repos):
+    """Empty, malformed or non-list repo scopes all fail closed."""
+    decision = evaluate_guardrail(
+        "executor", "github_api",
+        {"method": "POST", "repository_id": "Proj/A"},
+        migration_plan={"plan_id": "p1", "repos": repos},
+        plan_approved=True, session=_LIVE_SESSION,
+    )
+    assert decision.blocked
+
+
+def test_write_allowed_for_a_repo_the_plan_names():
+    """Regression guard: the well-formed path still authorises its own repos."""
+    decision = evaluate_guardrail(
+        "executor", "github_api",
+        {"method": "POST", "repository_id": "Proj/A"},
+        migration_plan={"plan_id": "p1", "repos": [{"id": "Proj/A"}]},
+        plan_approved=True, session=_LIVE_SESSION,
+    )
+    assert decision.allowed
+
+
+# ─── THR-06-002: unregistered tools must fail closed ──────────────────
+
+def test_unknown_operation_blocked_by_default():
+    """An allowlist whose fall-through is "permit" guards nothing (THR-06-002)."""
+    decision = evaluate_guardrail("executor", "provision_secret", {}, session=_LIVE_SESSION)
+    assert decision.blocked
+
+
+def test_every_bound_tool_has_a_guardrail_classification():
+    """Every tool the agents bind must be classified, or the terminal BLOCK hits it.
+
+    Read-only use of `tools/*.py`: registering a new tool without adding it to one
+    of the three sets fails here rather than at runtime (THR-06-002).
+    """
+    from ado2gh.agents.migration_agent.guardrails import (
+        _DELETION_OPERATIONS,
+        _READ_OPERATIONS,
+        _WRITE_OPERATIONS,
+    )
+    from ado2gh.agents.migration_agent.tools.executor_tools import get_executor_tools
+    from ado2gh.agents.migration_agent.tools.orchestrator_tools import get_orchestrator_tools
+    from ado2gh.agents.migration_agent.tools.planner_tools import get_planner_tools
+    from ado2gh.agents.migration_agent.tools.validator_tools import get_validator_tools
+
+    classified = _READ_OPERATIONS | _WRITE_OPERATIONS | _DELETION_OPERATIONS
+    bound = {
+        tool.name
+        for builder in (
+            get_orchestrator_tools, get_planner_tools, get_executor_tools, get_validator_tools,
+        )
+        for tool in builder()
+    }
+    assert bound <= classified, f"unclassified tools: {sorted(bound - classified)}"
+
+
+# ─── THR-06-005: an absent session is not live authority ──────────────
+
+@pytest.mark.parametrize("session", [None, {}, {"dry_run": None}, {"dry_run": "false"}])
+@pytest.mark.parametrize("tool_name", ["github_api", "call_accelerator"])
+def test_write_blocked_when_session_carries_no_live_decision(session, tool_name):
+    """Only an explicit `dry_run is False` is live authority (CA-001, THR-06-005)."""
+    decision = evaluate_guardrail(
+        "executor", tool_name,
+        {"method": "POST", "repository_id": "Proj/A", "target_resource": "Proj/A"},
+        migration_plan={"plan_id": "p1", "repos": [{"id": "Proj/A"}]},
+        plan_approved=True, session=session,
+    )
+    assert decision.blocked
+    assert "dry-run" in decision.reason
+
+
+@pytest.mark.asyncio
+async def test_wrap_tool_blocks_write_when_session_getter_returns_none():
+    """`wrap_tool_with_guardrail` must survive a session getter that returns None."""
+    async def github_api(**kwargs):
+        return {"status": "written"}
+
+    wrapped = wrap_tool_with_guardrail(
+        github_api, agent_role="executor", session_getter=lambda: None,
+    )
+    result = await wrapped(_tool_name="github_api", method="POST", repository_id="Proj/A")
+    assert result["error"] == "guardrail_blocked"
+
+
+# ─── GAP-070: no alias may set plan approval ──────────────────────────
+
+def test_plan_approval_cannot_be_set_through_an_alias():
+    """`plan_approved` is the only way to say "the operator approved this" (GAP-070).
+
+    The deleted `approved_plan` alias implied approval from the mere presence of a
+    plan, so a caller that only had a plan object handed one in and got a write
+    authorised without an operator ever approving it.
+    """
+    plan = {"plan_id": "p1", "repos": [{"id": "Proj/A"}]}
+    with pytest.raises(TypeError):
+        evaluate_guardrail(
+            "executor", "github_api",
+            {"method": "POST", "repository_id": "Proj/A"},
+            approved_plan=plan,
+            session=_LIVE_SESSION,
+        )
+
+    decision = evaluate_guardrail(
+        "executor", "github_api",
+        {"method": "POST", "repository_id": "Proj/A"},
+        migration_plan=plan, session=_LIVE_SESSION,
+    )
+    assert decision.blocked
+    assert "approved" in decision.reason.lower()
+
+
+def test_plan_scope_refuses_an_entry_it_cannot_identify():
+    """`repos: [None]` must not authorise the literal target "None" (Codex review)."""
+    from ado2gh.agents.migration_agent.guardrails import plan_scope
+
+    assert plan_scope({"repos": [None]}) is None
+    assert plan_scope({"repos": [{"id": "Proj/A"}, 7]}) is None
+    assert plan_scope({"repos": ["Proj/A", " Proj/B "]}) == {"Proj/A", "Proj/B"}

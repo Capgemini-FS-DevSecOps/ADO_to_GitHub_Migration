@@ -1025,3 +1025,34 @@ T089 final regeneration, run per `specs/013-clean-code-arch-remediation/tasks.md
 - **Inventory**: web console (TypeScript) 205 to 204 exports; the `dead` tag count 1 to 0 (`inventory-summary.md`). `--pending` still exits 1 on exactly the three rows reserved for the operator (`services/accelerator_api/routes/profile_routes.py::migration_scan_profile:bool_flag`, `services/accelerator_api/routes/settings_routes.py::list_cloud_credentials:bool_flag`, `services/accelerator_api/routes/_shared.py:module_name_review`) — unchanged by this task and left for the operator, per T089's own instructions.
 - **ChatGPT/Codex consultation**: run before committing per repo `CLAUDE.md`, through the Codex CLI (`gpt-5.6-luna`, `--sandbox read-only --ephemeral`). It confirmed the dead-vs-mock-surface evidence ("No import, alias, re-export, wrapper, or direct call reaches `useParams`... Only computed/reflection-based access or code outside the searched tree could evade the greps, and nothing indicates either") and recommended removing `navState.params` as orphaned state, which was applied.
 - **Not changed, for later**: none — T089 as scoped (the SC-001 gate) is closed.
+
+
+## 2026-09-13 — 013 threat-model remediation: guardrails (GAP-070)
+
+`ado2gh/agents/migration_agent/guardrails.py::evaluate_guardrail` carried an
+`approved_plan` keyword whose only behaviour was to imply `plan_approved = True` from
+the mere presence of a plan object. Grep over `ado2gh/` and `services/` at `685c624`
+found no production caller; the only callers were four test files, all of them
+module- or test-level skipped legacy (spec 011) suites.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `ado2gh/agents/migration_agent/guardrails.py` | (same) | parameter deleted | `evaluate_guardrail`'s `approved_plan` alias, its docstring entry and the three-line alias block that set `plan_approved = True` from it. Approval is now expressible only through `plan_approved` (GAP-070) | yes | pass (39, `run-r10a-guardrails.txt`) | 2026-09-13 |
+| `tests/unit/test_guardrails_spec011.py` | (deleted) | file deleted | 19 test functions, the whole module skipped at import since spec 012 ("Legacy guardrail API (spec 011) — superseded by test_guardrails.py"). Every test asserted the superseded contract (`ado2gh_*` tool names, role-based access) and 9 of them drove it through `approved_plan=` | yes | pass (39, `run-r10a-guardrails.txt`) | 2026-09-13 |
+| `tests/contract/test_agent_pev_flow_contracts.py` | (same) | tests deleted | 3 `@skip`-marked legacy guardrail contract tests that called `evaluate_guardrail(..., approved_plan=plan)`: `test_guardrail_blocks_unauthorized_delete_contract`, `test_guardrail_blocks_repo_not_in_plan_contract`, `test_guardrail_allows_ado_write_with_cleanup_contract`. The file's other skipped legacy tests do not touch the alias and were left alone | yes | pass (14 passed / 12 skipped, `run-r10a-contract.txt`) | 2026-09-13 |
+
+- **Deleted functions**: 22 — 19 in `tests/unit/test_guardrails_spec011.py` (whole file) plus the
+  3 named above in `tests/contract/test_agent_pev_flow_contracts.py`. As with the T089 entry,
+  this does not follow the usual FR-029 pointer to a pre-increment `inventory.json` row with
+  `disposition == "delete"`: the inventory walks `ado2gh/`, `services/` and `apps/`, not `tests/`,
+  so no row has ever existed for any of them. Pointer for the record: `inventory.json@8b48f36`
+  (1717 rows, none naming `evaluate_guardrail`, `approved_plan` or `test_guardrails_spec011`).
+  Production functions deleted: 0 — `evaluate_guardrail` lost a parameter, not its definition.
+- **Regression check**: `tests/unit/test_guardrails.py::test_plan_approval_cannot_be_set_through_an_alias`
+  asserts the alias keyword now raises `TypeError` and that a plan passed without `plan_approved`
+  blocks the write.
+- **Not changed, for later**: `tests/unit/test_executor.py` and `tests/integration/test_pev_loop.py`
+  also pass `approved_plan=`, but to the deleted legacy `AgentExecutor.invoke`, not to
+  `evaluate_guardrail`; both modules are skipped at import and are out of GAP-070's scope.
+- **Concurrent work**: same tree as the R1/R4/R10b/R10c threat-model batches; only the paths in
+  the table above were touched by this entry.
