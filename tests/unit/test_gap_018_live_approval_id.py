@@ -29,11 +29,11 @@ import pytest
 from ado2gh.api.accelerator import Accelerator
 from ado2gh.api.contracts import RunWaveRequest
 from ado2gh.api.errors import ConfigurationError
+from ado2gh.api.live_approval_store import migrate_scope_id
 from ado2gh.auth.models import PlatformRole, PlatformUser
 from ado2gh.state.factory import create_state_db
 
 APPROVAL_ID = "approval-0001"
-SCOPE_ID = "migrate_job:wave-1"
 
 
 class _StubExecutor:
@@ -92,15 +92,19 @@ def wave_env(tmp_path, monkeypatch):
     return str(config_path), db_path, create_state_db(db_path)
 
 
-def _seed_approval(db, status: str) -> None:
-    """Write one live-execution approval row, decided to `status` when not pending."""
+def _seed_approval(db, status: str, scope_id: str) -> None:
+    """Write one live-execution approval row for `scope_id`, decided to `status`.
+
+    The scope id is the one ``Accelerator.run_wave`` rebuilds for itself, since a
+    quoted token has to name the scope it was granted for (GAP-063).
+    """
     now = datetime.now(timezone.utc).isoformat()
     db.create_live_execution_approval(
         approval_id=APPROVAL_ID,
         requester_user_id="user-1",
         requester_username="operator",
         scope_type="migrate_job",
-        scope_id=SCOPE_ID,
+        scope_id=scope_id,
         requested_at=now,
     )
     if status != "pending":
@@ -124,7 +128,7 @@ def _request(config_path: str, db_path: str, approval_id: str | None) -> RunWave
 def test_undecided_or_denied_approval_migrates_nothing(wave_env, status):
     """A quoted approval that was never granted stops the wave."""
     config_path, db_path, db = wave_env
-    _seed_approval(db, status)
+    _seed_approval(db, status, migrate_scope_id(None, 1, config_path))
 
     with pytest.raises(ConfigurationError) as exc:
         Accelerator(db_path=db_path).run_wave(_request(config_path, db_path, APPROVAL_ID))
@@ -149,7 +153,7 @@ def test_unknown_approval_id_migrates_nothing(wave_env):
 def test_approved_token_lets_the_wave_run(wave_env):
     """A granted approval is honoured — the refusal is targeted, not blanket."""
     config_path, db_path, db = wave_env
-    _seed_approval(db, "approved")
+    _seed_approval(db, "approved", migrate_scope_id(None, 1, config_path))
 
     result = Accelerator(db_path=db_path).run_wave(
         _request(config_path, db_path, APPROVAL_ID),

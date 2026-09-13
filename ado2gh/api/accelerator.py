@@ -17,6 +17,7 @@ from ado2gh.api.contracts import (
     ValidateResult,
 )
 from ado2gh.api.errors import ConfigurationError
+from ado2gh.api.live_approval_store import LiveApprovalStore, migrate_scope_id
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.ado_token_manager import ADOTokenManager
 from ado2gh.clients.gh_client import GHClient
@@ -169,9 +170,15 @@ class Accelerator:
                 token-config source is present.
 
         A quoted ``request.live_approval_id`` is verified here before anything
-        else happens: it must name an ``approved`` live-execution approval or
-        nothing is migrated (GAP-018). Quoting no token leaves the run as it
-        was — this is not the approval gate itself, which lives in the routes.
+        else happens: it must name an ``approved`` live-execution approval for
+        *this* wave and config, or nothing is migrated (GAP-018, GAP-063).
+        Quoting no token leaves the run as it was — this is not the approval
+        gate itself, which lives in the routes.
+
+        The scope checked here names no profile: the SDK has no settings store
+        to resolve the active one from. The profile-aware gate is
+        ``require_migrate_live_approval`` on the route, which drops the token
+        once it has verified it so that the weaker check cannot overrule it.
 
         Returns:
             A ``RunWaveResult`` for the last wave executed: its wave id, final
@@ -184,13 +191,16 @@ class Accelerator:
         """
         db = create_state_db(request.db_path)
         if request.live_approval_id:
-            row = db.get_live_execution_approval(request.live_approval_id)
-            if not row or row.get("status") != "approved":
+            scope_id = migrate_scope_id(None, request.wave_id, request.config_path)
+            if not LiveApprovalStore(request.db_path).is_approved_for(
+                request.live_approval_id,
+                scope_type="migrate_job",
+                scope_id=scope_id,
+            ):
                 raise ConfigurationError(
                     f"live_approval_id {request.live_approval_id!r} is not an "
-                    f"approved live-execution approval "
-                    f"(status: {row.get('status') if row else 'no such approval'}). "
-                    f"Nothing was migrated."
+                    f"approved live-execution approval for this migrate scope "
+                    f"({scope_id}). Nothing was migrated."
                 )
         global_cfg, waves = ConfigLoader.load(request.config_path)
         ado = _build_ado_client(global_cfg, ado_url=ado_url, ado_pat=ado_pat)

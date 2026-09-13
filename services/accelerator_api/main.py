@@ -34,7 +34,6 @@ from ado2gh.api.contracts import (
     HealthResponse,
     JobEnqueueRequest,
     JobStatusResponse,
-    LiveApprovalCreateRequest,
     OnboardingStatusResponse,
     PlanRequest,
     PlanResponse,
@@ -49,17 +48,11 @@ from ado2gh.api.credentials.credential_validation import (  # noqa: F401
     validate_ado_pat,  # re-exported: tests patch services.accelerator_api.main.validate_ado_pat
     validate_github_token,  # re-exported: same, .main.validate_github_token
 )
-from ado2gh.api.live_approval_store import (
-    migrate_scope_id,
-)
 from ado2gh.api.migration_scan import (
     scan_with_credentials,  # noqa: F401 -- re-exported: tests patch .main.scan_with_credentials
 )
 from ado2gh.api.pipeline_runner import (
     PipelineRunStore,
-)
-from ado2gh.api.platform_rbac import (
-    operator_requires_live_approval,
 )
 from ado2gh.api.profile_governance import (
     ProfileGovernanceError,
@@ -70,7 +63,6 @@ from ado2gh.api.settings_store import SettingsStore
 from ado2gh.auth.models import PlatformRole
 from ado2gh.core.config_loader import ConfigLoader
 from ado2gh.core.redis_queue import RedisJobQueue
-from ado2gh.models import ExecutionMode
 from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
 from ado2gh.state.factory import create_state_db
 from ado2gh.state.job_store import JobStoreFactory
@@ -87,9 +79,9 @@ from services.accelerator_api.routes._shared import (
     _accel,
     _config_path,
     _governance_http_error,
-    _live_store,
     _platform_user,
     _settings,
+    require_migrate_live_approval,
 )
 from services.accelerator_api.routes.migrate_routes import router as migrate_features_router
 from services.accelerator_api.routes.pipeline_routes import router as pipeline_router
@@ -388,9 +380,10 @@ def migrate(req: RunWaveRequest, request: Request) -> list[RunWaveResponse]:
 
     The request passes three gates before any work starts. The active
     migration profile must be approved and runnable; a caller who needs
-    approval for live execution must already hold one, either quoted as
-    ``live_approval_id`` or standing for this migrate scope; and the config
-    must actually contain the requested wave. A live run without an approval
+    approval for live execution must already hold one for *this* profile,
+    wave and config, either quoted as ``live_approval_id`` or standing for
+    the scope (``require_migrate_live_approval``); and the config must
+    actually contain the requested wave. A live run without an approval
     creates a pending approval request and refuses the call, so the console can
     poll for the decision and retry. ``dry_run`` decides everything else: the
     default rehearses, while a live run pushes into GitHub for real.
@@ -420,34 +413,9 @@ def migrate(req: RunWaveRequest, request: Request) -> list[RunWaveResponse]:
                 assert_profile_active_for_run(active)
             except ProfileGovernanceError as exc:
                 raise _governance_http_error(exc)
-        user = _platform_user(request)
-        profile_id = active.id if active else None
-        scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)
-        if operator_requires_live_approval(
-            user, ExecutionMode.from_dry_run(dry_run=req.dry_run),
-        ):
-            store = _live_store()
-            approved = False
-            if req.live_approval_id:
-                row = store.db.get_live_execution_approval(req.live_approval_id)
-                approved = bool(row and row.get("status") == "approved")
-            elif store.has_approved("migrate_job", scope_id):
-                approved = True
-            if not approved:
-                approval = store.create_or_get_pending(
-                    user,
-                    LiveApprovalCreateRequest(
-                        scope_type="migrate_job",
-                        scope_id=scope_id,
-                        profile_id=profile_id,
-                        reason_request="Dashboard live migrate",
-                        context=req.model_dump(exclude={"live_approval_id"}),
-                    ),
-                )
-                raise HTTPException(
-                    status_code=403,
-                    detail={"code": "awaiting_approval", "approval_id": approval["id"]},
-                )
+        req = require_migrate_live_approval(
+            _platform_user(request), req, profile_id=active.id if active else None,
+        )
         _, waves = ConfigLoader.load(req.config_path)
         targets = [w for w in waves if req.wave_id is None or w.wave_id == req.wave_id]
         if not targets:

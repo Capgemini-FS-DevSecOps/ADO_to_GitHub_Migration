@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Any
 from fastapi import HTTPException, Request
 
 from ado2gh.api.accelerator import Accelerator
-from ado2gh.api.contracts import RunWaveRequest
+from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
 from ado2gh.api.credentials.credential_validation import validate_ado_pat as _validate_ado_pat
 from ado2gh.api.credentials.credential_validation import validate_github_token as _validate_github_token
-from ado2gh.api.live_approval_store import LiveApprovalStore
+from ado2gh.api.live_approval_store import LiveApprovalStore, migrate_scope_id
 from ado2gh.api.migration_scan import (
     load_scan_results as _load_scan_results,
 )
@@ -21,9 +21,10 @@ from ado2gh.api.migration_scan import (
     scan_with_credentials as _scan_with_credentials,
 )
 from ado2gh.api.pipeline_runner import PipelineRunner, PipelineRunStore
-from ado2gh.api.platform_rbac import require_manage_settings
+from ado2gh.api.platform_rbac import operator_requires_live_approval, require_manage_settings
 from ado2gh.api.profile_governance import ProfileGovernanceError
 from ado2gh.api.settings_store import SettingsStore
+from ado2gh.models import ExecutionMode
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard, types only
     from pathlib import Path
@@ -176,6 +177,71 @@ def _live_store() -> LiveApprovalStore:
         A store bound to the configured state database.
     """
     return LiveApprovalStore()
+
+
+def require_migrate_live_approval(
+    user: PlatformUser | None,
+    req: RunWaveRequest,
+    *,
+    profile_id: str | None,
+) -> RunWaveRequest:
+    """Hold a live ``POST /v1/migrate`` until an approver has released this exact run.
+
+    A dry run, or a caller who may approve live execution, passes straight through.
+    Anyone else needs an approval for this profile, wave and config — either standing
+    for the scope, or quoted as ``live_approval_id`` and verified against that same
+    scope rather than by status alone (GAP-063, CA-002). Without one the run is parked
+    in the approval queue and refused, so the console can poll for the decision and
+    retry.
+
+    Args:
+        user: The signed-in caller, as the authentication middleware resolved them.
+        req: The run-wave request being gated.
+        profile_id: Active migration profile, or ``None`` for the default profile.
+
+    Returns:
+        The request to run. A token this gate verified is dropped from it:
+        ``Accelerator.run_wave`` re-checks a quoted token against a scope built
+        without a profile — it has no settings store to resolve one from — so leaving
+        the verified token in place would only let the weaker check overrule the
+        stronger one. This mirrors ``_execute_approved_migrate``, which runs an
+        approved request with the token already excluded.
+
+    Raises:
+        HTTPException: 403 carrying ``awaiting_approval`` and the queued approval's
+            id when this run still needs a decision.
+    """
+    if not operator_requires_live_approval(
+        user, ExecutionMode.from_dry_run(dry_run=req.dry_run),
+    ):
+        return req
+    scope_id = migrate_scope_id(profile_id, req.wave_id, req.config_path)
+    store = _live_store()
+    if req.live_approval_id:
+        approved = store.is_approved_for(
+            req.live_approval_id,
+            scope_type="migrate_job",
+            scope_id=scope_id,
+            actor=getattr(user, "username", "") or "_system",
+        )
+    else:
+        approved = store.has_approved("migrate_job", scope_id)
+    if not approved:
+        approval = store.create_or_get_pending(
+            user,
+            LiveApprovalCreateRequest(
+                scope_type="migrate_job",
+                scope_id=scope_id,
+                profile_id=profile_id,
+                reason_request="Dashboard live migrate",
+                context=req.model_dump(exclude={"live_approval_id"}),
+            ),
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "awaiting_approval", "approval_id": approval["id"]},
+        )
+    return req.model_copy(update={"live_approval_id": None})
 
 
 def _governance_http_error(exc: ProfileGovernanceError) -> HTTPException:
