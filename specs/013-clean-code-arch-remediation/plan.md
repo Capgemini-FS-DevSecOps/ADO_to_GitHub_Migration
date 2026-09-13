@@ -120,6 +120,10 @@ GAP-061, is medium. The **"zero critical or high gaps open" bar is therefore sti
 for exactly the four operator-blocked gaps already listed: GAP-019, GAP-024, GAP-031 and
 GAP-054.
 
+The ratchet moved with them: the 14 tests added by the T077 review lift whole-package coverage
+to **62.39 %** (`run-ratchet-62.txt`, 1,033 passed / 30 skipped), so `--cov-fail-under` in
+`.github/workflows/ci.yml` is raised 61 → **62** under FR-027a.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
@@ -427,6 +431,9 @@ sections of `docs/STRUCTURAL_CHANGELOG.md` and against
 | Increment 3 (`state/`) | 58 → **59** | `7eba3d7`, changelog line 432 |
 | Increments 4, 5, 6, 8, 7, 13, 14, 9 | **59** at each; increment 8 measured 58 and was correctly not lowered | changelog lines 460, 492, 523, 561, 619, 703, 810 |
 | HEAD `7396829` | **59** (`ci.yml:36`) | — |
+| Increment 10 (`agents/`) | 59 → **60** | `ca3f3b2` |
+| Increment 12 (`services/accelerator_api/`) | 60 → **61** | `ef7a6c7` |
+| T077 review tests (2026-09-13) | 61 → **62** | `run-ratchet-62.txt`, measured 62.39 % |
 
 The gate has never been lowered, which is the compensating control recorded against
 GAP-022 (GAP-TOOL-01). Increments 10, 11 and 12 were still in flight when this trail

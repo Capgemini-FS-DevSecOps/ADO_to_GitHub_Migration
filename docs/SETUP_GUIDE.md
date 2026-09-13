@@ -180,7 +180,7 @@ pytest
 # If discovery works, you're ready to start the migration workflow
 ```
 
-The suite is roughly 1,000 tests and takes about 100 seconds. On Windows, call it as `.\.venv\Scripts\python.exe -m pytest` when the virtual environment is not activated. CI gates the same suite with `ruff check ado2gh/ services/` and `pytest --cov=ado2gh --cov-fail-under=61`; see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for the full rule set and the structural guard tests.
+The suite is roughly 1,000 tests and takes about 100 seconds. On Windows, call it as `.\.venv\Scripts\python.exe -m pytest` when the virtual environment is not activated. CI gates the same suite with `ruff check ado2gh/ services/` and `pytest --cov=ado2gh --cov-fail-under=62`; see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for the full rule set and the structural guard tests.
 
 ---
 

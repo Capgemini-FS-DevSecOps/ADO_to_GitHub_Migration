@@ -93,7 +93,7 @@ tests/                  pytest + contract tests
 ```bash
 pytest                                      # ~1,000 tests, about 100 seconds
 ruff check ado2gh/ services/                # lint gate
-pytest --cov=ado2gh --cov-fail-under=61     # coverage ratchet, as CI runs it
+pytest --cov=ado2gh --cov-fail-under=62     # coverage ratchet, as CI runs it
 ```
 
 On Windows, call the suite as `.\.venv\Scripts\python.exe -m pytest` when the virtual environment is not activated, and redirect the output to a file rather than piping it.
