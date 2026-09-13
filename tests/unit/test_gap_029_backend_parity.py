@@ -106,6 +106,83 @@ def test_sqlite_and_postgres_declare_the_same_tables() -> None:
     assert len(sqlite_tables) == EXPECTED_TABLE_COUNT
 
 
+def _declared_columns(schema: str) -> dict[str, set[str]]:
+    """Map each declared table to the column names in its ``CREATE TABLE`` body.
+
+    Args:
+        schema: The ``SCHEMA`` constant of a state store.
+
+    Returns:
+        One entry per table, holding the column names only — types, constraints
+        and table-level clauses (``PRIMARY KEY (...)``, ``UNIQUE (...)``,
+        ``FOREIGN KEY``) are dropped, so a type that differs between the two
+        dialects (``SERIAL`` against ``INTEGER``) is not a parity failure but a
+        missing or renamed column is.
+    """
+    tables: dict[str, set[str]] = {}
+    for block in schema.split(";"):
+        match = re.search(
+            r"CREATE TABLE IF NOT EXISTS\s+(\w+)\s*\((.*)\)", block, re.IGNORECASE | re.DOTALL,
+        )
+        if not match:
+            continue
+        columns: set[str] = set()
+        depth = 0
+        current = ""
+        for char in match.group(2):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            if char == "," and depth == 0:
+                columns.add(current)
+                current = ""
+            else:
+                current += char
+        columns.add(current)
+        names = set()
+        for raw in columns:
+            first = raw.strip().split()
+            if not first:
+                continue
+            # `UNIQUE(phase)` has no space before its bracket, so split the
+            # keyword off the column list before testing it.
+            keyword = first[0].split("(", 1)[0].upper()
+            if keyword in ("PRIMARY", "UNIQUE", "FOREIGN", "CONSTRAINT", "CHECK"):
+                continue
+            names.add(first[0].strip('"'))
+        tables[match.group(1)] = names
+    return tables
+
+
+def test_sqlite_and_postgres_declare_the_same_columns_per_table() -> None:
+    """COV-DRIFT-005: surface parity is not enough — the column sets must match.
+
+    ``test_sqlite_and_postgres_declare_the_same_tables`` compares table names
+    only, so a column renamed in one backend passes it. A SQL-level divergence
+    of that kind is exactly what would pass CI and surface first in a production
+    migration run.
+    """
+    sqlite_columns = _declared_columns(SQLiteStateDB.SCHEMA)
+    postgres_columns = _declared_columns(PostgresStateDB.SCHEMA)
+
+    assert set(sqlite_columns) == set(postgres_columns)
+    assert len(sqlite_columns) == EXPECTED_TABLE_COUNT
+
+    drift: dict[str, tuple[list[str], list[str]]] = {}
+    for table, columns in sqlite_columns.items():
+        other = postgres_columns[table]
+        if columns != other:
+            drift[table] = (sorted(columns - other), sorted(other - columns))
+    assert not drift, f"column drift between the backends: {drift}"
+
+
+def test_every_declared_table_has_at_least_one_column() -> None:
+    """A parse that silently yields an empty set would make the parity test vacuous."""
+    for table, columns in _declared_columns(PostgresStateDB.SCHEMA).items():
+        assert columns, f"{table} parsed to no columns at all"
+
+
 def test_a_real_sqlite_file_holds_exactly_the_declared_tables(tmp_path: Path) -> None:
     """The DDL above is what a constructed store actually writes to disk."""
     db_path = tmp_path / "parity.db"
