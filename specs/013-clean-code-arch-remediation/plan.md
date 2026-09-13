@@ -290,6 +290,62 @@ batch were observed and left alone: the working-tree `ado2gh/audit/redaction.py`
 `ruff` (I001, W292) and `mypy` (`return-value` at `:23`), and a stalled full-suite pytest from
 06:13 was cleared with `Stop-Process` before this run could start.
 
+**Addendum (2026-09-13, remediation batch R10a — the agent guardrail and orchestrator
+threat-model findings).** The figures above are superseded: the register now holds **88 gaps:
+20 critical, 38 high, 19 medium, 11 low**, counted from its own `- severity:` lines. R10a took
+the eight findings the threat-model hook artefact `threat-model-2026-09-13-001.md` raised
+against `ado2gh/agents/migration_agent/guardrails.py`, `nodes/orchestrator.py` and
+`nodes/orchestrator_tools.py`, re-measured each one in this tree before editing, and registered
+them as GAP-081…GAP-088. Seven are remediated in two commits; GAP-086 is recorded open because
+both of its sites live in `ado2gh/agents/migration_agent/tools/`, which a concurrent batch owns.
+GAP-070 is closed in the same pass at the coordinator's instruction.
+
+| Id | Title | Severity | Status |
+|----|-------|----------|--------|
+| GAP-081 (GAP-AGT-10) | The approved-plan scope check was skipped whenever the plan's repo set was empty or its key was misspelled | high | remediated |
+| GAP-082 (GAP-AGT-11) | The guardrail's terminal branch allowed any tool absent from all three classification sets | high | remediated |
+| GAP-083 (GAP-AGT-12) | The CA-002 confirmation for rollback was never read, so a form submission deleted GitHub resources unconfirmed | high | remediated |
+| GAP-084 (GAP-AGT-13) | A falsy session skipped the CA-001 dry-run write blocks entirely | medium | remediated |
+| GAP-085 (GAP-AGT-14) | The planner handoffs seeded the session's execution mode from the model's own tool argument | medium | remediated |
+| GAP-086 (GAP-AGT-15) | `call_accelerator` defaults its HTTP method to POST, so a tool call that omits `method` writes | medium | open |
+| GAP-087 (GAP-AGT-16) | The guardrail had one call site, and the orchestrator's inline tool dispatcher was not one of them | low | remediated |
+| GAP-088 (GAP-AGT-17) | ADO-sourced repository names were interpolated into the orchestrator's system prompt | high | remediated |
+
+The common shape across the three high guardrail findings is a control that fails **open**: a
+scope check skipped on the degenerate input, an allowlist whose fall-through permits, and a
+confirmation nothing server-side reads. All three now fail closed, and the tool-classification
+sets are tied to the four tool builders by
+`tests/unit/test_guardrails.py::test_every_bound_tool_has_a_guardrail_classification`, so
+registering a tool without classifying it fails a test rather than shipping unguarded. All four
+of R10a's high entries are remediated, so the batch adds nothing to the open-high set and the
+**"zero critical or high gaps open" bar is unaffected** by it.
+
+Two structural consequences are recorded rather than absorbed silently. `nodes/orchestrator.py`
+stood at 792 of its 800 permitted lines, and the THR-01-001 fix took it to 837, so the
+orchestrator's LLM-turn assembly was split into the new
+`ado2gh/agents/migration_agent/nodes/orchestrator_prompt.py` (53 lines; `orchestrator.py` is
+789 after the split), with a `docs/STRUCTURAL_CHANGELOG.md` row. The GAP-070 deletion removed
+22 test functions — the whole of the import-skipped `tests/unit/test_guardrails_spec011.py`
+plus three `@skip`-marked legacy contract tests — and 0 production functions; that changelog
+section carries the count and the inventory pointer.
+
+Measured at the two fix commits `e0fe573` and `f8ab25b`:
+`ruff check` over the four files this batch owns — `All checks passed!`; `mypy ado2gh/` —
+`Success: no issues found in 197 source files`; the targeted run over `tests/agent` and
+`tests/unit` for the touched areas — **173 passed, 6 skipped** (`run-r10a-targeted.txt`), with
+one unrelated failure, `tests/unit/test_hitl_form_guardrails.py::test_human_input_node_labels_an_unlabelled_payload`,
+which belongs to a concurrent batch's untracked test file and passes both in isolation and
+alongside this batch's own tests; the public-surface snapshot, the 800-line file cap and the
+orphan-module guard all pass (`run-r10a-guards.txt`). No full-suite run was taken in this pass —
+batch R1 ran one against the same tree. A read-only Codex `gpt-5.6-terra` review of the diff ran
+before the first commit and produced four findings; two were applied (`plan_scope` stringified
+non-dict entries so `repos: [None]` authorised the literal target `"None"`; the dispatcher read
+`plan_approved` with `bool()` rather than `is True`), one was answered in a comment (the
+session-local control tools' read classification) and one is recorded as a residual on GAP-088
+(context-window trimming preserves system messages unconditionally but non-system ones only
+from the tail).
+
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
