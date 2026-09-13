@@ -66,6 +66,25 @@ def _is_secret_key(key: object) -> bool:
     return isinstance(key, str) and _SECRET_KEY_RE.search(key.lower()) is not None
 
 
+def redact_text(text: str) -> str:
+    """Mask every recognised secret *value* shape in a block of free text.
+
+    The string half of :func:`redact_payload`, exposed on its own for callers
+    that already hold rendered text — a formatted log message, a traceback — and
+    need a ``str`` back rather than ``object``.
+
+    Args:
+        text: Free text that may carry a token, PAT, ``Bearer`` header or
+            ``key=value`` pair.
+
+    Returns:
+        The same text with every recognised secret masked.
+    """
+    if len(text) < 5:  # nothing we match is shorter
+        return text
+    return _SECRET_VALUE_RE.sub(_mask_match, text)
+
+
 def redact_payload(payload: object, _depth: int = 0) -> object:
     """Recursively redact likely secrets from any payload, message, or log record.
 
@@ -89,9 +108,7 @@ def redact_payload(payload: object, _depth: int = 0) -> object:
     if payload is None or isinstance(payload, (bool, int, float)):
         return payload
     if isinstance(payload, str):
-        if len(payload) < 5:  # nothing we match is shorter
-            return payload
-        return _SECRET_VALUE_RE.sub(_mask_match, payload)
+        return redact_text(payload)
     if _depth >= _MAX_DEPTH:
         return _MASK  # fail safe: pathological nesting / cycle -> redact
     if isinstance(payload, dict):
