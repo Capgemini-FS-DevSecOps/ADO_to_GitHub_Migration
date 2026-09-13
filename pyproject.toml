@@ -80,9 +80,12 @@ markers = [
     "contract: API and schema contract tests",
     "langsmith: LangSmith eval tests (require LANGCHAIN_API_KEY)",
 ]
-# Coverage flags live in CI (`pytest --cov=ado2gh --cov-fail-under=85`), not here —
+# Coverage flags live in CI (`pytest --cov=ado2gh --cov-fail-under=<N>`), not here —
 # hardcoding them in addopts breaks bare `pytest` when pytest-cov isn't installed
-# and conflicts with CI's own --cov invocation.
+# and conflicts with CI's own --cov invocation. `.github/workflows/ci.yml` is the
+# single source of truth for <N>: the FR-027a ratchet raises it after each
+# increment and never lowers it (62 at the time of writing; the constitutional
+# 85 % target stays outstanding as gap G-seed 4).
 addopts = ""
 
 [tool.coverage.run]
