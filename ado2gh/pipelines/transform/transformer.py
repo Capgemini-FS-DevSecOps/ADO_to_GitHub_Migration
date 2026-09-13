@@ -474,8 +474,9 @@ class PipelineTransformer:
             unsupported: Task names with no known equivalent.
 
         Returns:
-            The path of the notes file. Service connections are listed by name
-            only; no credential is written.
+            The path of the notes file. Service connections and variable-group
+            variables are listed by name only; no credential or variable value
+            is written.
         """
         notes_file = output_dir / f"{safe_name}_migration_notes.md"
         lines: list[str] = [
@@ -501,6 +502,25 @@ class PipelineTransformer:
                 sc_name = sc.get("name", sc) if isinstance(sc, dict) else str(sc)
                 lines.append(f"- `{sc_name}`")
             lines.append("")
+        if meta.variable_groups:
+            lines += [
+                "## Variable Groups",
+                "",
+                "Variable groups are not migrated. Recreate each name below as a "
+                "GitHub Actions repository or environment variable — as a secret "
+                "where it is marked as one — and copy its value from Azure DevOps "
+                "by hand. Values are never exported by this tool, so none appears "
+                "here.",
+                "",
+            ]
+            for raw in meta.variable_groups:
+                group = raw if isinstance(raw, dict) else {"name": str(raw)}
+                secret_names = set(group.get("secret_variables") or ())
+                lines += [f"### {group.get('name', '')}", ""]
+                for name in group.get("variables") or ():
+                    marker = " (secret)" if name in secret_names else ""
+                    lines.append(f"- `{name}`{marker}")
+                lines.append("")
         if unsupported:
             lines += ["## Unsupported Tasks", ""]
             for task in sorted(set(unsupported)):

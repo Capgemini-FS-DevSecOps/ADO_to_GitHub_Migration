@@ -16,6 +16,34 @@ from ado2gh.models import (
 )
 
 
+def _variable_group_record(vg: dict, vg_id: int, name: str) -> dict:
+    """Summarise one referenced variable group by name.
+
+    Args:
+        vg: Raw variable-group record from the ADO API, or ``{}`` when the
+            reference could not be resolved against the project's groups.
+        vg_id: Identifier of the referenced group.
+        name: Display name of the referenced group.
+
+    Returns:
+        The group's id, name, type, its variable names and the subset of those
+        names Azure DevOps flags as secret. No variable value is ever copied,
+        so nothing downstream can print one (CA-003).
+    """
+    variables = vg.get("variables") or {}
+    specs = variables.items() if isinstance(variables, dict) else ()
+    return {
+        "id":        vg_id,
+        "name":      name,
+        "type":      vg.get("type", "Vsts"),
+        "variables": [str(n) for n in variables],
+        "secret_variables": [
+            str(n) for n, spec in specs
+            if isinstance(spec, dict) and spec.get("isSecret")
+        ],
+    }
+
+
 class PipelineMetadataExtractor:
     """Build normalised pipeline metadata from raw Azure DevOps responses.
 
@@ -267,12 +295,9 @@ class PipelineMetadataExtractor:
         for vg_ref in build_def.get("variableGroups", []):
             vg_id = vg_ref if isinstance(vg_ref, int) else vg_ref.get("id", 0)
             vg    = vg_map.get(vg_id, {})
-            meta.variable_groups.append({
-                "id":        vg_id,
-                "name":      vg.get("name", f"group-{vg_id}"),
-                "type":      vg.get("type", "Vsts"),
-                "variables": list(vg.get("variables", {}).keys()),
-            })
+            meta.variable_groups.append(_variable_group_record(
+                vg, vg_id, vg.get("name", f"group-{vg_id}"),
+            ))
 
     def _extract_retention(self, meta: PipelineMetadata, build_def: dict) -> None:
         """Record the build retention period on the metadata.
@@ -320,12 +345,9 @@ class PipelineMetadataExtractor:
                     vg_name = var["group"]
                     vg = next((v for v in var_groups
                                if v.get("name") == vg_name), {})
-                    meta.variable_groups.append({
-                        "id":        vg.get("id", 0),
-                        "name":      vg_name,
-                        "type":      vg.get("type", "Vsts"),
-                        "variables": list(vg.get("variables", {}).keys()),
-                    })
+                    meta.variable_groups.append(
+                        _variable_group_record(vg, vg.get("id", 0), vg_name)
+                    )
                 else:
                     meta.variables.append(PipelineVariable(
                         name  = var.get("name", ""),
