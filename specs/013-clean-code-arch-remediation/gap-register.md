@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-70 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, and GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, each with the next free id); the per-component placeholder each id
+75 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, and GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -21,14 +21,14 @@ table below rather than by re-rating an entry here.
 
 | Severity | Count |
 |----------|-------|
-| critical | 19 |
-| high | 30 |
-| medium | 13 |
+| critical | 20 |
+| high | 33 |
+| medium | 14 |
 | low | 8 |
-| **total** | **70** |
+| **total** | **75** |
 
-All 19 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 70 entries carries at least one path:line citation or a reproduction command
+All 20 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
+one of the 75 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -82,6 +82,10 @@ one of the 70 entries carries at least one path:line citation or a reproduction 
 | GAP-067 (GAP-AUTH-10) | Approving a `/v1/migrate/*` live run raises `ValidationError` after the decision is committed and before it is audited | remediated |
 | GAP-068 (GAP-ENG-09) | `MigrationEngine` and `rollback_wave` default their `ExecutionMode` parameter to `LIVE` | open |
 | GAP-069 (GAP-STATE-06) | The DynamoDB claim-conflict audit can never be written: its writer is built from a factory that raises for that backend | open |
+| GAP-071 (GAP-AUTH-11) | An approved `migrate_job` executed the client's context, not the scope the approver was shown | remediated |
+| GAP-072 (GAP-AUTH-12) | Approval scopes dropped falsy identifiers, so wave 0 was every wave and an empty profile was the default one | remediated |
+| GAP-073 (GAP-TOKEN-07) | The live-approval context was persisted without masking, so a credential posted into the queue survived verbatim | remediated |
+| GAP-075 (GAP-ACC-11) | Feature-route live approvals were profile-blind, so a grant under one profile released the same route under every other | remediated |
 
 Zero critical or high entries remain in `open` or `disputed` except six: GAP-019
 (GAP-AUTH-03), GAP-024 (GAP-UI-02) and GAP-031 (GAP-PIPE-01) stay `open`, each awaiting an
@@ -94,6 +98,15 @@ operator already holds open for GAP-018 (GAP-CLI-03), and deciding it separately
 deciding one policy twice; GAP-069's turns on where a DynamoDB deployment's audit database
 should live, which is a configuration decision rather than a code one. Every critical entry
 is remediated.
+
+The five entries opened on 2026-09-13 from the Astra security review of the post-fix tree
+do not change that count. GAP-071 (critical), GAP-072, GAP-073 and GAP-075 (high) are all
+`remediated` in the same pass; GAP-074 is `medium` and `open`, so it falls outside this
+sentence's scope, and its resolution is held for the same reason as GAP-019 and GAP-054 —
+the obvious shape is a new environment variable, which is an FR-024 contract change.
+GAP-075 carries one residual left open inside a remediated entry: `POST
+/v1/platform/approvals` still takes `profile_id` from the client, which steers attribution
+and the scope label but not the executor.
 
 ## Disputes
 
@@ -1446,6 +1459,106 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: not applicable; no fix applied.
 - contract_change: false — `evaluate_guardrail` is internal to the agent package and the alias has no caller outside the test suite, so removing it changes no route, CLI command, table or environment variable, and `tests/contract/public_surface_snapshot.json` is unaffected.
 - follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-065..067 close-out) from the Astra branch review. Delete the alias together with its nine test call sites; no successor task filed yet.
+
+### GAP-071 (GAP-AUTH-11) An approved `migrate_job` executed the client's context, not the scope the approver was shown
+
+- components: accelerator service, auth & RBAC
+- violates: Principle V (Enterprise Migration Safeguards, NON-NEGOTIABLE — CA-002, a live or destructive action runs only on a confirmation given for *that* action); Principle IV (the approval queue reads as though a scope id identifies the work, and it did not)
+- evidence:
+  - `ado2gh/api/live_approval_store.py:152` at the time of the finding — `context_json=json.dumps(request.context or {})` persisted a free-form `context` dict taken straight off `POST /v1/platform/approvals` (`services/accelerator_api/routes/approval_routes.py:79`, `LiveApprovalCreateRequest.context` at `ado2gh/api/contracts.py:651`).
+  - `:72-96` — `_public_row` omits `context_json`, so `GET /v1/platform/approvals` shows the approver a `scope_id` and never the context. The two were never compared.
+  - `:494` at the time of the finding — `_execute_migrate` read that context back and passed it whole to the registered executor; `services/accelerator_api/routes/_shared.py:320` `_execute_approved_migrate` built `RunWaveRequest(**ctx)` from it and called `run_wave`.
+  - reproduced end to end by the post-fix security review (`run-codex-astra-security.txt`, finding 1): an operator holding `can_operate` and not `can_approve_live_execution`, with `ADO2GH_AUTH_ENABLED=true`, opened scope `migrate:prod:1:migration.yaml` with `context={'config_path': 'OTHER.yaml'}`. The approver approved the displayed scope. The executor ran `OTHER.yaml` with `wave_id=None` — every wave — and `dry_run=False`.
+  - the same shape reached `dry_run`: the flag came out of the client's context, so what a "live approval" released was whatever mode the requester had written into it.
+- severity: critical (critical_test: a). An irreversible migration — real `git push --mirror` or GEI invocation into GitHub — ran with no confirmation for the work it performed. A confirmation existed, but for a different config and a different wave, which under FR-019 is the same thing as none: the approver was shown one statement and the executor read another. It is reachable in the shipped default RBAC configuration by a plain operator, with authentication enabled, through a documented public route — no non-default setting is required, which is what separates this from a high rating. (e) is met as a secondary reading, two components disagreeing on what an approval identifies; (a) governs, as it does for GAP-007 (GAP-ACC-01) and GAP-063 (GAP-AUTH-08). (b) is not met — that shape is GAP-073, recorded separately.
+- blast_radius: every live `POST /v1/migrate` an operator cannot self-approve, which is the whole purpose of the approval queue. The escalation is from "may request one specific live migration" to "may run any wave of any config the server can read", bounded only by the profile's credentials. The `/v1/migrate/*` feature routes are not affected: their context names a `route` and executes nothing here (GAP-067), and the guard admits the caller's own retry.
+- status: remediated
+- resolution: applied 2026-09-13 by Claude (opus subagent, GAP-071..073), commit `0863f81`. The scope and the context are now one statement about one piece of work, checked at both ends of the queue. `_migrate_job_params` (`ado2gh/api/live_approval_store.py:133`) canonicalises a `migrate_job` context by building the `RunWaveRequest` it would execute, so the scope derived from a context and the request built from it are the same reading of the same values; `create_or_get_pending` (`:251`) refuses 422 when that derivation does not equal the supplied `scope_id`, or when the context asks for a dry run; `_execute_migrate` (`:619`) derives again from the stored context and refuses anything that does not equal the approved row's scope, recording `platform.live_execution.scope_mismatch` — the same event the quoted-token path writes (CA-004). What executes is rebuilt from `_MIGRATE_CONTEXT_KEYS` (`:37`) with `dry_run` forced live from the scope, because a queued migrate job is live by definition and must not take that flag from the client. The profile comes from the approval row, resolved server-side, never from the context.
+  - Two residuals are recorded rather than fixed. `db_path` stays in the allowlist: it names the state database the run records itself in, selects no migration target, and is already client-chosen on the unguarded `POST /v1/plan` (`services/accelerator_api/main.py:361` calls `create_state_db(req.db_path)`), so constraining it is a separate finding about arbitrary state-database paths, not about approval binding. And a scope mismatch at execution returns rather than raises: the decision row is committed and audited before `_resume_approved_scope` runs, so raising would only turn a refusal into a 500 for the approver, but it does mean the approver sees success while nothing started. The audit event is the record; a persistent `execution_refused` status would be clearer and is the follow-up.
+  - A read-only Codex `gpt-5.6-terra` review of the diff, run before the commit (`run-codex-terra-gap071.txt`), found the first draft derived the scope from the raw context dict while the executor built a validated `RunWaveRequest` from it — so `" 1"`, `"01"`, `1.0` and `True` each rendered a distinct scope id and all arrived at the executor as wave 1 (confirmed against `RunWaveRequest.wave_id: Optional[int]` in this session). Deriving from the validated request closes the class; the four spellings are parametrised regression tests.
+- regression_check: `tests/auth/test_gap_071_approval_context_bound_to_scope.py` — eleven tests. Critical test (a) is covered twice: a crafted context naming another config is refused 422 at creation, and a row seeded straight into the database with that context is refused at execution and audited. The legitimate dashboard context still executes, live, with only scope-encoded keys; the feature-route context still grants without executing.
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-071..073), evidence at `run-gap-071-revert.txt`. With the fix's two non-test files (`ado2gh/api/live_approval_store.py`, `services/accelerator_api/routes/_shared.py`) stashed, `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_071_approval_context_bound_to_scope.py -q` reported `9 failed, 2 passed` in 4.51s; the two that pass are the "still works" guards. `git stash pop` restored the tree and `git stash list` held only the unrelated pre-existing `stash@{0}: a5fbb01 test(GAP-012)` entry.
+- contract_change: false — no route, request field, CLI command, table or environment variable moved. `POST /v1/platform/approvals` keeps its path, body and 200 shape; a 422 on a self-contradicting body and a refusal on a scope mismatch are validation outcomes, not surface changes. No field was added to the public approval request model. `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-072 (GAP-AUTH-12) Approval scopes dropped falsy identifiers, so wave 0 was every wave and an empty profile was the default one
+
+- components: accelerator service, auth & RBAC
+- violates: Principle V (CA-002 — an approval identifies exactly one piece of work); Principle I (a falsy test standing in for an absence test)
+- evidence:
+  - `ado2gh/api/live_approval_store.py:615` at the time of the finding — `f"migrate:{profile_id or 'default'}:{wave_id or 'all'}:{config_path}"`. `0 or 'all'` is `'all'` and `'' or 'default'` is `'default'`, so wave 0 and "every wave" produced one scope id, as did a profile named `''` and the default profile.
+  - `ado2gh/api/contracts.py:34` — `wave_id: Optional[int] = None` is unbounded, and `ado2gh/api/accelerator.py:215` selects `request.wave_id is None or w.wave_id == request.wave_id`, so the two spellings select genuinely different targets: wave 0 alone, versus every wave in the config.
+  - `services/accelerator_api/routes/migrate_guard.py:84` at the time of the finding — `for f in _SCOPE_FIELDS if body.get(f)` had the same shape one level down: a body naming a target as `""` built the scope, and the audit target at `:103`, of a body that did not name it at all.
+  - raised by the post-fix security review (`run-codex-astra-security.txt`, finding 2), which also noted that a failed execution of a non-existent wave 0 leaves the approval standing and reusable — approvals are never consumed.
+- severity: high. It violates CA-002 in the default configuration, which is the FR-019 definition of high. It is not rated critical: reaching it needs a config that declares a wave 0, or a caller that supplies one, and the collision widens an approval rather than removing it — the approver did confirm a live migration of that config, just not of every wave in it. That distinction is what separates this from GAP-071, where the config itself changed.
+- blast_radius: any deployment whose wave numbering starts at 0, plus any caller that can post `wave_id=0`. The escalation is from one wave to all waves of the same config under the same profile. The guard half affects the nine `/v1/migrate/*` feature routes for any body that names an identity field as an empty string.
+- status: remediated
+- resolution: applied 2026-09-13 by Claude (opus subagent, GAP-071..073), commit `e1c3657`. `migrate_scope_id` (`ado2gh/api/live_approval_store.py:768`) tests `is None`; `migrate_guard` grows `_scope_fields` (`services/accelerator_api/routes/migrate_guard.py:73`), used by both the scope builder and the live-migration audit so the two cannot drift. An explicit JSON `null` still counts as absent, which is what it means to every request model on that router. `RunWaveRequest.wave_id` keeps its unbounded `Optional[int]`: a `ge=0` bound would reject bodies the API accepts today — an FR-024 contract change — and a negative wave was never what made the two scopes collide.
+  - Migration impact: the ids that were already correct do not move (`migrate:default:all:<config>` and `migrate:prod:1:<config>` are byte-identical, asserted by the regression test), so only the previously-colliding falsy spellings shift. No approval rows are persisted in this repository, so nothing has to be migrated here. A deployment holding pending or granted approvals for wave 0, for a `""` profile, or for a feature-route body with an empty identity field would see those rows stop matching and be re-queued under the corrected scope — which is the intended outcome, since those rows are exactly the ambiguous ones.
+- regression_check: `tests/auth/test_gap_072_approval_scope_encodes_falsy_ids.py` — wave 0, every wave and wave 1 are three distinct scopes; `''` is distinct from `None`; the unchanged spellings are pinned byte-for-byte; the guard distinguishes an empty target from an absent one and still treats an explicit `null` as absent.
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-071..073), evidence at `run-gap-072-revert.txt`. With `ado2gh/api/live_approval_store.py` and `services/accelerator_api/routes/migrate_guard.py` stashed, the file reported `3 failed, 2 passed` in 4.06s — the two passing being the unchanged-spelling pins, which is the point of including them. `git stash pop` restored the tree; `git stash list` held only `stash@{0}: a5fbb01 test(GAP-012)`.
+- contract_change: false — the scope id is an internal identifier, not a name on the frozen public surface. No route, request field, CLI command, table or environment variable moved; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-073 (GAP-TOKEN-07) The live-approval context was persisted without masking, so a credential posted into the queue survived verbatim
+
+- components: accelerator service, token management & audit writing
+- violates: Principle V (NON-NEGOTIABLE — CA-003 / FR-025, no secret reaches a log, report, message or persisted artefact)
+- evidence:
+  - `ado2gh/api/live_approval_store.py:152` at the time of the finding — `context_json=json.dumps(request.context or {})`, serialising a client-supplied dict straight into the column with no redaction step.
+  - every sibling persistence path already routes through the same choke point: `ado2gh/audit/writer.py:44` (`redact_payload(payload or {})`), `ado2gh/agents/migration_agent/session/store.py:37`, `ado2gh/logging_config.py:80`. `ado2gh/audit/redaction.py:3` names itself "the one place secret shapes are recognised" — this column was outside it.
+  - reproduced by the post-fix security review (`run-codex-astra-security.txt`, finding 3): a `ghp_`-shaped probe posted as `context.gh_token` through `POST /v1/platform/approvals` was read back out of the column unchanged.
+  - `_public_row` never returns the context, so nothing surfaces it to an operator; and the queue neither consumes nor expires rows, so the value outlives the run it released.
+- severity: high. FR-019 rates a secret reaching a persisted artefact as critical under (b) when it happens on an ordinary path — that is how GAP-010 and GAP-064 are rated. This one is held at high because the value has to be put there by the caller: no platform-produced context carries a credential (the dashboard context is a config path, a wave id and a database path; the guard's is a route), and the guard's own `_SCOPE_FIELDS` allowlist already keeps `secret_value` out of the one request model that has one. What the gap removes is the containment guarantee, not a leak the platform itself produces — an operator who pastes a PAT into a context has no masking behind them, which is precisely what CA-003 exists to provide.
+- blast_radius: the `live_execution_approvals` table in every deployment, for as long as the rows live — which is indefinitely. Read access to that column is read access to whatever any operator ever put in a context. Bounded to what callers supply: no shipped producer writes a credential there.
+- status: remediated
+- resolution: applied 2026-09-13 by Claude (opus subagent, GAP-071..073), commit `047745d`. `_redacted_context` (`ado2gh/api/live_approval_store.py:111`) puts the context through `ado2gh.audit.redaction.redact_payload` before it is stored. The ordering matters and is deliberate: masking happens *before* the GAP-071 scope check reads the context (`:251`), not after, so the bytes checked at creation are the bytes the executor later reads back. The other order would have let a path that masking altered pass creation and then fail the execution check — fail-closed, but refused long after the operator could act on it.
+  - The executed fields are unaffected: `config_path`, `db_path` and `route` are paths, `wave_id` is an integer, and none is a shape `redact_text` recognises. A path that does happen to carry a token shape — `configs/pat-xyz/migration.yaml` matches the `pat-` branch — is now rejected at creation with the 422 the scope check already raises, which is the loud end of that trade. Flagged in the Codex `gpt-5.6-terra` review of the GAP-071 diff and resolved by the ordering above.
+- regression_check: `tests/auth/test_gap_073_approval_context_redacted_at_rest.py` — a GitHub-token shape, a `pat-` shape inside free text and a secret *key name* with an unrecognisable value are all masked in the column; an ordinary migrate context and a feature-route context round-trip byte-for-byte; and a context carrying a token still executes the approved scope, proving the masking did not disturb the binding.
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-071..073), evidence at `run-gap-073-revert.txt`. With `ado2gh/api/live_approval_store.py` stashed — GAP-071 and GAP-072 already committed, so the stash isolates this fix — the file reported `3 failed, 2 passed` in 4.25s; the two round-trip tests pass either way, which is what makes them the no-regression half. `git stash pop` restored the tree; `git stash list` held only `stash@{0}: a5fbb01 test(GAP-012)`.
+- contract_change: false — `context_json` keeps its name, its type and its column. No route, request field, CLI command, table or environment variable moved; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-074 (GAP-AUTH-13) `_is_https_deployment` lets a client-supplied `X-Forwarded-Proto` drop the session cookie's `Secure` flag
+
+- components: auth & RBAC, accelerator service
+- violates: Principle V (CA-003 — a session token is a credential and must not travel in cleartext); Principle IV (a header named for a proxy is trusted as though a proxy had set it)
+- evidence:
+  - `services/accelerator_api/auth_routes.py:152-154` — `forwarded = request.headers.get("x-forwarded-proto", "")`, then `proto = forwarded.split(",")[0].strip() if forwarded else request.url.scheme`. The header does not *supplement* the transport, it *replaces* it: when the header is present the real scheme is never consulted.
+  - so a request arriving on a direct TLS connection (`request.url.scheme == "https"`) carrying `X-Forwarded-Proto: http` yields `proto == "http"`, and `:181` / `:203` set the session cookie with `secure=False`.
+  - the comma handling makes it worse in the standard proxy spelling: `X-Forwarded-Proto: http, https` takes the *first* element, which is the client-controlled hop.
+  - no trusted-proxy check exists anywhere in the reviewed code — nothing compares `request.client.host` against a proxy allowlist, and no setting names one.
+  - residual of GAP-020 (GAP-AUTH-06), whose remediation introduced this function. The docstring at `:130-151` argues correctly that plain HTTP must stay plain so `docker compose` operators are not locked out, and that "a client that forges the header over HTTP only makes its own cookie unusable" — which is true for the HTTP case and does not cover the HTTPS case, where the same forgery downgrades a cookie that would otherwise have been `Secure`.
+  - measured in this session by reading the function; not reproduced against a running server.
+- severity: medium. A downgrade needs the attacker to control a request header on a direct TLS connection to the platform — that is, to already be the client, whose cookie it is — so the practical path is a cross-site or injected request that makes the *victim's* browser send the header, which browsers do not permit for `X-Forwarded-*` from ordinary page script. Behind a real terminating proxy the header is normally overwritten by the proxy, which is the deployment the function is written for. What remains is a correctness defect with a plausible-but-narrow exploitation path, and no effect on `HttpOnly`, `SameSite`, path or expiry. The security review rated it minor; medium is one step up, because the function's own contract — decide whether this is an HTTPS deployment — is decided by the caller.
+- blast_radius: the session cookie on any deployment that terminates TLS at the service itself rather than at a proxy. A dropped `Secure` flag means the browser will send the session token over a plain-HTTP request to the same host, which a network attacker can then read.
+- status: open
+- resolution: none applied. The fix is a trusted-proxy setting — trust `X-Forwarded-Proto` only when the peer is a configured proxy, and prefer the real scheme otherwise. Recorded rather than applied because the obvious shape is an environment variable naming the trusted proxies, and adding one is an FR-024 contract change against the frozen environment-variable surface; the alternative, hardcoding "only downgrade, never upgrade" (trust the header to say https, ignore it when it says http on a TLS connection), is a two-line change that fixes the reported downgrade but leaves the upgrade direction trusting the same header. Which of the two is right depends on the deployment topology the operator intends, so it is put to them rather than guessed.
+- regression_check: none yet. The check the fix should carry is the reproduction: a request with scheme `https` and header `X-Forwarded-Proto: http` must still produce `secure=True`, and `http, https` must not be read as `http`. `tests/auth/test_gap_020_session_cookie_flags.py` is where it belongs.
+- revert_proof: not applicable; no fix applied.
+- contract_change: true if resolved with a trusted-proxy environment variable — that is a new name on the frozen public surface, and it must go to `plan.md` § Approved contract changes first. False for the downgrade-only variant.
+- follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-071..073) from the post-fix security review. Completes GAP-020 (GAP-AUTH-06), whose remediation this is a residual of; no successor task filed yet.
+
+### GAP-075 (GAP-ACC-11) Feature-route live approvals were profile-blind, so a grant under one profile released the same route under every other
+
+- components: accelerator service, auth & RBAC
+- violates: Principle V (CA-002 — a live action runs on a confirmation given for that action, against that target); Principle IV (two halves of one approval queue disagreeing about what a scope identifies)
+- evidence:
+  - `services/accelerator_api/routes/migrate_guard.py:84` at the time of the finding — `":".join([path, *(... for f in _SCOPE_FIELDS ...)])`. The scope was the request path plus the target the body names, and nothing else.
+  - `ado2gh/api/live_approval_store.py:602` — the dashboard path's `migrate_scope_id(profile_id, wave_id, config_path)` does embed the profile, and `services/accelerator_api/routes/_shared.py:218` resolves it server-side from the active profile. The two producers of `scope_type="migrate_job"` therefore meant different things by "the same scope".
+  - `:139` — `guard_live_migration` passed `profile_id=active_profile_id()` into the approval *row* while leaving it out of the *scope*, so the row recorded which profile asked and the match ignored it.
+  - the consequence is the `has_approved("migrate_job", scope_id)` early return at `:145`: an approver releases `/v1/migrate/git-mirror` for `Contoso/payments` under profile A; the operator switches the active profile to B and replays the same request; the standing grant matches and the guard admits it, so profile B's organisation and credentials take the live migration. Approvals are never consumed or expired, so the grant stays usable for as long as the row exists.
+  - raised by the post-fix security review as the `migrate_guard.py:143` half of its profile/tenant candidate; the review confirmed the dashboard half already rejects cross-profile matching.
+- severity: high. It violates CA-002 in the default configuration, which is the FR-019 definition of high. It is not critical: the approver did confirm this route and this target live, and switching the active profile is an operation the same operator is entitled to perform, so what changes is which organisation and credentials the confirmed action lands on — a widened confirmation rather than an absent one.
+- blast_radius: the nine `/v1/migrate/*` feature routes in any multi-profile deployment. Each of them mutates GitHub irreversibly — repository mirroring, secret provisioning, workflow pushes — and each was released across every profile by one approval.
+- status: remediated
+- resolution: applied 2026-09-13 by Claude (opus subagent, GAP-071..073), commit `5891da4`. `_live_scope_id` (`services/accelerator_api/routes/migrate_guard.py:91`) takes the active profile and puts it in the scope; a deployment with no active profile gets its own `_platform` scope rather than matching every profile. `guard_live_migration` (`:172`) resolves the profile once and uses the same value for the scope and for the approval row, so the two cannot drift. Fixed rather than deferred because it is a two-line change with a test and it is contract-neutral.
+  - Residual, recorded open under this id: `POST /v1/platform/approvals` still takes `profile_id` from the client (`services/accelerator_api/routes/approval_routes.py:79`) rather than from the active profile, so a caller can attribute an approval to a profile that is not active. Flagged in the Codex `gpt-5.6-terra` review and checked against the code: it steers attribution and the scope *label*, not the executor — `RunWaveRequest` carries no profile and the run uses ambient credentials — and forcing it server-side would change the behaviour of the `agent_session` and `pipeline_run` approvals that share the route. Left for the same operator decision as the ambient-credential half of the review's profile/tenant candidate.
+  - Migration impact: a deployment holding pending or granted feature-route approvals would see those rows stop matching and be re-queued under the active profile. No approval rows are persisted in this repository.
+- regression_check: `tests/auth/test_gap_075_feature_route_scope_includes_profile.py` — two profiles migrating the same repository are two distinct scopes, no active profile has its own `_platform` scope, and an end-to-end guard test grants under `prod`, switches the active profile to `staging`, replays the identical live body and asserts it is parked again with `awaiting_approval`.
+- revert_proof: performed 2026-09-13 by Claude (opus subagent, GAP-071..073), evidence at `run-gap-075-revert.txt`. With `services/accelerator_api/routes/migrate_guard.py` stashed, `.venv\Scripts\python.exe -m pytest tests/auth/test_gap_075_feature_route_scope_includes_profile.py -q` reported `3 failed` in 4.63s. `git stash pop` restored the tree; `git stash list` held only `stash@{0}: a5fbb01 test(GAP-012)`.
+- contract_change: false — `_live_scope_id` is module-private and the scope id is an internal identifier, not a frozen name. No route, request field, CLI command, table or environment variable moved; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13 (remediated with the residual above left open)
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 

@@ -170,6 +170,49 @@ findings on the two route parameters held for the FR-024 decision, nothing new;
 `tests/unit/test_scripts_cleanup.py::test_only_scripts_dev_remains`, against the operator's
 untracked `scripts/dev/` scratch files. The ratchet is left at 62.
 
+**Addendum (2026-09-13) — the Astra security review of the post-fix tree appended five
+more entries.** The figures in the previous addendum are superseded: the register now holds
+**75 gaps: 20 critical, 33 high, 14 medium, 8 low**, counted from its own `- severity:` and
+`- status:` lines (75 of each, one per entry). The review re-read the tree after the
+GAP-063…GAP-067 fixes landed and reproduced three findings end to end, plus two it did not
+fix:
+
+| Id | Title | Severity | Status |
+|----|-------|----------|--------|
+| GAP-071 (GAP-AUTH-11) | An approved `migrate_job` executed the client's context, not the scope the approver was shown | critical | remediated |
+| GAP-072 (GAP-AUTH-12) | Approval scopes dropped falsy identifiers, so wave 0 was every wave and an empty profile was the default one | high | remediated |
+| GAP-073 (GAP-TOKEN-07) | The live-approval context was persisted without masking, so a credential posted into the queue survived verbatim | high | remediated |
+| GAP-074 (GAP-AUTH-13) | `_is_https_deployment` lets a client-supplied `X-Forwarded-Proto` drop the session cookie's `Secure` flag | medium | open |
+| GAP-075 (GAP-ACC-11) | Feature-route live approvals were profile-blind, so a grant under one profile released the same route under every other | high | remediated |
+
+GAP-071 is the first new critical since GAP-065 and GAP-066; it is remediated, so **all 20
+critical entries remain remediated**. Of the 33 high entries, 26 are remediated, 2 are
+deferred by decision (GAP-018, GAP-022) and **6 are open** — the same six as the previous
+addendum: GAP-019, GAP-024, GAP-031, GAP-054, GAP-068, GAP-069. None of the four new
+remediations adds to that list and GAP-074 is medium, so the open-high set is unchanged.
+The **"zero critical or high gaps open" bar is still not met**, and for the same cause it
+has never been met — operator decisions on FR-024 contract changes, not unfixed defects.
+GAP-074 is held for that same reason: a trusted-proxy environment variable is a new name on
+the frozen surface, and the alternative "downgrade only, never upgrade" still trusts the
+same header in one direction, so which is right depends on the deployment topology the
+operator intends. The verdict recorded at T095 and in `spec.md` § Status is unchanged.
+
+Two residuals are recorded inside remediated entries rather than as separate ids, so
+neither is lost: the `db_path` key an approved migrate job still takes from its context
+(GAP-071 — already client-chosen on the unguarded `POST /v1/plan`, and it names no
+migration target), and the `profile_id` that `POST /v1/platform/approvals` still takes from
+the client (GAP-075 — it steers attribution and the scope label, not the executor).
+
+Measured at the close-out commit: `ruff check ado2gh/ services/` — the same 4 FBT001/FBT002
+findings on the two route parameters held for the FR-024 decision, nothing new;
+`mypy ado2gh/ --ignore-missing-imports` — `Success: no issues found in 195 source files`;
+`pytest --cov=ado2gh --cov-fail-under=62` — **1,103 passed, 30 skipped, coverage 62.61 %**
+(`run-gap-071-full.txt`) against the ratchet of 62, with the same single local-only failure,
+`tests/unit/test_scripts_cleanup.py::test_only_scripts_dev_remains`, against the operator's
+untracked `scripts/dev/` scratch files. The public-surface snapshot, the 800-line file cap
+and the orphan-module guard all pass (`run-gap-071-guards.txt`). The ratchet is left at 62:
+62.61 % is the same rounded point it already names.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
