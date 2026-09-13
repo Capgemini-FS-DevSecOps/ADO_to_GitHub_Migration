@@ -22,12 +22,15 @@ attributes, and the credentials below are obvious fakes.
 from __future__ import annotations
 
 from http.cookies import Morsel, SimpleCookie
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from ado2gh.auth.service import SESSION_COOKIE, AuthService
 from ado2gh.state.factory import create_state_db
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 ADMIN = {"username": "gap074-admin", "password": "not-a-real-pass-12345", "display_name": "Admin"}
 LOGIN = {"username": ADMIN["username"], "password": ADMIN["password"]}
@@ -155,6 +158,54 @@ def test_x_forwarded_proto_wins_over_forwarded(accel, monkeypatch):
     headers = {"X-Forwarded-Proto": "https", "Forwarded": "for=10.0.0.1;proto=http"}
 
     assert _is_secure(_login(accel, https=False, headers=headers))
+
+
+def test_the_two_forwarding_headers_resolve_to_https_when_they_disagree(accel, monkeypatch):
+    """A proxy may write one header and pass the other through from the client untouched.
+
+    Neither precedence order is safe on its own, so the HTTPS reading wins: a wrongly
+    ``Secure`` cookie is one the browser drops, while the other way round loses the flag.
+    """
+    monkeypatch.setenv("ADO2GH_TRUSTED_PROXY", "true")
+    proxy_wrote_forwarded = {"X-Forwarded-Proto": "http", "Forwarded": "for=10.0.0.1;proto=https"}
+
+    assert _is_secure(_login(accel, https=False, headers=proxy_wrote_forwarded))
+
+
+def test_a_quoted_comma_cannot_hide_the_protocol(accel, monkeypatch):
+    """RFC 7239 values may be quoted, and a naive split on ``,`` would cut inside one."""
+    monkeypatch.setenv("ADO2GH_TRUSTED_PROXY", "true")
+    headers = {"Forwarded": 'for="[2001:db8::1],[2001:db8::2]";proto=https'}
+
+    assert _is_secure(_login(accel, https=False, headers=headers))
+
+
+def test_the_shipped_launcher_disables_uvicorns_proxy_header_middleware():
+    """Uvicorn rewrites the scheme from ``X-Forwarded-Proto`` for trusted peers by default.
+
+    That happens before any route runs, so it would decide the ``Secure`` flag behind the
+    back of ``ADO2GH_TRUSTED_PROXY``; the served app must switch it off.
+    """
+    dockerfile = REPO_ROOT / "services" / "accelerator_api" / "Dockerfile"
+
+    assert "--no-proxy-headers" in dockerfile.read_text(encoding="utf-8")
+
+
+def test_the_middleware_this_guards_against_really_does_rewrite_the_scheme(accel):
+    """Why the launcher flag matters: with the middleware on, the header decides the scheme.
+
+    The app is wrapped here exactly as uvicorn would wrap it, with the caller treated as a
+    trusted peer, and the forged header alone flips the cookie the route issues.
+    """
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    wrapped = ProxyHeadersMiddleware(accel, trusted_hosts="*")
+    client = TestClient(wrapped, base_url="http://testserver")
+
+    response = client.post("/v1/auth/login", json=LOGIN, headers={"X-Forwarded-Proto": "https"})
+
+    assert response.status_code == 200, response.text
+    assert _is_secure(response), "middleware left on would let the header decide — hence --no-proxy-headers"
 
 
 def test_logout_clears_the_cookie_under_the_same_rule(accel):

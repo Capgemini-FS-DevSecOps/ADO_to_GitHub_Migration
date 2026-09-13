@@ -141,6 +141,35 @@ def _trusted_proxy() -> bool:
     return os.environ.get("ADO2GH_TRUSTED_PROXY", "").lower() in ("1", "true", "yes")
 
 
+def _split_outside_quotes(value: str, separator: str) -> list[str]:
+    """Split on a separator, ignoring separators inside a quoted string.
+
+    RFC 7239 allows quoted values — ``for="[2001:db8::1]:8080"`` — which may
+    themselves contain a comma or a semicolon, so a plain ``str.split`` can cut a
+    field in half and lose the ``proto`` that follows it.
+
+    Args:
+        value: Header value to split.
+        separator: Single character to split on.
+
+    Returns:
+        The parts, in order, with the quotes left in place.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in value:
+        if char == '"':
+            quoted = not quoted
+        if char == separator and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
 def _last_hop(request: Request, header: str) -> str:
     """Read what the closest hop wrote into a forwarding header.
 
@@ -157,32 +186,45 @@ def _last_hop(request: Request, header: str) -> str:
         The last element, stripped, or ``""`` when the header is absent or blank.
     """
     values = [value for value in request.headers.getlist(header) if value.strip()]
-    return values[-1].rsplit(",", 1)[-1].strip() if values else ""
+    return _split_outside_quotes(values[-1], ",")[-1].strip() if values else ""
 
 
-def _forwarded_proto(request: Request) -> str:
-    """Read the protocol the closest proxy reported, lower-cased.
-
-    Only the last hop counts — see :func:`_last_hop`; everything before it was
-    supplied by whatever called that proxy. ``X-Forwarded-Proto`` is preferred;
-    RFC 7239 ``Forwarded`` is read as a fallback for proxies that emit only the
-    standard header.
+def _rfc7239_proto(request: Request) -> str:
+    """Read ``proto`` out of the last hop of an RFC 7239 ``Forwarded`` header.
 
     Args:
         request: Incoming request the response is being built for.
 
     Returns:
-        ``"https"``, ``"http"`` or whatever the proxy wrote, and ``""`` when no
-        forwarding header carried a protocol.
+        The protocol the last hop declared, lower-cased and unquoted, or ``""``
+        when the header is absent or names no protocol.
     """
-    xfp = _last_hop(request, "x-forwarded-proto")
-    if xfp:
-        return xfp.lower()
-    for param in _last_hop(request, "forwarded").split(";"):
+    for param in _split_outside_quotes(_last_hop(request, "forwarded"), ";"):
         name, _, value = param.partition("=")
         if name.strip().lower() == "proto":
             return value.strip().strip('"').lower()
     return ""
+
+
+def _forwarded_protos(request: Request) -> set[str]:
+    """Collect what the last hop said about the protocol, across both headers.
+
+    Only the last hop counts — see :func:`_last_hop`; everything before it was
+    supplied by whatever called that proxy. Both the de-facto
+    ``X-Forwarded-Proto`` and the standard ``Forwarded`` are read rather than one
+    winning outright: a proxy may write one of them and pass the other through
+    from the client untouched, and neither order of precedence is safe against
+    that on its own.
+
+    Args:
+        request: Incoming request the response is being built for.
+
+    Returns:
+        The protocols the last hop declared, lower-cased; empty when neither
+        header carried one.
+    """
+    candidates = (_last_hop(request, "x-forwarded-proto").lower(), _rfc7239_proto(request))
+    return {proto for proto in candidates if proto}
 
 
 def _is_https_deployment(request: Request) -> bool:
@@ -196,21 +238,26 @@ def _is_https_deployment(request: Request) -> bool:
 
     A deployment that terminates TLS at a reverse proxy sets
     ``ADO2GH_TRUSTED_PROXY=true``; the proxy's own value — the last hop, see
-    :func:`_forwarded_proto` — is then believed in both directions, since that
+    :func:`_forwarded_protos` — is then believed in both directions, since that
     operator has declared the hop trustworthy and stands behind it stripping or
-    overwriting whatever the client sent.
+    overwriting whatever the client sent. Should the two forwarding headers
+    disagree, because the proxy writes one and passes the other through, the
+    HTTPS reading wins: getting that wrong costs a cookie the browser drops,
+    while the other way round costs the ``Secure`` flag itself.
 
     Plain HTTP stays plain on purpose. ``docker compose up`` serves the console
     on ``:3000`` against the API on ``:8080`` over HTTP, and a browser silently
     drops a ``Secure`` cookie on such an origin, so marking it ``Secure`` there
     would lock every local operator out.
 
-    One caveat this function cannot cover: uvicorn's own proxy-header middleware
-    is on by default and rewrites ``scope["scheme"]`` from ``X-Forwarded-Proto``
-    for clients it considers trusted (``127.0.0.1`` unless ``FORWARDED_ALLOW_IPS``
-    says otherwise), which happens before any route runs. A deployment that
-    serves TLS from uvicorn directly should launch it with ``--no-proxy-headers``
-    so this flag stays the only switch.
+    Uvicorn's own proxy-header middleware would otherwise undercut all of this:
+    it is on by default and rewrites ``scope["scheme"]`` from
+    ``X-Forwarded-Proto`` for clients it considers trusted (``127.0.0.1`` unless
+    ``FORWARDED_ALLOW_IPS`` says otherwise), before any route runs. The shipped
+    launcher therefore passes ``--no-proxy-headers``
+    (``services/accelerator_api/Dockerfile``), pinned by
+    ``tests/auth/test_gap_074_trusted_proxy_secure_cookie.py``; anything else
+    serving this app must do the same, or this setting is not the only switch.
 
     Args:
         request: Incoming request the response is being built for.
@@ -219,9 +266,9 @@ def _is_https_deployment(request: Request) -> bool:
         True when the session cookie may be marked ``Secure``.
     """
     if _trusted_proxy():
-        proto = _forwarded_proto(request)
-        if proto:
-            return proto == "https"
+        protos = _forwarded_protos(request)
+        if protos:
+            return "https" in protos
     return request.url.scheme.lower() == "https"
 
 

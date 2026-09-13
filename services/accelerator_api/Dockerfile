@@ -24,4 +24,7 @@ RUN pip install --no-cache-dir -e ".[api,postgres,redis]"
 
 ENV ADO2GH_CONFIG=/app/migration.yaml
 EXPOSE 8080
-CMD ["uvicorn", "services.accelerator_api.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# --no-proxy-headers: uvicorn would otherwise rewrite the request scheme from a
+# client-supplied X-Forwarded-Proto for peers it trusts, behind the back of the
+# ADO2GH_TRUSTED_PROXY check that decides the session cookie's Secure flag (GAP-074).
+CMD ["uvicorn", "services.accelerator_api.main:app", "--host", "0.0.0.0", "--port", "8080", "--no-proxy-headers"]
