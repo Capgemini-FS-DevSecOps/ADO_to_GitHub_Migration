@@ -208,7 +208,7 @@ export async function approveProfile(id: string) {
   return api<MigrationProfile>(`/v1/settings/profiles/${id}/approve`, { method: 'POST' });
 }
 
-/** Deny a pending migration profile with an optional reason (POST /v1/settings/profiles/{id}/deny). */
+/** Deny a pending migration profile with an optional reason (POST /v1/settings/profiles/{id}/deny); resolves to the now-denied profile. */
 export async function denyProfile(id: string, reason: string = '') {
   return api<MigrationProfile>(`/v1/settings/profiles/${id}/deny`, {
     method: 'POST',

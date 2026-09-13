@@ -32,6 +32,32 @@ from ado2gh.state.factory import create_state_db
 
 
 def _build_ado_client(global_cfg: dict, ado_url: str | None = None, ado_pat: str | None = None) -> ADOClient:
+    """Build an ADO client, preferring an explicit token over env vars over config.
+
+    The org URL and PAT are each resolved independently: the caller-supplied
+    value wins, then the matching environment variable, then ``global_cfg``.
+    When one or more numbered ``ADO_PAT_1..19`` environment variables are set
+    they take priority over a single PAT and build a rotating token manager;
+    otherwise the single resolved PAT is used.
+
+    Args:
+        global_cfg: The parsed ``global`` block of the migration config. Read
+            for ``ado_org_url`` and ``ado_pat`` as the last-resort source.
+        ado_url: Org URL supplied by the caller, tried before the environment
+            and config.
+        ado_pat: Single PAT supplied by the caller, tried before the
+            environment and config; ignored when numbered ``ADO_PAT_1..19``
+            variables are present.
+
+    Returns:
+        An ``ADOClient`` bound to the resolved org URL, backed by a
+        single-token or multi-token rotating ``ADOTokenManager`` depending on
+        which PAT source was used.
+
+    Raises:
+        ConfigurationError: If no org URL resolves, or no PAT resolves from
+            either the numbered variables, the single PAT source, or config.
+    """
     ado_url = ado_url or os.environ.get("ADO_ORG_URL") or global_cfg.get("ado_org_url", "")
     ado_pat = ado_pat or os.environ.get("ADO_PAT") or global_cfg.get("ado_pat", "")
     ado_vars = [f"ADO_PAT_{i}" for i in range(1, 20) if os.environ.get(f"ADO_PAT_{i}")]

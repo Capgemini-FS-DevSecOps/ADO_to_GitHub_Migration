@@ -71,7 +71,22 @@ async def _continue_graph_after_form(
     values: dict[str, Any],
     session_token: str | None,
 ) -> OrchestratorResult:
-    """Resume an interrupted graph or continue with a synthetic user message."""
+    """Resume an interrupted graph or continue with a synthetic user message.
+
+    Args:
+        session: Session dict for the thread.
+        message: Text used when the thread is not paused at an interrupt.
+        form_id: Id of the form the operator just answered.
+        values: The operator's answers, passed through as the interrupt's
+            resume payload alongside ``form_id``.
+        session_token: Bearer token forwarded to the accelerator on behalf of
+            the session, when the caller has one.
+
+    Returns:
+        The ``OrchestratorResult`` from resuming the interrupted graph (or
+        starting a fresh turn with the synthetic message), same as
+        ``continue_session_graph``.
+    """
     return await continue_session_graph(
         session,
         message,

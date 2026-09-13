@@ -46,7 +46,24 @@ router = APIRouter()
 
 @router.post("/v1/sessions/{session_id}/run-pev")
 async def run_pev(session_id: str, request: Request) -> dict[str, Any]:
-    """Start planner → executor → validator against the accelerator (dry-run by default)."""
+    """Start planner → executor → validator against the accelerator (dry-run by default).
+
+    Args:
+        session_id: Session whose plan is executed.
+        request: Used for the operate-permission check and to resolve the
+            session's actor.
+
+    Returns:
+        A status payload with ``session_id``, ``status``, ``subagent``,
+        ``dry_run`` and ``run_id``. When a run was already in progress and
+        this call did not start a new one, the payload also carries
+        ``blocked: True`` and ``execution_policy`` instead of starting a
+        second run.
+
+    Raises:
+        HTTPException: 409 when the session has no migration plan yet, or
+            the plan is blocked.
+    """
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
     plan = session.get("migration_plan")
@@ -242,6 +259,17 @@ async def resume_live_internal(session_id: str) -> dict[str, str]:
     """Resume a session in live mode after the accelerator approved it.
 
     Service-to-service only — the caller must present the internal token header.
+    Ensures a run record exists (reusing one already in progress, otherwise
+    creating a new ``PLANNING`` run) before flipping the session to live.
+
+    Args:
+        session_id: Session the accelerator just approved for live execution.
+
+    Returns:
+        ``{"session_id": session_id, "status": "executing"}``.
+
+    Raises:
+        HTTPException: 404 when the session does not exist.
     """
     session = _sessions.get(session_id)
     if not session:

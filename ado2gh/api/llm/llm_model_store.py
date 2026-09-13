@@ -494,7 +494,17 @@ class LLMModelStore:
 
 
 def invalidate_ambient_models(ambient_provider: str) -> int:
-    """Reset validation on ambient models for a cloud provider."""
+    """Reset validation on ambient models for a cloud provider.
+
+    Args:
+        ambient_provider: Cloud provider whose ambient-credentialed models
+            (``credential_mode == "ambient"``) should be invalidated.
+
+    Returns:
+        The number of matching models whose validation state was actually
+        reset (already-``never_validated`` models are skipped and not
+        counted).
+    """
     store = LLMModelStore()
     models = store.load()
     count = 0

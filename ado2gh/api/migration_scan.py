@@ -79,6 +79,16 @@ def _stub_pipeline(defn: dict, project: str) -> PipelineMetadata:
 
 
 def _summarize_service_connections(svc_conns: list[dict]) -> list[dict[str, Any]]:
+    """Reduce raw ADO service connections to the fields the scan summary needs.
+
+    Args:
+        svc_conns: Service connection dicts as returned by the ADO API.
+
+    Returns:
+        One entry per named connection, each with ``name``, ``type``, ``id``
+        and ``is_ready`` (from ADO's ``isReady``, default ``True``). Entries
+        with no name are dropped.
+    """
     return [
         {
             "name": sc.get("name", ""),
