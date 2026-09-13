@@ -14,6 +14,7 @@ from urllib.parse import unquote
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
+from ado2gh.agents.migration_agent.utils import IdeAuditBridge
 from ado2gh.audit.redaction import redact_text
 
 _MAX_ENDPOINT_CHARS = 2048
@@ -24,21 +25,57 @@ _MAX_ERROR_DETAIL_CHARS = 500
 _URL_USERINFO_RE = re.compile(r"(?<=://)[^/\s@]+(?=@)")
 _URL_QUERY_RE = re.compile(r"(?<=\?)[^\s\"'<>]+")
 
+_audit = IdeAuditBridge()
+
 
 class ApiPathError(ValueError):
     """A model-chosen endpoint did not stay inside its fixed API prefix."""
 
 
+def _refuse_path(prefix: str, endpoint: str, reason: str) -> ApiPathError:
+    """Record a refused tool path and build the error to raise (CA-004).
+
+    A refusal that only ever shows up as a tool result is visible to the model
+    and to nobody else. The durable record goes through the same masking audit
+    bridge the agent's routes use, and a failure to write it never blocks the
+    refusal itself.
+
+    Args:
+        prefix: The prefix the endpoint failed to stay under.
+        endpoint: The model-supplied endpoint, truncated before it is stored.
+        reason: Machine-readable refusal reason.
+
+    Returns:
+        The :class:`ApiPathError` the caller should raise.
+    """
+    try:
+        _audit.record(
+            "agent.tool.path_refused",
+            detail=reason,
+            metadata={"prefix": prefix, "endpoint": endpoint[:200]},
+        )
+    except Exception:  # noqa: S110 - auditing must never break the refusal it records
+        pass
+    return ApiPathError(reason)
+
+
 def join_api_path(prefix: str, endpoint: str) -> str:
     """Join a model-chosen endpoint onto a fixed API prefix without letting it escape.
 
-    httpx resolves dot-segments when it merges a path onto ``base_url``
-    (measured on httpx 0.28.1: ``/v1/ado/../../v1/migrate/git-mirror`` reaches
-    ``/v1/migrate/git-mirror``), and uvicorn percent-decodes the path before it
-    routes, so ``..%2f`` is traversal too. The candidate is normalised the same
-    way here and the prefix re-checked afterwards. What is returned is the
-    unmodified join, so a legitimate endpoint still reaches the accelerator byte
-    for byte as it did before.
+    Three stack behaviours have to be modelled together. httpx resolves
+    dot-segments when it merges a path onto ``base_url`` (measured on httpx
+    0.28.1: ``/v1/ado/../../v1/migrate/git-mirror`` reaches
+    ``/v1/migrate/git-mirror``). uvicorn percent-decodes the path before it
+    routes, so ``..%2f`` is traversal too. And httpx drops everything from the
+    first ``#`` before it builds the request path, so ``..#`` reads as one
+    ordinary segment to any check that normalises the whole string while the
+    wire sees a bare ``..`` — measured, ``/v1/ado/..#`` is sent as ``/v1``.
+    A ``#`` in an API path is never legitimate here, so it is refused outright
+    rather than modelled; with it gone the probe below and the transport path
+    agree.
+
+    What is returned is the unmodified join, so a legitimate endpoint still
+    reaches the accelerator byte for byte as it did before.
 
     Args:
         prefix: The prefix the request must stay under, e.g. ``/v1/ado``.
@@ -49,17 +86,20 @@ def join_api_path(prefix: str, endpoint: str) -> str:
         The joined request path, verified to still resolve under ``prefix``.
 
     Raises:
-        ApiPathError: When the endpoint is over-long, or normalises to a path
-            outside ``prefix``.
+        ApiPathError: When the endpoint is over-long, carries a fragment, or
+            normalises to a path outside ``prefix``.
     """
     if len(endpoint) > _MAX_ENDPOINT_CHARS:
-        raise ApiPathError("endpoint_too_long")
+        raise _refuse_path(prefix, endpoint, "endpoint_too_long")
     trimmed = prefix.strip("/")
     base = f"/{trimmed}/" if trimmed else "/"
     candidate = base + endpoint.lstrip("/")
-    probe = posixpath.normpath(unquote(candidate.split("?", 1)[0]).replace("\\", "/"))
+    decoded = unquote(candidate.split("?", 1)[0]).replace("\\", "/")
+    if "#" in candidate or "#" in decoded:
+        raise _refuse_path(prefix, endpoint, "endpoint_carries_fragment")
+    probe = posixpath.normpath(decoded)
     if not f"{probe}/".startswith(base):
-        raise ApiPathError(f"endpoint_escapes_prefix:{base}")
+        raise _refuse_path(prefix, endpoint, f"endpoint_escapes_prefix:{base}")
     return candidate
 
 

@@ -16,6 +16,7 @@ from ado2gh.agents.migration_agent.tools.shared_tools import (
     join_api_path,
     tool_error,
 )
+from ado2gh.audit.redaction import redact_text
 from ado2gh.pipelines.validation import WorkflowValidator
 
 # Repository file content is attacker-controllable and lands in the validator's
@@ -188,11 +189,16 @@ def get_validator_tools(
                 elif raw:
                     content = str(raw)
             size = len(content)
+            # Redaction runs on the whole decoded file, then the cap. The other
+            # order leaves a secret that straddles the boundary as a fragment
+            # too short for any pattern to recognise, and the tool result is
+            # persisted (THR-02-001).
+            masked = redact_text(content)
             return {
                 "workflow_path": normalized,
-                "content": content[:MAX_WORKFLOW_CONTENT_CHARS],
+                "content": masked[:MAX_WORKFLOW_CONTENT_CHARS],
                 "size": size,
-                "truncated": size > MAX_WORKFLOW_CONTENT_CHARS,
+                "truncated": len(masked) > MAX_WORKFLOW_CONTENT_CHARS,
             }
         except Exception as e:
             return tool_error(e, workflow_path=workflow_path)

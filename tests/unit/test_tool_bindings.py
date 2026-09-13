@@ -334,3 +334,92 @@ async def test_call_accelerator_without_a_method_does_not_write():
 
     assert posted == []
     assert seen == ["/v1/migrate/git-mirror"]
+
+
+# --- Second-review findings (fragment traversal, redact-before-truncate, CA-004)
+
+
+@pytest.mark.parametrize("endpoint", ["..#", "..#junk", "x/../..#j", "..%23"])
+def test_join_api_path_rejects_fragment_assisted_traversal(endpoint):
+    """A `#` segment absorbs a `..` in the probe that httpx drops from the wire."""
+    from ado2gh.agents.migration_agent.tools.shared_tools import ApiPathError, join_api_path
+
+    with pytest.raises(ApiPathError):
+        join_api_path("/v1/ado", endpoint)
+
+
+@pytest.mark.parametrize("prefix", ["/v1/ado", "/v1/github"])
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "..#", "..#junk", "x/..#", "a/b/../../..#z", "..%23", "..#?ref=main",
+        "../../v1/migrate/git-mirror", "..%2f..%2fv1/migrate", "./a/../../b",
+    ],
+)
+def test_join_api_path_agrees_with_what_httpx_would_send(prefix, endpoint):
+    """Whatever survives the check must still be under the prefix on the wire."""
+    import httpx
+
+    from ado2gh.agents.migration_agent.tools.shared_tools import ApiPathError, join_api_path
+
+    try:
+        joined = join_api_path(prefix, endpoint)
+    except ApiPathError:
+        return  # refused before it could be sent, which is the safe outcome
+    sent = httpx.Client(base_url="http://accelerator:8080")._merge_url(joined)
+    assert str(sent.path).startswith(prefix + "/"), (endpoint, str(sent))
+
+
+def test_join_api_path_refusal_is_audited():
+    """CA-004: a blocked traversal must leave a durable record, not just a tool result."""
+    from ado2gh.agents.migration_agent.tools import shared_tools
+
+    recorded = []
+
+    class FakeBridge:
+        def record(self, action, **kwargs):
+            recorded.append((action, kwargs))
+            return "aud_test"
+
+    original = shared_tools._audit
+    shared_tools._audit = FakeBridge()
+    try:
+        with pytest.raises(shared_tools.ApiPathError):
+            shared_tools.join_api_path("/v1/ado", "../../v1/migrate/git-mirror")
+    finally:
+        shared_tools._audit = original
+
+    assert recorded, "no audit event written for a refused tool path"
+    action, kwargs = recorded[0]
+    assert action == "agent.tool.path_refused"
+    assert kwargs["metadata"]["prefix"] == "/v1/ado"
+    assert "endpoint_escapes_prefix" in kwargs["detail"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_github_workflow_redacts_before_it_truncates():
+    """A PAT straddling the cap must not survive as an unrecognisable fragment."""
+    import base64
+
+    from ado2gh.agents.migration_agent.tools.validator_tools import MAX_WORKFLOW_CONTENT_CHARS
+
+    pat = "q" * 52
+    raw = "A" * (MAX_WORKFLOW_CONTENT_CHARS - 21) + " " + pat + " " + "B" * 100
+    assert raw.index(pat) < MAX_WORKFLOW_CONTENT_CHARS < raw.index(pat) + len(pat)
+    payload = base64.b64encode(raw.encode()).decode()
+
+    async def accel_get(path, session_token=None):
+        return {"encoding": "base64", "content": payload}
+
+    tools = get_validator_tools(accel_get=accel_get)
+    tool = next(t for t in tools if t.name == "fetch_github_workflow")
+
+    result = await tool.ainvoke({
+        "github_org": "o",
+        "github_repo": "r",
+        "workflow_path": ".github/workflows/ci.yml",
+    })
+
+    assert pat not in result["content"]
+    assert pat[:30] not in result["content"]
+    assert "***" in result["content"]
