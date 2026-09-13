@@ -324,8 +324,11 @@ def _execute_approved_migrate(ctx: dict) -> None:
     starts the work without the caller posting again.
 
     Args:
-        ctx: The approval's stored context, holding the fields of the original
-            run-wave request.
+        ctx: Run-wave fields the store rebuilt from the approval, not the context
+            as the caller supplied it: ``LiveApprovalStore._execute_migrate``
+            re-derives the scope from the stored context, refuses it unless it
+            equals the scope the approver decided on, and passes on only the keys
+            that scope encodes with ``dry_run`` set live from it (GAP-071).
     """
     req = RunWaveRequest(**ctx)
     _accel(req.db_path).run_wave(req)
