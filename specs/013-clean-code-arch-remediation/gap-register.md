@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-54 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, and GAP-054 on 2026-09-12, each with the next free id); the per-component placeholder each id
+58 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, and GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -22,13 +22,13 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 16 |
-| high | 22 |
+| high | 25 |
 | medium | 11 |
-| low | 5 |
-| **total** | **54** |
+| low | 6 |
+| **total** | **58** |
 
 All 16 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 54 entries carries at least one path:line citation or a reproduction command
+one of the 58 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -71,6 +71,9 @@ one of the 54 entries carries at least one path:line citation or a reproduction 
 | GAP-052 (GAP-CLI-05) | `ado2gh phase assign` crashes on every invocation; no repo can be risk-scored from the CLI | remediated |
 | GAP-053 (GAP-ENG-08) | The queue worker cannot execute any job type: every one dies at `Accelerator` construction | remediated |
 | GAP-054 (GAP-STATE-05) | `JobStore.complete()`/`.fail()` assign `updated_at` on a `JobRecord` that has no such field, raising at runtime | open |
+| GAP-055 (GAP-CLI-06) | `ado2gh service-connections` writes an empty manifest: the generator is handed repo objects, not project names | remediated |
+| GAP-057 (GAP-ACC-08) | The Vertex credential probe could never pass: `google.auth.transport.requests` used without importing it | remediated |
+| GAP-058 (GAP-ACC-09) | T077 regression: the single-repo dry run probes credentials that were never merged and can report COMPLETED | remediated |
 
 Zero critical or high entries remain in `open` or `disputed` except four: GAP-019
 (GAP-AUTH-03), GAP-024 (GAP-UI-02) and GAP-031 (GAP-PIPE-01) stay `open`, each awaiting an
@@ -1126,6 +1129,78 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - contract_change: true — adding `created_at`/`updated_at` to `JobRecord` changes every backend's serialized job record (`model_dump()` gains two fields), not only DynamoDB's, so any consumer that asserts an exact key set on a job payload would need to be checked
 - follow_up: add `created_at`/`updated_at` fields to `JobRecord` (`ado2gh/models.py:501-510`) with a serialization/migration review, once an operator approves the contract change under FR-024 (`plan.md` § Approved contract changes); doing so would also let the `# type: ignore[call-arg]` (six sites) and `# type: ignore[attr-defined]` (four sites) comments `7a05ca9` added across `ado2gh/state/job_store.py` be dropped instead of permanently suppressed. No successor task filed.
 - closed_on: —
+
+### GAP-055 (GAP-CLI-06) `ado2gh service-connections` writes an empty manifest: the generator is handed repo objects, not project names
+
+- components: CLI, pipeline transformation (service connection manifest)
+- violates: Principle IV (Intuitive Architecture & Naming — the parameter is named `projects` and each element is put straight into an ADO REST URL, and the caller passed `RepoConfig` objects); Principle V (Enterprise Migration Safeguards — step 4 of the documented execution workflow produced an ops artefact naming none of the manual setup it exists to name); Principle VI (no test invoked the command; `tests/pipeline/test_service_connection_manifest.py` exercised the generator only, always with project-name strings)
+- evidence:
+  - `ado2gh/reporting/service_connection_manifest.py:110-165` — `generate(projects: list[str], output_path=None)` loops `for project in projects:` and calls `self.ado.list_service_connections(project)`, whose argument is encoded into the Azure DevOps REST URL
+  - `ado2gh/cli/misc.py:71` (pre-fix) — `repos = load_repos(input_file, global_cfg, waves)` followed by `ServiceConnectionManifest(ado).generate(repos, output)`; `load_repos` returns `list[RepoConfig]` (`ado2gh/api/repo_input.py:13-47`)
+  - `ado2gh/reporting/service_connection_manifest.py:160-161` — the per-project `except Exception` logs `Failed to scan service connections for %s` at warning level and carries on, so the command still exits 0 and still writes a manifest, one with `by_project: {}`, `connections: []` and `total_connections: 0`
+  - reproduction: at `d1427fd^`, `tests/unit/test_gap_055_service_connections_cli.py::test_manifest_lists_the_connections_of_every_project` gives `AssertionError: assert [] == ['Contoso', 'Fabrikam']`, and `::test_each_project_is_scanned_once_by_name` shows the client receiving `RepoConfig(ado_project='Contoso', ado_repo='payments', ...)` objects instead of names
+- severity: high (critical_test: —). Rated under US3 scenario 3, first clause: violates Principle V in the default configuration. It meets no critical test — (a) nothing destructive runs, the manifest is read-only by construction; (b) no secret is handled, the manifest carries connection names and GitHub secret *names* only and the warning quotes a `RepoConfig` repr, which holds no credential (CA-003); (c) nothing is persisted to the state DB, so nothing can be corrupted; (d) the failure path does have a fail-safe default — skip the project, log a warning — it is simply the wrong artefact, not an absent default; (e) is the close call, and it is not met: the two components do disagree on the element type of a shared list, but the disagreement is logged as a warning per project rather than passing silently, and (e) requires that the wrong result be produced *silently*. Medium was rejected on the ground GAP-052 and GAP-053 already set: medium is reserved for readability, naming and documentation drift with no safety impact, and a documented workflow step that cannot do its job is not drift.
+- blast_radius: a CLI-only operator following the documented workflow received a manifest stating that the migration needs no GitHub secrets and no OIDC setup, for any organisation, because no project was ever scanned. Acting on it would mean pushing converted workflows with no credentials configured. Capped by two things: the warning line per project is visible on the console, so the emptiness is not silent to anyone reading the output, and `ServiceConnectionManifest` has carried a v1.0.0 deprecation notice since spec 009 naming the `analyze_deps` pipeline step as its successor — that step performs the same scan on the live UI and agent paths and was never affected.
+- status: remediated
+- resolution: fixed in `d1427fd` (T077) as a by-product of making mypy a CI gate: `ado2gh/cli/misc.py` now derives `projects = sorted({r.ado_project for r in repos})` and passes that, which also deduplicates the repeated project of a multi-repo wave into one scan. No option, signature or help text changed. This entry records the fix and supplies the test it landed without.
+- regression_check: `tests/unit/test_gap_055_service_connections_cli.py` — drives `ado2gh service-connections` through Click's `CliRunner` against a fake ADO client and a temp config whose single wave holds two Contoso repos and one Fabrikam repo, then asserts the written manifest carries both projects' connections with their mapped GitHub secret names, that `total_connections` is 3, and that the client was asked for exactly `["Contoso", "Fabrikam"]` — by name, once each.
+- revert_proof: `git worktree add "$TEMP/pre-t077" d1427fd^`, the new test copied in, `.venv\Scripts\python.exe -m pytest tests/unit/test_gap_055_service_connections_cli.py -p no:cacheprovider -q` run from inside the worktree so its own `ado2gh` shadows the editable install (confirmed via `ado2gh.__file__`), then `git worktree remove --force "$TEMP/pre-t077"`. Both tests fail there, with `assert [] == ['Contoso', 'Fabrikam']` and with the client receiving `RepoConfig(...)` objects; both pass on this commit. Taken 2026-09-13 (UTC) by Claude (opus subagent, T077 review fixes).
+- contract_change: false — no route, CLI command, table or environment variable changed; `--config/--input/--output` and the command's `--help` are untouched and `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-056 (GAP-ACC-07) The step-label fallback imports `_PIPELINE_STEP_INDEX` from a module that does not have it
+
+- components: accelerator service (pipeline runner)
+- violates: Principle II (Documented Functions & Classes — `_label`'s docstring promises "a message is always readable even for an unknown step", which the branch could not deliver); Principle VI (the fallback branch had no test)
+- evidence:
+  - `ado2gh/api/step_prerequisites.py:98` (pre-fix) — `from ado2gh.api.pipeline_runner import _PIPELINE_STEP_INDEX` inside `_label`
+  - `ado2gh/api/pipeline_models.py:67` — `_PIPELINE_STEP_INDEX` is defined here; `ado2gh/api/pipeline_runner.py` neither imports nor re-exports it (measured: the pre-fix import raises `ImportError: cannot import name '_PIPELINE_STEP_INDEX' from 'ado2gh.api.pipeline_runner'`)
+  - `ado2gh/api/step_prerequisites.py:68-72` — the branch is unreachable from the only caller: `check` skips a prerequisite that is absent from `run.steps` as out-of-scope *before* calling `_label`, and a prerequisite that is present is always matched by `_label`'s own first loop. Verified by reading every caller of `_label` — `check` is the only one
+- severity: low (critical_test: —). No critical test is met and there is no reachable behaviour to be wrong: the defect sits in a branch no shipped caller can enter today, so no operator ever saw it. Recorded as low rather than medium because it is not readability, naming or documentation drift either — it is a latent defect that would turn a label lookup into a failed step the moment any caller passed a step id the run does not carry, which is exactly what the helper's docstring invites a caller to do. Recorded at all because the fix landed inside a commit described as typing-only and carried no test.
+- blast_radius: none today, by reachability. If reached, the `ImportError` propagates out of `StepPrerequisiteChecker.check`, which `PipelineRunner._execute` calls before dispatching a step: the run would fail with an import error naming an internal symbol instead of blocking the step with a readable prerequisite message.
+- status: remediated
+- resolution: fixed in `d1427fd` (T077) while making mypy a CI gate: the import was repointed at `ado2gh.api.pipeline_models`, where the index lives. The fallback's behaviour is otherwise unchanged. This entry records the fix and supplies the test it landed without.
+- regression_check: `tests/unit/test_step_prerequisites.py::TestLabelFallback` — three tests calling `_label` directly, since `check` cannot reach the branch: a step absent from the run resolves to its canonical label (`migrate` → `Run all scoped migrations`), an unknown id is title-cased rather than raising, and every id in `_PIPELINE_STEP_INDEX` resolves to that index's own label.
+- revert_proof: the worktree run recorded on GAP-055, with `tests/unit/test_step_prerequisites.py` copied in as well: all three `TestLabelFallback` tests fail at `d1427fd^` with `ImportError: cannot import name '_PIPELINE_STEP_INDEX' from 'ado2gh.api.pipeline_runner'` raised at `ado2gh\api\step_prerequisites.py:98`, while the file's twelve pre-existing tests still pass; all pass on this commit. Taken 2026-09-13 (UTC) by Claude (opus subagent, T077 review fixes).
+- contract_change: false — no route, CLI command, table or environment variable changed; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-057 (GAP-ACC-08) The Vertex credential probe could never pass: `google.auth.transport.requests` used without importing it
+
+- components: accelerator service (cloud credential probes)
+- violates: Principle V (Enterprise Migration Safeguards — the probe is the step that distinguishes a working credential source from a merely present one, and for GCP it always answered "failed"); Principle VI (no test covered `_probe_gcp`)
+- evidence:
+  - `ado2gh/api/credentials/cloud_credential_probe.py:141-146` (pre-fix) — `import google.auth` followed by `credentials.refresh(google.auth.transport.requests.Request())`
+  - a submodule is an attribute of its package only once it has been imported (measured on this host with google-auth 2.55.1: `hasattr(google.auth, "transport")` is `False` after `import google.auth`, and `hasattr(google.auth.transport, "requests")` is `False` after `import google.auth.transport`), so the expression raised `AttributeError`
+  - `ado2gh/api/credentials/cloud_credential_probe.py:183-184` — the trailing `except Exception` swallows it into `_classify_probe_error`, which returns a fixed `network` failure, so the defect surfaced as "Probe failed due to a network error" no matter how good the host's credentials were
+  - reproduction: at `d1427fd^`, `tests/cloud_credentials/test_cloud_credential_probe.py::test_probe_vertex_passed` gives `AssertionError: Probe failed due to a network error. assert 'failed' == 'passed'` against a fake transport that returns HTTP 200
+- severity: high (critical_test: —). Rated under US3 scenario 3, first clause: violates Principle V in the default configuration for a provider the project documents as supported (`vertex` in CLAUDE.md's provider list and in `.env.example`). It meets no critical test — (a) nothing destructive runs; (b) no credential value is handled or returned, `_classify_probe_error` deliberately returns fixed messages and never the exception text (CA-003); (c) nothing is persisted before the raise; (d) the failure path is fail-closed and *does* leave a fail-safe default — it reports the credential as failed, which is the safe direction — so the admin is blocked, never wrongly cleared; (e) no second component reads a disagreeing contract. Medium was rejected on the GAP-052 ground: a documented provider whose probe can never pass is a capability that is absent, not drift.
+- blast_radius: an administrator with valid ambient GCP credentials could not get a Vertex credential source to pass its probe, so the source stayed unapproved and Vertex was effectively unusable through the settings flow. Nothing was approved that should not have been — the defect fails closed — and no other provider shares the code path: `_probe_aws` and `_probe_foundry` import what they use.
+- status: remediated
+- resolution: fixed in `d1427fd` (T077) while making mypy a CI gate: `import google.auth.transport.requests` was added beside `import google.auth`. One line, no behaviour otherwise changed. This entry records the fix and supplies the test it landed without.
+- regression_check: `tests/cloud_credentials/test_cloud_credential_probe.py::test_probe_vertex_passed`, `::test_probe_vertex_rejected_credentials` and `::test_probe_vertex_requires_project_and_model` — the probe is driven with `google.auth.default` and `httpx.Client` faked and no network call. `google.auth.transport.requests.Request` is deliberately *not* patched: patching it by name would import the submodule and hide the very defect under test, so the real `Request` is constructed (it makes no network call on construction). The tests skip with a stated reason if google-auth is absent; it is installed here (2.55.1).
+- revert_proof: the worktree run recorded on GAP-055, with `tests/cloud_credentials/test_cloud_credential_probe.py` copied in as well: at `d1427fd^` `test_probe_vertex_passed` fails with `Probe failed due to a network error. assert 'failed' == 'passed'` and `test_probe_vertex_rejected_credentials` fails with `assert 'network' == 'credentials'` — the AttributeError is misclassified as a network fault — while `test_probe_vertex_requires_project_and_model`, which never reaches the import, passes there as it does here. Both failures clear on this commit. Taken 2026-09-13 (UTC) by Claude (opus subagent, T077 review fixes).
+- contract_change: false — no route, CLI command, table or environment variable changed, and no dependency added (SC-003): google-auth was already an optional provider dependency, and the test skips without it. `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
+
+### GAP-058 (GAP-ACC-09) T077 regression: the single-repo dry run probes credentials that were never merged and can report COMPLETED
+
+- components: accelerator service (pipeline runner), tooling & guards (the mypy pass that introduced it)
+- violates: Principle V (Enterprise Migration Safeguards — CA-001: a dry run exists to prove the credentials and the plan before anything is migrated, and this path reported that proof without having the credentials); Principle VI (no test covered the no-profile single-repo path, which is how the regression passed CI)
+- evidence:
+  - `ado2gh/api/pipeline_steps.py` `_migrate_scoped`, single-repo branch — entered on `run.repository_id and run.dry_run` alone, with no profile requirement; the line above it spells the no-profile case out: `gh_org = profile.gh_org if profile else "ado-to-gh-migration"`. So `profile is None` is reachable with a wave in hand
+  - `d1427fd` wrapped the following credential merge in `if profile:`. `ado2gh/api/validation_run.py` `_merge_profile_credentials` is what puts `ado_pat`, `gh_token`, `ado_org_url` and `gh_org` into the config, and the two connectivity probes immediately below read exactly those keys through `_build_ado_client` / `_build_gh_client`
+  - before `d1427fd` the unconditional call raised `AttributeError` on `profile.ado_org_url` and `PipelineRunner._execute` turned that into a FAILED step with the run marked failed; after it, the step ran its probes against unmerged config and could set `StepStatus.COMPLETED` with `{"dry_run": True, "validated": True}`
+  - the same commit replaced the live branch's narrowing with `assert profile is not None`, a construct `python -O` strips, which would leave the live path merging nothing
+  - reproduction: `git stash push -- ado2gh/api/pipeline_steps.py` on this commit, then `.venv\Scripts\python.exe -m pytest tests/core/test_pipeline_steps_profile_merge.py -p no:cacheprovider -q` → `1 failed, 2 passed`, the no-profile run reporting `StepStatus.COMPLETED` with both probes recorded
+- severity: high (critical_test: —). Rated under US3 scenario 3, first clause: violates Principle V in the default configuration — a single-repo dry run with no active profile is reachable from the console with no special setup. It meets no critical test — (a) a dry run performs no destructive action, and the step returns before any migration; (b) no secret is exposed, the defect is the *absence* of credentials in the config, and the step message names none; (c) no migration state is written on the dry-run path; (d) the probes still fail closed when the ambient environment holds no usable credential, so the FAILED outcome remains available, it is just no longer guaranteed; (e) no second component reads a disagreeing contract. Critical was considered under (d) and rejected: the path does not remove a fail-safe default, it makes a safeguard's *evidence* unreliable — the step can report credentials validated when the merge that supplies them never ran. That is the high bar, not the critical one, and it is the same shape as GAP-016.
+- blast_radius: an operator running a single-repo dry run with no active profile could see the migration step report success, and act on it, without either credential having been checked against the run's own configuration. The outcome depends on what the process environment happens to hold: `SettingsStore.apply_to_process_env` and the on-disk `migration.yaml` can leave an `ADO_PAT`/`GH_TOKEN` in place from a different profile, in which case both probes pass and the step completes on the wrong organisation's credentials. The live branch of the same method was one `python -O` away from the same defect. Bounded to the single-repo branch: the profile-driven branch cannot be entered without a profile, and the no-wave path already skips with `skipped_reason: "no_profile"`.
+- status: remediated
+- resolution: fixed at the choke point rather than at the call site, so every caller is covered: `_merge_profile_credentials` (`ado2gh/api/validation_run.py`) now takes `MigrationProfile | None` and raises `RuntimeError("No active migration profile: ADO and GitHub credentials cannot be resolved...")` when it gets None, and it gained the docstring it never had, documenting that None is an error and not a no-op. Both call sites in `pipeline_steps.py` call it unconditionally again; `PipelineRunner._execute` turns the raise into a FAILED step with that message, which is the pre-T077 outcome with a readable reason attached. The `assert profile is not None` on the live branch is gone — the raise does the same job and `python -O` cannot strip it. `build_global_cfg`, the only other caller, guards with `if profile:` and is unaffected: there a missing profile legitimately means the config came from YAML or an upload.
+- regression_check: `tests/core/test_pipeline_steps_profile_merge.py` — drives the real `PipelineRunner._execute` with a fake settings store: with no active profile the step ends FAILED, the run is marked failed, the message names the profile and the client builders recorded zero calls; with an active profile that profile's ADO PAT, GitHub token and org URL are present in the config both probes receive and the step completes; and the merge helper itself raises on None. Obvious fake credentials only (CA-003). The same file also pins the unknown-phase guard added in the same review pass.
+- revert_proof: `git stash push -- ado2gh/api/pipeline_steps.py` from this commit (leaving the helper's raise in place, so the proof isolates the call-site guard), `.venv\Scripts\python.exe -m pytest tests/core/test_pipeline_steps_profile_merge.py -p no:cacheprovider -q` → `1 failed, 2 passed, 2 warnings in 4.34s`, the failure being `test_single_repo_dry_run_without_profile_fails_the_step` reporting a COMPLETED step, then `git stash pop`; `git stash list` afterwards holds only the unrelated pre-existing `stash@{0}: a5fbb01 test(GAP-012)` entry, which was not touched. With the fix in place: `3 passed`. Taken 2026-09-13 (UTC) by Claude (opus subagent, T077 review fixes).
+- contract_change: false — no route, CLI command, table or environment variable changed. `_merge_profile_credentials` is private and its widened parameter type accepts everything it accepted before; `tests/contract/public_surface_snapshot.json` is unchanged.
+- closed_on: 2026-09-13
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 
