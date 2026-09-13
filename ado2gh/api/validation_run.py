@@ -75,9 +75,32 @@ def _global_cfg_from_profile(
 
 def _merge_profile_credentials(
     global_cfg: dict[str, Any],
-    profile: MigrationProfile,
+    profile: MigrationProfile | None,
     advanced: AdvancedSettings,
 ) -> dict[str, Any]:
+    """Overlay the active profile's credentials and defaults onto a migration config.
+
+    Args:
+        global_cfg: Config as loaded from ``migration.yaml``; never mutated.
+        profile: The active migration profile. ``None`` is an error, not a
+            no-op: this call is what puts the ADO PAT and the GitHub token into
+            the config, so returning ``global_cfg`` unchanged would hand a
+            caller credential-less config it would then treat as validated.
+        advanced: Advanced settings supplying the strategy and parallelism
+            defaults used when the config names none.
+
+    Returns:
+        A new config dict with the profile's ADO org, PAT, GitHub org and first
+        GitHub token applied over ``global_cfg``.
+
+    Raises:
+        RuntimeError: No profile is active, so no credentials can be resolved.
+    """
+    if profile is None:
+        raise RuntimeError(
+            "No active migration profile: ADO and GitHub credentials cannot be "
+            "resolved. Activate a migration profile before running this step.",
+        )
     merged = dict(global_cfg)
     if profile.ado_org_url:
         merged["ado_org_url"] = profile.ado_org_url

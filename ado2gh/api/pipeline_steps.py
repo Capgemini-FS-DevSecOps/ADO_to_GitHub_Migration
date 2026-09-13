@@ -848,8 +848,14 @@ class PipelineStepsMixin(_PipelineStepsHost):
 
                 if run.dry_run:
                     global_cfg, _ = ConfigLoader.load(adv.config_path)
-                    if profile:
-                        global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
+                    # Unconditional: the single-repo branch above builds a wave even
+                    # with no profile, so this is the one path that can reach the
+                    # merge with none. Skipping it would run the connectivity probes
+                    # below against credential-less config and let the step report
+                    # COMPLETED on credentials nothing ever checked (CA-001), so
+                    # _merge_profile_credentials raises on a missing profile and the
+                    # runner turns that into a FAILED step.
+                    global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
                     global_cfg["gh_org"] = gh_org
                     validation_errors: list[str] = []
                     try:
@@ -928,11 +934,10 @@ class PipelineStepsMixin(_PipelineStepsHost):
                     f"{step_label}: {len(wave.repos)} repo(s) phase {run.phase} [{mode}]{dep_note}{scope_note}",
                 )
                 global_cfg, _ = ConfigLoader.load(adv.config_path)
-                # wave is only non-empty here via the profile-driven branch above: the
-                # single-repo branch requires run.dry_run=True (this code only runs when
-                # dry_run is False, per the early return above) and the no-profile branch
-                # leaves wave=None. profile is therefore always set; narrowed for mypy.
-                assert profile is not None
+                # wave is only non-empty here via the profile-driven branch above, so
+                # profile is expected to be set; _merge_profile_credentials enforces
+                # that rather than an assert, which `python -O` would strip and leave
+                # this live path merging nothing (CA-001).
                 global_cfg = _merge_profile_credentials(global_cfg, profile, adv)
                 global_cfg["gh_org"] = gh_org
                 ado = _build_ado_client(global_cfg)
