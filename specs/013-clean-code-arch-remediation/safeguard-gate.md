@@ -204,3 +204,127 @@ Per repo `CLAUDE.md`, one consultation was run through the Codex CLI channel spe
 One consultation claim was checked and **not** accepted: it read the `docs/STRUCTURAL_CHANGELOG.md` citation in §7 as citing the wrong source path for the audit-module move. Re-reading `STRUCTURAL_CHANGELOG.md` lines 356 and 358 shows both a package-level rename (`ado2gh/assignments/` → `ado2gh/audit/`, row 356) and a subsequent file-level split (`ado2gh/audit/audit.py` → `ado2gh/audit/writer.py`, row 358); the original §7 text correctly reflects the resulting baseline→HEAD path chain (`ado2gh/assignments/audit.py` → `ado2gh/audit/writer.py`) across those two rows, so no change was made there.
 
 No blocker was raised or found. All 7 verdicts remain PASS; three sections (§2, §3, §7) were tightened for accuracy and §6's verdict label was made explicitly conditional rather than bare.
+
+---
+
+## Re-measurement at e57eecb (2026-09-13)
+
+**Why**: T093 was measured at HEAD `7a05ca9` (2026-09-12 18:37 -0400). 26 commits have
+landed since, including six security gap-fixes — GAP-059 (console confirm gates),
+GAP-063 (approval scope verification), GAP-064 (log masking of exception messages and
+tracebacks), GAP-065 (migrate-guard `dry_run` parsing), GAP-066 (pipeline-run
+authorization), GAP-067 (feature-route live approvals) — plus the T077 behaviour-review
+fixes. Every CA-001…CA-004 command from T093 was re-run verbatim against the new tip.
+
+**Baseline commit**: `9c83a29` (unchanged — still an ancestor of HEAD).
+**T093 reference commit**: `7a05ca9`.
+**HEAD commit**: `e57eecb` (2026-09-13 01:20:42 -0400) — "docs(013): register and close GAP-064".
+109 commits separate `9c83a29` from HEAD; 26 of them are new since `7a05ca9`.
+
+### Verdict table
+
+| # | Check | Baseline (9c83a29 / T011) | T093 @ `7a05ca9` | HEAD `e57eecb` | Delta vs T093 | Explanation | Verdict |
+|---|---|---|---|---|---|---|---|
+| 1 | CA-001 flags — `--dry-run` in `tests/contract/public_surface_snapshot.json` | 6 | 6 | 6 | 0 | Same six commands: `ado-cleanup`, `phase run`, `pipelines retry-failed`, `push-workflows`, `rollback`, `run`. No flag removed or renamed. | PASS |
+| 2 | CA-001 defaults — removed `dry_run=True` paired with an `ExecutionMode.DRY_RUN` addition | 12 diff lines (10 real removals + 2 signature-only edits) | 10/10 real removals paired | byte-identical 12 lines; 10/10 still paired | 0 | The `9c83a29..HEAD` diff output is textually identical to T093's. All five touched files still carry the `ExecutionMode` replacements (`_common.py` 2 refs, `executor/node.py` 6, `planner_research.py` 3, `form_routes.py` 4). The 2 `orchestrator_tools.py` lines remain signature-only keyword-only edits — `dry_run: bool = True` is still present verbatim at lines 176 and 193. | PASS |
+| 3 | CA-002 approve — `can_approve_live_execution` | 6 | 11 | 11 | 0 | Identical set of 11 hits. `migrate_guard.py` moved 89 → 118 (docstring line shifted by GAP-065's `dry_run` parsing fix); the real enforcement call `operator_requires_live_approval(...)` is now at line 134 and still present. `proxy_routes.py:165` (docstring) with enforcement `require_approve_live_execution(request)` at line 196, unchanged. | PASS |
+| 4 | CA-002 confirm — `require_confirmation\|confirm_execute\|plan_confirmed` | 28 | 29 | 29 | 0 | Per-file distribution unchanged from T093: `guardrails.py` 1, `hitl/form_fields.py` 3, `hitl/intake.py` 14, `hitl/intake_llm.py` 1, `hitl/schemas.py` 10. No file added to or removed from the set. | PASS |
+| 5 | CA-003 tests — `pytest tests/ -k "mask or redact or secret" -q` | (n/a at T011) | 44 passed, 9 skipped, 997 deselected | 49 passed, 9 skipped, 1029 deselected, 0 failed/errors, exit 0, 6.38 s | +5 passed, +32 deselected | Suite grew: GAP-064 added `tests/unit/test_gap_064_logging_masks_exceptions.py`, and the wider suite gained tests from the other gap-fixes (the deselected count reflects total suite growth, not a masking regression). Zero failures, zero errors. | PASS |
+| 6 | CA-003 secrets grep — `^\+.*(ghp_\|github_pat_\|password\s*=\s*")` over `9c83a29..HEAD` | required 0 | 8 matching lines, all non-secret | 16 matching lines, all non-secret | +8 | Command still does not literally "print nothing". Every one of the 16 is accounted for below; none is a credential. Same documented-exception disposition as T093 § 6. | PASS (documented exception, as at T093) |
+| 7 | CA-004 audit — `AuditWriter\|audit_event(` | 11 (`audit_event(` 4 + `AuditWriter` 7) | 21 | 21 | 0 | Identical set of 21 hits across `utils.py` (7), `profile_governance.py` (2), `audit/writer.py` (2), `audit/__init__.py` (2), `state/base.py` (1), `state/job_store.py` (5), `postgres_agentic_users_mixin.py` (1), `sqlite_agentic_mixin.py` (1). | PASS |
+
+### Did any count drop? — one sentence per row
+
+1. **Row 1 — no drop.** 6 at baseline, 6 at T093, 6 at HEAD; all six CLI names are the same six.
+2. **Row 2 — no drop.** The diff output is byte-identical to T093's, and every `ExecutionMode`/`from_dry_run` replacement that paired those removals is still present in all five files at HEAD.
+3. **Row 3 — no drop.** 11 at T093, 11 at HEAD, against a baseline of 6; the only movement is a line-number shift inside `migrate_guard.py` caused by GAP-065, not a removed call site.
+4. **Row 4 — no drop.** 29 at T093, 29 at HEAD, against a baseline of 28; the per-file breakdown is unchanged file-for-file.
+5. **Row 5 — no drop.** Passing tests rose 44 → 49 and nothing regressed to failed or errored; the deselected count rose because the whole suite grew, which is not a safeguard count.
+6. **Row 6 — this row counts *unwanted* matches, so its rise is not a safeguard drop**; it grew 8 → 16, and each of the 8 new lines is documentation or a deliberately fake fixture (itemised below), so there is no new credential exposure.
+7. **Row 7 — no drop.** 21 at T093, 21 at HEAD, against a baseline of 11; the same 21 file:line hits resolve, so no audit-write call site was lost by the GAP-063…067 work.
+
+No primary row dropped, so no `docs/STRUCTURAL_CHANGELOG.md` rename justification is
+required for the seven rows above. One supplementary row did drop between baseline and
+T093 — see S1, where the changelog explanation is given.
+
+### Row 6 detail — the 16 CA-003 matches, by file
+
+Values are never reproduced here; only what each line *is*.
+
+| File | Lines | What the line actually is | New since T093? |
+|---|---|---|---|
+| `ado2gh/audit/redaction.py` | 2 | The redaction module's own pattern source — the comment naming the GitHub token prefixes it recognises, and the `_SECRET_VALUE_RE` literal. This *is* the CA-003 masking implementation, so it must contain the substrings it matches. | no |
+| `specs/013-clean-code-arch-remediation/gap-register.md` | 3 | Spec prose. Line 287 describes the `_SECRET_PATTERNS` consolidation; lines 1312 and 1315 are the GAP-064 write-up describing the pre-fix `logging_config.py` behaviour and the measured repro. | +2 |
+| `specs/013-clean-code-arch-remediation/quickstart.md` | 1 | The stored text of this very grep command, kept as documentation — a self-referential match on the pattern's own literal. | no |
+| `specs/013-clean-code-arch-remediation/safeguard-gate.md` | 3 | This document. The T093 section quotes the grep command and its pattern in the verdict table, in § 6, and in the verbatim-commands block. Self-referential. | +3 |
+| `specs/013-clean-code-arch-remediation/tasks.md` | 1 | The T093 task text itself, containing the same command. Self-referential. | no |
+| `tests/agent/test_gap_011_agent_message_masking.py` | 1 | `FAKE_`-prefixed test fixture. | no |
+| `tests/auth/test_gap_010_redact_payload_token_shapes.py` | 1 | Token-shape fixture for the redaction tests. | no |
+| `tests/unit/test_gap_028_dynamo_double_claim.py` | 1 | `FAKE_`-prefixed test fixture. | no |
+| `tests/unit/test_gap_064_logging_masks_exceptions.py` | 3 | New GAP-064 test. Line 20 is `FAKE_TOKEN`, built as a bare prefix concatenated with 36 repeated `A` characters; lines 50 and 73 assert the *masked* form (prefix followed by `***`) appears in the rendered log record. | +3 |
+
+All 8 new matches are documentation of the check itself, spec prose about redaction, or a
+synthetic fixture whose value is a literal repeated character. No real credential was added
+to the tree between `7a05ca9` and `e57eecb`.
+
+### Supplementary rows
+
+| # | Check | 9c83a29 | `7a05ca9` | HEAD `e57eecb` | Delta vs T093 | Explanation | Verdict |
+|---|---|---|---|---|---|---|---|
+| S1 | Console confirm gates — `rg -n "confirm" apps/migration-ui/src --type ts -c` | 34 matches / 10 files | 31 / 9 | 62 / 15 | +31 matches, +6 files | GAP-059's doing. New: `app/settings/migrate/page.tsx` 5 (the `confirmLive` arm-then-launch state and its button branch), `lib/pipelineRunStatus.ts` 4 (`liveStartNeedsConfirm(dryRun, confirmArmed)` — a live start needs a second click), plus their tests (`page.test.tsx` 2, `pipelineRunStatus.test.ts` 3), `AgentChat.test.tsx` 2, `cloudCredentials.test.ts` 2, `cloud-credentials/page.tsx` 1→2, `lib/agentChat.ts` 7→10, `lib/agentChat.test.ts` 9→18. | PASS |
+| S2 | Live-approval audit call sites — `grep -rn "platform\.live_execution\." ado2gh services --include=*.py` | 3 | 7 | 11 | +4 | All 11 sit in `ado2gh/api/live_approval_store.py`. | PASS |
+| S3 | Distinct live-approval audit event names | 3 | 4 | 6 | +2 | See the list below. None dropped. | PASS |
+
+**S1 drop note.** S1 is the one count that fell anywhere in this exercise: 34 at baseline
+`9c83a29` → 31 at `7a05ca9`, a drop of 3 that predates this re-measurement. It is explained
+by a deletion recorded in `docs/STRUCTURAL_CHANGELOG.md`: the 013 dead-export sweep removed
+21 zero-reference exports from `apps/migration-ui`, four of them from `src/lib/agent.ts` —
+including `confirmLiveExecution` — each re-verified by grep as having zero references before
+deletion, with 0 tests removed (changelog rows at lines 749 and 756, `inventory.json@7fd1c86`,
+pass 47, 2026-09-09). That removed 4 matches; `lib/agentChat.ts` gained 1 over the same span,
+netting −3. At HEAD the count is 62, comfortably above the baseline 34, so no confirm gate is
+missing today.
+
+**S3 — event names.** Baseline `9c83a29` had three: `platform.live_execution.requested`,
+`.approved`, `.denied`. `7a05ca9` added `.notify_failed`. HEAD adds two more:
+
+- `platform.live_execution.scope_mismatch` — GAP-063, written when a live approval is
+  replayed against a migrate job it was not granted for (`live_approval_store.py:266`).
+- `platform.live_execution.resume_failed` — GAP-067, written when an approved
+  feature-route session cannot be resumed (`live_approval_store.py:367`).
+
+`comm` over the sorted name sets at `7a05ca9` and HEAD confirms two additions and zero
+removals.
+
+### Exact commands re-run (verbatim)
+
+```
+grep -n -- "--dry-run" tests/contract/public_surface_snapshot.json
+git diff 9c83a29..HEAD -- ado2gh services | grep -E "^-.*dry_run.*=.*True"
+grep -rn "can_approve_live_execution" ado2gh services --include=*.py | wc -l
+grep -rn "require_confirmation\|confirm_execute\|plan_confirmed" ado2gh services --include=*.py | wc -l
+.venv\Scripts\python.exe -m pytest tests/ -k "mask or redact or secret" -q
+git diff 9c83a29..HEAD | grep -E "^\+.*(ghp_|github_pat_|password\s*=\s*\")"
+grep -rn "AuditWriter\|audit_event(" ado2gh services --include=*.py | wc -l
+```
+
+Supplementary commands:
+
+```
+rg -n "confirm" apps/migration-ui/src --type ts -c      # plus git grep -c at 9c83a29 and 7a05ca9
+grep -rn "platform\.live_execution\." ado2gh services --include=*.py
+comm -13 <names@7a05ca9> <names@HEAD>                   # additions vs removals
+```
+
+Raw outputs are in `run-gate-rerun-ca001-flags.txt`, `run-gate-rerun-ca001-defaults.txt`,
+`run-gate-rerun-ca003.txt`, `run-gate-rerun-ca003-secrets.txt` and
+`run-gate-rerun-audit-events.txt` (untracked working-tree artifacts, not committed).
+
+### Outcome
+
+All seven CA-001…CA-004 rows hold at `e57eecb` with the same verdicts as T093: six clean
+PASS plus row 6's documented exception, unchanged in character. Five of the seven counts are
+numerically identical to T093's; the two that moved (row 5 +5 passing tests, row 6 +8
+non-secret documentation/fixture matches) both moved in the safe direction. The six security
+gap-fixes landed since `7a05ca9` added safeguards — 31 more console confirm matches, 4 more
+live-approval audit writes, 2 new audit event names — and removed none.
