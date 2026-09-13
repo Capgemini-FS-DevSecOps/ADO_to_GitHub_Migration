@@ -257,6 +257,39 @@ pass — the concurrent GAP-071…GAP-075 pass ran one at `run-gap-071-full.txt`
 full runs against the same tree deadlock — so the coverage figure and the ratchet are
 unchanged from the addendum above.
 
+
+**Addendum (2026-09-13, remediation batch R1 — GAP-018, GAP-068, GAP-078).** The operator
+approved option A of `operator-decisions.md` § 1 by instruction, and that one decision closed
+all three default-execution-mode gaps; it is recorded as § Approved contract changes entry 9.
+`run`, `phase run` and `ado-cleanup` now declare the Click boolean pair `--dry-run/--live` with
+`default=True` (`b9eb89c`); `MigrationEngine.__init__` and `RollbackHandler.rollback_wave`
+default to `ExecutionMode.DRY_RUN` (`121a772`); and the remaining ten `ExecutionMode` parameter
+defaults follow (`754a82a`), with `mode=` made explicit at the five in-repo call sites whose
+behaviour had to stay live — the two `PipelineInventoryBuilder` constructions in
+`ado2gh/api/accelerator.py` and `ado2gh/api/migration_scan.py`, whose persisted inventory is the
+entire product of the call, and the `mark_wave_run` calls in `ado2gh/core/rollback.py` and
+`ado2gh/phase/batch_executor.py`, which previously reached the live default from inside a live
+guard. Three `cli_commands` lines moved in `tests/contract/public_surface_snapshot.json`
+(`opts=--dry-run` → `opts=--dry-run/--live`, `default=False` → `default=True`); the entry count
+stays 96 and the other three frozen keys are untouched. 55 worked examples across `README.md`,
+`docs/COMMAND_REFERENCE.md`, `docs/EXECUTION_MANUAL.md`, `docs/MIGRATION_RUNBOOK.md` and
+`docs/TROUBLESHOOTING.md` gained `--live`; none was deleted.
+
+Measured at `754a82a`: the targeted run over `tests/core`, `tests/pipeline`, the three new
+regression modules, `tests/unit/test_gap_026_execute_phase.py` and the three guard tests —
+**271 passed** (`run-r1-targeted.txt`); `ruff check` over every package directory this batch
+touched and over `services/` — `All checks passed!`; `mypy ado2gh/ --ignore-missing-imports` —
+clean over this batch's files. One full run was taken
+(`.venv/Scripts/python.exe -m pytest --cov=ado2gh --cov-fail-under=62 -q`, `run-r1-full.txt`):
+**1361 passed, 11 failed, 26 skipped, coverage 64.65 % ≥ 62**. None of the eleven is in this
+batch's surface: four belong to `34dce99` (GAP-069), two to the route-test commit `2886cf1`,
+four to the concurrent uncommitted agent-package work (`guardrails.py`, `hitl/blockers.py`,
+`nodes/orchestrator_tools.py`), and the last is the known local-only
+`test_scripts_cleanup.py::test_only_scripts_dev_remains`. Two pre-existing findings outside this
+batch were observed and left alone: the working-tree `ado2gh/audit/redaction.py` currently fails
+`ruff` (I001, W292) and `mypy` (`return-value` at `:23`), and a stalled full-suite pytest from
+06:13 was cleared with `Stop-Process` before this run could start.
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
@@ -536,8 +569,43 @@ Applied in `ceb6b0b` (fix) and `aefea23` (test) — `ado2gh/cli/phase.py:166-168
 
 *Snapshot impact: none.* The change adds, removes and retypes no CLI option.
 
-Entries 9–11 and 13 are reserved for the remaining operator decisions of 2026-09-13
-(`operator-decisions.md` items 1, 2, 3 and 8) and are appended by the batches that apply them.
+**9. `run`, `phase run` and `ado-cleanup` default to dry-run and require `--live` to execute
+(GAP-018, GAP-068, GAP-078). Decision (operator, 2026-09-13): approved by operator instruction.**
+The three migration commands declared `--dry-run` as `is_flag=True, default=False`, so each
+mutated unless the operator opted out, and none prompted for confirmation. On the CLI path that
+default was the only guard in existence: the approval-token check landed in `5f799e7` fires only
+when a request quotes a `live_approval_id`, and `ado2gh/cli/migration.py` never sends one. Each
+option becomes `--dry-run/--live` with `default=True` in `ado2gh/cli/migration.py`,
+`ado2gh/cli/phase.py` and `ado2gh/cli/misc.py`; `--dry-run` keeps its name and its meaning, and
+`ExecutionMode.from_dry_run(dry_run=…)` still converts at the boundary. The same decision settles
+the twelve `ExecutionMode` parameter defaults held against it: `MigrationEngine.__init__` and
+`RollbackHandler.rollback_wave` (GAP-068) and the ten in `ado2gh/core/ado_cleanup.py`,
+`core/scopes/base.py`, `core/wave_runner.py`, `phase/batch_executor.py` (two),
+`pipelines/inventory.py`, `pipelines/push_workflows.py` (two), `state/base.py`,
+`state/sqlite_db.py` and `state/postgres_db.py` (GAP-078) all move from `ExecutionMode.LIVE` to
+`ExecutionMode.DRY_RUN`. Applied in `b9eb89c` (GAP-018), `121a772` (GAP-068) and `754a82a`
+(GAP-078).
+
+*Migration note.* Any script or runbook that ran these three commands without `--dry-run` and
+expected a real migration must add `--live`. Until it does, the command reports what it would
+do and changes nothing — a safe failure, but an unattended pipeline will appear to succeed
+while migrating nothing. Scripts that already pass `--dry-run` are unaffected. For the twelve
+signatures, every shipped in-repo call site already passed `mode=` explicitly or was changed to
+do so in the same commit, so nothing in this repository changes at runtime; an out-of-tree SDK
+consumer that omitted the argument now previews instead of migrating. The persisted
+`wave_runs.dry_run` column keeps its polarity exactly — only what an omitted argument records
+changed, never how a stated mode is serialised.
+
+*Snapshot impact: yes — three lines on `cli_commands`.* The `dry_run` param line for
+`ado2gh run`, `ado2gh phase run` and `ado2gh ado-cleanup` each change `opts=--dry-run` to
+`opts=--dry-run/--live` and `default=False` to `default=True`. The entry count stays at 96;
+no command or option is added or removed. The twelve signature defaults touch no frozen key.
+Verified by `tests/contract/test_public_surface_snapshot.py`; behaviour is covered by
+`tests/unit/test_gap_018_dry_run_default.py`, `tests/unit/test_gap_068_execution_mode_defaults.py`
+and `tests/unit/test_gap_078_execution_mode_defaults.py`.
+
+Entries 10, 11 and 13 are reserved for the remaining operator decisions of 2026-09-13
+(`operator-decisions.md` items 2, 3 and 8) and are appended by the batches that apply them.
 
 **12. `GET /v1/settings/cloud-credentials` no longer accepts `scan`. Decision (operator,
 2026-09-13): approved by operator instruction.** The listing endpoint accepted `?scan=true` to
