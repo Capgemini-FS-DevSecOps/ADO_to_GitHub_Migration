@@ -76,19 +76,27 @@ open" bar is therefore **not** met, and `spec.md` § Status says so explicitly.
 
 **Outstanding operator decisions carried past completion.**
 
-1. The four FR-024 contract changes still awaiting sign-off — GAP-007, GAP-008, GAP-003 and
-   GAP-017, detailed in § Approved contract changes above. None drifts the four frozen
-   snapshot keys.
-2. The two `bool_flag` route parameters named above: convert them, or register them as
-   permanent exceptions.
+1. ~~The four FR-024 contract changes still awaiting sign-off — GAP-007, GAP-008, GAP-003 and
+   GAP-017.~~ **Resolved 2026-09-13**: signed off by operator instruction and now entries 5–8
+   of § Approved contract changes. None drifts the four frozen snapshot keys.
+2. ~~The two `bool_flag` route parameters named above.~~ **Resolved 2026-09-13**: `sync` on
+   `POST /v1/settings/profiles/{id}/scan` is recorded as `bool_data` with a
+   `# noqa: FBT001,FBT002` and an exception-register row; `scan` on
+   `GET /v1/settings/cloud-credentials` was removed outright (entry 12 of § Approved
+   contract changes) rather than excepted.
 3. GAP-054: whether `JobRecord` gains `created_at`/`updated_at` fields or the DynamoDB job
    store stops writing them.
-4. `services/accelerator_api/routes/_shared.py` — module rename proposal still open, no
-   reviewer decision recorded.
-5. `services/agent/routes/_helpers.py` — rename **confirmed** by the review agent (the module
-   mixes trivial accessors with plan-building and live-approval logic, contradicting its own
-   docstring). The rename itself was deliberately not performed at T095 so it does not land
-   unreviewed in the completion commit.
+4. ~~`services/accelerator_api/routes/_shared.py` — module rename proposal still open.~~
+   **Resolved 2026-09-13**: the operator rejected the rename and kept the name
+   (`tag-decisions.json`, `--decided-by operator`); the docstring and the contents agree and a
+   rename churns 14 import sites for no behaviour change. GAP-036's remaining module-naming
+   concern is the `__import__`-based singletons, not the name.
+5. ~~`services/agent/routes/_helpers.py` — rename **confirmed** by the review agent.~~
+   **Resolved 2026-09-13**: the operator kept the name, superseding the reviewer's confirm
+   (`tag-decisions.json`, `--decided-by operator`). A rename does not fix what the reviewer
+   objected to — `_build_migration_plan`, `_enqueue_session_live_approval` and
+   `_try_start_pev_run` being business logic in a helpers module — so the extraction is filed
+   as GAP-080 instead.
 
 **CI.** `.github/workflows/ci.yml` triggers only on `push` to `main`/`master` and on
 `pull_request`, so pushing `feature/ado-agentic-ai` produces no workflow run and none could be
@@ -490,17 +498,71 @@ working and the field simply has no effect.
 *Snapshot impact: none.* Request-model fields, model deletions and validation strictness are
 not among the four frozen keys.
 
-**Contract changes still awaiting sign-off.** Four further changes sit in the working tree
-without operator approval, listed with their full detail in
-`contracts/public-contract-freeze.md` § Contract changes awaiting operator sign-off: GAP-007
-(`/v1/migrate/*` live-execution guard), GAP-008 (GitHub write proxy requires
-`can_approve_live_execution`), GAP-003 (agent `/v1/internal/` fails closed without
-`ADO2GH_INTERNAL_TOKEN`) and GAP-017 (`phase gate-check --override` rejects an empty
-`--reason`). **None of them drifts the snapshot** — the four frozen keys are untouched by all
-four. GAP-007, GAP-008 and GAP-003 are security fixes central to this feature, so reverting
-them is not in question; each carries a migration note in the freeze document stating exactly
-what a client sees. They are listed as unapproved because they are as operator-visible as the
-approved changes and have not been put to the operator.
+**5. Nine `/v1/migrate/*` routes gain a live-execution guard (GAP-007). Decision (operator,
+2026-09-13): approved by operator instruction.** An unauthenticated live request to any
+`/v1/migrate/*` route now gets **401**, and a signed-in OPERATOR or COORDINATOR gets **403**
+carrying an `awaiting_approval` `approval_id` instead of the route proceeding; dry-run requests
+pass through unchanged. Applied in `36edbc3` —
+`services/accelerator_api/routes/migrate_guard.py` hangs `guard_live_migration` off the
+`/v1/migrate` router. Full text and migration note:
+`contracts/public-contract-freeze.md:291-305`.
+
+*Snapshot impact: none.* The guard changes who gets an answer, not any route path.
+
+**6. GitHub write proxy requires `can_approve_live_execution` (GAP-008). Decision (operator,
+2026-09-13): approved by operator instruction.** Proxy writes — POST, PATCH, PUT and DELETE —
+now require `can_approve_live_execution` and are audited before being forwarded; reads are
+unaffected. Applied in `a6309ea` — `services/accelerator_api/routes/proxy_routes.py` is split
+by verb. Full text and migration note: `contracts/public-contract-freeze.md:319-333`.
+
+*Snapshot impact: none.* The split changes who gets an answer, not any route path.
+
+**7. Agent `/v1/internal/` fails closed without `ADO2GH_INTERNAL_TOKEN` (GAP-003). Decision
+(operator, 2026-09-13): approved by operator instruction.** `ADO2GH_INTERNAL_TOKEN` becomes
+mandatory wherever `ADO2GH_AUTH_ENABLED=true`. A deployment that forgets it sees approvals
+accepted in the console while the run silently never resumes, which is the failure mode the
+operator is accepting in exchange for the routes no longer standing open. Applied in `8285f0c`
+— `services/agent/main.py:100-103` reads the variable and warns when it is unset. Full text and
+migration note: `contracts/public-contract-freeze.md:353-368`.
+
+*Snapshot impact: none.* `ADO2GH_INTERNAL_TOKEN` is already in the frozen `env_vars` list.
+
+**8. `phase gate-check --override` rejects an empty `--reason` (GAP-017). Decision (operator,
+2026-09-13): approved by operator instruction.** `--override` with an empty `--reason` is now a
+clean `click.UsageError` where it previously raised `TypeError` and wrote no gate row at all.
+Applied in `ceb6b0b` (fix) and `aefea23` (test) — `ado2gh/cli/phase.py:166-168` raises, and
+`tests/unit/test_gap_017_gate_check_signature.py` covers it. Full text and migration note:
+`contracts/public-contract-freeze.md:372-378`.
+
+*Snapshot impact: none.* The change adds, removes and retypes no CLI option.
+
+Entries 9–11 and 13 are reserved for the remaining operator decisions of 2026-09-13
+(`operator-decisions.md` items 1, 2, 3 and 8) and are appended by the batches that apply them.
+
+**12. `GET /v1/settings/cloud-credentials` no longer accepts `scan`. Decision (operator,
+2026-09-13): approved by operator instruction.** The listing endpoint accepted `?scan=true` to
+re-probe the host for cloud credential sources before answering. It performed exactly the probe
+that `POST /v1/settings/cloud-credentials/scan` performs, but wrote no audit record, so the
+console's page load — `fetchCloudCredentials(true)` on every render and every refetch — was
+probing the host outside the audit trail (CA-004). The parameter and its branch are removed from
+`services/accelerator_api/routes/settings_routes.py` with no shim (FR-006a);
+`apps/migration-ui/src/lib/cloudCredentials.ts` drops the argument and the console's existing
+Rescan button, already wired to the audited POST, becomes the only way to re-probe.
+
+*Migration note.* A client still sending `?scan=true` gets the listing without a probe —
+FastAPI ignores an undeclared query parameter, so nothing errors, but the response reflects the
+last recorded detection rather than a fresh one. Any caller that relied on the flag must issue
+`POST /v1/settings/cloud-credentials/scan` first, which needs the same `can_manage_models`
+capability and additionally writes a `cloud_credentials.scanned` audit event.
+
+*Snapshot impact: none.* The route path and method are unchanged; query parameters are not
+recorded in `http_routes` and are not among the four frozen keys. Verified by
+`tests/contract/test_public_surface_snapshot.py`; the removal is covered by
+`tests/contract/test_cloud_credentials_contracts.py::test_listing_never_probes_the_host`.
+
+**Contract changes still awaiting sign-off.** None. The four that were — GAP-007, GAP-008,
+GAP-003 and GAP-017 — were signed off by operator instruction on 2026-09-13 and are entries
+5–8 above.
 
 ## Coverage measurement
 

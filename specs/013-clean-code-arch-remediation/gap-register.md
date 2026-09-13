@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-79 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, and GAP-076 through GAP-079 on 2026-09-13 from the Sol `ExecutionMode` review, each with the next free id); the per-component placeholder each id
+80 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, GAP-076 through GAP-079 on 2026-09-13 from the Sol `ExecutionMode` review, and GAP-080 on 2026-09-13 from operator decision 9, each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -24,11 +24,11 @@ table below rather than by re-rating an entry here.
 | critical | 20 |
 | high | 34 |
 | medium | 16 |
-| low | 9 |
-| **total** | **79** |
+| low | 10 |
+| **total** | **80** |
 
 All 20 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 79 entries carries at least one path:line citation or a reproduction command
+one of the 80 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -828,7 +828,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - regression_check: —
 - revert_proof: —
 - contract_change: false
-- follow_up: Rename `ado2gh/assignments/` (now `ado2gh/audit/`) to match its actual responsibility (audit-event writing) and replace `services/accelerator_api/routes/_shared.py`'s `__import__`-based singletons with ordinary imports so the orphan guard and import graphing can see them; registered-only per spec.md:35, no successor task filed.
+- follow_up: Rename `ado2gh/assignments/` (now `ado2gh/audit/`) to match its actual responsibility (audit-event writing) and replace `services/accelerator_api/routes/_shared.py`'s `__import__`-based singletons with ordinary imports so the orphan guard and import graphing can see them; registered-only per spec.md:35, no successor task filed. The *name* `_shared.py` is settled and is not part of this follow-up: operator decision, 2026-09-13 (`operator-decisions.md` § 7, recommended option B applied as instructed), recorded in `tag-decisions.json` as `--reject services/accelerator_api/routes/_shared.py:module_name_review --decided-by operator` — the docstring and the contents agree, no reviewer contested the name, and a rename churns 14 import sites for zero behaviour change. The module-naming half of this entry now rests entirely on the `__import__` singletons. The sibling decision on `services/agent/routes/_helpers.py` is GAP-080.
 - closed_on: —
 
 ### GAP-037 (GAP-ACC-05) Deprecated `/v1/plan` points operators at a route that does not exist
@@ -1640,6 +1640,24 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: not applicable; no fix applied.
 - contract_change: true (proposed, not applied) — the declared type and default of two request fields.
 - follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-076) from the Sol `ExecutionMode` review. No successor task filed.
+
+### GAP-080 (GAP-AGT-09) `services/agent/routes/_helpers.py` mixes accessors with plan-building and approval logic
+
+- components: agent service
+- violates: Principle IV (Intuitive Architecture & Naming)
+- evidence:
+  - `services/agent/routes/_helpers.py:1` — the module docstring claims it holds helpers "needed by route handlers but not specific to LangGraph agent logic", which is not what the file contains
+  - `services/agent/routes/_helpers.py:432` `_build_migration_plan`, `:544` `_enqueue_session_live_approval`, `:568` `_try_start_pev_run` — migration-plan building and live-approval/PEV-start business logic, not helpers; the reviewer's recorded `module_name_review` decision in `tag-decisions.json` says the same in terms ("the helpers name undersells what a reader needs to know here")
+  - the rest of the 599-line module is what the name promises: the session and run registries (`:48-49`), the audit bridge (`:50`), the accelerator HTTP client (`:154-200`) and the auth guards (`:203-245`)
+- severity: low
+- blast_radius: naming and placement only; a reader looking for how a session's plan is built or how a live run is queued has no reason to open a module called `_helpers.py`. No safety impact — the live-approval and PEV-start paths themselves are correct and covered by the GAP-006 and GAP-063 regression tests.
+- status: open
+- resolution: — the module name is deliberate and stays. Operator decision, 2026-09-13 (`operator-decisions.md` § 9, recommended option B applied as instructed), recorded in `tag-decisions.json` as `--reject services/agent/routes/_helpers.py:module_name_review --decided-by operator`, superseding the reviewer's `confirm`: T079 prescribed the name when it moved the module out of `ado2gh/agents/migration_agent/route_helpers.py`, and a rename does not fix what the reviewer objected to.
+- regression_check: —
+- revert_proof: —
+- contract_change: false
+- follow_up: extract `_build_migration_plan`, `_enqueue_session_live_approval` and `_try_start_pev_run` into a module of their own (`session_runtime.py`), rewriting the 11 import sites and appending the move to `docs/STRUCTURAL_CHANGELOG.md`; `session_runtime.py` becomes the right name for what is left only once those three have moved out. Raised 2026-09-13 by Claude (opus subagent, R4) from operator decision 9. No successor task filed.
+- closed_on: —
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 
