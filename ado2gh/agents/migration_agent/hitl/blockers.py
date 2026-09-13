@@ -1,14 +1,59 @@
-"""Blocked work-item tracking for operator-input resolution."""
+"""Blocked work-item tracking and plan-revision identity for operator-input resolution."""
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
 
+from ado2gh.agents.migration_agent.utils import coerce_dry_run
 from ado2gh.api.migration_work_plan import sync_work_item_wire_keys
 
 
 def _blocker_text(work_item: dict[str, Any]) -> str:
     return str(work_item.get("blocker") or work_item.get("block_reason") or "").strip()
+
+
+def plan_revision_key(plan: dict[str, Any] | None) -> str:
+    """Identify one revision of a migration plan by the decisions it asks the operator to make.
+
+    The digest covers what an operator answers *about* — the plan id and revision
+    counter, the execution mode, the target repositories and the scope/repo pairs of
+    the work items — and deliberately excludes mutable execution state such as work
+    item ``status``, so running the plan never invalidates the approval that
+    authorised the run (THR-09-002, THR-09-005).
+
+    Args:
+        plan: The migration plan, or None when the session has none.
+
+    Returns:
+        A short stable digest, or ``""`` when there is no plan to identify.
+    """
+    if not isinstance(plan, dict) or not plan:
+        return ""
+    parts = [
+        str(plan.get("plan_id") or ""),
+        str(plan.get("revision", 0)),
+        str(coerce_dry_run(plan.get("dry_run"), default=True)),
+    ]
+    for repo in plan.get("repos") or []:
+        if isinstance(repo, dict):
+            parts.append(str(repo.get("id") or repo.get("repository_id") or repo.get("name") or ""))
+        else:
+            parts.append(str(repo))
+    for work_item in plan.get("work_items") or []:
+        if isinstance(work_item, dict):
+            parts.append(f"{work_item.get('scope')}@{work_item.get('repo')}")
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+def _declined_key(plan: dict[str, Any] | None, key: str) -> str:
+    """Scope a blocker key to the plan revision that raised it.
+
+    Returns:
+        ``"<plan-revision>::<blocker-key>"``, so a replan re-raises a blocker the
+        operator declined on an earlier revision instead of silently skipping it.
+    """
+    return f"{plan_revision_key(plan)}::{key}"
 
 
 def blocker_key(work_item: dict[str, Any]) -> str | None:
@@ -37,7 +82,7 @@ def outstanding_blockers(plan: dict[str, Any], session: dict[str, Any]) -> list[
         if not isinstance(wi, dict) or wi.get("status") != "blocked":
             continue
         key = blocker_key(wi)
-        if not key or key in declined or key in seen_keys:
+        if not key or _declined_key(plan, key) in declined or key in seen_keys:
             continue
         seen_keys.add(key)
         outstanding.append({
@@ -84,12 +129,26 @@ def apply_skip_blocked_scopes(
     return plan
 
 
-def record_declined_blockers(session: dict[str, Any], blocker_keys: list[str]) -> None:
-    """Remember blocker keys the operator chose not to resolve, skipping duplicates."""
+def record_declined_blockers(
+    session: dict[str, Any],
+    blocker_keys: list[str],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> None:
+    """Remember blocker keys the operator declined, scoped to the plan revision that raised them.
+
+    Args:
+        session: Live agent session, updated in place.
+        blocker_keys: Blocker keys the operator chose not to resolve.
+        plan: The plan revision the operator was answering about. Defaults to the
+            session's current plan.
+    """
+    plan = plan if plan is not None else session.get("migration_plan")
     declined = list(session.get("declined_blocker_resolutions") or [])
     for key in blocker_keys:
-        if key not in declined:
-            declined.append(key)
+        scoped = _declined_key(plan, key)
+        if scoped not in declined:
+            declined.append(scoped)
     session["declined_blocker_resolutions"] = declined
 
 
@@ -110,7 +169,7 @@ def sanitize_plan_for_operator_view(
             continue
         if wi.get("status") == "blocked":
             key = blocker_key(wi)
-            if key and key not in declined:
+            if key and _declined_key(plan, key) not in declined:
                 continue
         work_items.append(dict(wi))
     copy["work_items"] = work_items

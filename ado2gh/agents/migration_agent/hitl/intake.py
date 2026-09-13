@@ -13,16 +13,73 @@ from ado2gh.agents.migration_agent.hitl.schemas import (
     OperatorMessageAnalysis,
     required_fields_for_phase,
 )
-from ado2gh.agents.migration_agent.utils import canonical_repo_id, find_discovery_repo
+from ado2gh.agents.migration_agent.utils import canonical_repo_id, coerce_dry_run, find_discovery_repo
+
+#: Session key recording *which* plan revision the operator approved. ``plan_approved``
+#: alone is a bare boolean that survived every replan (THR-09-002).
+PLAN_APPROVAL_KEY = "plan_approved_for"
+
+
+def record_plan_approval(session: dict[str, Any]) -> None:
+    """Bind the operator's approval to the plan revision that is on the session now."""
+    from ado2gh.agents.migration_agent.hitl.blockers import plan_revision_key
+
+    session["plan_approved"] = True
+    session[PLAN_APPROVAL_KEY] = plan_revision_key(session.get("migration_plan"))
+
+
+def clear_stale_plan_approval(
+    session: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+) -> bool:
+    """Drop an approval that was given for a different plan than the one now in play.
+
+    Approval was a sticky boolean: once set, a replan — or a plan swapped in by a
+    tool — inherited it and executed without ever being shown to the operator
+    (THR-09-002). A plan already handed to the executor keeps its approval, so an
+    in-flight or finished run is never retro-actively unapproved.
+
+    Args:
+        session: Live agent session, updated in place.
+        plan: The plan about to be acted on. Defaults to the session's own plan;
+            pass the incoming plan when it has not been stored on the session yet.
+
+    Returns:
+        True when a stale approval was cleared.
+    """
+    from ado2gh.agents.migration_agent.hitl.blockers import plan_revision_key
+
+    if not session.get("plan_approved"):
+        return False
+    if session.get("pev_execution_started") or session.get("pev_execution_completed"):
+        return False
+    if plan is None:
+        plan = session.get("migration_plan")
+    if not isinstance(plan, dict) or not plan:
+        return False
+    if session.get(PLAN_APPROVAL_KEY) == plan_revision_key(plan):
+        return False
+    session["plan_approved"] = False
+    session.pop(PLAN_APPROVAL_KEY, None)
+    return True
 
 
 def intake_from_session(session: dict[str, Any]) -> MigrationIntakeSchema:
     """Hydrate intake schema from persisted session fields."""
+    clear_stale_plan_approval(session)
     repo_ids = session.get("plan_repository_ids")
     return MigrationIntakeSchema(
         repository_id=session.get("plan_repository_id") or None,
         repository_ids=list(repo_ids) if repo_ids else None,
-        dry_run=session.get("dry_run") if session.get("execution_mode_confirmed") else None,
+        # Pydantic's lax bool parser would turn a malformed "false" into a real
+        # live decision that sync_intake_to_session then persists; unspecified
+        # means dry-run (GAP-076, CA-001).
+        dry_run=(
+            coerce_dry_run(session.get("dry_run"), default=True)
+            if session.get("execution_mode_confirmed")
+            else None
+        ),
         phase=session.get("plan_phase") or None,
         plan_confirmed=True if session.get("plan_approved") else None,
     )
@@ -40,7 +97,7 @@ def sync_intake_to_session(session: dict[str, Any], intake: MigrationIntakeSchem
     if intake.phase:
         session["plan_phase"] = intake.phase
     if intake.plan_confirmed:
-        session["plan_approved"] = True
+        record_plan_approval(session)
     if intake.plan_notes:
         plan = session.get("migration_plan") or {}
         if isinstance(plan, dict):
@@ -163,6 +220,7 @@ def determine_intake_phase(session: dict[str, Any], *, intent: str = "") -> Inta
         The phase whose required fields must be collected next, or None when
         the session needs nothing from the operator right now.
     """
+    clear_stale_plan_approval(session)
     if session.get("pending_cancellation"):
         return IntakePhase.CANCELLATION
     if session.get("migration_plan") and not session.get("plan_approved"):
@@ -368,7 +426,7 @@ def build_plan_review_form(session: dict[str, Any]) -> dict[str, Any]:
     repo_id = session.get("plan_repository_id") or plan.get("repository_id")
     title = f"Confirm migration plan — {repo_id}" if repo_id else "Confirm migration plan"
     repo_count = plan.get("repo_count", len(plan.get("repos", [])))
-    mode = "dry-run" if session.get("dry_run", True) else "live"
+    mode = "dry-run" if coerce_dry_run(session.get("dry_run"), default=True) else "live"
     if repo_id:
         description = f"Review and confirm the {mode} plan for `{repo_id}`."
     else:
@@ -412,8 +470,29 @@ async def prepare_form_submission(
     Returns:
         The next orchestrator action — a ``status`` plus whichever of ``reply``,
         ``form``, ``values`` or ``validation_error`` that status carries.
+        ``form_incomplete`` means the submission skipped a required field and
+        nothing was applied to the session.
     """
     form_id = str(form.get("form_id") or "")
+
+    from ado2gh.agents.migration_agent.hitl.forms import missing_required_form_fields
+
+    unanswered = missing_required_form_fields(form, values)
+    if unanswered:
+        labels = {
+            str(f.get("name")): str(f.get("label") or f.get("name"))
+            for f in form.get("fields") or []
+            if isinstance(f, dict)
+        }
+        named = ", ".join(labels.get(name, name) for name in unanswered)
+        reply = f"Please answer the required field(s) before continuing: {named}."
+        return {
+            "status": "form_incomplete",
+            "form": form,
+            "reply": reply,
+            "missing_fields": unanswered,
+            "message": reply,
+        }
 
     if form_id.startswith("operator_input_"):
         from ado2gh.agents.migration_agent.hitl.operator_input import (
@@ -470,7 +549,7 @@ async def prepare_form_submission(
                 "form": build_plan_review_form(session),
                 "reply": "Confirm the plan is correct, or describe changes in Notes without checking confirm.",
             }
-        session["plan_approved"] = True
+        record_plan_approval(session)
         plan = session.get("migration_plan") or {}
         if intake.plan_notes:
             plan["operator_notes"] = intake.plan_notes
@@ -503,7 +582,7 @@ async def prepare_form_submission(
     if intake_ready_for_planner(intake):
         repo_id = intake.resolved_repository_id() or ""
         sync_intake_to_session(session, intake)
-        dry_run = intake.dry_run if intake.dry_run is not None else bool(session.get("dry_run", True))
+        dry_run = coerce_dry_run(session.get("dry_run"), default=True) if intake.dry_run is None else intake.dry_run
         mode = "dry-run" if dry_run else "live"
         return {
             "status": "invoke_planner",

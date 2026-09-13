@@ -38,19 +38,21 @@ def request_id_for_blockers(blockers: list[dict[str, Any]]) -> str:
 def _field_specs_from_operator_fields(
     fields: list[OperatorInputFieldSpec],
 ) -> list[IntakeFieldSpec]:
-    return [
-        IntakeFieldSpec(
-            name=f.name,
-            label=f.label,
-            field_type=f.field_type,
-            description=f.description,
-            placeholder=f.placeholder,
-            recommended_value=f.recommended_value,
-            options=f.options,
-            required=f.required,
-        )
-        for f in fields
-    ]
+    """Convert operator-input field specs to intake field specs.
+
+    ``required`` is forwarded only when the caller set it explicitly, so a field that
+    never named it keeps falling through to the per-type default (THR-09-003).
+
+    Returns:
+        One :class:`IntakeFieldSpec` per operator field, in the same order.
+    """
+    specs: list[IntakeFieldSpec] = []
+    for f in fields:
+        data = f.model_dump()
+        if "required" not in f.model_fields_set:
+            data.pop("required", None)
+        specs.append(IntakeFieldSpec.model_validate(data))
+    return specs
 
 
 def operator_input_to_form(request: OperatorInputRequest) -> dict[str, Any]:
@@ -623,7 +625,19 @@ def assess_operator_input_needed(
     session: dict[str, Any],
     planner_request: dict[str, Any] | None = None,
 ) -> OperatorInputRequest | None:
-    """Return an operator-input request when planner or validator needs a decision."""
+    """Return an operator-input request when planner or validator needs a decision.
+
+    Every node that produces a plan passes through here before the graph's executor
+    edge reads ``plan_approved``, so this is where an approval that belongs to an
+    earlier plan is revoked (THR-09-002).
+
+    Returns:
+        The request the operator must answer, or None when none is needed.
+    """
+    from ado2gh.agents.migration_agent.hitl.intake import clear_stale_plan_approval
+
+    clear_stale_plan_approval(session, plan=plan)
+
     if planner_request:
         try:
             return OperatorInputRequest.model_validate(planner_request)
@@ -700,8 +714,10 @@ async def apply_operator_input_resolution(
     if resolution == "skip_blocked_scope":
         plan = session.get("migration_plan") or {}
         if isinstance(plan, dict) and request.blocker_keys:
+            # Record against the revision that raised the blockers, before
+            # apply_skip_blocked_scopes rewrites the plan (THR-09-005).
+            record_declined_blockers(session, request.blocker_keys, plan=plan)
             plan = apply_skip_blocked_scopes(plan, blocker_keys=request.blocker_keys)
-            record_declined_blockers(session, request.blocker_keys)
             session["migration_plan"] = plan
         clear_operator_input(session)
         session.pop("plan_approved", None)
