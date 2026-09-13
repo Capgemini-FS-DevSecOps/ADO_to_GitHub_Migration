@@ -139,7 +139,13 @@ class ConnectivityStore:
         return profile
 
     def update(self, data: dict[str, Any], *, actor: str = "system") -> ConnectivityProfile:
-        """Apply partial update; retain secrets when masked or omitted."""
+        """Apply a partial update; keep secrets when masked or omitted, clear them on "".
+
+        The two write-only fields take three sentinels: the ``***`` mask the public
+        shape returns and ``None`` both keep the stored secret, and an empty string
+        clears it (GAP-061). Anything else replaces it. Callers that mean "the operator
+        left the box blank" must send ``***`` or omit the key.
+        """
         current = self.load()
         if "proxy_enabled" in data:
             current.proxy_enabled = bool(data["proxy_enabled"])

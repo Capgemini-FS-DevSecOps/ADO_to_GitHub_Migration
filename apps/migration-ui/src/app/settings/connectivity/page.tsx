@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
   fetchConnectivity,
+  proxyPasswordUpdate,
   testConnectivity,
   updateConnectivity,
   type ConnectivityProfile,
@@ -53,7 +54,7 @@ export default function ConnectivitySettingsPage() {
         proxy_host: proxyHost,
         proxy_port: proxyPort,
         proxy_username: proxyUsername,
-        proxy_password: proxyPassword || '***',
+        proxy_password: proxyPasswordUpdate(proxyPassword),
         custom_ca_pem: customCaPem || (data?.custom_ca_configured ? '***' : ''),
         allow_custom_model_id: allowCustomModelId,
       }),
@@ -65,6 +66,17 @@ export default function ConnectivitySettingsPage() {
       setCustomCaPem('');
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'Save failed'),
+  });
+
+  const clearPasswordMut = useMutation({
+    mutationFn: () => updateConnectivity({ proxy_password: proxyPasswordUpdate('', { clear: true }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connectivity-settings', 'connectivity-readonly'] });
+      setNotice('Stored proxy password cleared. Proxy calls are now unauthenticated until you save a new one.');
+      setError('');
+      setProxyPassword('');
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Clearing the password failed'),
   });
 
   const testMut = useMutation({
@@ -130,6 +142,23 @@ export default function ConnectivitySettingsPage() {
             onChange={(e) => setProxyPassword(e.target.value)}
           />
         </div>
+        {data?.proxy_password === '***' && (
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="oai-button confirm-delete-btn"
+              disabled={clearPasswordMut.isPending}
+              onClick={() => {
+                if (window.confirm('Clear the stored proxy password? Proxy calls stay unauthenticated until a new one is saved.')) {
+                  clearPasswordMut.mutate();
+                }
+              }}
+            >
+              Clear stored password
+            </button>
+            <p className="form-hint">Leaving the box blank keeps the stored password — clearing it is deliberate.</p>
+          </div>
+        )}
       </div>
       <div className="oai-card" style={{ marginTop: 16 }}>
         <h3 className="oai-subsection-title">Custom CA certificate</h3>

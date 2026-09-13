@@ -127,6 +127,17 @@ export async function fetchConnectivity(): Promise<ConnectivityProfile> {
 }
 
 /**
+ * The `proxy_password` value a connectivity update should send.
+ *
+ * `'***'` is the keep-mask the `GET` returns, so a blank password box keeps whatever is
+ * stored rather than wiping it. Clearing is a separate, confirmed action and sends the
+ * empty string, which the store reads as "clear" (GAP-061).
+ */
+export function proxyPasswordUpdate(typed: string, options: { clear?: boolean } = {}): string {
+  return options.clear ? '' : typed || '***';
+}
+
+/**
  * Save the proxy and TLS connectivity profile via `PUT /v1/settings/connectivity`.
  * Returns the stored profile.
  */

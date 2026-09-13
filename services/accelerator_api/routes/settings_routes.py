@@ -59,11 +59,12 @@ def put_connectivity(request: Request, body: dict) -> dict[str, object]:
     Only the keys present in the body are applied, so a partial update leaves
     everything else alone. The two secret fields — the proxy password and the
     custom CA bundle — are write-only: sending back the mask that the ``GET``
-    returned, an empty string or null leaves the stored value untouched, which
-    lets the console round-trip the form without knowing the secret.
+    returned, or null, leaves the stored value untouched, which lets the console
+    round-trip the form without knowing the secret. An **empty string** clears
+    the stored secret (GAP-061), so a blank form field is sent as the mask.
 
-    The audit record names the fields that actually changed and never their
-    values (CA-003).
+    The audit record names the fields that actually changed — a cleared secret
+    included — and never their values (CA-003).
 
     Args:
         request: The incoming request, used for the capability check and to
@@ -84,10 +85,15 @@ def put_connectivity(request: Request, body: dict) -> dict[str, object]:
     actor = user.username if user else "admin"
     profile = _connectivity.update(body, actor=actor)
     after = profile.to_public()
+    # Secrets are compared only by the presence marker the public shape exposes, which
+    # flips when one is stored or cleared; any other value replaces the secret (GAP-061).
+    presence = {"proxy_password": "proxy_password", "custom_ca_pem": "custom_ca_configured"}
     changed: list[str] = []
     for key in body:
-        if key in ("proxy_password", "custom_ca_pem"):
-            if body[key] not in (None, "", "***"):
+        if key in presence:
+            replaced = body[key] not in (None, "", "***")
+            marker = presence[key]
+            if replaced or before.get(marker) != after.get(marker):
                 changed.append(key)
         elif before.get(key) != after.get(key):
             changed.append(key)
