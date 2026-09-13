@@ -53,8 +53,8 @@ def test_unchanged_spellings_keep_their_scope_ids():
 def test_guard_scope_distinguishes_an_empty_target_from_an_absent_one():
     """A feature-route body that names a target as '' is not a body that omits it."""
     path = "/v1/migrate/git-mirror"
-    named_empty = _live_scope_id(path, {"project": "", "repo_name": "payments"})
-    omitted = _live_scope_id(path, {"repo_name": "payments"})
+    named_empty = _live_scope_id(path, {"project": "", "repo_name": "payments"}, "prod")
+    omitted = _live_scope_id(path, {"repo_name": "payments"}, "prod")
 
     assert named_empty != omitted, (
         f"a body naming project='' built the scope of a body that omits project "
@@ -65,6 +65,6 @@ def test_guard_scope_distinguishes_an_empty_target_from_an_absent_one():
 def test_guard_scope_treats_an_explicit_null_as_absent():
     """JSON ``null`` and an omitted key mean the same thing to the request model."""
     path = "/v1/migrate/git-mirror"
-    assert _live_scope_id(path, {"project": None, "repo_name": "payments"}) == (
-        _live_scope_id(path, {"repo_name": "payments"})
+    assert _live_scope_id(path, {"project": None, "repo_name": "payments"}, "prod") == (
+        _live_scope_id(path, {"repo_name": "payments"}, "prod")
     )

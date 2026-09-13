@@ -88,18 +88,29 @@ def _scope_fields(body: dict[str, Any]) -> dict[str, Any]:
     return {f: body[f] for f in _SCOPE_FIELDS if body.get(f) is not None}
 
 
-def _live_scope_id(path: str, body: dict[str, Any]) -> str:
-    """Approval scope for one live run: the route plus the target it names.
+def _live_scope_id(path: str, body: dict[str, Any], profile_id: str | None) -> str:
+    """Approval scope for one live run: the profile, the route and the target named.
+
+    The profile is part of the identity of the work, not context around it. Without
+    it an approval for `/v1/migrate/git-mirror` on ``Contoso/payments`` released the
+    same route and target under every other profile — a different organisation,
+    different credentials, the same standing grant (GAP-075, CA-002). The dashboard
+    path has always embedded it, via ``migrate_scope_id``.
 
     Args:
         path: Request path of the migrate route being guarded.
         body: Parsed request body; only allowlisted identity fields are read.
+        profile_id: Active migration profile, or ``None`` when none is active —
+            which gets its own ``_platform`` scope rather than matching any profile.
 
     Returns:
-        A colon-joined scope id, stable for the same route and target, so a
+        A colon-joined scope id, stable for the same profile, route and target, so a
         repeat of the same live request finds the approval already granted.
     """
-    return ":".join([path, *(str(v).strip() for v in _scope_fields(body).values())])
+    return ":".join([
+        path, profile_id or "_platform",
+        *(str(v).strip() for v in _scope_fields(body).values()),
+    ])
 
 
 def audit_live_migration(path: str, user: PlatformUser | None, body: dict[str, Any]) -> None:
@@ -158,7 +169,8 @@ async def guard_live_migration(request: Request) -> None:
 
     from ado2gh.api.live_approval_store import LiveApprovalStore
 
-    scope_id = _live_scope_id(path, body)
+    profile_id = active_profile_id()
+    scope_id = _live_scope_id(path, body, profile_id)
     store = LiveApprovalStore()
     if store.has_approved("migrate_job", scope_id):
         audit_live_migration(path, user, body)
@@ -168,7 +180,7 @@ async def guard_live_migration(request: Request) -> None:
         LiveApprovalCreateRequest(
             scope_type="migrate_job",
             scope_id=scope_id,
-            profile_id=active_profile_id(),
+            profile_id=profile_id,
             reason_request=f"Live {path}",
             context={"route": path, "scope_id": scope_id},
         ),
