@@ -81,8 +81,9 @@ def register(cli: click.Group) -> None:
     @click.option("--phase", "-p", "phase_name", required=True,
                   type=click.Choice(["poc", "pilot", "wave1", "wave2", "wave3"]),
                   help="Phase to run. Phases go in order: poc, pilot, wave1, wave2, wave3.")
-    @click.option("--dry-run", is_flag=True, default=False,
-                  help="Show what would happen. Creates nothing, pushes nothing.")
+    @click.option("--dry-run/--live", default=True,
+                  help="Show what would happen, creating nothing and pushing nothing "
+                       "(the default). Pass --live to actually migrate.")
     @click.option("--force", is_flag=True, default=False,
                   help="Go ahead even though the previous phase's gate did not pass. "
                        "Does NOT get you past a blocked gate: record the override "

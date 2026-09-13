@@ -24,6 +24,8 @@ export ADO_PAT=... ADO_ORG_URL=https://dev.azure.com/YOUR_ORG GH_TOKEN=...
 ado2gh discover --config migration.yaml
 ado2gh phase assign --config migration.yaml --input in/repo_map.txt
 ado2gh phase run --phase poc --config migration_phase.yaml --dry-run
+# --dry-run is the default; add --live when the preview looks right:
+ado2gh phase run --phase poc --config migration_phase.yaml --live
 ```
 
 Full local setup (native processes, lightweight agent, state paths): **[docs/LOCAL_DEVELOPMENT.md](docs/LOCAL_DEVELOPMENT.md)**

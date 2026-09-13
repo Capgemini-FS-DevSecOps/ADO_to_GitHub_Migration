@@ -32,8 +32,9 @@ def register(cli: click.Group) -> None:
     @click.option("--config", "-c", required=True, help="Path to the migration config YAML.")
     @click.option("--wave", "-w", type=int, default=None,
                   help="Wave number to run. Omit to run every wave in the config.")
-    @click.option("--dry-run", is_flag=True, default=False,
-                  help="Report what would be migrated without creating or pushing anything.")
+    @click.option("--dry-run/--live", default=True,
+                  help="Report what would be migrated without creating or pushing anything "
+                       "(the default). Pass --live to actually migrate.")
     @click.option("--db", default="migration_state.db", show_default=True,
                   help="SQLite state file. Overridden by ADO2GH_SQLITE_PATH; "
                        "ignored when ADO2GH_STORAGE_BACKEND selects postgres.")
@@ -54,8 +55,9 @@ def register(cli: click.Group) -> None:
           work_items   creates the issues again — one duplicate GitHub issue
                        per ADO work item, every time
 
-        Only the repo scope runs by default. Use --dry-run first if you are
-        re-running a wave that partly succeeded.
+        Only the repo scope runs by default, and so is --dry-run: without
+        --live this reports what it would do and changes nothing. Read that
+        report before adding --live to a wave that partly succeeded.
         """
         from ado2gh.api.accelerator import Accelerator
         from ado2gh.api.contracts import RunWaveRequest

@@ -83,7 +83,7 @@ git lfs install
 
 If LFS push partially fails, the migration continues with a warning. Re-run:
 ```bash
-ado2gh phase run --phase poc --config migration_phase.yaml
+ado2gh phase run --phase poc --config migration_phase.yaml --live
 ```
 
 ---
@@ -159,7 +159,7 @@ The previous phase must pass its gate before the next phase can start.
 ado2gh phase gate-check --phase poc --config migration_phase.yaml
 
 # Fix failures and re-run (resumes automatically)
-ado2gh phase run --phase poc --config migration_phase.yaml
+ado2gh phase run --phase poc --config migration_phase.yaml --live
 
 # Or override with documented reason
 ado2gh phase gate-check --phase poc --override --reason "2 repos excluded by design"
@@ -171,7 +171,7 @@ Just re-run the same command. The tool tracks completed batches in SQLite and re
 
 ```bash
 # This is safe to run multiple times
-ado2gh phase run --phase wave1 --config migration_phase.yaml
+ado2gh phase run --phase wave1 --config migration_phase.yaml --live
 ```
 
 ### `No waves for phase wave1`
@@ -231,7 +231,7 @@ The repo may have already been deleted or never created. The tool logs this and 
 ado2gh export-failed --phase wave1 --output retry.txt
 
 # Edit retry.txt if needed, then re-run the phase
-ado2gh phase run --phase wave1 --config migration_phase.yaml
+ado2gh phase run --phase wave1 --config migration_phase.yaml --live
 ```
 
 ---

@@ -86,8 +86,9 @@ def register(cli: click.Group) -> None:
         help="Also archive the ADO repository once its pipelines are disabled.",
     )
     @click.option(
-        "--dry-run", is_flag=True, default=False,
-        help="Report what would happen on the ADO side without changing anything.",
+        "--dry-run/--live", default=True,
+        help="Report what would happen on the ADO side without changing anything "
+             "(the default). Pass --live to actually change the ADO side.",
     )
     def ado_cleanup(
         config: str, input_file: str | None, *, archive: bool, dry_run: bool,
@@ -96,8 +97,8 @@ def register(cli: click.Group) -> None:
 
         Disables the ADO pipelines for each repo and pushes a MIGRATION_NOTICE.md
         redirecting readers to the GitHub repository, optionally archiving the ADO
-        repository afterwards. Use --dry-run first: it reports every action it
-        would take and changes nothing.
+        repository afterwards. --dry-run is the default: without --live it
+        reports every action it would take and changes nothing.
         """
         from ado2gh.core.ado_cleanup import ADOCleanup
         from ado2gh.core.config_loader import ConfigLoader

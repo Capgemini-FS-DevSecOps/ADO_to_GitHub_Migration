@@ -188,26 +188,26 @@ ado2gh plan -c migration_phase.yaml
 ado2gh phase run -p poc -c migration_phase.yaml --dry-run
 
 # Execute POC
-ado2gh phase run -p poc -c migration_phase.yaml
+ado2gh phase run -p poc -c migration_phase.yaml --live
 
 # Execute Pilot
-ado2gh phase run -p pilot -c migration_phase.yaml
+ado2gh phase run -p pilot -c migration_phase.yaml --live
 
 # Execute waves
-ado2gh phase run -p wave1 -c migration_phase.yaml
-ado2gh phase run -p wave2 -c migration_phase.yaml
-ado2gh phase run -p wave3 -c migration_phase.yaml
+ado2gh phase run -p wave1 -c migration_phase.yaml --live
+ado2gh phase run -p wave2 -c migration_phase.yaml --live
+ado2gh phase run -p wave3 -c migration_phase.yaml --live
 
 # Get past a BLOCKED gate on the previous phase — two steps, in this order.
 # Record the override first (this is the audited act), then run the phase.
 ado2gh phase gate-check -p poc -c migration_phase.yaml --override --reason "2 repos excluded by design"
-ado2gh phase run -p pilot -c migration_phase.yaml
+ado2gh phase run -p pilot -c migration_phase.yaml --live
 
 # Custom DB
-ado2gh phase run -p poc -c migration_phase.yaml --db custom.db
+ado2gh phase run -p poc -c migration_phase.yaml --db custom.db --live
 ```
 
-**Options:** `-c/--config` (required), `-p/--phase` (required, one of `poc|pilot|wave1|wave2|wave3`), `--dry-run`, `--force`, `--db`
+**Options:** `-c/--config` (required), `-p/--phase` (required, one of `poc|pilot|wave1|wave2|wave3`), `--dry-run/--live` (default: `--dry-run`), `--force`, `--db`
 
 **`--force` does not skip a blocked gate.** Every phase after `poc` checks the previous
 phase's gate before it starts, and forcing past a *blocking* one requires a reason, which
@@ -225,16 +225,16 @@ shown above. `--force` still has an effect where the previous gate is not blocki
 
 ```bash
 # Run specific wave
-ado2gh run -c migration_phase.yaml -w 1
+ado2gh run -c migration_phase.yaml -w 1 --live
 
 # Run all waves
-ado2gh run -c migration_phase.yaml
+ado2gh run -c migration_phase.yaml --live
 
 # Dry run
 ado2gh run -c migration_phase.yaml -w 1 --dry-run
 ```
 
-**Options:** `-c/--config` (required), `-w/--wave` (omit to run every wave), `--dry-run`, `--db`
+**Options:** `-c/--config` (required), `-w/--wave` (omit to run every wave), `--dry-run/--live` (default: `--dry-run`), `--db`
 
 **A re-run is not free.** Nothing is skipped because an earlier run finished it — every scope
 a repo asks for is executed again, and what that costs depends on the scope:
@@ -245,7 +245,9 @@ a repo asks for is executed again, and what that costs depends on the scope:
 | `pipelines` | Skips the pipelines this wave already recorded as completed; re-transforms if the workflows are gone from the branch, or if you re-run under a new `--wave`. |
 | `work_items` | Creates the issues again — one duplicate GitHub issue per ADO work item, every time. |
 
-Only the `repo` scope runs by default. Use `--dry-run` first if you are re-running a wave
+Only the `repo` scope runs by default, and so is `--dry-run`: without `--live` this
+reports what it would do and changes nothing. Read that report before adding `--live`
+to a wave
 that partly succeeded.
 
 ---
@@ -345,16 +347,16 @@ ado2gh validate -c migration_phase.yaml -i in/repos.txt
 ado2gh ado-cleanup -c migration_phase.yaml --dry-run
 
 # Default: disable pipelines + add redirect notice
-ado2gh ado-cleanup -c migration_phase.yaml
+ado2gh ado-cleanup -c migration_phase.yaml --live
 
 # Full cleanup: disable + redirect + archive ADO repo
-ado2gh ado-cleanup -c migration_phase.yaml --archive
+ado2gh ado-cleanup -c migration_phase.yaml --archive --live
 
 # Clean up only the repos listed in an input file
-ado2gh ado-cleanup -c migration_phase.yaml -i in/poc_repos.txt
+ado2gh ado-cleanup -c migration_phase.yaml -i in/poc_repos.txt --live
 ```
 
-**Options:** `-c/--config` (required), `-i/--input`, `--archive`, `--dry-run`
+**Options:** `-c/--config` (required), `-i/--input`, `--archive`, `--dry-run/--live` (default: `--dry-run`)
 
 **What it does:**
 - Disables all ADO build pipelines for the selected repos
@@ -489,23 +491,23 @@ ado2gh phase plan -c migration_phase.yaml
 
 # ── POC (10 repos) ──────────────────────────────────
 ado2gh phase run -p poc -c migration_phase.yaml --dry-run
-ado2gh phase run -p poc -c migration_phase.yaml
+ado2gh phase run -p poc -c migration_phase.yaml --live
 ado2gh validate -c migration_phase.yaml -o output/poc_validation.csv
 ado2gh phase gate-check -p poc -c migration_phase.yaml
 
 # ── Pilot (100 repos) ───────────────────────────────
-ado2gh phase run -p pilot -c migration_phase.yaml
+ado2gh phase run -p pilot -c migration_phase.yaml --live
 ado2gh validate -c migration_phase.yaml
 ado2gh phase gate-check -p pilot -c migration_phase.yaml
 
 # ── Waves ────────────────────────────────────────────
-ado2gh phase run -p wave1 -c migration_phase.yaml
+ado2gh phase run -p wave1 -c migration_phase.yaml --live
 ado2gh phase gate-check -p wave1 -c migration_phase.yaml
 
-ado2gh phase run -p wave2 -c migration_phase.yaml
+ado2gh phase run -p wave2 -c migration_phase.yaml --live
 ado2gh phase gate-check -p wave2 -c migration_phase.yaml
 
-ado2gh phase run -p wave3 -c migration_phase.yaml
+ado2gh phase run -p wave3 -c migration_phase.yaml --live
 
 # ── Monitor throughout ───────────────────────────────
 ado2gh phase dashboard -c migration_phase.yaml
@@ -516,7 +518,7 @@ ado2gh validate -c migration_phase.yaml -o output/final_validation.csv
 ado2gh report -c migration_phase.yaml --format html --output output/final_report.html
 ado2gh report -c migration_phase.yaml --format csv --output output/final_report.csv
 ado2gh ado-cleanup -c migration_phase.yaml --dry-run
-ado2gh ado-cleanup -c migration_phase.yaml --archive
+ado2gh ado-cleanup -c migration_phase.yaml --archive --live
 ```
 
 ---
