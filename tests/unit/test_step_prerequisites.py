@@ -126,6 +126,38 @@ class TestFailureMessage:
         assert msg.endswith("before Validate can proceed.")
 
 
+class TestLabelFallback:
+    """GAP-056 — the label fallback for a step the run does not carry.
+
+    ``_label`` falls back to the canonical accelerator step index when the run
+    has no step with that id. It imported ``_PIPELINE_STEP_INDEX`` from
+    ``pipeline_runner``, which neither defines nor re-exports it, so the branch
+    raised ``ImportError`` the moment it ran — turning a cosmetic label lookup
+    into a failed step. ``d1427fd`` (T077) repointed the import at
+    ``pipeline_models``, where the index lives; these tests cover that fix.
+    """
+
+    def test_step_absent_from_the_run_uses_the_canonical_label(self):
+        # The run carries none of the accelerator steps, so the label can only
+        # come from the step index — the branch that used to raise ImportError.
+        checker = StepPrerequisiteChecker()
+        run = _run([("validate", StepStatus.PENDING)])
+        assert checker._label("migrate", run) == "Run all scoped migrations"
+
+    def test_unknown_step_id_is_title_cased_not_an_error(self):
+        checker = StepPrerequisiteChecker({"validate": ["not_a_real_step"]})
+        run = _run([("validate", StepStatus.PENDING)])
+        assert checker._label("not_a_real_step", run) == "Not A Real Step"
+
+    def test_label_matches_the_step_index_entry(self):
+        from ado2gh.api.pipeline_models import _PIPELINE_STEP_INDEX
+
+        checker = StepPrerequisiteChecker()
+        run = _run([])
+        for step_id, meta in _PIPELINE_STEP_INDEX.items():
+            assert checker._label(step_id, run) == meta["label"]
+
+
 class TestCustomPrerequisites:
     def test_custom_prerequisite_map(self):
         checker = StepPrerequisiteChecker({"b": ["a"]})
