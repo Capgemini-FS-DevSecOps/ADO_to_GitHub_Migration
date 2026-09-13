@@ -136,6 +136,6 @@ def test_agent_approvals_alias_is_gone(agent_client):
     """The deprecated /v1/approvals alias was removed in 859bb6b.
 
     Live approvals are served by the accelerator at /v1/platform/approvals; the agent
-    only calls out to it (session_routes.py).
+    only calls out to it (execution_routes.py).
     """
     assert agent_client.get("/v1/approvals").status_code == 404
