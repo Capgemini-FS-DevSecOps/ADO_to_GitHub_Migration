@@ -130,7 +130,7 @@ in this register. T037 therefore had no dispute to put to the operator.
 - evidence:
   - `ado2gh/auth/service.py:21-22` — `auth_enabled()` reads `ADO2GH_AUTH_ENABLED` and returns `False` when unset; this is the code-level default, not a deployment choice
   - `ado2gh/api/platform_rbac.py:16-17,25-26` — `_require_authenticated` / `require_capability` short-circuit `if not auth_enabled(): return user` before any capability check, making `require_approve_live_execution` (`:41-42`) a no-op
-  - `ado2gh/agents/migration_agent/route_helpers.py:199,209` — `_require_operate` / `_require_approve_live` bodies are wrapped in `if auth_enabled():`
+  - `ado2gh/agents/migration_agent/route_helpers.py:199,209` (now `services/agent/routes/_helpers.py:229,239`) — `_require_operate` / `_require_approve_live` bodies are wrapped in `if auth_enabled():`
   - `ado2gh/agents/migration_agent/policies.py:127-129,141-143` — `can_execute_live_without_approval` returns `True` and `session_requires_live_approval` returns `False` when auth is off, both in the permissive direction
   - `services/agent/main.py:94-95`, `services/accelerator_api/main.py:106-107` — both auth middlewares `return await call_next(request)` unconditionally when auth is disabled
   - `docker-compose.yml:53` — `ADO2GH_AUTH_ENABLED: "false"` in the compose file CLAUDE.md lists first
@@ -211,7 +211,7 @@ in this register. T037 therefore had no dispute to put to the operator.
   - `ado2gh/auth/service.py:68-72` — `can_operate` covers ADMIN/COORDINATOR/OPERATOR while `can_approve_live_execution` covers only ADMIN/APPROVER; OPERATOR and COORDINATOR pass the gate this route uses while explicitly lacking approve-live rights
   - `ado2gh/agents/migration_agent/nodes/executor/node.py:160-161` — `dry_run = migration_plan.get("dry_run", session.get("dry_run", True))` then `session["dry_run"] = dry_run` — the plan-level flag wins and is written back onto the shared session dict
   - `ado2gh/agents/migration_agent/guardrails.py:142,164` and `ado2gh/agents/migration_agent/policies.py:125,139` — the per-tool-call BLOCK check and the entire approval gate key off `session["dry_run"]` only, never `migration_plan["dry_run"]`; once `node.py:161` clobbers it, both are disabled for the rest of the session
-  - `ado2gh/agents/migration_agent/route_helpers.py:544` — `_try_start_pev_run` checks `session_requires_live_approval(session)`, reading the pre-clobber value, so `run-pev` proceeds even though the plan already says live
+  - `ado2gh/agents/migration_agent/route_helpers.py:544` (now `services/agent/routes/_helpers.py:576`) — `_try_start_pev_run` checks `session_requires_live_approval(session)`, reading the pre-clobber value, so `run-pev` proceeds even though the plan already says live
   - test coverage: `confirm-live` / `confirm_live_execution` appear in `tests/` only in `tests/contract/public_surface_snapshot.json`, a route-registration snapshot — zero behavioural tests
 - severity: critical (critical_test: a, e)
 - blast_radius: any holder of the routine operate permission — OPERATOR or COORDINATOR, precisely the roles the approval system exists to restrict — converts a session to live GitHub-writing mode with one unguarded POST, no approver review, and no audit record of how live mode was reached. The plan/session `dry_run` split then disables the per-tool guardrail for the remainder of the session.
@@ -282,13 +282,13 @@ in this register. T037 therefore had no dispute to put to the operator.
 - components: token management & audit writing, migration engine
 - violates: Principle V (CA-003: secret values masked in all messages, logs, and audit records); property 5
 - evidence:
-  - `ado2gh/assignments/audit.py:10-18` — all seven `_SECRET_PATTERNS` match GitHub-token shapes only (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`, `pat-`, and a `"token|password|secret|pat":"..."` JSON-key pattern); none match a bare Azure DevOps PAT (opaque, no prefix) or a generic `Bearer <token>` value
-  - `ado2gh/assignments/audit.py:21,36` — `_SECRET_KEY_NAMES` is matched exactly (`k.lower() in _SECRET_KEY_NAMES`), so realistic keys such as `ado_pat`, `access_token`, or `github_token` — the platform's own env-var naming per CLAUDE.md — fall through to the regex path, which also misses them
-  - `ado2gh/assignments/audit.py:52-70` — `AuditWriter.write()` calls `redact_payload(payload or {})` at `:61` as the sole redaction step before `json.dumps(safe)` is persisted by `insert_audit_event` at `:62`; the module docstring at `:1` claims "secret redaction (CA-003)"
+  - `ado2gh/assignments/audit.py:10-18` (now `ado2gh/audit/redaction.py:20-33`, the single combined `_SECRET_VALUE_RE`) — all seven `_SECRET_PATTERNS` match GitHub-token shapes only (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`, `pat-`, and a `"token|password|secret|pat":"..."` JSON-key pattern); none match a bare Azure DevOps PAT (opaque, no prefix) or a generic `Bearer <token>` value
+  - `ado2gh/assignments/audit.py:21,36` (now `ado2gh/audit/redaction.py:38-42,66`, where `_SECRET_KEY_RE` replaced the exact-match frozenset) — `_SECRET_KEY_NAMES` is matched exactly (`k.lower() in _SECRET_KEY_NAMES`), so realistic keys such as `ado_pat`, `access_token`, or `github_token` — the platform's own env-var naming per CLAUDE.md — fall through to the regex path, which also misses them
+  - `ado2gh/assignments/audit.py:52-70` (now `ado2gh/audit/writer.py:25-49`, with the `redact_payload` call at `:44`, `insert_audit_event` at `:45` and the docstring at `:1`) — `AuditWriter.write()` calls `redact_payload(payload or {})` at `:61` as the sole redaction step before `json.dumps(safe)` is persisted by `insert_audit_event` at `:62`; the module docstring at `:1` claims "secret redaction (CA-003)"
   - `ado2gh/api/profile_governance.py:135-148` — `write_profile_audit()` passes the payload straight to `writer.write(...)` with no pre-masking pass
-  - persistence chain: `ado2gh/api/contracts.py:471` → `services/accelerator_api/routes/pipeline_routes.py:211,221` → `ado2gh/api/live_approval_store.py:158-164` → `ado2gh/assignments/audit.py:61` → `ado2gh/state/sqlite_agentic_mixin.py:26-37`
+  - persistence chain: `ado2gh/api/contracts.py:471` → `services/accelerator_api/routes/pipeline_routes.py:211,221` → `ado2gh/api/live_approval_store.py:158-164` → `ado2gh/assignments/audit.py:61` (now `ado2gh/audit/writer.py:44`) → `ado2gh/state/sqlite_agentic_mixin.py:26-37`
   - reproduction: passing a 52-character ADO-PAT-shaped string through `redact_payload` returns it unchanged (measured)
-  - three independently maintained masking implementations with non-overlapping coverage and no reuse: `ado2gh/assignments/audit.py:10-18`, `ado2gh/core/scopes/git_scope.py:18-25`, `ado2gh/agents/migration_agent/utils.py:335`
+  - three independently maintained masking implementations with non-overlapping coverage and no reuse: `ado2gh/assignments/audit.py:10-18` (now `ado2gh/audit/redaction.py:20-33`), `ado2gh/core/scopes/git_scope.py:18-25`, `ado2gh/agents/migration_agent/utils.py:335`
 - severity: critical (critical_test: b)
 - blast_radius: any audit event whose free-text or payload carries an ADO PAT, a Bearer value, or a prefixed key name is persisted verbatim into `audit_events` — the highest-retention, most broadly exported artefact in the system (`GET /v1/history/sessions/export`). The single function designated as the containment choke point does not contain the platform's own primary credential type.
 - status: remediated
@@ -360,10 +360,10 @@ in this register. T037 therefore had no dispute to put to the operator.
 - components: migration engine
 - violates: Principle V (fail-safe defaults); property 2 (resumability after interruption)
 - evidence:
-  - `ado2gh/core/migration_fr036.py:14-21` — the `REPO_LOCK_MANAGER.holder(...)` check is wrapped in `try: ... except Exception: pass`, with no record that the check was inconclusive (verified)
-  - `ado2gh/core/migration_fr036.py:22-33` — the `PipelineRunStore.list_active_runs()` check is wrapped identically
-  - `ado2gh/core/migration_fr036.py:34` — after both handlers swallow, execution reaches `return False`, i.e. "no other run holds this repo" — the permissive direction for a function whose sole purpose is detecting a concurrency conflict
-  - `ado2gh/core/migration_fr036.py:46-47` — `clear_stale_in_progress_migrations` only refuses to clear when `other_run_holds_repo` returns True, so the double-exception path proceeds to mark the in-progress row failed and clear it
+  - `ado2gh/core/migration_fr036.py:14-21` (now `ado2gh/core/conflict_detection.py:32-39`) — the `REPO_LOCK_MANAGER.holder(...)` check is wrapped in `try: ... except Exception: pass`, with no record that the check was inconclusive (verified)
+  - `ado2gh/core/migration_fr036.py:22-33` (now `ado2gh/core/conflict_detection.py:40-51`) — the `PipelineRunStore.list_active_runs()` check is wrapped identically
+  - `ado2gh/core/migration_fr036.py:34` (now `ado2gh/core/conflict_detection.py:52`) — after both handlers swallow, execution reaches `return False`, i.e. "no other run holds this repo" — the permissive direction for a function whose sole purpose is detecting a concurrency conflict
+  - `ado2gh/core/migration_fr036.py:46-47` (now `ado2gh/core/conflict_detection.py:91-94`) — `clear_stale_in_progress_migrations` only refuses to clear when `other_run_holds_repo` returns True, so the double-exception path proceeds to mark the in-progress row failed and clear it
   - `ado2gh/core/migration_engine.py:72-78` — `migrate_repo()`'s only guard against two concurrent live migrations of the same repo is `has_repo_in_progress(...)` followed by `_try_clear_orphaned_in_progress(repo)`; a cleared row is what permits the migration to proceed
 - severity: critical (critical_test: d)
 - blast_radius: a transient error in either the lock manager or the pipeline-run store silently downgrades "conflict detection failed" to "no conflict, proceed". Two live migrations can then race the same repo — corrupting git state, double-applying branch-policy changes, or racing two GEI/mirror pushes at the same target. Reachable on any live migration of a repo carrying a stale in-progress row, which is the normal post-interruption scenario this code exists to handle.
@@ -441,12 +441,13 @@ in this register. T037 therefore had no dispute to put to the operator.
 - components: CLI, migration engine, accelerator service
 - violates: Principle V; property 6
 - evidence:
-  - `ado2gh/cli/run_cmd.py:18-19` — `run --dry-run` is `is_flag=True, default=False`, so the command mutates unless the operator opts out
-  - `ado2gh/cli/phase.py:20` — `phase run --dry-run` same default
-  - `ado2gh/cli/misc.py:41` — `ado-cleanup --dry-run` same default, on a command that disables ADO pipelines and archives repos
-  - `ado2gh/cli/run_cmd.py:21-39` — `run()` goes from parsed args to `accel.run_wave(...)` with no `click.confirm`
-  - `ado2gh/cli/run_cmd.py:119` — the `rollback` command in the same file *does* call `click.confirm`; repo-wide grep confirms this is the only `click.confirm` in all of `ado2gh/`, so the codebase already decided destructive commands warrant a prompt and applied it to exactly one
-  - `ado2gh/api/contracts.py:25` — `RunWaveRequest.live_approval_id: Optional[str] = None` is declared, and grep of `ado2gh/api/accelerator.py` finds zero reads of it: `run_wave` accepts an approval token and discards it (verified)
+  - `ado2gh/cli/run_cmd.py:18-19` (now `ado2gh/cli/migration.py:35`) — `run --dry-run` is `is_flag=True, default=False`, so the command mutates unless the operator opts out
+  - `ado2gh/cli/phase.py:20` (now `ado2gh/cli/phase.py:84`) — `phase run --dry-run` same default
+  - `ado2gh/cli/misc.py:41` (now `ado2gh/cli/misc.py:89`) — `ado-cleanup --dry-run` same default, on a command that disables ADO pipelines and archives repos
+  - `ado2gh/cli/run_cmd.py:21-39` (now `ado2gh/cli/migration.py:40-76`) — `run()` goes from parsed args to `accel.run_wave(...)` with no `click.confirm`
+  - `ado2gh/cli/run_cmd.py:119` (now `ado2gh/cli/migration.py:175`) — the `rollback` command in the same file *does* call `click.confirm`; repo-wide grep confirms this is the only `click.confirm` in all of `ado2gh/`, so the codebase already decided destructive commands warrant a prompt and applied it to exactly one
+  - `ado2gh/api/contracts.py:25` (now `ado2gh/api/contracts.py:37`; the class declaration stayed at `:25`) — `RunWaveRequest.live_approval_id: Optional[str] = None` is declared, and grep of `ado2gh/api/accelerator.py` finds zero reads of it: `run_wave` accepts an approval token and discards it (verified)
+  - the CLI live path quotes no approval token at all: `ado2gh/cli/migration.py:74-76` builds `RunWaveRequest(config_path=…, wave_id=…, dry_run=dry_run, db_path=db)` with no `live_approval_id`, and the check landed by `5f799e7` at `ado2gh/api/accelerator.py:186` only runs under `if request.live_approval_id:` — so on this path the flag default is the only guard that exists (measured 2026-09-13, operator-decisions.md § 1)
 - severity: high (critical_test: —)
 - blast_radius: any operator or script invoking `ado2gh run --wave N` without `--dry-run` immediately performs live repo creation, git mirror/GEI transfer, and scoped pipeline and work-item writes with no interactive confirmation and no server-side approval check on this path. Not rated critical because a documented `--dry-run` option exists on every command named and invoking the command is itself the operator's explicit act; the dangling `live_approval_id` is the sharper defect and the reason this is high rather than medium.
 - status: deferred
@@ -462,7 +463,7 @@ in this register. T037 therefore had no dispute to put to the operator.
 - violates: Principle V (fail-safe defaults)
 - evidence:
   - `services/agent/routes/session_routes.py:1224-1233` — `provision_session(session_id: str, req: ProvisionRequest)` has no `Request` parameter at all and grants `tier="write"` based solely on `req.actor != "approver"`
-  - `ado2gh/agents/migration_agent/route_helpers.py:86-89` — `ProvisionRequest.actor: str = "operator"`, free text with no binding to the authenticated identity
+  - `ado2gh/agents/migration_agent/route_helpers.py:86-89` (now `services/agent/routes/_helpers.py:98-102`) — `ProvisionRequest.actor: str = "operator"`, free text with no binding to the authenticated identity
   - `services/agent/routes/session_routes.py:1236-1237` — `remediate_session` has the identical structural defect
   - repo-wide search: `session["provision_tier"]`, the field this route writes, has no reader anywhere; neither route has a UI caller or a test
 - severity: high (critical_test: —)
@@ -499,10 +500,10 @@ in this register. T037 therefore had no dispute to put to the operator.
 - evidence:
   - `ado2gh/state/job_store.py:11-12` — `from ado2gh.api.contracts import JobRecord, JobStatus` / `JobTypeEnum` — the state layer takes its core record types from the API layer
   - `ado2gh/clients/gh_client.py:22` — `GHClient._session` defers `from ado2gh.core.sessions import get_thread_session` into a property body; `ado2gh/core/__init__.py:5` eagerly imports `RollbackHandler`, which transitively imports `ado2gh.clients`, which is the collision a top-level import would hit
-  - `ado2gh/core/migration_fr036.py:15,23` — `ado2gh.core` reaches up into `ado2gh.api` with function-local `from ado2gh.api.repo_lock import REPO_LOCK_MANAGER` and `from ado2gh.api.pipeline_store import PipelineRunStore`
+  - `ado2gh/core/migration_fr036.py:15,23` (now `ado2gh/core/conflict_detection.py:33,41`) — `ado2gh.core` reaches up into `ado2gh.api` with function-local `from ado2gh.api.repo_lock import REPO_LOCK_MANAGER` and `from ado2gh.api.pipeline_store import PipelineRunStore`
   - `ado2gh/auth/service.py` — lazily imports `ado2gh.api.profile_governance` inside `_audit_auth` and `register_operator` specifically to dodge a load-time cycle, while `ado2gh/api/platform_rbac.py:6-7`, `ado2gh/api/audit_access.py:6-7`, `ado2gh/api/profile_governance.py:8`, and `ado2gh/api/live_approval_store.py:14` all import `ado2gh.auth.*` at module top level
   - `ado2gh/api/pipeline_steps.py:943`, `ado2gh/api/validation_run.py:102,113` — API-layer modules reaching across into engine internals
-  - `ado2gh/agents/migration_agent/route_helpers.py:26` vs `ado2gh/api/pipeline_runner.py:168` — agent and API layers mutually referencing
+  - `ado2gh/agents/migration_agent/route_helpers.py:26` (now `services/agent/routes/_helpers.py:26`) vs `ado2gh/api/pipeline_runner.py:168` — agent and API layers mutually referencing
   - `ado2gh/auth/models.py` — 34 lines, zero non-stdlib imports, confirming the cycle runs through `auth.service` rather than the foundational models module
   - pre-registered as `specs/013-clean-code-arch-remediation/research.md:344` (G-seed 3, Principle IV, high) and independently reproduced by four separate assessments this pass
 - severity: high (critical_test: —)
@@ -561,12 +562,12 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: web console, agent service
 - violates: Principle V; Principle VI
 - evidence:
-  - `ado2gh/agents/migration_agent/hitl/form_fields.py:176-183` — `build_field_recommendations` sets `recs["confirm_execute"]["recommended_value"] = False` as a real Python bool
-  - `ado2gh/agents/migration_agent/hitl/form_fields.py:74-78` — `field_dict_from_spec` unconditionally does `field["recommended_value"] = str(recommended_value).strip()[:120]`, turning `False` into `"False"`; `ado2gh/agents/migration_agent/hitl/forms.py:39-43` repeats the pattern
+  - `ado2gh/agents/migration_agent/hitl/form_fields.py:176-183` (now `:202-205`, with the `False` at `:204`) — `build_field_recommendations` sets `recs["confirm_execute"]["recommended_value"] = False` as a real Python bool
+  - `ado2gh/agents/migration_agent/hitl/form_fields.py:74-78` (now `:99-100`) — `field_dict_from_spec` unconditionally does `field["recommended_value"] = str(recommended_value).strip()[:120]`, turning `False` into `"False"`; `ado2gh/agents/migration_agent/hitl/forms.py:39-43` repeats the pattern
   - `apps/migration-ui/src/lib/agentChat.ts:162` — `if (field.type === 'checkbox') { return Boolean(field.recommended_value); }`; `Boolean("False")` is `true`, so the checkbox initialises checked against the backend's intent
   - `apps/migration-ui/src/lib/agentChat.test.ts:110-170` — no case covers a `"False"` / `false` `recommended_value` for a checkbox
   - `apps/migration-ui/src/components/AgentChat.tsx:411` — the checkbox is disabled when live approval is required but its value is not forced back to unchecked, so it can render disabled-and-checked
-  - not critical: `ado2gh/agents/migration_agent/route_helpers.py:544` and `ado2gh/agents/migration_agent/policies.py:138-149` — `_try_start_pev_run` re-checks `session_requires_live_approval` from server-held state before any live run, independent of the submitted `confirm_execute`
+  - not critical: `ado2gh/agents/migration_agent/route_helpers.py:544` (now `services/agent/routes/_helpers.py:576`) and `ado2gh/agents/migration_agent/policies.py:138-149` — `_try_start_pev_run` re-checks `session_requires_live_approval` from server-held state before any live run, independent of the submitted `confirm_execute`
 - severity: high (critical_test: —)
 - blast_radius: the confirmation control an operator relies on to see whether they are about to authorise live execution renders in the wrong state by default, in every session that reaches this form. No path to unauthorised live execution was found because the server re-checks independently, which is why this is high rather than critical (a). The root cause is in two backend files, so any other boolean recommended field reproduces it.
 - status: open
@@ -618,7 +619,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: migration engine, CLI
 - violates: Principle II (false docstring); Principle IV (no idempotency contract on `ScopeHandler`); property 1
 - evidence:
-  - `ado2gh/cli/run_cmd.py:22` — `"""Execute migration wave(s). Idempotent — skips completed scopes."""`
+  - `ado2gh/cli/run_cmd.py:22` (now `ado2gh/cli/migration.py:41`) — `"""Execute migration wave(s). Idempotent — skips completed scopes."""`
   - `ado2gh/core/migration_engine.py:92-113` — the scope loop calls `handler.migrate(...)` unconditionally for every requested scope on every invocation; `MigrationStatus.COMPLETED` is written at `:129` and never read back as a skip condition
   - `ado2gh/core/scopes/git_scope.py:163-182` — `_verify_existing_target_repo`, the real HEAD-SHA pre-check, is wired only into the `gei` branch; the mirror branch proceeds after a bare existence check
   - `ado2gh/core/scopes/git_scope.py:301-306` — mirror runs `git push --force origin +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*` unconditionally, capable of discarding GitHub-side changes made since the last run
@@ -662,7 +663,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - `ado2gh/state/storage_config.py:36,47-50` — `dynamodb_table` defaults to `"ado2gh"`, so the only DynamoDB validation almost never fires and `from_env()` returns a fully valid `StorageConfig(backend=DYNAMODB, ...)`
   - `ado2gh/state/factory.py:21-30` — `create_state_db()` branches only on SQLITE (`:23`) and POSTGRES (`:26`), then falls through to `raise ValueError(f"Unsupported storage backend: {cfg.backend}")` (`:30`) for the value the config layer just validated, with no reference to the env var that caused it
   - `ado2gh/state/factory.py:15,21,26-28` — `db_path` (the `--db` value) is passed as `sqlite_default` and used only as the SQLite fallback; the Postgres branch uses `cfg.database_url` exclusively and never references it
-  - `ado2gh/cli/phase.py:23,39,51,65,83`, `ado2gh/cli/pipelines.py:20,34,44`, `ado2gh/cli/run_cmd.py:20`, `ado2gh/cli/misc.py:16` — every `--db` option is `default="migration_state.db", show_default=True` with no mention that `ADO2GH_STORAGE_BACKEND` overrides it
+  - `ado2gh/cli/phase.py:23,39,51,65,83`, `ado2gh/cli/pipelines.py:20,34,44`, `ado2gh/cli/run_cmd.py:20` (now `ado2gh/cli/migration.py:37`), `ado2gh/cli/misc.py:16` — every `--db` option is `default="migration_state.db", show_default=True` with no mention that `ADO2GH_STORAGE_BACKEND` overrides it
 - severity: high (critical_test: —)
 - blast_radius: an operator who sets `ADO2GH_STORAGE_BACKEND=postgres` in a shell or CI job and runs `ado2gh phase run --db test.db` believing they are isolated to a scratch file is silently redirected to the shared production database named by `ADO2GH_DATABASE_URL`, with no warning. Separately, any command run with the DynamoDB backend crashes with an unhandled `ValueError` for a configuration the platform accepts as legitimate.
 - status: remediated
@@ -783,18 +784,18 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: accelerator service, token management & audit writing
 - violates: Principle IV (Intuitive Architecture & Naming)
 - evidence:
-  - `ado2gh/assignments/__init__.py:1` — the package docstring describes it as the audit event writer, while the directory name `assignments` describes something else entirely; `ado2gh/assignments/audit.py` is its only substantive module
-  - `ado2gh/api/agentic_routes.py` — a routes module living under `ado2gh/api/` rather than with the other route modules in `services/accelerator_api/routes/`, and named for an adjective rather than a resource
+  - `ado2gh/assignments/__init__.py:1` (now `ado2gh/audit/__init__.py:1`, the package split into `ado2gh/audit/redaction.py` and `ado2gh/audit/writer.py`) — the package docstring describes it as the audit event writer, while the directory name `assignments` describes something else entirely; `ado2gh/assignments/audit.py` is its only substantive module
+  - `ado2gh/api/agentic_routes.py` (now `services/accelerator_api/routes/history_routes.py`) — a routes module living under `ado2gh/api/` rather than with the other route modules in `services/accelerator_api/routes/`, and named for an adjective rather than a resource
   - `services/accelerator_api/routes/_shared.py:99-105` — module-level singletons constructed through `__import__` rather than a normal import, obscuring the dependency from any static reader or tool
-  - `docs/STRUCTURAL_CHANGELOG.md:137` (contract example) already anticipates `ado2gh/assignments/` → `ado2gh/audit/` — citation unverified at T035: that line is an unrelated `ado2gh/api/credentials/__init__.py` row, and no `assignments/` → `audit/` row exists anywhere in `docs/STRUCTURAL_CHANGELOG.md`
+  - `docs/STRUCTURAL_CHANGELOG.md:137` (contract example) already anticipates `ado2gh/assignments/` → `ado2gh/audit/` (that row now exists, at `docs/STRUCTURAL_CHANGELOG.md:356`) — citation unverified at T035: that line is an unrelated `ado2gh/api/credentials/__init__.py` row, and no `assignments/` → `audit/` row exists anywhere in `docs/STRUCTURAL_CHANGELOG.md`
 - severity: medium
-- blast_radius: a reader looking for audit-writing code has no reason to open `ado2gh/assignments/`, and the `__import__` singletons are invisible to the orphan-module guard and to import graphing. No safety impact.
+- blast_radius: a reader looking for audit-writing code has no reason to open `ado2gh/assignments/` (now `ado2gh/audit/`), and the `__import__` singletons are invisible to the orphan-module guard and to import graphing. No safety impact.
 - status: open
 - resolution: —
 - regression_check: —
 - revert_proof: —
 - contract_change: false
-- follow_up: Rename `ado2gh/assignments/` to match its actual responsibility (audit-event writing) and replace `services/accelerator_api/routes/_shared.py`'s `__import__`-based singletons with ordinary imports so the orphan guard and import graphing can see them; registered-only per spec.md:35, no successor task filed.
+- follow_up: Rename `ado2gh/assignments/` (now `ado2gh/audit/`) to match its actual responsibility (audit-event writing) and replace `services/accelerator_api/routes/_shared.py`'s `__import__`-based singletons with ordinary imports so the orphan guard and import graphing can see them; registered-only per spec.md:35, no successor task filed.
 - closed_on: —
 
 ### GAP-037 (GAP-ACC-05) Deprecated `/v1/plan` points operators at a route that does not exist
@@ -819,10 +820,10 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: agent service, auth & RBAC
 - violates: Principle III (Deprecation Policy)
 - evidence:
-  - `ado2gh/agents/migration_agent/route_helpers.py:45-47` — "DEPRECATED: this in-memory session store is being replaced by the persistent MigrationSessionStore ... in Spec 011. Do not add new consumers; existing routes will be migrated incrementally." — no date, version, or milestone; CLAUDE.md lists spec 011 as already completed
-  - `ado2gh/agents/migration_agent/route_helpers.py:237` and `services/agent/routes/session_routes.py:1226` — `_sessions` remains the primary store the audited approval and provision routes read directly
-  - `ado2gh/agents/migration_agent/route_helpers.py:48` — `_runs` is populated only by `resume_live_internal` (`session_routes.py:483-493`) and deleted only on session delete (`:314-315`); exhaustive grep across `session_routes.py`, `route_helpers.py`, and `run_routes.py` finds no read of `_runs[run_id]`
-  - `ado2gh/agents/migration_agent/route_helpers.py:42-44` — an adjacent comment does honestly document the store's single-replica and restart-loss ceiling, so the limitation itself is disclosed; the deprecation timeline is what is missing
+  - `ado2gh/agents/migration_agent/route_helpers.py:45-47` (now `services/agent/routes/_helpers.py:45-47`) — "DEPRECATED: this in-memory session store is being replaced by the persistent MigrationSessionStore ... in Spec 011. Do not add new consumers; existing routes will be migrated incrementally." — no date, version, or milestone; CLAUDE.md lists spec 011 as already completed
+  - `ado2gh/agents/migration_agent/route_helpers.py:237` (now `services/agent/routes/_helpers.py:267`) and `services/agent/routes/session_routes.py:1226` — `_sessions` remains the primary store the audited approval and provision routes read directly
+  - `ado2gh/agents/migration_agent/route_helpers.py:48` (now `services/agent/routes/_helpers.py:48`) — `_runs` is populated only by `resume_live_internal` (`session_routes.py:483-493`) and deleted only on session delete (`:314-315`); exhaustive grep across `session_routes.py`, `route_helpers.py`, and `run_routes.py` finds no read of `_runs[run_id]`
+  - `ado2gh/agents/migration_agent/route_helpers.py:42-44` (now `services/agent/routes/_helpers.py:42-44`) — an adjacent comment does honestly document the store's single-replica and restart-loss ceiling, so the limitation itself is disclosed; the deprecation timeline is what is missing
 - severity: medium
 - blast_radius: process and hygiene risk rather than safety — the durable store exists and is consulted on restart (`services/agent/main.py:57-70`), so resumability is intact. The concern is a store marked "do not extend" that remains load-bearing for the approval routes, with its retirement open-ended past the completion of the spec meant to retire it.
 - status: open
@@ -839,7 +840,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - violates: Principle II (documentation asserts behaviour the code lacks)
 - evidence:
   - `CLAUDE.md:216` — "Failed repos auto-exported to `failed_repos_{phase}.txt` after each phase run"
-  - `ado2gh/phase/batch_executor.py:35` — `execute_phase` writes no such file; `ado2gh/cli/run_cmd.py:122-132` — the only producer of the export is the separate `export-failed` command, which takes its filename from its own `--output` option rather than the documented `failed_repos_{phase}.txt` shape
+  - `ado2gh/phase/batch_executor.py:35` — `execute_phase` writes no such file; `ado2gh/cli/run_cmd.py:122-132` (now `ado2gh/cli/migration.py:182-196`) — the only producer of the export is the separate `export-failed` command, which takes its filename from its own `--output` option rather than the documented `failed_repos_{phase}.txt` shape
   - reproduction: `grep -c 'failed_repos' ado2gh/phase/batch_executor.py` → **0** (verified at T035)
 - severity: medium
 - blast_radius: an operator relying on the documented automatic export finds no file and may believe there were no failures. Recoverable by running `export-failed` manually, so no data is lost.
@@ -856,7 +857,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: token management & audit writing
 - violates: Principle V; property 5
 - evidence:
-  - `ado2gh/assignments/audit.py:52-70` — `write()` applies `redact_payload` to `payload` only; `actor` is passed through to `insert_audit_event` unmodified
+  - `ado2gh/assignments/audit.py:52-70` (now `ado2gh/audit/writer.py:25-49`) — `write()` applies `redact_payload` to `payload` only; `actor` is passed through to `insert_audit_event` unmodified
   - `ado2gh/api/profile_governance.py:135-148` — a caller that supplies `actor` from upstream request data
 - severity: medium
 - blast_radius: narrower than GAP-010 (GAP-TOKEN-01) since `actor` is normally a username or display name, but it is an unredacted free-text field written to the same persisted audit artefact, so the containment guarantee is incomplete on a second axis.
@@ -873,9 +874,9 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: token management & audit writing
 - violates: Principle VI
 - evidence:
-  - `ado2gh/clients/token_manager.py` — the rate-limit update and rotation paths driven from response headers have no direct test
-  - `ado2gh/assignments/audit.py:10-18` — the `_SECRET_PATTERNS` regex branch has no test asserting a match or a miss, which is why GAP-010 (GAP-TOKEN-01)'s coverage hole was not visible
-  - confirmed clean and separately worth recording: `ado2gh/clients/token_manager.py:92-124` — `get_token()` raises rather than returning an empty or unauthenticated token, so this path is fail-safe
+  - `ado2gh/clients/token_manager.py` (now `ado2gh/clients/gh_token_manager.py`) — the rate-limit update and rotation paths driven from response headers have no direct test
+  - `ado2gh/assignments/audit.py:10-18` (now `ado2gh/audit/redaction.py:20-33`) — the `_SECRET_PATTERNS` regex branch has no test asserting a match or a miss, which is why GAP-010 (GAP-TOKEN-01)'s coverage hole was not visible
+  - confirmed clean and separately worth recording: `ado2gh/clients/token_manager.py:92-124` (now `ado2gh/clients/gh_token_manager.py:164-209`) — `get_token()` raises rather than returning an empty or unauthenticated token, so this path is fail-safe
 - severity: medium
 - blast_radius: the two behaviours that keep the platform inside GitHub's rate limits and keep secrets out of the audit log both lack regression tests. No live defect in the rate-limit path was found.
 - status: open
@@ -893,7 +894,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - evidence:
   - `ado2gh/core/rollback.py:105` — `rollback_repos()`, docstring "Rollback specific repos (not entire wave)" — the only implementation of repo-level targeted rollback
   - whole-repo grep for `rollback_repos` returns only its own definition; zero call sites in `ado2gh/`, `services/`, or `tests/`
-  - `ado2gh/cli/run_cmd.py:120` — the CLI `rollback` command only ever calls `rollback_wave(...)`
+  - `ado2gh/cli/run_cmd.py:120` (now `ado2gh/cli/migration.py:176-180`) — the CLI `rollback` command only ever calls `rollback_wave(...)`
   - `ado2gh/core/rollback.py:176-181` — `_rollback_pipelines` calls `self.db.reset_failed_pipeline_migrations(wave_id)` with no repo argument
   - `ado2gh/state/sqlite_db.py:591` — `reset_failed_pipeline_migrations(self, wave_id: int)` takes no repo parameter and deletes every failed row for the whole wave (mirrored in `base.py` and `postgres_db.py`)
 - severity: medium
@@ -916,7 +917,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - `ado2gh/state/sqlite_db.py:156-164` vs `ado2gh/state/postgres_db.py:145-153` — `audit_events.actor` and `payload_json` are `NOT NULL DEFAULT` on SQLite and nullable with no default on Postgres
   - `tests/core/test_storage_config.py:52-73` — the existing parity tests check table and method *presence* only; neither divergence would fail any test
 - severity: medium
-- blast_radius: currently inert — nothing reads `assignment_id`, and `ado2gh/assignments/audit.py:52-70` never passes `None` for either audit column. The risk is that the moment a second `insert_audit_event` caller omits a payload, or any code starts reading `assignment_id`, behaviour diverges by backend with no test to catch it. All other shared tables, including `batch_checkpoints` upsert semantics, were verified symmetric.
+- blast_radius: currently inert — nothing reads `assignment_id`, and `ado2gh/assignments/audit.py:52-70` (now `ado2gh/audit/writer.py:25-49`) never passes `None` for either audit column. The risk is that the moment a second `insert_audit_event` caller omits a payload, or any code starts reading `assignment_id`, behaviour diverges by backend with no test to catch it. All other shared tables, including `batch_checkpoints` upsert semantics, were verified symmetric.
 - status: open
 - resolution: —
 - regression_check: —
@@ -930,7 +931,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - components: integration seams, agent service
 - violates: Principle I (a field that reads as a live safety signal but is structurally inert); Principle VI
 - evidence:
-  - `ado2gh/agents/migration_agent/route_helpers.py:493` and `ado2gh/agents/migration_agent/nodes/planner_plan_builders.py:140` — both compute `"blocked_items": [r for r in repos_data if r.get("blocked")]`
+  - `ado2gh/agents/migration_agent/route_helpers.py:493` (now `services/agent/routes/_helpers.py:529`) and `ado2gh/agents/migration_agent/nodes/planner_plan_builders.py:140` — both compute `"blocked_items": [r for r in repos_data if r.get("blocked")]`
   - `ado2gh/api/contracts.py:435-443` — `DiscoveryRepoItem` has no `blocked` field, so the predicate is always falsy
   - `ado2gh/agents/migration_agent/hitl/blockers.py:107` — `sanitize_plan_for_operator_view()` pops `blocked_items` before the plan reaches the operator anyway
   - `apps/migration-ui/src/lib/agent.ts:66-86` — the `MigrationPlan` type has no `blocked_items` field
@@ -1055,7 +1056,7 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - violates: Principle V (Enterprise Migration Safeguards — migration state must not be written by anything but a migration run); Principle VI (CI reliability)
 - evidence:
   - `ado2gh/agents/migration_agent/graph/builder.py:129` — `db_path = os.environ.get("ADO2GH_SQLITE_PATH", "data/agent_checkpoints.db")`, resolved at call time inside `_get_checkpointer`, relative to the working directory; `get_compiled_graph()` (`:335`) reaches it from the agent's `/health` route and from every session test
-  - `tests/conftest.py` (before this fix) — the session fixture isolated only `ADO2GH_DATA_DIR`; `ADO2GH_SQLITE_PATH` stayed unset, so the checkpointer opened the developer's real `data/agent_checkpoints.db` (2.3 MB, gitignored via `*.db`, the store for real agent sessions) and `ado2gh/auth/service.py:26,87,149`, `ado2gh/api/live_approval_store.py:50`, `ado2gh/api/agentic_routes.py:18`, `ado2gh/api/profile_governance.py:145` opened `migration_state.db` in the repo root
+  - `tests/conftest.py` (before this fix) — the session fixture isolated only `ADO2GH_DATA_DIR`; `ADO2GH_SQLITE_PATH` stayed unset, so the checkpointer opened the developer's real `data/agent_checkpoints.db` (2.3 MB, gitignored via `*.db`, the store for real agent sessions) and `ado2gh/auth/service.py:26,87,149`, `ado2gh/api/live_approval_store.py:50`, `ado2gh/api/agentic_routes.py:18` (now `services/accelerator_api/routes/history_routes.py:25`), `ado2gh/api/profile_governance.py:145` opened `migration_state.db` in the repo root
   - `ado2gh/agents/migration_agent/graph/builder.py:364-389` — `clear_langgraph_thread` deletes a checkpoint thread by session id; session-lifecycle tests call it against whatever file the checkpointer holds
   - `ado2gh/state/storage_config.py:51` — `sqlite_path = os.environ.get("ADO2GH_SQLITE_PATH", sqlite_default)`: the environment overrides an explicit `create_state_db(db_path)`, so a single session-wide override would have made every test that passes its own path share one file (measured: `tests/profile/test_profile_discovery.py` and `tests/profile/test_profile_scan_db.py`, 3 failures, `run-isolation-fix.first-attempt.txt`)
   - `docs/STRUCTURAL_CHANGELOG.md:368,435` — increments 1–3 could only be verified in a detached worktree because the shared tree stalled mid-suite with `data/agent_checkpoints.db-wal` / `-shm` present
