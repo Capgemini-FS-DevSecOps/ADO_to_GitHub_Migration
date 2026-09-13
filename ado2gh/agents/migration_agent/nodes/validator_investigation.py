@@ -13,6 +13,7 @@ from ado2gh.agents.migration_agent.constants import (
 from ado2gh.agents.migration_agent.nodes.planner import _planner_text_indicates_blocker
 from ado2gh.agents.migration_agent.nodes.streaming import _stream_llm_response
 from ado2gh.agents.migration_agent.prompts import get_prompt
+from ado2gh.agents.migration_agent.untrusted import fence_untrusted
 from ado2gh.agents.migration_agent.utils import (
     _append_and_stream,
     _emit_tool_call,
@@ -383,9 +384,9 @@ def _build_validator_investigation_context(
     )
 
     if dry_run:
-        executor_log_json = json.dumps(
-            _validator_executor_log_summary(executor_result), default=str
-        )[:12000]
+        executor_log_json = fence_untrusted(
+            "executor_log", _validator_executor_log_summary(executor_result), limit=12000
+        )
         parts = [
             "DRY RUN — no live GitHub/ADO writes were performed.",
             "Validate using executor logs and simulated scope output below. "
@@ -394,9 +395,9 @@ def _build_validator_investigation_context(
             f"Executor output (primary evidence): {executor_log_json}",
         ]
     else:
-        executor_metadata_json = json.dumps(
-            _validator_executor_metadata(executor_result), default=str
-        )[:4000]
+        executor_metadata_json = fence_untrusted(
+            "executor_metadata", _validator_executor_metadata(executor_result), limit=4000
+        )
         parts = [
             "LIVE RUN — verify outcomes exclusively via tool/API evidence.",
             "Do NOT treat executor status fields, scope summaries, or workflow_files "
@@ -406,14 +407,15 @@ def _build_validator_investigation_context(
         ]
 
     if migration_plan:
-        plan_summary_json = json.dumps(
+        plan_summary_json = fence_untrusted(
+            "migration_plan",
             {
                 "repos": migration_plan.get("repos"),
                 "work_items": migration_plan.get("work_items"),
                 "revision": migration_plan.get("revision"),
             },
-            default=str,
-        )[:6000]
+            limit=6000,
+        )
         parts.append(f"Migration plan: {plan_summary_json}")
     if baseline_findings:
         label = (
@@ -422,10 +424,13 @@ def _build_validator_investigation_context(
             else "Deterministic baseline probes (auto)"
         )
         parts.append(
-            f"{label}: {json.dumps(baseline_findings[:8], default=str)[:6000]}"
+            f"{label}: {fence_untrusted('baseline_findings', baseline_findings[:8], limit=6000)}"
         )
     if baseline_failures:
-        parts.append(f"Deterministic baseline failures: {json.dumps(baseline_failures[:10], default=str)}")
+        parts.append(
+            "Deterministic baseline failures: "
+            + fence_untrusted("baseline_failures", baseline_failures[:10])
+        )
     profile = session.get("profile") or {}
     if isinstance(profile, dict) and profile.get("github_org"):
         parts.append(f"GitHub org: {profile.get('github_org')}")
@@ -511,7 +516,9 @@ async def _execute_validator_tool_calls(
             results.append(entry)
             _emit_tool_result(session, name, entry, subagent="validator")
         except Exception as exc:
-            entry = {"tool": name, "error": str(exc)}
+            from ado2gh.agents.migration_agent.tools.shared_tools import tool_error
+
+            entry = {"tool": name, **tool_error(exc)}
             results.append(entry)
             _emit_tool_result(session, name, entry, subagent="validator")
     return results
@@ -722,15 +729,9 @@ async def _run_validator_llm_investigation(
         messages.append(
             HumanMessage(
                 content=(
-                    "Tool results (continue investigation or emit validation_report when done):\n"
-                    + json.dumps(
-                        {
-                            "tool_results": tool_results,
-                            "tool_calls_total": tool_calls_total,
-                            "min_required": min_tool_calls,
-                        },
-                        default=str,
-                    )[:12000]
+                    "Tool results (continue investigation or emit validation_report when done). "
+                    f"tool_calls_total: {tool_calls_total}, min_required: {min_tool_calls}.\n"
+                    + fence_untrusted("validator_tool_results", {"tool_results": tool_results})
                 ),
             ),
         )

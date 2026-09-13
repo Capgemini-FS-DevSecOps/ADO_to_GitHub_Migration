@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -11,6 +13,7 @@ from ado2gh.agents.migration_agent.constants import (
     PLANNER_MIN_RESEARCH_TOOL_CALLS,
 )
 from ado2gh.agents.migration_agent.nodes.streaming import _stream_llm_response
+from ado2gh.agents.migration_agent.untrusted import fence_untrusted
 from ado2gh.agents.migration_agent.utils import (
     _append_and_stream,
     _emit_tool_call,
@@ -33,6 +36,34 @@ _PLANNER_RESEARCH_TOOLS = frozenset({
     "github_api_query",
     "call_accelerator",
 })
+
+# The one accelerator route whose body may become the session's durable
+# discovery snapshot. Matched whole, not by substring: the snapshot is rendered
+# into the *system* prompt on every later turn (THR-04-001), and a substring
+# test accepted any model-chosen path ending in "/discovery".
+_DISCOVERY_PATH_RE = re.compile(r"^/v1/settings/profiles/[^/]+/discovery$")
+
+
+def _discovery_snapshot(endpoint: str, result: object) -> dict[str, Any] | None:
+    """Decide whether a call_accelerator result may become the discovery snapshot.
+
+    Args:
+        endpoint: The endpoint string the model asked for.
+        result: The decoded tool result.
+
+    Returns:
+        The result when the endpoint is exactly the profile discovery route and
+        the body has the shape the snapshot readers expect (a ``repos`` list),
+        otherwise ``None``.
+    """
+    # Matched against the decoded path, because that is what the accelerator
+    # routes on: `profiles/a%2Fb/discovery` is two segments there, not one.
+    path = "/" + unquote(str(endpoint).split("?", 1)[0]).lstrip("/")
+    if not _DISCOVERY_PATH_RE.match(path):
+        return None
+    if not isinstance(result, dict) or not isinstance(result.get("repos"), list):
+        return None
+    return result
 
 
 async def _execute_planner_tool_call(
@@ -60,6 +91,8 @@ async def _execute_planner_tool_call(
     if not isinstance(args, dict):
         args = {}
 
+    from ado2gh.agents.migration_agent.tools.shared_tools import join_api_path, tool_error
+
     if tool_name == "get_current_profile":
         from ado2gh.agents.migration_agent.tools.shared_tools import fetch_current_profile
 
@@ -71,35 +104,29 @@ async def _execute_planner_tool_call(
             )
             return {"tool": tool_name, "arguments": args, "result": result}
         except Exception as exc:
-            return {"tool": tool_name, "arguments": args, "error": str(exc)}
+            return {"tool": tool_name, "arguments": args, **tool_error(exc)}
 
-    if tool_name == "ado_api_query" and accel_get:
+    prefixes = {"ado_api_query": "/v1/ado", "github_api_query": "/v1/github"}
+    if tool_name in prefixes and accel_get:
         try:
-            endpoint = str(args.get("endpoint", "")).lstrip("/")
-            result = await accel_get(f"/v1/ado/{endpoint}", session_token=session_token)
+            path = join_api_path(prefixes[tool_name], str(args.get("endpoint", "")))
+            result = await accel_get(path, session_token=session_token)
             return {"tool": tool_name, "arguments": args, "result": result}
         except Exception as exc:
-            return {"tool": tool_name, "arguments": args, "error": str(exc)}
-
-    if tool_name == "github_api_query" and accel_get:
-        try:
-            endpoint = str(args.get("endpoint", "")).lstrip("/")
-            result = await accel_get(f"/v1/github/{endpoint}", session_token=session_token)
-            return {"tool": tool_name, "arguments": args, "result": result}
-        except Exception as exc:
-            return {"tool": tool_name, "arguments": args, "error": str(exc)}
+            return {"tool": tool_name, "arguments": args, **tool_error(exc)}
 
     if tool_name == "call_accelerator" and accel_get:
-        ep = str(args.get("endpoint", "")).lstrip("/")
-        if not ep:
+        endpoint = str(args.get("endpoint", ""))
+        if not endpoint.lstrip("/"):
             return {"tool": tool_name, "arguments": args, "error": "endpoint_required"}
         try:
-            result = await accel_get(f"/{ep}", session_token=session_token)
-            if (ep.endswith("/discovery") or "/discovery" in ep) and isinstance(result, dict):
-                session["discovery_snapshot"] = result
+            result = await accel_get(join_api_path("/", endpoint), session_token=session_token)
+            snapshot = _discovery_snapshot(endpoint, result)
+            if snapshot is not None:
+                session["discovery_snapshot"] = snapshot
             return {"tool": tool_name, "arguments": args, "result": result}
         except Exception as exc:
-            return {"tool": tool_name, "arguments": args, "error": str(exc)}
+            return {"tool": tool_name, "arguments": args, **tool_error(exc)}
 
     return {"tool": tool_name, "arguments": args, "error": "tool_unavailable"}
 
@@ -456,11 +483,9 @@ async def _run_planner_research_loop(
                     except json.JSONDecodeError:
                         pass
                 if tool_name == "call_accelerator":
-                    ep = str(args.get("endpoint", ""))
-                    if (ep.endswith("/discovery") or "/discovery" in ep) and isinstance(
-                        result_content, dict
-                    ):
-                        session["discovery_snapshot"] = result_content
+                    snapshot = _discovery_snapshot(str(args.get("endpoint", "")), result_content)
+                    if snapshot is not None:
+                        session["discovery_snapshot"] = snapshot
                 _emit_tool_result(
                     session,
                     tool_name,
@@ -478,14 +503,11 @@ async def _run_planner_research_loop(
 
         conversation.append(
             HumanMessage(
-                content=json.dumps(
-                    {
-                        "tool_results": batch_results,
-                        "research_tool_calls_so_far": research_tool_calls,
-                        "min_required": PLANNER_MIN_RESEARCH_TOOL_CALLS,
-                    },
-                    default=str,
-                )[:12000]
+                content=(
+                    f"research_tool_calls_so_far: {research_tool_calls}, "
+                    f"min_required: {PLANNER_MIN_RESEARCH_TOOL_CALLS}.\n"
+                    + fence_untrusted("planner_tool_results", {"tool_results": batch_results})
+                )
             )
         )
 
