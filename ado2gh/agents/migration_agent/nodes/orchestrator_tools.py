@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
 from ado2gh.agents.migration_agent.nodes.intent import _begin_new_agent_migration
 from ado2gh.agents.migration_agent.utils import (
     _append_event,
@@ -10,6 +11,7 @@ from ado2gh.agents.migration_agent.utils import (
     _emit_tool_call,
     _emit_tool_result,
     _has_queued_messages,
+    coerce_dry_run,
 )
 
 # ─── Orchestrator tool execution (inlined — no separate graph node) ───
@@ -97,6 +99,30 @@ async def _execute_orchestrator_tools(
         )
         if not is_cached_discovery:
             _emit_tool_call(session, tool_name, subagent="orchestrator", arguments=args)
+
+        # The orchestrator's tools are dispatched by name here rather than bound
+        # through `wrap_tool_with_guardrail`, so the guardrail is applied at the
+        # dispatch seam — otherwise this path is protected only by the fact that
+        # today's orchestrator tools happen to be read-only (THR-06-008).
+        decision = evaluate_guardrail(
+            agent_role="orchestrator",
+            tool_name=tool_name,
+            arguments=args,
+            migration_plan=session.get("migration_plan"),
+            # `is True`, not `bool(...)`: a malformed truthy value such as the string
+            # "false" is not an operator approval.
+            plan_approved=session.get("plan_approved") is True,
+            session=session,
+        )
+        if not decision.allowed:
+            results.append({
+                "tool": tool_name,
+                "error": "guardrail_blocked",
+                "message": decision.reason,
+                "decision": decision.to_dict(),
+            })
+            _emit_tool_result(session, tool_name, results[-1], subagent="orchestrator")
+            continue
 
         if tool_name == "get_current_profile":
             from ado2gh.agents.migration_agent.tools.shared_tools import fetch_current_profile
@@ -239,7 +265,10 @@ async def _execute_orchestrator_tools(
                 if not is_cached_discovery:
                     _emit_tool_result(session, tool_name, results[-1], subagent="orchestrator")
                 continue
-            dry_run = session.get("dry_run", args.get("dry_run", True))
+            # The session carries the operator's decision; the model's tool argument
+            # does not get to seed it, and a malformed value is not a decision
+            # (GAP-076 single reader, CA-001, THR-06-006).
+            dry_run = coerce_dry_run(session.get("dry_run"), default=True)
             phase = args.get("phase")
             session["plan_repository_id"] = repo_id
             session["dry_run"] = dry_run
@@ -287,7 +316,10 @@ async def _execute_orchestrator_tools(
                 import re as _re
                 repo_ids = _re.findall(r'([\w.-]+/[\w.-]+)', user_msg)
             # Prefer session's dry_run over LLM's argument
-            dry_run = session.get("dry_run", args.get("dry_run", True))
+            # The session carries the operator's decision; the model's tool argument
+            # does not get to seed it, and a malformed value is not a decision
+            # (GAP-076 single reader, CA-001, THR-06-006).
+            dry_run = coerce_dry_run(session.get("dry_run"), default=True)
             phase = args.get("phase")
             session["plan_repository_ids"] = repo_ids
             session["dry_run"] = dry_run
@@ -361,6 +393,8 @@ async def execute_tools_node(state: dict[str, Any]) -> dict[str, Any]:
 async def _execute_rollback(
     state: dict[str, Any],
     session: dict[str, Any],
+    *,
+    confirmed: bool,
 ) -> dict[str, Any]:
     """T101: Execute rollback by deleting GitHub resources from rollback_records.
 
@@ -368,11 +402,31 @@ async def _execute_rollback(
         state: Graph state; supplies ``rollback_records``, the accelerator POST
             callable and the session token.
         session: Session dict the progress events are appended to.
+        confirmed: The operator's explicit confirmation of this irreversible
+            deletion (CA-002). Required, and required to be exactly ``True``:
+            the form's ``required`` flag is a client-side hint only
+            (``hitl/forms.py``), so this function is where the confirmation is
+            enforced for every caller (THR-06-003).
 
     Returns:
         An ``AgentState`` update with ``rollback_complete`` and
-        ``rollback_count`` — zero when there was nothing recorded to undo.
+        ``rollback_count`` — zero when there was nothing recorded to undo, and
+        ``error: confirmation_required`` when the confirmation was missing.
     """
+    if confirmed is not True:
+        _append_event(
+            session,
+            role="system",
+            content="Rollback refused: no explicit operator confirmation on the submission (CA-002).",
+            kind="message",
+        )
+        return {
+            "rollback_complete": False,
+            "rollback_count": 0,
+            "rollback_failed": 0,
+            "error": "confirmation_required",
+        }
+
     rollback_records = state.get("rollback_records", [])
     accel_post = state.get("accel_post")
     session_token = state.get("session_token")

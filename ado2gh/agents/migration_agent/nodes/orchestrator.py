@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from ado2gh.agents.migration_agent.constants import NO_LLM_CONFIGURED_MESSAGE
 from ado2gh.agents.migration_agent.nodes._common import (
     _is_pev_max_retries_exhausted,
@@ -18,16 +16,15 @@ from ado2gh.agents.migration_agent.nodes._common import (
 )
 from ado2gh.agents.migration_agent.nodes.intent import (
     _begin_new_agent_migration,
-    _build_session_context,
     _classify_user_intent,
 )
+from ado2gh.agents.migration_agent.nodes.orchestrator_prompt import build_orchestrator_messages
 from ado2gh.agents.migration_agent.nodes.orchestrator_tools import (
     _apply_orchestrator_tools,
     _execute_rollback,
 )
 from ado2gh.agents.migration_agent.nodes.planner import _build_migration_queue_from_plan
 from ado2gh.agents.migration_agent.nodes.streaming import _stream_llm_response
-from ado2gh.agents.migration_agent.prompts import get_prompt
 from ado2gh.agents.migration_agent.runtime.context_window import build_context_with_cycle_summaries
 from ado2gh.agents.migration_agent.session.state import SessionState, release_session_for_chat
 from ado2gh.agents.migration_agent.utils import (
@@ -310,9 +307,19 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
         if form_id in ("cancellation_options", "intake_cancellation_action"):
             action = values.get("action") or values.get("cancellation_action", "")
             if action == "rollback":
-                # Execute rollback
-                rollback_result = await _execute_rollback(state, session)
-                reply = f"Rollback complete: {rollback_result.get('rollback_count', 0)} resources deleted, {rollback_result.get('rollback_failed', 0)} failed."
+                # CA-002: the checkbox's `required` flag is a client-side hint, so the
+                # submitted value is what authorises the deletion — and only a real
+                # `True` does (THR-06-003). `_execute_rollback` enforces it.
+                rollback_result = await _execute_rollback(
+                    state, session, confirmed=values.get("confirm_rollback") is True,
+                )
+                if rollback_result.get("error") == "confirmation_required":
+                    reply = (
+                        "Rollback needs an explicit confirmation — tick “Confirm rollback” "
+                        "and submit again. Nothing was deleted."
+                    )
+                else:
+                    reply = f"Rollback complete: {rollback_result.get('rollback_count', 0)} resources deleted, {rollback_result.get('rollback_failed', 0)} failed."
                 publish_orchestrator_chat(session, reply)
                 return {"should_return": True, "reply": reply}
             else:
@@ -435,17 +442,13 @@ async def _handle_general_chat(
         reply = publish_orchestrator_chat(session, NO_LLM_CONFIGURED_MESSAGE)
         return {"should_return": True, "reply": reply}
 
-    system_prompt = get_prompt("orchestrator") + _build_session_context(session)
     # T097: Apply context window trimming
     existing_messages = state.get("messages", [])
     cycle_summaries = state.get("cycle_summaries", [])
     max_budget = state.get("max_token_budget", 32000)
 
     # Build new messages with system prompt and user message
-    new_messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_message),
-    ]
+    new_messages = build_orchestrator_messages(session, user_message)
 
     # Combine with existing messages and trim
     all_messages = existing_messages + new_messages
@@ -529,16 +532,14 @@ async def _handle_migration_info(
         info_text += f" Run ID: {session['run_id']}."
 
     if llm and not llm_unconfigured:
-        system_prompt = get_prompt("orchestrator") + _build_session_context(session)
         # T097: Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
         max_budget = state.get("max_token_budget", 32000)
 
-        new_messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=f"{user_message}\n\nContext: {info_text}"),
-        ]
+        new_messages = build_orchestrator_messages(
+            session, f"{user_message}\n\nContext: {info_text}",
+        )
 
         all_messages = existing_messages + new_messages
         trimmed_messages = build_context_with_cycle_summaries(
@@ -671,16 +672,12 @@ async def _handle_migration_action(
     # The orchestrator only collects parameters and interfaces with the user.
 
     if llm and not llm_unconfigured:
-        system_prompt = get_prompt("orchestrator") + _build_session_context(session)
         # T097: Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
         max_budget = state.get("max_token_budget", 32000)
 
-        new_messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message),
-        ]
+        new_messages = build_orchestrator_messages(session, user_message)
 
         all_messages = existing_messages + new_messages
         trimmed_messages = build_context_with_cycle_summaries(
