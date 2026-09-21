@@ -1,22 +1,33 @@
 """Tests for scripts cleanup (US8)."""
 from pathlib import Path
 
+# scripts/dev/ is manually curated; add the filename here when a new dev script lands.
+EXPECTED_DEV_SCRIPTS = {
+    "_local-common.ps1",
+    "run-local-agent.ps1",
+    "run-ui.ps1",
+    "claude-mcp-bridge.mjs",
+    "claude-mcp-bridge.test.mjs",
+    "codex-mcp-bridge.mjs",
+    "codex-mcp-bridge.test.mjs",
+}
+
 
 def test_only_scripts_dev_remains():
-    """Verify only scripts/dev/ directory remains in scripts/ (no top-level script files) and contains at most 3 files (T120a)."""
+    """Verify only scripts/dev/ directory remains in scripts/ (no top-level script files) and its contents match the expected allowlist (T120a)."""
     scripts_dir = Path("scripts")
-    
+
     # Check no top-level script files (only dev/ directory should exist)
     top_level_items = [item for item in scripts_dir.iterdir() if item.is_file()]
     assert len(top_level_items) == 0, f"scripts/ should have no top-level files, found: {[i.name for i in top_level_items]}"
-    
+
     # Check scripts/dev/ exists
     dev_dir = scripts_dir / "dev"
     assert dev_dir.exists(), "scripts/dev/ should exist"
-    
-    # Check it has at most 3 files
-    dev_files = [item for item in dev_dir.iterdir() if item.is_file()]
-    assert len(dev_files) <= 3, f"scripts/dev/ should have at most 3 files, found {len(dev_files)}: {[i.name for i in dev_files]}"
+
+    # Check its files match the expected allowlist exactly
+    dev_files = {item.name for item in dev_dir.iterdir() if item.is_file()}
+    assert dev_files == EXPECTED_DEV_SCRIPTS, f"scripts/dev/ contents changed, found {sorted(dev_files)}"
 
 
 def test_no_stale_script_references_in_docs():
