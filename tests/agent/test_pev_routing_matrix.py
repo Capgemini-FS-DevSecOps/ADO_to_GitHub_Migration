@@ -34,9 +34,21 @@ from ado2gh.agents.migration_agent.graph import (
     _route_after_planner,
     _route_after_validator,
 )
+from ado2gh.agents.migration_agent.hitl.intake import record_plan_approval
 
 PLAN = {"id": "plan-1", "steps": [{"scope": "repo"}]}
 FORM = {"id": "form-1", "fields": []}
+
+# An approval is bound to the plan revision that was approved: the router
+# recomputes a fingerprint of the plan carried in state and compares it against
+# the fingerprint recorded at approval time, so a session must carry a matching
+# fingerprint, not the bare "plan_approved" flag by itself, for the approval to
+# still count (ado2gh/agents/migration_agent/hitl/intake.py, functions
+# record_plan_approval and clear_stale_plan_approval). Building this session the
+# same way production code does keeps the fixture honest about what "approved"
+# means.
+APPROVED_SESSION = {"migration_plan": PLAN}
+record_plan_approval(APPROVED_SESSION)
 
 
 # --------------------------------------------------------------------------
@@ -144,9 +156,14 @@ PLANNER_MATRIX = [
         {"pending_clarification": {"q": "?"}, "planner_next": "executor"},
         "orchestrator",
     ),
-    # A plan plus an approval, from either source, reaches the executor.
+    # A plan plus an approval, from either source, reaches the executor. The
+    # session-recorded approval must carry the plan-revision fingerprint that
+    # record_plan_approval stamps on it, not just the bare "plan_approved" flag,
+    # because a changed plan needs a fresh approval and the router revokes an
+    # approval that does not match the plan revision it is being asked to
+    # authorise.
     ({"migration_plan": PLAN, "start_execution": True}, "executor"),
-    ({"migration_plan": PLAN, "session": {"plan_approved": True}}, "executor"),
+    ({"migration_plan": PLAN, "session": APPROVED_SESSION}, "executor"),
     # A plan with no approval goes back for review.
     ({"migration_plan": PLAN}, "orchestrator"),
     ({"migration_plan": PLAN, "session": {"plan_approved": False}}, "orchestrator"),
@@ -176,6 +193,25 @@ def test_the_planner_routes_this_state_here(state, expected):
 def test_an_unapproved_plan_never_reaches_the_executor():
     """CA-001: nothing runs until the plan has been approved."""
     assert _route_after_planner({"migration_plan": PLAN}) != "executor"
+
+
+def test_a_changed_plan_revokes_a_stale_approval_and_returns_to_the_orchestrator():
+    """An approval is bound to the plan revision that was approved.
+
+    Once the plan carried in state is a different revision than the one the
+    operator approved, the recorded approval no longer applies: a changed plan
+    needs a fresh approval. The router must send the run back to the
+    orchestrator step, where the operator reviews and re-approves, instead of
+    forwarding the stale approval on to the executor (THR-09-002).
+    """
+    session = {"migration_plan": PLAN}
+    record_plan_approval(session)
+
+    revised_plan = {**PLAN, "revision": 1}
+    state = {"migration_plan": revised_plan, "session": session}
+
+    assert _route_after_planner(state) == "orchestrator"
+    assert session["plan_approved"] is False
 
 
 # --------------------------------------------------------------------------
