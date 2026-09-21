@@ -21,6 +21,7 @@ from ado2gh.agents.migration_agent.utils import (
     _parse_llm_json,
     canonical_repo_id,
 )
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 from ado2gh.audit.redaction import redact_payload
 from ado2gh.models import ExecutionMode
 
@@ -110,7 +111,7 @@ async def _execute_planner_tool_call(
         except Exception as exc:
             return {"tool": tool_name, "arguments": args, **tool_error(exc)}
 
-    prefixes = {"ado_api_query": "/v1/ado", "github_api_query": "/v1/github"}
+    prefixes = {"ado_api_query": ADO_PROXY_PREFIX, "github_api_query": GITHUB_PROXY_PREFIX}
     if tool_name in prefixes and accel_get:
         try:
             path = join_api_path(prefixes[tool_name], str(args.get("endpoint", "")))
@@ -198,7 +199,7 @@ async def _gather_planner_baseline_context(
             from ado2gh.agents.migration_agent.hitl.operator_input import parse_github_target_probe
 
             try:
-                gh_path = f"/v1/github/repos/{entry['github_org']}/{entry['github_repo']}"
+                gh_path = f"{GITHUB_PROXY_PREFIX}/repos/{entry['github_org']}/{entry['github_repo']}"
                 gh_resp = await accel_get(gh_path, session_token=session_token)
                 entry["github_target"] = parse_github_target_probe(
                     gh_resp if isinstance(gh_resp, dict) else None,
@@ -214,7 +215,7 @@ async def _gather_planner_baseline_context(
         if accel_get and project and repo_name:
             try:
                 ado_resp = await accel_get(
-                    f"/v1/ado/projects/{project}/repos/{repo_name}",
+                    f"{ADO_PROXY_PREFIX}/projects/{project}/repos/{repo_name}",
                     session_token=session_token,
                 )
                 entry["ado_repo"] = {

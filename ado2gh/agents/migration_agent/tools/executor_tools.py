@@ -23,6 +23,7 @@ from ado2gh.agents.migration_agent.tools.shared_tools import (
     join_api_path,
     tool_error,
 )
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 
 
 class GeneratePlanArgs(BaseModel):
@@ -109,7 +110,7 @@ def get_executor_tools(
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            return await accel_get(join_api_path("/v1/ado", endpoint), session_token=session_token)
+            return await accel_get(join_api_path(ADO_PROXY_PREFIX, endpoint), session_token=session_token)
         except Exception as e:
             return tool_error(e)
 
@@ -135,7 +136,7 @@ def get_executor_tools(
         if request_fn is None:
             return {"error": "accelerator_unavailable"}
         try:
-            return await request_fn(method_upper, join_api_path("/v1/github", endpoint), body)
+            return await request_fn(method_upper, join_api_path(GITHUB_PROXY_PREFIX, endpoint), body)
         except Exception as e:
             return tool_error(e)
 

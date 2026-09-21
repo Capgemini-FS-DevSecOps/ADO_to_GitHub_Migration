@@ -20,6 +20,7 @@ from ado2gh.agents.migration_agent.utils import (
     _emit_tool_result,
     _parse_llm_json,
 )
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -290,7 +291,7 @@ async def _gather_validator_baseline_probes(
             from ado2gh.agents.migration_agent.hitl.operator_input import parse_github_target_probe
 
             try:
-                gh_path = f"/v1/github/repos/{entry['github_org']}/{entry['github_repo']}"
+                gh_path = f"{GITHUB_PROXY_PREFIX}/repos/{entry['github_org']}/{entry['github_repo']}"
                 gh_resp = await accel_get(gh_path, session_token=session_token)
                 entry["github_target"] = parse_github_target_probe(
                     gh_resp if isinstance(gh_resp, dict) else None,
@@ -303,7 +304,7 @@ async def _gather_validator_baseline_probes(
         if accel_get and project and repo_name:
             try:
                 ado_resp = await accel_get(
-                    f"/v1/ado/projects/{project}/repos/{repo_name}",
+                    f"{ADO_PROXY_PREFIX}/projects/{project}/repos/{repo_name}",
                     session_token=session_token,
                 )
                 entry["ado_repo"] = {

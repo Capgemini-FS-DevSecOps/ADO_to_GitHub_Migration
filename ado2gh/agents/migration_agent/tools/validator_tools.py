@@ -16,6 +16,7 @@ from ado2gh.agents.migration_agent.tools.shared_tools import (
     join_api_path,
     tool_error,
 )
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 from ado2gh.audit.redaction import redact_text
 from ado2gh.pipelines.validation import WorkflowValidator
 
@@ -78,7 +79,7 @@ def get_validator_tools(
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            return await accel_get(join_api_path("/v1/ado", endpoint), session_token=session_token)
+            return await accel_get(join_api_path(ADO_PROXY_PREFIX, endpoint), session_token=session_token)
         except Exception as e:
             return tool_error(e)
 
@@ -86,7 +87,7 @@ def get_validator_tools(
         if not accel_get:
             return {"error": "accelerator_unavailable"}
         try:
-            return await accel_get(join_api_path("/v1/github", endpoint), session_token=session_token)
+            return await accel_get(join_api_path(GITHUB_PROXY_PREFIX, endpoint), session_token=session_token)
         except Exception as e:
             return tool_error(e)
 
@@ -98,14 +99,14 @@ def get_validator_tools(
             encoded_repo = quote(repo_name, safe="")
             repo_resp = await accel_get(
                 join_api_path(
-                    "/v1/ado",
+                    ADO_PROXY_PREFIX,
                     f"{encoded_project}/_apis/git/repositories/{encoded_repo}?api-version=7.0",
                 ),
                 session_token=session_token,
             )
             repo_id = str(repo_resp.get("id") or "") if isinstance(repo_resp, dict) else ""
             pipelines_resp = await accel_get(
-                join_api_path("/v1/ado", f"{encoded_project}/_apis/pipelines?api-version=7.0"),
+                join_api_path(ADO_PROXY_PREFIX, f"{encoded_project}/_apis/pipelines?api-version=7.0"),
                 session_token=session_token,
             )
             pipelines: list[dict[str, Any]] = []
@@ -145,7 +146,7 @@ def get_validator_tools(
                 f"repos/{quote(github_org, safe='')}/{quote(github_repo, safe='')}"
                 f"/contents/.github/workflows?{urlencode({'ref': ref})}"
             )
-            resp = await accel_get(join_api_path("/v1/github", path), session_token=session_token)
+            resp = await accel_get(join_api_path(GITHUB_PROXY_PREFIX, path), session_token=session_token)
             files: list[dict[str, Any]] = []
             if isinstance(resp, list):
                 for item in resp:
@@ -180,7 +181,7 @@ def get_validator_tools(
                 f"repos/{quote(github_org, safe='')}/{quote(github_repo, safe='')}"
                 f"/contents/{quote(normalized)}?{urlencode({'ref': ref})}"
             )
-            resp = await accel_get(join_api_path("/v1/github", path), session_token=session_token)
+            resp = await accel_get(join_api_path(GITHUB_PROXY_PREFIX, path), session_token=session_token)
             content = ""
             if isinstance(resp, dict):
                 raw = resp.get("content") or ""

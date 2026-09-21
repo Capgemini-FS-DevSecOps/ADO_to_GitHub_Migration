@@ -13,6 +13,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Request
 
 from ado2gh.api.platform_rbac import require_approve_live_execution, require_operate
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 from services.accelerator_api.routes.migrate_guard import active_profile_id
 from services.accelerator_api.routes.migrate_routes import _get_clients
 
@@ -52,7 +53,7 @@ def _http_error(exc: requests.HTTPError) -> HTTPException:
     return HTTPException(status_code=status, detail=detail)
 
 
-@router.get("/v1/ado/{path:path}")
+@router.get(ADO_PROXY_PREFIX + "/{path:path}")
 def proxy_ado_get(path: str, request: Request) -> object:
     """Read from the Azure DevOps REST API through the platform's own credentials.
 
@@ -238,7 +239,7 @@ def _proxy_github_request(
         raise _http_error(exc) from exc
 
 
-@router.get("/v1/github/{path:path}")
+@router.get(GITHUB_PROXY_PREFIX + "/{path:path}")
 def proxy_github_get(path: str, request: Request) -> object:
     """Read from the GitHub REST API through the platform's own credentials.
 
@@ -263,7 +264,7 @@ def proxy_github_get(path: str, request: Request) -> object:
     return _proxy_github_request("GET", path, request)
 
 
-@router.post("/v1/github/{path:path}")
+@router.post(GITHUB_PROXY_PREFIX + "/{path:path}")
 async def proxy_github_post(path: str, request: Request) -> object:
     """Create a GitHub resource through the platform's own credentials.
 
@@ -292,7 +293,7 @@ async def proxy_github_post(path: str, request: Request) -> object:
     return _proxy_github_request("POST", path, request, body=body)
 
 
-@router.patch("/v1/github/{path:path}")
+@router.patch(GITHUB_PROXY_PREFIX + "/{path:path}")
 async def proxy_github_patch(path: str, request: Request) -> object:
     """Update a GitHub resource through the platform's own credentials.
 
@@ -321,7 +322,7 @@ async def proxy_github_patch(path: str, request: Request) -> object:
     return _proxy_github_request("PATCH", path, request, body=body)
 
 
-@router.put("/v1/github/{path:path}")
+@router.put(GITHUB_PROXY_PREFIX + "/{path:path}")
 async def proxy_github_put(path: str, request: Request) -> object:
     """Replace a GitHub resource through the platform's own credentials.
 
@@ -352,7 +353,7 @@ async def proxy_github_put(path: str, request: Request) -> object:
     return _proxy_github_request("PUT", path, request, body=body)
 
 
-@router.delete("/v1/github/{path:path}")
+@router.delete(GITHUB_PROXY_PREFIX + "/{path:path}")
 def proxy_github_delete(path: str, request: Request) -> object:
     """Delete a GitHub resource through the platform's own credentials.
 

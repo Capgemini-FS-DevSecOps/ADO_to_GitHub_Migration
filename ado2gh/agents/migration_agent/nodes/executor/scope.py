@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX
 from ado2gh.models import ExecutionMode
 
 if TYPE_CHECKING:
@@ -164,7 +165,7 @@ async def ensure_repo_feature_detection(
         if accel_get and project:
             try:
                 wiki_resp = await accel_get(
-                    f"/v1/ado/{project}/_apis/wiki/wikis?api-version=7.0",
+                    f"{ADO_PROXY_PREFIX}/{project}/_apis/wiki/wikis?api-version=7.0",
                     session_token=session_token,
                 )
                 wiki_list = wiki_resp.get("value", []) if isinstance(wiki_resp, dict) else []
@@ -176,13 +177,13 @@ async def ensure_repo_feature_detection(
             if repo_name:
                 try:
                     repo_resp = await accel_get(
-                        f"/v1/ado/projects/{project}/repos/{repo_name}",
+                        f"{ADO_PROXY_PREFIX}/projects/{project}/repos/{repo_name}",
                         session_token=session_token,
                     )
                     repo_id = repo_resp.get("id") if isinstance(repo_resp, dict) else None
                     if repo_id:
                         pol_resp = await accel_get(
-                            f"/v1/ado/projects/{project}/_apis/policy/configurations?api-version=7.0",
+                            f"{ADO_PROXY_PREFIX}/projects/{project}/_apis/policy/configurations?api-version=7.0",
                             session_token=session_token,
                         )
                         policies = pol_resp.get("value", []) if isinstance(pol_resp, dict) else []

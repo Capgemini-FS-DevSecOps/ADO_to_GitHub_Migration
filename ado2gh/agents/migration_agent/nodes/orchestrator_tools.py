@@ -16,6 +16,7 @@ from ado2gh.agents.migration_agent.utils import (
     _has_queued_messages,
     coerce_dry_run,
 )
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 
 # ─── Orchestrator tool execution (inlined — no separate graph node) ───
 
@@ -147,14 +148,14 @@ async def _execute_orchestrator_tools(
                 results.append({"tool": tool_name, "error": str(e)})
         elif tool_name == "ado_api_query" and accel_get:
             try:
-                path = join_api_path("/v1/ado", str(args.get("endpoint", "")))
+                path = join_api_path(ADO_PROXY_PREFIX, str(args.get("endpoint", "")))
                 result = await accel_get(path, session_token=session_token)
                 results.append({"tool": tool_name, "result": result})
             except Exception as e:
                 results.append({"tool": tool_name, "error": str(e)})
         elif tool_name == "github_api_query" and accel_get:
             try:
-                path = join_api_path("/v1/github", str(args.get("endpoint", "")))
+                path = join_api_path(GITHUB_PROXY_PREFIX, str(args.get("endpoint", "")))
                 result = await accel_get(path, session_token=session_token)
                 results.append({"tool": tool_name, "result": result})
             except Exception as e:

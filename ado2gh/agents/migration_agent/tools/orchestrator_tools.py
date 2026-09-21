@@ -15,6 +15,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from ado2gh.agents.migration_agent.tools.shared_tools import append_shared_tools
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 
 
 class AdoApiQueryArgs(BaseModel):
@@ -159,7 +160,7 @@ def get_orchestrator_tools(
             return {"error": "accelerator_unavailable"}
         try:
             path = endpoint.lstrip("/")
-            return await accel_get(f"/v1/ado/{path}", session_token=session_token)
+            return await accel_get(f"{ADO_PROXY_PREFIX}/{path}", session_token=session_token)
         except Exception as e:
             return {"error": str(e)}
 
@@ -169,7 +170,7 @@ def get_orchestrator_tools(
             return {"error": "accelerator_unavailable"}
         try:
             path = endpoint.lstrip("/")
-            return await accel_get(f"/v1/github/{path}", session_token=session_token)
+            return await accel_get(f"{GITHUB_PROXY_PREFIX}/{path}", session_token=session_token)
         except Exception as e:
             return {"error": str(e)}
 
