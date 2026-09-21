@@ -25,14 +25,17 @@ class DiscoverResult(BaseModel):
 class RunWaveRequest(BaseModel):
     """Migrate one wave, or every wave in the config; body of ``POST /v1/migrate``.
 
-    ``dry_run`` defaults to false, so a body that omits it migrates for real and pushes into GitHub.
+    ``dry_run`` defaults to true, so a body that omits it only previews; a caller
+    has to say ``dry_run: false`` to migrate for real and push into GitHub. A preview
+    run being the default and a real run needing an explicit opt-in is a standing
+    safeguard across this codebase (register cross-reference: CA-001).
     An operator without live-execution rights is refused with ``awaiting_approval``;
     ``live_approval_id`` then replays the request against the approval that was granted.
     """
 
     config_path: str
     wave_id: Optional[int] = None
-    dry_run: bool = False
+    dry_run: bool = True
     db_path: str = "migration_state.db"
     live_approval_id: Optional[str] = None
 
@@ -51,14 +54,17 @@ class RunWaveResult(BaseModel):
 class PhaseRunRequest(BaseModel):
     """Execute one risk-based migration phase with its gates enforced, behind ``ado2gh phase run``.
 
-    ``dry_run`` defaults to false, so a request that omits it migrates for real. ``force`` bypasses
-    a blocking prior-phase gate and belongs with ``override_reason``, which is persisted on the
-    OVERRIDE record as the audit trail for the escalation.
+    ``dry_run`` defaults to true, so a request that omits it only previews; a caller
+    has to say ``dry_run: false`` to migrate for real. A preview run being the default
+    and a real run needing an explicit opt-in is a standing safeguard across this
+    codebase (register cross-reference: CA-001). ``force`` bypasses a blocking prior-phase
+    gate and belongs with ``override_reason``, which is persisted on the OVERRIDE record as the
+    audit trail for the escalation.
     """
 
     config_path: str
     phase: Literal["poc", "pilot", "wave1", "wave2", "wave3"]
-    dry_run: bool = False
+    dry_run: bool = True
     force: bool = False
     override_reason: str = Field(
         default="",
@@ -544,7 +550,7 @@ class ValidateConnectionResponse(BaseModel):
 class PipelineRunStartRequest(BaseModel):
     """Body of ``POST /v1/pipeline/runs``.
 
-    Unknown fields are rejected with 422 rather than dropped (GAP-004). This
+    Unknown fields are rejected with 422 rather than dropped (register cross-reference: GAP-004). This
     route used to accept a client-supplied ``agent_live_approved`` boolean that
     disabled the live-execution gate; that field is gone, and a caller still
     sending it — or any other field this model does not declare — now gets a
