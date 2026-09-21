@@ -248,7 +248,8 @@ def test_deleting_the_default_naming_an_unusable_replacement_is_refused(admin):
 def test_deactivating_a_profile_keeps_the_record(admin):
     profile = _create(admin, "contract-deactivate")
     bystander = _create(admin, "contract-deactivate-bystander")
-    admin.post(f"/v1/settings/profiles/{bystander['id']}/set-default")
+    set_default = admin.post(f"/v1/settings/profiles/{bystander['id']}/set-default")
+    assert set_default.status_code == 200, set_default.text
     resp = admin.post(f"/v1/settings/profiles/{profile['id']}/deactivate", json={})
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "inactive"
@@ -258,11 +259,15 @@ def test_deactivating_a_profile_keeps_the_record(admin):
 def test_deactivating_the_default_without_a_replacement_is_refused(admin):
     default = _create(admin, "contract-deactivate-default")
     _create(admin, "contract-deactivate-default-other")
-    admin.post(f"/v1/settings/profiles/{default['id']}/set-default")
+    set_default = admin.post(f"/v1/settings/profiles/{default['id']}/set-default")
+    assert set_default.status_code == 200, set_default.text
     resp = admin.post(f"/v1/settings/profiles/{default['id']}/deactivate", json={})
     assert resp.status_code == 400
     assert resp.json()["detail"] == "default_replacement_required"
-    assert admin.get(f"/v1/settings/profiles/{default['id']}").status_code == 200
+    unchanged = admin.get(f"/v1/settings/profiles/{default['id']}")
+    assert unchanged.status_code == 200
+    assert unchanged.json()["status"] == "active"
+    assert unchanged.json()["is_default"] is True
 
 
 # --------------------------------------------------------------------------

@@ -113,3 +113,19 @@ def test_cloud_credentials_store_resolves_the_data_directory_per_access(tmp_path
 
     assert store.path.parent == second
     assert store.load()["sources"] == [], "a source scanned into the old directory must not leak into the new one"
+
+    store.apply_scan(
+        [
+            {
+                "provider": "gcp",
+                "completeness": "complete",
+                "primary_method": "env_keys",
+                "alternate_methods": [],
+                "region": "us-central1",
+                "project": None,
+                "endpoint": None,
+                "missing_fields": [],
+            }
+        ]
+    )
+    assert (second / "cloud_credentials.json").exists(), "a scan after the switch must write into the new directory"
