@@ -8,6 +8,15 @@ from ado2gh.cli.helpers import load_clients
 from ado2gh.logging_config import console
 from ado2gh.output_dirs import output_str
 
+# Confirmation prompt text for a real, live `ado-cleanup` run: it names what
+# is about to change and requires an explicit yes before anything is disabled
+# or archived, the same interactive safeguard the `rollback` command applies
+# to its own destructive live run (register cross-reference: CA-002).
+ADO_CLEANUP_LIVE_CONFIRM = (
+    "Live ado-cleanup on {count} ADO repo(s): disables their pipelines and "
+    "pushes a MIGRATION_NOTICE.md redirect{archive_clause}. Continue?"
+)
+
 
 def register(cli: click.Group) -> None:
     """Attach the miscellaneous commands to the top-level CLI group.
@@ -98,7 +107,10 @@ def register(cli: click.Group) -> None:
         Disables the ADO pipelines for each repo and pushes a MIGRATION_NOTICE.md
         redirecting readers to the GitHub repository, optionally archiving the ADO
         repository afterwards. --dry-run is the default: without --live it
-        reports every action it would take and changes nothing.
+        reports every action it would take and changes nothing. A --live run
+        with repos to act on requires an explicit interactive confirmation before
+        anything is disabled or archived, so a mistyped --live still leaves a
+        chance to back out (register cross-reference: CA-002).
         """
         from ado2gh.core.ado_cleanup import ADOCleanup
         from ado2gh.core.config_loader import ConfigLoader
@@ -106,6 +118,16 @@ def register(cli: click.Group) -> None:
         global_cfg, waves = ConfigLoader.load(config)
         ado, _ = load_clients(global_cfg)
         repos = load_repos(input_file or "", global_cfg, waves)
+        if not dry_run and repos:
+            # Nothing to act on is nothing to confirm; this also keeps a
+            # --live run over an empty repo list non-interactive.
+            archive_clause = ", then archives the repo" if archive else ""
+            click.confirm(
+                ADO_CLEANUP_LIVE_CONFIRM.format(
+                    count=len(repos), archive_clause=archive_clause,
+                ),
+                abort=True,
+            )
         ADOCleanup(
             ado, mode=ExecutionMode.from_dry_run(dry_run=dry_run)
         ).cleanup_repos(repos, archive_repo=archive)
@@ -152,8 +174,9 @@ def register(cli: click.Group) -> None:
         if not repos:
             console.print("[red]No repos. Use --input <file> or configure waves.[/red]")
             return
-        # GAP-016: the readiness assessment gates each live push; the state store
-        # comes from the configured backend, same as `pipeline-readiness`.
+        # The readiness assessment gates each live push; the state store comes
+        # from the configured backend, same as `pipeline-readiness`
+        # (register cross-reference: GAP-016).
         count = push_workflows_for_repos(
             gh, repos, workflows_dir, branch=branch, base=base,
             mode=ExecutionMode.from_dry_run(dry_run=dry_run),
