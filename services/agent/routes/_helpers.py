@@ -31,6 +31,7 @@ from ado2gh.agents.migration_agent.policies import (
 from ado2gh.agents.migration_agent.session.state import normalize_session_status
 from ado2gh.agents.migration_agent.utils import IdeAuditBridge, _append_event, mask_secrets
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX
 from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
 from services.agent.profiles import LocalAgentProfile, get_profile
 
@@ -671,7 +672,7 @@ async def _build_migration_plan(
                 if _accel_get:
                     if project:
                         result = await _accel_get(
-                            f"/v1/ado/projects/{project}/repos/{repo_name}",
+                            f"{ADO_PROXY_PREFIX}/projects/{project}/repos/{repo_name}",
                             session_token=session_token,
                         )
                     else:

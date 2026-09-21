@@ -91,7 +91,8 @@ def get_plan_summary(session_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="No migration plan found for this session")
 
     work_items = plan.get("work_items", [])
-    # T076: Highlight destructive operations requiring individual confirmation (FR-054, CA-002)
+    # Flag which scopes are destructive so the operator sees each one called out for
+    # individual confirmation before the plan runs (T076, FR-054, CA-002)
     DESTRUCTIVE_SCOPES = {"repo_delete", "workflow_delete", "secret_delete", "pipeline_disable"}
     destructive_operations = []
     for wi in work_items:

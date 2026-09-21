@@ -67,7 +67,7 @@ def _configure_agent_tracing() -> None:
 
 @app.on_event("startup")
 def _recover_sessions_on_restart() -> None:
-    """T061: On startup, load persisted sessions and mark active ones for resume."""
+    """On startup, load persisted sessions and mark the active ones for resume (T061)."""
     try:
         from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
         store = MigrationSessionStore()

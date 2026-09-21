@@ -70,7 +70,8 @@ def test_catalog_anthropic_live_contract(accel_client, monkeypatch):
         "ado2gh.api.llm.model_catalog.build_cloud_llm_http_client",
         lambda **kwargs: mock_client,
     )
-    # GAP-012: the key travels in the POST body, never in the URL (CWE-598).
+    # The API key must travel in the POST body, never in the URL, so it is never
+    # written into a server access log (GAP-012, CWE-598).
     r = accel_client.post(
         "/v1/settings/llm-models/catalog",
         json={"provider": "anthropic", "api_key": "sk-ant-test"},

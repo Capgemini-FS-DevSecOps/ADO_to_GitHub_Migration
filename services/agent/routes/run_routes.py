@@ -48,7 +48,8 @@ async def health() -> dict[str, Any]:
     enabled_models = store.list_agent_ready_models()
     profile = _profile()
 
-    # T078: Active session count and storage backend connectivity
+    # Surface two more health signals: how many sessions are active, and whether the
+    # storage backend answered when asked (T078).
     active_session_count = 0
     storage_ok = True
     try:

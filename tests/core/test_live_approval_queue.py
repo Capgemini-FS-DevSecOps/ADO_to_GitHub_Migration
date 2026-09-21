@@ -157,7 +157,7 @@ def test_failed_agent_notify_is_recorded_not_swallowed(client, tmp_path, monkeyp
         "recorded as a plain success — nothing tells the operator the session is stuck"
     )
     assert events[0]["actor"] == "admin"
-    # CA-003: the shared secret never reaches a log line or an audit payload.
+    # The internal shared secret must never reach a log line or an audit payload (CA-003).
     assert "shared-secret-value" not in caplog.text
     assert "shared-secret-value" not in events[0]["payload_json"]
 

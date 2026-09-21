@@ -427,7 +427,8 @@ def test_an_unknown_format_is_refused_by_the_cli(cli_report):
 
 
 # --------------------------------------------------------------------------
-# CA-003: the reporter does not redact (observed behaviour, carried as a gap)
+# The reporter renders whatever the database holds, with no redaction step of
+# its own — observed behaviour, carried here as a tracked gap (CA-003)
 # --------------------------------------------------------------------------
 
 
