@@ -23,6 +23,7 @@ from ado2gh.agents.migration_agent.session.state import (
     OrchestratorResult,
     set_session_idle,
 )
+from ado2gh.agents.migration_agent.utils import coerce_dry_run
 from ado2gh.auth.service import auth_enabled
 from services.agent.routes._helpers import (
     ProvisionRequest,
@@ -38,6 +39,8 @@ from services.agent.routes._helpers import (
     _enqueue_session_live_approval,
     _get_accessible_session,
     _profile,
+    _remember_session,
+    _require_approve_live,
     _require_operate,
     _resolve_model_id,
     _runs,
@@ -56,7 +59,14 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
     session_token = _session_token_from_request(request)
     await _assert_deployment_profile_active(req.profile_id)
     profile = _profile(req.profile_id)
-    dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default
+    # Only a real boolean in the request body decides dry-run vs live; an
+    # omitted dry_run falls through to the profile default, which the old
+    # `bool = True` field made unreachable (register item GAP-079).
+    # `coerce_dry_run` is the shared strict reader: a preview run is the
+    # default and a real run needs an explicit opt-in (register item CA-001).
+    dry_run = coerce_dry_run(
+        req.dry_run, default=bool(getattr(profile, "dry_run_default", True)),
+    )
     from ado2gh.agents.migration_agent.session.lifecycle import (
         apply_model_selection,
         new_isolated_agent_session,
@@ -69,12 +79,15 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
     actor, role = _audit_actor(request)
     platform_user = getattr(request.state, "platform_user", None)
 
-    _sessions[session_id] = new_isolated_agent_session(
+    _remember_session(
         session_id,
-        profile_id=req.profile_id,
-        session_token=session_token,
-        dry_run=dry_run,
-        user_username=getattr(platform_user, "username", None) if platform_user else None,
+        new_isolated_agent_session(
+            session_id,
+            profile_id=req.profile_id,
+            session_token=session_token,
+            dry_run=dry_run,
+            user_username=getattr(platform_user, "username", None) if platform_user else None,
+        ),
     )
     apply_model_selection(
         _sessions[session_id],
@@ -251,27 +264,77 @@ def delete_session(session_id: str, request: Request) -> dict[str, str]:
 
 
 @router.post("/v1/sessions/{session_id}/provision")
-def provision_session(session_id: str, req: ProvisionRequest) -> dict[str, str]:
-    """Set the provisioning tier; the write tier requires an Approver actor."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if req.tier == "write" and req.actor != "approver":
-        raise HTTPException(status_code=403, detail="Write tier requires Approver")
+def provision_session(
+    session_id: str, req: ProvisionRequest, request: Request,
+) -> dict[str, str]:
+    """Set the provisioning tier; the write tier requires live-approval authority.
+
+    The tier used to be granted on ``req.actor != "approver"`` — a free-text body
+    field — and the handler took no ``Request`` at all, so it could neither check
+    who was calling nor whether they own the session (GAP-019). The actor is now
+    the authenticated platform user, and the transcript line it records goes
+    through the masked writer with a server-fixed role (THR-01-003).
+
+    Args:
+        session_id: Session whose provisioning tier is being set.
+        req: The requested tier and the operator's reason.
+        request: Used for the permission checks and to resolve the actor.
+
+    Returns:
+        The session id, the tier now in force, and ``status: provisioned``.
+    """
+    _require_operate(request)
+    session = _get_accessible_session(session_id, request)
+    if req.tier == "write":
+        # `_require_approve_live` is inert while auth is off, so also insist on an
+        # identity: there is no one to attribute a write tier to without one.
+        if not getattr(request.state, "platform_user", None):
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        _require_approve_live(request)
     session["provision_tier"] = req.tier
-    session["messages"].append({"role": req.actor, "content": f"provision:{req.tier}"})
+    actor, role = _audit_actor(request)
+    # The actor goes to the audit record, not into the transcript: even a
+    # server-derived username is attacker-influenced text once it reaches the
+    # model's context (THR-01-003). `req.tier` is a Literal, so this line is fixed.
+    _add_message(session_id, "system", f"provision:{req.tier}")
+    _audit.record(
+        "session.provision",
+        profile_id=session.get("profile_id"),
+        actor=actor,
+        session_id=session_id,
+        metadata={"tier": req.tier, "role": role, "reason": req.reason},
+    )
     return {"session_id": session_id, "tier": req.tier, "status": "provisioned"}
 
 
 @router.post("/v1/sessions/{session_id}/remediate")
-async def remediate_session(session_id: str, req: RemediateRequest) -> dict[str, Any]:
-    """Record a remediation attempt, escalating once the retry budget runs out."""
-    session = _sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+async def remediate_session(
+    session_id: str, req: RemediateRequest, request: Request,
+) -> dict[str, Any]:
+    """Record a remediation attempt, escalating once the retry budget runs out.
+
+    The attempt counter lives on the session. It arrived in the request body, so a
+    client that kept sending ``retry_count: 0`` never reached the ceiling and could
+    retry for ever (THR-10-003).
+
+    Args:
+        session_id: Session being remediated.
+        req: Names the repository to retry.
+        request: Used for the operate-permission and session-ownership checks.
+
+    Returns:
+        The session id, the resulting status, and the server-held attempt count.
+    """
+    _require_operate(request)
+    session = _get_accessible_session(session_id, request)
     max_retries = int(os.environ.get("ADO2GH_MAX_RETRIES", "3"))
-    if req.retry_count >= max_retries:
+    attempts = int(session.get("remediation_attempts", 0) or 0)
+    if attempts >= max_retries:
         session["status"] = "escalated"
-        return {"session_id": session_id, "status": "escalated", "retry_count": req.retry_count}
+        return {"session_id": session_id, "status": "escalated", "retry_count": attempts}
+    attempts += 1
+    session["remediation_attempts"] = attempts
+    if req.repo_key:
+        session["remediation_repo_key"] = req.repo_key
     session["status"] = "remediating"
-    return {"session_id": session_id, "status": "remediating", "retry_count": req.retry_count + 1}
+    return {"session_id": session_id, "status": "remediating", "retry_count": attempts}
