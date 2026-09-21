@@ -6,8 +6,9 @@ These tests pin the response shape, the administrator gate and the governance
 refusals (last active profile, default replacement, unknown identifier).
 
 No network: the two routes that reach Azure DevOps or GitHub to re-check stored
-credentials have their validators replaced. Every credential literal is
-obviously fake (CA-003).
+credentials have their validators replaced. Every credential literal used here is
+obviously fake and never a real secret, satisfying the project rule that no genuine
+credential value may appear in test code or fixtures (register cross-reference: CA-003).
 
 The profile store behind the routes is a module-level singleton bound to one
 data directory for the whole session, so each test names its own profile and
@@ -22,7 +23,6 @@ from fastapi.testclient import TestClient
 
 from ado2gh.auth.service import AuthService
 from ado2gh.state.factory import create_state_db
-from services.accelerator_api.routes import _shared
 
 FAKE_ADO_PAT = "fake-ado-pat-value-not-real-0001"
 PROFILE_RESPONSE_KEYS = {
@@ -83,7 +83,17 @@ def _create(client: TestClient, name: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def _cleanup_profiles():
-    """Drop every profile this test created, so the shared store does not leak."""
+    """Drop every profile this test created, so the shared store does not leak.
+
+    Imports the route module's store singletons here rather than at the top of
+    this file: those singletons resolve their data directory from an
+    environment variable that the test session sets once fixtures start
+    running, so importing the module that builds them before then would bind
+    at least one of them to whatever directory happened to be current when
+    this file was collected, not the one the test session actually uses.
+    """
+    from services.accelerator_api.routes import _shared
+
     before = {p.id for p in _shared._settings.load().migration_profiles}
     yield
     for profile in list(_shared._settings.load().migration_profiles):
@@ -237,11 +247,22 @@ def test_deleting_the_default_naming_an_unusable_replacement_is_refused(admin):
 
 def test_deactivating_a_profile_keeps_the_record(admin):
     profile = _create(admin, "contract-deactivate")
-    _create(admin, "contract-deactivate-bystander")
+    bystander = _create(admin, "contract-deactivate-bystander")
+    admin.post(f"/v1/settings/profiles/{bystander['id']}/set-default")
     resp = admin.post(f"/v1/settings/profiles/{profile['id']}/deactivate", json={})
     assert resp.status_code == 200, resp.text
-    assert resp.json()["status"] != "active"
+    assert resp.json()["status"] == "inactive"
     assert admin.get(f"/v1/settings/profiles/{profile['id']}").status_code == 200
+
+
+def test_deactivating_the_default_without_a_replacement_is_refused(admin):
+    default = _create(admin, "contract-deactivate-default")
+    _create(admin, "contract-deactivate-default-other")
+    admin.post(f"/v1/settings/profiles/{default['id']}/set-default")
+    resp = admin.post(f"/v1/settings/profiles/{default['id']}/deactivate", json={})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "default_replacement_required"
+    assert admin.get(f"/v1/settings/profiles/{default['id']}").status_code == 200
 
 
 # --------------------------------------------------------------------------
@@ -250,6 +271,8 @@ def test_deactivating_a_profile_keeps_the_record(admin):
 
 
 def test_approve_refuses_when_the_stored_ado_credential_no_longer_validates(admin):
+    from services.accelerator_api.routes import _shared
+
     profile = _create(admin, "contract-approve-expired")
     with patch.object(
         _shared, "validate_ado_pat",
@@ -262,6 +285,8 @@ def test_approve_refuses_when_the_stored_ado_credential_no_longer_validates(admi
 
 
 def test_approve_on_an_unknown_profile_is_404(admin):
+    from services.accelerator_api.routes import _shared
+
     with patch.object(_shared, "validate_ado_pat", return_value={"valid": True, "message": ""}):
         resp = admin.post("/v1/settings/profiles/no-such-profile/approve")
     assert resp.status_code == 404
@@ -269,6 +294,8 @@ def test_approve_on_an_unknown_profile_is_404(admin):
 
 def test_approving_a_profile_not_awaiting_approval_is_refused(admin):
     """A profile created through the admin route is already active, not pending."""
+    from services.accelerator_api.routes import _shared
+
     profile = _create(admin, "contract-approve-active")
     with patch.object(_shared, "validate_ado_pat", return_value={"valid": True, "message": ""}):
         resp = admin.post(f"/v1/settings/profiles/{profile['id']}/approve")
