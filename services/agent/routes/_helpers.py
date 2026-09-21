@@ -5,15 +5,22 @@ that are needed by route handlers but not specific to the LangGraph agent logic.
 """
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 from fastapi import HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from ado2gh.agents.migration_agent.constants import (
+    MAX_CHAT_MESSAGE_CHARS,
+    MAX_FORM_SUBMISSION_CHARS,
+    MAX_IN_MEMORY_SESSIONS,
+    SESSION_IDLE_TTL_SECONDS,
+)
 from ado2gh.agents.migration_agent.policies import (
     execution_policy_summary,
     is_admin_request,
@@ -22,7 +29,7 @@ from ado2gh.agents.migration_agent.policies import (
     session_requires_live_approval,
 )
 from ado2gh.agents.migration_agent.session.state import normalize_session_status
-from ado2gh.agents.migration_agent.utils import IdeAuditBridge
+from ado2gh.agents.migration_agent.utils import IdeAuditBridge, _append_event, mask_secrets
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
 from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
 from services.agent.profiles import LocalAgentProfile, get_profile
@@ -49,6 +56,28 @@ _runs: dict[str, dict] = {}
 _sessions: dict[str, dict] = {}
 _audit = IdeAuditBridge()
 
+SSE_EVENT_LIMIT_REPLY = (
+    "Stream ended: this run produced more events than one response may carry. "
+    "Send another message to continue."
+)
+
+
+def client_error_detail(exc: BaseException) -> str:
+    """Render an exception for an HTTP client: type name plus a masked message.
+
+    Route handlers used to interpolate ``str(exc)`` straight into a response body and server-sent event error
+    frames, handing the caller whatever the failing library put in the message — internal hosts, paths, and any
+    secret value embedded in it. Nothing sent back to a caller may contain a secret value, and an error must not
+    describe internal topology to someone who was never authenticated (register items THR-02-004, CA-003).
+
+    Args:
+        exc: The exception being reported to the caller.
+
+    Returns:
+        ``"<ClassName>: <masked message>"``, safe to put on the wire.
+    """
+    return f"{type(exc).__name__}: {mask_secrets(str(exc))}"
+
 
 class RunStatus(str, Enum):
     """Lifecycle states reported for an agent run."""
@@ -64,29 +93,59 @@ class RunStatus(str, Enum):
 class PlanPhaseBody(BaseModel):
     """Request body selecting which migration phase to plan."""
 
-    phase: Optional[str] = None
+    phase: Optional[str] = Field(default=None, max_length=200)
 
 
 class SessionRequest(BaseModel):
-    """Request body for creating an agent session."""
+    """Request body for creating an agent session.
 
-    profile_id: str = "lightweight"
-    prompt: str = ""
-    dry_run: bool = True
-    model_id: Optional[str] = None
+    ``dry_run`` is a three-state field: ``True``/``False`` decide, and an omitted field defers to the deployment
+    profile's ``dry_run_default``. A preview run is the default and a real run needs an explicit opt-in, so that
+    profile default must stay reachable (register item GAP-079). The field used to be declared ``bool = True``,
+    which made the fallback unreachable.
+    """
+
+    profile_id: str = Field(default="lightweight", max_length=200)
+    prompt: str = Field(default="", max_length=MAX_CHAT_MESSAGE_CHARS)
+    dry_run: Optional[bool] = None
+    model_id: Optional[str] = Field(default=None, max_length=200)
     execute_pev: bool = False
 
 
 class SessionMessageRequest(BaseModel):
     """Request body carrying one operator message for a session turn."""
 
-    message: str = ""
+    message: str = Field(default="", max_length=MAX_CHAT_MESSAGE_CHARS)
 
 
 class FormSubmitRequest(BaseModel):
-    """Request body with the operator's answers to a pending HITL form."""
+    """Request body with the operator's answers to a form the agent asked them to fill in."""
 
     values: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("values")
+    @classmethod
+    def _within_size_limit(cls, values: dict[str, Any]) -> dict[str, Any]:
+        """Reject a submission larger than the documented boundary limit.
+
+        Form answers are free-form and land in the model's context, so a body with no size limit lets a caller
+        make the server consume unbounded memory and processing time. Raising here makes FastAPI answer 422.
+        Every request body that reaches the model must carry a maximum size (register item THR-10-002).
+
+        Args:
+            values: The submitted answers, keyed by form field name.
+
+        Returns:
+            The same answers, unchanged, when they fit the limit.
+
+        Raises:
+            ValueError: When the serialised body exceeds ``MAX_FORM_SUBMISSION_CHARS``.
+        """
+        if len(json.dumps(values, default=str)) > MAX_FORM_SUBMISSION_CHARS:
+            raise ValueError(
+                f"form submission exceeds {MAX_FORM_SUBMISSION_CHARS} characters",
+            )
+        return values
 
 
 class ExecutionModeRequest(BaseModel):
@@ -96,25 +155,32 @@ class ExecutionModeRequest(BaseModel):
 
 
 class ProvisionRequest(BaseModel):
-    """Request body for provisioning a session's access tier."""
+    """Request body for provisioning a session's access tier.
 
-    tier: str = "read"
-    actor: str = "operator"
-    reason: str = ""
+    Carries no ``actor``: the identity that decides whether the ``write`` tier may be granted is the
+    authenticated platform user resolved from the request, never a free-text field the caller writes into the
+    body — a body field would let any caller claim to be an approver (register item GAP-019).
+    """
+
+    tier: Literal["read", "write"] = "read"
+    reason: str = Field(default="", max_length=MAX_CHAT_MESSAGE_CHARS)
 
 
 class RemediateRequest(BaseModel):
-    """Request body asking the agent to retry one repository."""
+    """Request body asking the agent to retry one repository.
 
-    repo_key: str = ""
-    retry_count: int = 0
+    Carries no ``retry_count``: the escalation counter is held server-side, on the session itself, so a client
+    cannot reset its own count and retry past the ceiling forever (register item THR-10-003).
+    """
+
+    repo_key: str = Field(default="", max_length=400)
 
 
 class ApprovalRequest(BaseModel):
     """Request body recording an operator's approval decision."""
 
     approved: bool
-    reason: str = ""
+    reason: str = Field(default="", max_length=MAX_CHAT_MESSAGE_CHARS)
 
 
 _PLANNER_SYSTEM = (
@@ -235,7 +301,13 @@ def _require_operate(request: Request) -> None:
 
 
 def _require_approve_live(request: Request) -> None:
-    """Require approve_live permission."""
+    """Require approve_live permission.
+
+    An identity gate only, and inert while ``ADO2GH_AUTH_ENABLED`` is unset. It is not the decision to allow a
+    real, non-preview run: that decision belongs to ``policies.enforce_live_mode_request`` alone, and every
+    entry point that writes ``dry_run=False`` must route through it rather than deciding on its own (register
+    item THR-06-004).
+    """
     if auth_enabled():
         from ado2gh.auth.service import permissions_for
         user = getattr(request.state, "platform_user", None) if request else None
@@ -259,6 +331,126 @@ def _resolve_model_id(requested: str | None) -> tuple[str | None, bool, bool]:
     return resolved_id, degraded, unconfigured
 
 
+def _session_activity_epoch(session: dict[str, Any]) -> float:
+    """Read a session's last-activity timestamp as an epoch, newest-wins on failure.
+
+    Args:
+        session: The in-memory session dict.
+
+    Returns:
+        The parsed ``updated_at``/``created_at`` epoch, or *now* when neither parses —
+        an entry with no usable timestamp is treated as fresh so it is never evicted
+        by age, only ever by the size cap.
+    """
+    raw = session.get("updated_at") or session.get("created_at")
+    try:
+        return datetime.fromisoformat(str(raw)).timestamp()
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc).timestamp()
+
+
+def _forget_session(session_id: str) -> None:
+    """Drop one session and its run record from the in-memory caches."""
+    session = _sessions.pop(session_id, None)
+    run_id = (session or {}).get("run_id")
+    if run_id:
+        _runs.pop(str(run_id), None)
+
+
+# State that only exists in the in-memory dict: hydration rebuilds a session through
+# `new_isolated_agent_session`, which clears the LangGraph thread, so an interrupted
+# form, a live-approval handshake, a pending clarification and the remediation counter
+# do not survive a round trip. A session holding any of them is left alone by the TTL
+# sweep — the size cap below is still absolute. A *busy* run is already excluded above
+# by `is_session_busy`; `run_id` alone is deliberately not in this tuple, or a session
+# that ran PEV once and went idle would carry it forever and never age out.
+_NON_RECONSTRUCTIBLE_KEYS = (
+    "pending_form", "live_approval_id", "live_approval_status",
+    "remediation_attempts", "pending_clarification",
+)
+
+
+def _is_reconstructible(session: dict[str, Any]) -> bool:
+    """Report whether dropping a session from memory loses nothing but a reload.
+
+    Args:
+        session: The in-memory session dict.
+
+    Returns:
+        ``True`` when the session is idle and carries no in-memory-only state, so
+        :func:`_try_hydrate_session` can rebuild an equivalent one from the store.
+    """
+    from ado2gh.agents.migration_agent.session.state import is_session_busy
+
+    if is_session_busy(session.get("status")):
+        return False
+    return not any(session.get(key) for key in _NON_RECONSTRUCTIBLE_KEYS)
+
+
+def _evict_stale_state() -> None:
+    """Bound the in-memory session and run caches by age, then by size.
+
+    Both dicts are process-global and were only ever emptied by an explicit ``DELETE /v1/sessions/{id}``, so any
+    caller able to create sessions could grow them without limit. Every in-memory record the server keeps on a
+    caller's behalf needs both a time limit and a count limit, or a caller can exhaust server memory simply by
+    making enough requests (register item THR-10-001).
+
+    The age sweep only drops sessions :func:`_is_reconstructible` vouches for — ``persist_session_snapshot``
+    writes those to ``MigrationSessionStore`` and :func:`_try_hydrate_session` reads them back, so the eviction
+    costs a reload and nothing else.
+
+    The size cap is deliberately unconditional: an unbounded map is worse than a dropped run, and refusing to
+    evict "interesting" sessions would let a caller defeat the cap by making every session interesting. Oldest
+    first.
+    """
+    now = datetime.now(timezone.utc).timestamp()
+    for session_id, session in list(_sessions.items()):
+        if (
+            now - _session_activity_epoch(session) > SESSION_IDLE_TTL_SECONDS
+            and _is_reconstructible(session)
+        ):
+            _forget_session(session_id)
+    overflow = len(_sessions) - MAX_IN_MEMORY_SESSIONS
+    if overflow > 0:
+        by_age = sorted(_sessions.items(), key=lambda kv: _session_activity_epoch(kv[1]))
+        for session_id, _ in by_age[:overflow]:
+            _forget_session(session_id)
+    run_overflow = len(_runs) - MAX_IN_MEMORY_SESSIONS
+    if run_overflow > 0:
+        for run_id in list(_runs)[:run_overflow]:
+            _runs.pop(run_id, None)
+
+
+def _remember_session(session_id: str, session: dict[str, Any]) -> dict[str, Any]:
+    """Put a session into the in-memory cache, evicting stale entries around it.
+
+    Args:
+        session_id: The session's id.
+        session: The session dict to cache.
+
+    Returns:
+        The same session dict, for use at the call site.
+    """
+    _sessions[session_id] = session
+    _evict_stale_state()
+    return session
+
+
+def _remember_run(run_id: str, record: dict[str, Any]) -> dict[str, Any]:
+    """Put a run record into the in-memory cache, under the same bound as sessions.
+
+    Args:
+        run_id: The run's id.
+        record: The run record to cache.
+
+    Returns:
+        The same record, for use at the call site.
+    """
+    _runs[run_id] = record
+    _evict_stale_state()
+    return record
+
+
 def _get_accessible_session(
     session_id: str,
     request: Request | None = None,
@@ -268,7 +460,7 @@ def _get_accessible_session(
         hydrated = _try_hydrate_session(session_id)
         if hydrated is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        _sessions[session_id] = hydrated
+        _remember_session(session_id, hydrated)
 
     if auth_enabled() and request:
         viewer = request_username(request)
@@ -362,8 +554,8 @@ def _prune_stale_thinking_events(session: dict[str, Any]) -> None:
 def _session_payload(session_id: str) -> dict[str, Any]:
     """Build session response payload."""
     session = _sessions.get(session_id, {})
-    # Only include message events in the chat log — thinking/status events
-    # are streamed live via SSE but should not appear as chat messages.
+    # Only include message events in the chat log — thinking/status events are streamed live via a server-sent
+    # event stream but should not appear as chat messages.
     # PEV agents (planner/executor/validator) only emit thinking events.
     all_messages = session.get("messages", [])
     chat_messages = [m for m in all_messages if m.get("kind") == "message"]
@@ -402,19 +594,27 @@ def _add_message(
     kind: str = "message",
     subagent: str | None = None,
 ) -> None:
-    """Add a message to the session."""
-    if session_id not in _sessions:
+    """Append a message to a session through the one writer that masks secrets.
+
+    Secret values must never appear in anything the server stores or sends out — messages, logs, audit rows,
+    stored state, or the session transcript itself (register item CA-003). This function used to build and
+    append the message entry itself, which made it a second, unmasked writer alongside ``utils._append_event``
+    — the function that documents itself as the sole place where that masking happens. Every writer of the
+    session transcript must go through that one place rather than building its own entry and appending it
+    directly (register items THR-02-002, GAP-011 residual). This function now delegates to it, so every route
+    that appends a message gets the same masking, redaction and ``updated_at`` bookkeeping.
+
+    Args:
+        session_id: Session to append to; an unknown id is a no-op.
+        role: Who is speaking — ``assistant``, ``system`` or ``user``.
+        content: The message body, masked by the writer before it is stored.
+        kind: The event kind the console dispatches on.
+        subagent: Which agent produced the entry, when it matters to the console.
+    """
+    session = _sessions.get(session_id)
+    if session is None:
         return
-    message = {
-        "role": role,
-        "content": content,
-        "kind": kind,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    if subagent:
-        message["subagent"] = subagent
-    _sessions[session_id].setdefault("messages", []).append(message)
-    _sessions[session_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    _append_event(session, role=role, content=content, kind=kind, subagent=subagent)
 
 
 async def _assert_deployment_profile_active(profile_id: str) -> None:

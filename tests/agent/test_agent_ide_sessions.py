@@ -33,12 +33,19 @@ def test_request_live_sets_live_approval_pending():
     assert body.get("live_approval_status") == "pending"
 
 
-def test_approve_session():
+def test_approve_session_requires_an_authenticated_approver():
+    """Approving is a live transition, so it needs a real identity (register item THR-06-004).
+
+    This asserted 200 for a caller with no credentials at all, which is the defect:
+    ``/approve`` wrote ``dry_run=False`` behind ``_require_approve_live``, and that
+    helper is inert while ``ADO2GH_AUTH_ENABLED`` is unset. The authorised
+    counterpart is in ``tests/auth/test_thr_06_004_approve_route_live_gate.py``.
+    """
     created = client.post("/v1/sessions", json={"profile_id": "lightweight", "dry_run": True})
     sid = created.json()["session_id"]
     client.post(f"/v1/sessions/{sid}/request-live")
     r = client.post(f"/v1/sessions/{sid}/approve", json={"approved": True, "reason": "test"})
-    assert r.status_code == 200
+    assert r.status_code in (401, 403)
 
 
 def test_session_message():

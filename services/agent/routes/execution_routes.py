@@ -31,6 +31,7 @@ from services.agent.routes._helpers import (
     _audit,
     _enqueue_session_live_approval,
     _get_accessible_session,
+    _remember_run,
     _require_approve_live,
     _require_operate,
     _runs,
@@ -128,8 +129,7 @@ async def approve_session(
             "session.approve.denied",
             profile_id=session["profile_id"],
             session_id=session_id,
-            outcome="denied",
-            metadata={"reason": req.reason},
+            metadata={"reason": req.reason, "outcome": "denied"},
         )
         return {"session_id": session_id, "status": session["status"]}
 
@@ -157,6 +157,16 @@ async def approve_session(
         )
         return {"session_id": session_id, "status": session.get("status", "executing")}
 
+    # No approval row to forward to, so this branch *is* the live transition.
+    # `_require_approve_live` above is a no-op whenever ADO2GH_AUTH_ENABLED is
+    # unset — the shipped default — which used to leave the dry-run flag written
+    # with nothing guarding it. Every entry point that turns a session from a
+    # preview run into a real one must make that decision through the one
+    # shared policy check, never by writing the flag directly (register items
+    # THR-06-004, GAP-002 residual). Route the decision through that check
+    # before the flag is written.
+    attach_actor_to_session(session, getattr(request.state, "platform_user", None))
+    enforce_live_mode_request(request, ExecutionMode.LIVE, session=session)
     session["dry_run"] = False
     session["approval"] = {"approved": True, "reason": req.reason}
     _audit.record(
@@ -170,11 +180,13 @@ async def approve_session(
 
 @router.post("/v1/sessions/{session_id}/confirm-live")
 def confirm_live_execution(session_id: str, request: Request) -> dict[str, Any]:
-    """Confirm live execution of the session migration plan (CA-001).
+    """Confirm real, live execution of the session's migration plan.
 
-    Confirming is the *last* gate — nothing downstream re-checks the plan's dry-run
-    flag — so the caller must already hold live authority here, unlike
-    ``execution-mode`` which hands an unauthorised caller to the approval queue.
+    A preview run is the default and a real run needs this explicit
+    confirmation step (register item CA-001). Confirming is the *last* gate —
+    nothing downstream re-checks the plan's dry-run flag — so the caller must
+    already hold live authority here, unlike ``execution-mode`` which hands an
+    unauthorised caller to the approval queue.
     """
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
@@ -279,14 +291,17 @@ async def resume_live_internal(session_id: str) -> dict[str, str]:
     run_id = session.get("run_id")
     if not run_id or run_id not in _runs:
         run_id = str(uuid.uuid4())
-        _runs[run_id] = {
-            "run_id": run_id,
-            "session_id": session_id,
-            "status": RunStatus.PLANNING,
-            "request": {},
-            "steps": [],
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        }
+        _remember_run(
+            run_id,
+            {
+                "run_id": run_id,
+                "session_id": session_id,
+                "status": RunStatus.PLANNING,
+                "request": {},
+                "steps": [],
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
         session["run_id"] = run_id
     _audit.record(
         "session.resume_live",
