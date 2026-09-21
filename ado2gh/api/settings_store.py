@@ -56,11 +56,35 @@ class SettingsStore(ProfileMixin, ScanMixin):
         """Bind the store to a settings file.
 
         Args:
-            path: Location of the settings JSON document. Defaults to
-                ``ui_settings.json`` under the configured data directory.
+            path: Location of the settings JSON document. When omitted the
+                location — ``ui_settings.json`` under the configured data
+                directory — is resolved on every access, not here: the route
+                layer keeps one store for the process lifetime
+                (``services/accelerator_api/routes/_shared.py``), so resolving
+                it in the constructor froze it at import time and every later
+                change to ``ADO2GH_DATA_DIR`` was ignored.
 
         """
-        self.path = path or _settings_path()
+        self._path = path
+
+    @property
+    def path(self) -> Path:
+        """Settings document this store reads and writes, resolved on every access.
+
+        Returns:
+            Path: The explicit path this store was constructed with, or the
+            current location under the configured data directory.
+        """
+        return self._path or _settings_path()
+
+    @path.setter
+    def path(self, value: Path) -> None:
+        """Pin the store to one settings document, whatever the environment says.
+
+        Args:
+            value: File to read and write from now on.
+        """
+        self._path = value
 
     def load(self) -> UISettings:
         """Read the settings document, upgrading older layouts on the way.

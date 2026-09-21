@@ -195,10 +195,24 @@ class LLMModelStore:
         """Bind the store to a configuration file.
 
         Args:
-            path: File to read and write. Defaults to the platform data
-                directory location when omitted.
+            path: File to read and write. When omitted the platform data
+                directory location is resolved on every access, not here: the
+                route layer keeps one store for the process lifetime
+                (``services/accelerator_api/routes/_shared.py``), so resolving
+                it in the constructor froze it at import time and every later
+                change to ``ADO2GH_DATA_DIR`` was ignored.
         """
-        self.path = path or _path()
+        self._path = path
+
+    @property
+    def path(self) -> Path:
+        """Configuration file this store reads and writes, resolved on every access.
+
+        Returns:
+            Path: The explicit path this store was constructed with, or the
+            current location under the platform data directory.
+        """
+        return self._path or _path()
 
     def load(self) -> list[LLMModelConfig]:
         """Read every configured model from disk.
