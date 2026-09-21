@@ -54,6 +54,7 @@ def test_wave_runner_accepts_engine_and_db(wave_config, tmp_path):
 def test_batch_executor_execute_wave(wave_config, tmp_path):
     db = StateDB(str(tmp_path / "test.db"))
     engine = MagicMock(spec=MigrationEngine)
+    engine.mode = ExecutionMode.DRY_RUN
     engine.migrate_repo.return_value = {"status": "completed", "scopes": {}, "errors": []}
     executor = BatchExecutor(engine, db, ProgressTracker(1, 1))
 

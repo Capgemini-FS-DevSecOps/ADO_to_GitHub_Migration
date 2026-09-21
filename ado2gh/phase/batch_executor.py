@@ -53,6 +53,34 @@ class BatchExecutor:
         self.db = db
         self.tracker = tracker
 
+    def _require_matching_engine_mode(self, mode: ExecutionMode) -> None:
+        """Refuse to run when the executor and its engine disagree about live.
+
+        The executor's ``mode`` decides what is reported and checkpointed; the
+        engine's own ``mode`` decides what is actually migrated. They are set
+        independently, so a ``LIVE`` executor driving a ``DRY_RUN`` engine would
+        checkpoint and report a successful live run that migrated nothing, and
+        the inverse would push to GitHub while reporting a dry run. Both break
+        the rule that a preview run is the default and a real run needs an
+        explicit opt-in (register cross-reference: CA-001), and neither is
+        visible in the summary, so the mismatch is refused here rather than
+        discovered afterwards.
+
+        Args:
+            mode: Execution mode the caller asked this run to use.
+
+        Raises:
+            ValueError: The engine's mode is absent or differs from ``mode``.
+        """
+        engine_mode = getattr(self.engine, "mode", None)
+        if engine_mode is mode:
+            return
+        raise ValueError(
+            f"execution mode mismatch: the batch executor was asked for "
+            f"{mode.value!r} but its MigrationEngine is {getattr(engine_mode, 'value', engine_mode)!r}. "
+            f"Build the engine and run it with the same ExecutionMode."
+        )
+
     def execute_phase(
         self,
         phase: PhaseType,
@@ -70,7 +98,13 @@ class BatchExecutor:
         Returns:
             Summary with ``phase``, ``completed``, ``failed``, ``batches_run`` and
             ``batches_skipped`` counts.
+
+        Raises:
+            ValueError: The engine's mode differs from ``mode``, which would let a
+                preview run migrate for real or a real run get reported as a
+                preview (register cross-reference: CA-001).
         """
+        self._require_matching_engine_mode(mode)
         phase_waves = [w for w in waves if w.phase == phase.value]
         if not phase_waves:
             console.print(f"[yellow]No waves for phase {phase.value}[/yellow]")
@@ -170,7 +204,13 @@ class BatchExecutor:
             Wave summary: ``wave_id``, ``name``, ``status`` (``completed``,
             ``partial`` or ``failed``), ``dry_run``, per-repo ``repos`` results
             and the ``completed`` / ``failed`` / ``partial`` / ``total`` counts.
+
+        Raises:
+            ValueError: The engine's mode differs from ``mode``, which would let a
+                preview run migrate for real or a real run get reported as a
+                preview (register cross-reference: CA-001).
         """
+        self._require_matching_engine_mode(mode)
         dry_run = mode is ExecutionMode.DRY_RUN
         log.info(
             "=== Starting wave %d: %s (%d repos)%s ===",

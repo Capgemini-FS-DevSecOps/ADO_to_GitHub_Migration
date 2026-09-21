@@ -1,4 +1,4 @@
-"""GAP-026 (GAP-PHASE-03) — ``BatchExecutor.execute_phase`` has no test coverage.
+"""``BatchExecutor.execute_phase`` had no test coverage (register cross-reference: GAP-026, GAP-PHASE-03).
 
 Reproduction, in plain English:
 
@@ -124,15 +124,26 @@ def executor_env(tmp_path):
         return {"status": "completed", "scopes": {}, "errors": []}
 
     engine = MagicMock(spec=MigrationEngine)
+    engine.mode = ExecutionMode.DRY_RUN
     engine.migrate_repo.side_effect = _migrate
     executor = BatchExecutor(engine, db, ProgressTracker(REPO_COUNT, 1))
     return SimpleNamespace(db=db, engine=engine, calls=calls, executor=executor)
 
 
+def _execute_phase(env, phase, waves, mode=ExecutionMode.DRY_RUN):
+    """Run a phase with the engine and the executor agreeing about the mode.
+
+    `BatchExecutor` refuses a run whose engine disagrees with it, so a test that
+    asks for one mode has to build the engine for the same one.
+    """
+    env.engine.mode = mode
+    return env.executor.execute_phase(phase, waves, mode=mode)
+
+
 def test_phase_is_split_into_batches_of_the_configured_size(executor_env):
     """A wave larger than the batch size runs as consecutive batches of that size."""
     repos = _repos(REPO_COUNT)
-    summary = executor_env.executor.execute_phase(
+    summary = _execute_phase(executor_env,
         PhaseType.POC, [_wave(1, PhaseType.POC, repos)])
 
     assert summary["batches_run"] == EXPECTED_BATCHES
@@ -156,7 +167,7 @@ def test_only_waves_of_the_requested_phase_are_batched(executor_env):
         _wave(3, PhaseType.POC, poc[7:]),
     ]
 
-    summary = executor_env.executor.execute_phase(PhaseType.POC, waves)
+    summary = _execute_phase(executor_env, PhaseType.POC, waves)
 
     assert summary["batches_run"] == 2
     assert summary["completed"] == len(poc)
@@ -167,7 +178,7 @@ def test_only_waves_of_the_requested_phase_are_batched(executor_env):
 
 def test_phase_with_no_waves_runs_nothing(executor_env):
     """A phase nothing is assigned to returns a zeroed summary and touches no repo."""
-    summary = executor_env.executor.execute_phase(
+    summary = _execute_phase(executor_env,
         PhaseType.WAVE3, [_wave(1, PhaseType.POC, _repos(3))])
 
     assert summary == {"phase": "wave3", "completed": 0, "failed": 0,
@@ -178,7 +189,7 @@ def test_phase_with_no_waves_runs_nothing(executor_env):
 def test_a_checkpoint_is_written_for_every_batch(executor_env):
     """Each batch leaves one completed checkpoint row, and the resume cursor moves with it."""
     repos = _repos(REPO_COUNT)
-    executor_env.executor.execute_phase(
+    _execute_phase(executor_env,
         PhaseType.POC, [_wave(1, PhaseType.POC, repos)], mode=ExecutionMode.LIVE)
 
     rows = _checkpoints(executor_env.db, PhaseType.POC)
@@ -200,7 +211,7 @@ def test_resume_skips_the_batches_already_checkpointed(executor_env):
         started_at="2026-09-09T00:00:00+00:00", completed_at="2026-09-09T00:01:00+00:00",
     ))
 
-    summary = executor_env.executor.execute_phase(
+    summary = _execute_phase(executor_env,
         PhaseType.POC, [_wave(1, PhaseType.POC, repos)], mode=ExecutionMode.LIVE)
 
     assert summary["batches_skipped"] == 1
@@ -214,7 +225,7 @@ def test_resume_skips_the_batches_already_checkpointed(executor_env):
 
     # Re-running a phase whose every batch is checkpointed does no work at all.
     executor_env.calls.clear()
-    again = executor_env.executor.execute_phase(
+    again = _execute_phase(executor_env,
         PhaseType.POC, [_wave(1, PhaseType.POC, repos)], mode=ExecutionMode.LIVE)
     assert again["batches_run"] == 0
     assert again["batches_skipped"] == EXPECTED_BATCHES
@@ -226,7 +237,7 @@ def test_dry_run_persists_nothing_and_leaves_the_live_run_all_its_work(executor_
     repos = _repos(REPO_COUNT)
     waves = [_wave(1, PhaseType.POC, repos)]
 
-    preview = executor_env.executor.execute_phase(
+    preview = _execute_phase(executor_env,
         PhaseType.POC, waves, mode=ExecutionMode.DRY_RUN)
 
     assert preview["batches_run"] == EXPECTED_BATCHES
@@ -236,7 +247,7 @@ def test_dry_run_persists_nothing_and_leaves_the_live_run_all_its_work(executor_
     assert executor_env.db.get_last_completed_batch(PhaseType.POC) == -1
 
     executor_env.calls.clear()
-    live = executor_env.executor.execute_phase(PhaseType.POC, waves, mode=ExecutionMode.LIVE)
+    live = _execute_phase(executor_env, PhaseType.POC, waves, mode=ExecutionMode.LIVE)
 
     assert live["batches_skipped"] == 0
     assert live["batches_run"] == EXPECTED_BATCHES
@@ -284,6 +295,15 @@ def gated_phase(tmp_path, monkeypatch):
     engine_cls.return_value.migrate_repo.return_value = {
         "status": "completed", "scopes": {}, "errors": [],
     }
+
+    def _build_engine(*_args, mode=ExecutionMode.DRY_RUN, **_kwargs):
+        # The real engine carries the mode it was built with, and BatchExecutor
+        # now refuses a run whose engine disagrees with it, so the fake has to
+        # carry it too.
+        engine_cls.return_value.mode = mode
+        return engine_cls.return_value
+
+    engine_cls.side_effect = _build_engine
     monkeypatch.setattr(accelerator_module, "_build_ado_client", lambda *a, **k: MagicMock())
     monkeypatch.setattr(accelerator_module, "_build_gh_client", lambda *a, **k: MagicMock())
     monkeypatch.setattr(accelerator_module, "MigrationEngine", engine_cls)
