@@ -1,9 +1,10 @@
-"""Chat message routes for the agent service, plain and SSE-streamed."""
+"""Chat message routes for the agent service, plain and server-sent-event-streamed."""
 from __future__ import annotations
 
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,6 +21,7 @@ from ado2gh.agents.migration_agent.session.state import (
     is_session_busy,
 )
 from services.agent.routes._helpers import (
+    SSE_EVENT_LIMIT_REPLY,
     SessionMessageRequest,
     _accel_get,
     _accel_post,
@@ -31,6 +33,7 @@ from services.agent.routes._helpers import (
     _session_accel_token,
     _session_payload,
     _session_token_from_request,
+    client_error_detail,
 )
 
 router = APIRouter()
@@ -102,7 +105,7 @@ async def session_message(
 async def session_message_stream(
     session_id: str, req: SessionMessageRequest, request: Request,
 ) -> StreamingResponse:
-    """Stream agent events (thinking, status, tool updates) via SSE using LangGraph."""
+    """Stream agent events (thinking, status, tool updates) as a server-sent event stream, backed by LangGraph."""
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
     _reject_if_session_busy(session)
@@ -112,7 +115,10 @@ async def session_message_stream(
             detail="pending_form — submit the form or cancel before sending a new message",
         )
 
-    from ado2gh.agents.migration_agent.constants import SSE_HEARTBEAT_INTERVAL_SECONDS
+    from ado2gh.agents.migration_agent.constants import (
+        SSE_HEARTBEAT_INTERVAL_SECONDS,
+        SSE_MAX_EVENTS_PER_STREAM,
+    )
 
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
     session_token = _session_token_from_request(request) or _session_accel_token(session_id)
@@ -133,35 +139,48 @@ async def session_message_stream(
 
     async def event_stream() -> AsyncIterator[str]:
         last_heartbeat = asyncio.get_event_loop().time()
+        events_sent = 0
         try:
-            async for event in stream_user_message(
-                session,
-                req.message,
-                deps={
-                    "accel_get": _accel_get,
-                    "accel_post": _accel_post,
-                    "build_plan": _build_migration_plan,
-                    "session_token": session_token,
-                },
-            ):
-                if event.get("__done__"):
-                    reply = event.get("reply", "")
-                    pending_form = event.get("pending_form")
-                    done_payload = {"kind": "__done__", "reply": reply}
-                    if pending_form:
-                        done_payload["pending_form"] = pending_form
-                    yield f"data: {json.dumps(done_payload, default=str)}\n\n"
-                else:
-                    yield f"data: {json.dumps(event, default=str)}\n\n"
-                # Heartbeat keepalive
-                now = asyncio.get_event_loop().time()
-                if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
-                    yield f"data: {json.dumps({'kind': 'heartbeat', 'content': ''}, default=str)}\n\n"
-                    last_heartbeat = now
+            # aclosing: hitting the event cap returns from inside the `async for`,
+            # and an abandoned async generator otherwise never runs its `finally`,
+            # so the graph run behind it would not be closed down (THR-10-001).
+            async with aclosing(
+                stream_user_message(
+                    session,
+                    req.message,
+                    deps={
+                        "accel_get": _accel_get,
+                        "accel_post": _accel_post,
+                        "build_plan": _build_migration_plan,
+                        "session_token": session_token,
+                    },
+                ),
+            ) as events:
+                async for event in events:
+                    events_sent += 1
+                    if events_sent > SSE_MAX_EVENTS_PER_STREAM:
+                        session["status"] = "idle"
+                        yield f"data: {json.dumps({'kind': '__done__', 'reply': SSE_EVENT_LIMIT_REPLY}, default=str)}\n\n"
+                        return
+                    if event.get("__done__"):
+                        reply = event.get("reply", "")
+                        pending_form = event.get("pending_form")
+                        done_payload = {"kind": "__done__", "reply": reply}
+                        if pending_form:
+                            done_payload["pending_form"] = pending_form
+                        yield f"data: {json.dumps(done_payload, default=str)}\n\n"
+                    else:
+                        yield f"data: {json.dumps(event, default=str)}\n\n"
+                    # Heartbeat keepalive
+                    now = asyncio.get_event_loop().time()
+                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                        yield f"data: {json.dumps({'kind': 'heartbeat', 'content': ''}, default=str)}\n\n"
+                        last_heartbeat = now
         except Exception as exc:
             session["status"] = "idle"
-            yield f"data: {json.dumps({'kind': 'thinking', 'content': f'Error: {exc}', 'role': 'system', 'subagent': 'orchestrator'}, default=str)}\n\n"
-            yield f"data: {json.dumps({'kind': '__done__', 'reply': str(exc)}, default=str)}\n\n"
+            detail = client_error_detail(exc)
+            yield f"data: {json.dumps({'kind': 'thinking', 'content': f'Error: {detail}', 'role': 'system', 'subagent': 'orchestrator'}, default=str)}\n\n"
+            yield f"data: {json.dumps({'kind': '__done__', 'reply': detail}, default=str)}\n\n"
             return
 
     return StreamingResponse(

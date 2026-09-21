@@ -1,19 +1,23 @@
 """Health and metrics route handlers for the agent service."""
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 
+from ado2gh.agents.migration_agent.constants import HEALTH_GRAPH_COMPILE_TIMEOUT_SECONDS
 from ado2gh.auth.service import auth_enabled
 from services.agent.profiles import capability_matrix
 from services.agent.routes._helpers import (
-    ACCEL_URL,
     _check_accelerator,
     _profile,
     _resolve_model_id,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -22,12 +26,21 @@ router = APIRouter()
 async def health() -> dict[str, Any]:
     """Report agent health, accelerator reachability, and LLM readiness.
 
+    The route is authentication-exempt (``services/agent/main.py``
+    ``_AGENT_AUTH_EXEMPT``), so it reports only booleans and fixed remediation
+    text. It used to also return the accelerator URL and the raw connection
+    error, and both describe internal network topology to a caller who was
+    never authenticated — anyone who can reach the port could learn it (register
+    item THR-02-004). That detail is logged instead of returned.
+
     Returns:
         A status document naming the selected model, the active deployment
         profile, session and storage health, and — when a dependency is
         unreachable or unconfigured — the steps needed to restore it.
     """
     reachable, err = await _check_accelerator()
+    if not reachable:
+        logger.warning("accelerator health probe failed: %s", err)
     selected_model_id, llm_degraded, llm_unconfigured = _resolve_model_id(None)
     from ado2gh.api.llm.llm_model_store import LLMModelStore
 
@@ -46,21 +59,31 @@ async def health() -> dict[str, Any]:
     except Exception:
         storage_ok = False
 
-    # Graph compiled status
+    # Graph compiled status. Bounded: compiling opens the checkpointer database,
+    # and waiting on it with no timeout here would wedge the whole health check
+    # (and the Starlette test client's blocking portal with it) whenever that
+    # stalls. A status check must always return promptly rather than hang on a
+    # slow dependency (register item GAP-062).
     graph_compiled = False
     checkpointer_ok = False
     try:
         from ado2gh.agents.migration_agent.graph import get_compiled_graph
-        graph = await get_compiled_graph()
+        graph = await asyncio.wait_for(
+            get_compiled_graph(), timeout=HEALTH_GRAPH_COMPILE_TIMEOUT_SECONDS,
+        )
         graph_compiled = graph is not None
         checkpointer_ok = True  # If graph compiled, checkpointer is attached
+    except TimeoutError:
+        logger.warning(
+            "graph compilation did not finish within %ss; reporting not compiled",
+            HEALTH_GRAPH_COMPILE_TIMEOUT_SECONDS,
+        )
     except Exception:
         pass
 
     body: dict[str, Any] = {
         "status": "ok" if reachable and not llm_degraded and storage_ok else "degraded",
         "service": "agent",
-        "accelerator_url": ACCEL_URL,
         "accelerator_reachable": reachable,
         "profile": profile.profile_id if profile else "lightweight",
         "selected_model_id": selected_model_id,
@@ -77,7 +100,6 @@ async def health() -> dict[str, Any]:
     if profile:
         body["capabilities"] = capability_matrix(profile)
     if not reachable:
-        body["connection_error"] = err or "Connection refused"
         body["remediation_steps"] = [
             "Restart accelerator — a live GEI/git-mirror run may have blocked the API (stop and start port 8080)",
             "Start accelerator: docker compose up accelerator  (or .\\scripts\\dev\\run-local-agent.ps1)",

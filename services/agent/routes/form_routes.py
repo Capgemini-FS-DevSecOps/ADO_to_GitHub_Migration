@@ -1,16 +1,20 @@
-"""Human-in-the-loop form routes: submit, stream the response, cancel."""
+"""Routes for the forms the agent uses to prompt the operator: submit, stream the response, cancel."""
 from __future__ import annotations
 
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-from ado2gh.agents.migration_agent.constants import SSE_HEARTBEAT_INTERVAL_SECONDS
+from ado2gh.agents.migration_agent.constants import (
+    SSE_HEARTBEAT_INTERVAL_SECONDS,
+    SSE_MAX_EVENTS_PER_STREAM,
+)
 from ado2gh.agents.migration_agent.hitl.forms import (
     migration_ready_reply,
 )
@@ -28,6 +32,7 @@ from ado2gh.agents.migration_agent.session.state import (
 )
 from ado2gh.api.migration_work_plan import work_items_summary
 from services.agent.routes._helpers import (
+    SSE_EVENT_LIMIT_REPLY,
     FormSubmitRequest,
     _accel_get,
     _accel_post,
@@ -40,6 +45,7 @@ from services.agent.routes._helpers import (
     _session_payload,
     _session_token_from_request,
     _try_start_pev_run,
+    client_error_detail,
 )
 
 router = APIRouter()
@@ -165,7 +171,10 @@ async def submit_session_form(
             session["discovery_snapshot"] = discovery
             session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Pipeline inventory scan failed: {exc}") from exc
+            raise HTTPException(
+                status_code=502,
+                detail=f"Pipeline inventory scan failed: {client_error_detail(exc)}",
+            ) from exc
         session.pop("migration_plan", None)
         session["plan_approved"] = False
         session.pop("plan_review_presented", None)
@@ -250,6 +259,16 @@ async def submit_session_form(
     if outcome["status"] == "operator_input_unresolved":
         session["pending_form"] = outcome.get("form") or form
         raise HTTPException(status_code=400, detail=outcome.get("reply", "Unresolved operator input"))
+
+    if outcome["status"] == "form_incomplete":
+        # hitl/intake.py returns this when a required field was left blank; the
+        # form stays pending so the operator can answer it instead of the
+        # submission silently continuing the graph with an incomplete form.
+        session["pending_form"] = outcome.get("form") or form
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "form_incomplete", "missing": outcome.get("missing_fields", [])},
+        )
 
     if outcome["status"] == "inventory_gaps":
         from ado2gh.api.migration_work_plan import apply_operator_secret_mappings, plan_narrative_from_work_items
@@ -383,7 +402,7 @@ async def submit_session_form(
 async def submit_session_form_stream(
     session_id: str, req: FormSubmitRequest, request: Request,
 ) -> StreamingResponse:
-    """Stream agent events via SSE after a form submission."""
+    """Stream agent events, as a server-sent event stream, after a form submission."""
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
     form = _resolve_pending_form(session)
@@ -433,6 +452,17 @@ async def submit_session_form_stream(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
+    if outcome["status"] == "form_incomplete":
+        # Same contract as the non-streaming route above: a required field left
+        # blank answers with a single 422 response carrying a machine-readable
+        # code, not a server-sent event frame — there is no partial run yet to
+        # narrate.
+        session["pending_form"] = outcome.get("form") or form
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "form_incomplete", "missing": outcome.get("missing_fields", [])},
+        )
+
     synthetic_msg: str | None = None
 
     if outcome["status"] == "operator_remediate":
@@ -451,7 +481,10 @@ async def submit_session_form_stream(
                 session["discovery_snapshot"] = discovery
                 session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
             except Exception as exc:
-                raise HTTPException(status_code=502, detail=f"Pipeline inventory scan failed: {exc}") from exc
+                raise HTTPException(
+                status_code=502,
+                detail=f"Pipeline inventory scan failed: {client_error_detail(exc)}",
+            ) from exc
             session.pop("migration_plan", None)
             session["plan_approved"] = False
             session.pop("plan_review_presented", None)
@@ -626,35 +659,47 @@ async def submit_session_form_stream(
 
     async def event_stream() -> AsyncIterator[str]:
         last_heartbeat = asyncio.get_event_loop().time()
+        events_sent = 0
         try:
-            async for event in continue_session_graph_stream(
-                session,
-                synthetic_msg,
-                resume_value={"form_id": form_id, "values": values},
-                deps={
-                    "accel_get": _accel_get,
-                    "accel_post": _accel_post,
-                    "build_plan": _build_migration_plan,
-                    "session_token": session_token,
-                },
-            ):
-                if event.get("__done__"):
-                    reply = event.get("reply", "")
-                    pending_form = event.get("pending_form")
-                    done_payload = {"kind": "__done__", "reply": reply}
-                    if pending_form:
-                        done_payload["pending_form"] = pending_form
-                    yield f"data: {json.dumps(done_payload, default=str)}\n\n"
-                else:
-                    yield f"data: {json.dumps(event, default=str)}\n\n"
-                now = asyncio.get_event_loop().time()
-                if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
-                    yield f"data: {json.dumps({'kind': 'heartbeat', 'content': ''}, default=str)}\n\n"
-                    last_heartbeat = now
+            # aclosing: see message_routes — returning at the cap from inside the
+            # `async for` must still close the graph stream behind it.
+            async with aclosing(
+                continue_session_graph_stream(
+                    session,
+                    synthetic_msg,
+                    resume_value={"form_id": form_id, "values": values},
+                    deps={
+                        "accel_get": _accel_get,
+                        "accel_post": _accel_post,
+                        "build_plan": _build_migration_plan,
+                        "session_token": session_token,
+                    },
+                ),
+            ) as events:
+                async for event in events:
+                    events_sent += 1
+                    if events_sent > SSE_MAX_EVENTS_PER_STREAM:
+                        session["status"] = "idle"
+                        yield f"data: {json.dumps({'kind': '__done__', 'reply': SSE_EVENT_LIMIT_REPLY}, default=str)}\n\n"
+                        return
+                    if event.get("__done__"):
+                        reply = event.get("reply", "")
+                        pending_form = event.get("pending_form")
+                        done_payload = {"kind": "__done__", "reply": reply}
+                        if pending_form:
+                            done_payload["pending_form"] = pending_form
+                        yield f"data: {json.dumps(done_payload, default=str)}\n\n"
+                    else:
+                        yield f"data: {json.dumps(event, default=str)}\n\n"
+                    now = asyncio.get_event_loop().time()
+                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                        yield f"data: {json.dumps({'kind': 'heartbeat', 'content': ''}, default=str)}\n\n"
+                        last_heartbeat = now
         except Exception as exc:
             session["status"] = "idle"
-            yield f"data: {json.dumps({'kind': 'thinking', 'content': f'Error: {exc}', 'role': 'system', 'subagent': 'orchestrator'}, default=str)}\n\n"
-            yield f"data: {json.dumps({'kind': '__done__', 'reply': str(exc)}, default=str)}\n\n"
+            detail = client_error_detail(exc)
+            yield f"data: {json.dumps({'kind': 'thinking', 'content': f'Error: {detail}', 'role': 'system', 'subagent': 'orchestrator'}, default=str)}\n\n"
+            yield f"data: {json.dumps({'kind': '__done__', 'reply': detail}, default=str)}\n\n"
             return
 
     return StreamingResponse(
