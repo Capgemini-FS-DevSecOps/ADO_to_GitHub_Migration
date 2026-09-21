@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, cast
 
+from ado2gh.agents.migration_agent.constants import DEFAULT_HTTP_METHOD
 from ado2gh.agents.migration_agent.utils import coerce_dry_run
 
 
@@ -114,7 +115,8 @@ _READ_OPERATIONS = frozenset({
     # Session-local control tools: they hand the turn to another agent or to the
     # operator and reach no external system themselves. They do start work whose
     # later steps write, but those steps are the executor's tools, each evaluated
-    # here in their own right under CA-001 and the plan-approval check.
+    # here in their own right against the rule that a real run needs the operator's
+    # explicit opt-in, and against the plan-approval check (CA-001).
     "invoke_planner", "invoke_bulk_planner", "run_migration_pev", "request_user_input",
 })
 
@@ -223,9 +225,14 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
             reason="Read-only operation",
         )
 
-    # call_accelerator: allow GET requests without approved plan (read-only)
+    # call_accelerator: allow GET requests without approved plan (read-only).
+    # The default matches the tool the model actually calls — `CallAcceleratorArgs`
+    # and `executor_tools.call_accelerator` both now default to GET, matching what
+    # they actually perform — so an omitted method is evaluated as the read it will
+    # perform, not as a write the guardrail would then refuse for want of live
+    # authority (THR-06-007).
     if tool_name == "call_accelerator":
-        method = str(arguments.get("method", "POST")).upper()
+        method = str(arguments.get("method", DEFAULT_HTTP_METHOD)).upper()
         if method == "GET":
             return GuardrailDecision(
                 action=GuardrailAction.ALLOW,
@@ -250,7 +257,7 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
 
     # github_api: GET is read-only; writes require approved plan (and live mode)
     if tool_name == "github_api":
-        method = str(arguments.get("method", "GET")).upper()
+        method = str(arguments.get("method", DEFAULT_HTTP_METHOD)).upper()
         if method == "GET":
             return GuardrailDecision(
                 action=GuardrailAction.ALLOW,
@@ -399,8 +406,15 @@ def wrap_tool_with_guardrail(
     import asyncio
 
     def _evaluate(**kwargs: object) -> GuardrailDecision | None:
+        from ado2gh.agents.migration_agent.hitl.intake import clear_stale_plan_approval
+
         session = (session_getter() if session_getter else {}) or {}
         migration_plan = session.get("migration_plan")
+        # Approval is revocable and is bound to the plan revision it was given for
+        # (THR-09-002), so the flag is re-checked here rather than trusted from
+        # whichever node last passed a revocation point. A plan revised after the
+        # operator approved it is unapproved again by the time the tool runs.
+        clear_stale_plan_approval(session, plan=migration_plan)
         plan_approved = session.get("plan_approved", False)
 
         decision = evaluate_guardrail(

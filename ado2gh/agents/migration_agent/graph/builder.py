@@ -348,7 +348,14 @@ def _route_after_planner(state: AgentState) -> str:
     if planner_next == "orchestrator":
         return "orchestrator"
 
+    from ado2gh.agents.migration_agent.hitl.intake import clear_stale_plan_approval
+
     session = state.get("session") or {}
+    # The approval is bound to the plan revision it was given for (THR-09-002).
+    # The planner has just run, so the plan in state may be a revision the operator
+    # never saw; re-check here instead of trusting the flag, and a revised plan
+    # routes back to the orchestrator for a fresh approval rather than to the executor.
+    clear_stale_plan_approval(session, plan=state.get("migration_plan"))
     if state.get("migration_plan") and (
         state.get("start_execution") or session.get("plan_approved")
     ):

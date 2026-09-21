@@ -14,3 +14,21 @@ PLANNER_MIN_RESEARCH_TOOL_CALLS = 2
 VALIDATOR_MAX_TOOL_ROUNDS = 12
 VALIDATOR_MIN_TOOL_CALLS_PIPELINES = 4
 SSE_HEARTBEAT_INTERVAL_SECONDS = 15
+
+# ─── Agent-service HTTP boundary limits ───────────────────────────────
+# Every value below bounds something a client controls: how much text one
+# request may carry, how long an SSE stream may run, and how much session
+# state the process keeps resident (THR-10-001, THR-10-002).
+MAX_CHAT_MESSAGE_CHARS = 20_000
+MAX_FORM_SUBMISSION_CHARS = 100_000
+SSE_MAX_EVENTS_PER_STREAM = 2_000
+MAX_IN_MEMORY_SESSIONS = 200
+SESSION_IDLE_TTL_SECONDS = 24 * 60 * 60
+HEALTH_GRAPH_COMPILE_TIMEOUT_SECONDS = 5.0
+
+# HTTP method assumed for a tool call that omits one. Matches the accelerator
+# and GitHub tool schemas' own default (`CallAcceleratorArgs`, `GitHubApiArgs`
+# in tools/orchestrator_tools.py; `executor_tools.call_accelerator`), so an
+# omitted method is judged as the read those tools actually perform rather
+# than as a write (GAP-086, THR-06-007).
+DEFAULT_HTTP_METHOD = "GET"

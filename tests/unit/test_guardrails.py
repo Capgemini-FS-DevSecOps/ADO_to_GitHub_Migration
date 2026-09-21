@@ -75,9 +75,10 @@ def test_read_only_operation_allowed():
 
 
 def test_write_operation_no_plan_blocked():
-    # A live session, so the CA-001 dry-run block is not what blocks this (THR-06-005).
+    # The session is live (not a preview run), so the block here is not the
+    # preview-run safeguard — it is the missing plan, checked next (THR-06-005).
     decision = evaluate_guardrail(
-        "executor", "call_accelerator", {"target_resource": "Proj/RepoA"},
+        "executor", "call_accelerator", {"method": "POST", "target_resource": "Proj/RepoA"},
         session={"dry_run": False},
     )
     assert decision.blocked
@@ -88,7 +89,7 @@ def test_write_operation_plan_not_approved_blocked():
     plan = {"plan_id": "plan1", "repos": [{"id": "Proj/RepoA"}]}
     decision = evaluate_guardrail(
         "executor", "call_accelerator",
-        {"target_resource": "Proj/RepoA"},
+        {"method": "POST", "target_resource": "Proj/RepoA"},
         migration_plan=plan,
         plan_approved=False,
         session={"dry_run": False},
@@ -101,7 +102,7 @@ def test_write_operation_plan_approved_allowed():
     plan = {"plan_id": "plan1", "repos": [{"id": "Proj/RepoA"}]}
     decision = evaluate_guardrail(
         "executor", "call_accelerator",
-        {"target_resource": "Proj/RepoA"},
+        {"method": "POST", "target_resource": "Proj/RepoA"},
         migration_plan=plan,
         plan_approved=True,
         session={"dry_run": False},
@@ -143,7 +144,7 @@ def test_write_operation_resource_not_in_plan_blocked():
     plan = {"plan_id": "plan1", "repos": [{"id": "Proj/RepoA"}]}
     decision = evaluate_guardrail(
         "executor", "call_accelerator",
-        {"target_resource": "Proj/RepoB"},
+        {"method": "POST", "target_resource": "Proj/RepoB"},
         migration_plan=plan,
         plan_approved=True,
         session={"dry_run": False},
@@ -173,7 +174,9 @@ async def test_wrap_tool_blocks_no_plan():
     wrapped = wrap_tool_with_guardrail(
         call_accelerator, agent_role="executor", session_getter=session_getter,
     )
-    result = await wrapped(_tool_name="call_accelerator", target_resource="Proj/RepoA")
+    result = await wrapped(
+        _tool_name="call_accelerator", method="POST", target_resource="Proj/RepoA",
+    )
     assert result["error"] == "guardrail_blocked"
 
 
@@ -213,17 +216,27 @@ async def test_wrap_tool_logs_decision():
     def log_decision(sid, decision):
         logged.append((sid, decision))
 
+    # The approval is recorded against the plan's revision: a bare `plan_approved`
+    # with no revision on record is treated as a stale approval and is revoked
+    # (THR-09-002).
+    from ado2gh.agents.migration_agent.hitl.blockers import plan_revision_key
+    from ado2gh.agents.migration_agent.hitl.intake import PLAN_APPROVAL_KEY
+
+    logged_plan = {"plan_id": "p1", "repos": [{"id": "Proj/RepoA"}]}
     session_getter = lambda: {
         "session_id": "ses1",
-        "migration_plan": {"plan_id": "p1", "repos": [{"id": "Proj/RepoA"}]},
+        "migration_plan": logged_plan,
         "plan_approved": True,
+        PLAN_APPROVAL_KEY: plan_revision_key(logged_plan),
         "dry_run": False,
     }
     wrapped = wrap_tool_with_guardrail(
         call_accelerator, agent_role="executor",
         session_getter=session_getter, log_decision=log_decision,
     )
-    result = await wrapped(_tool_name="call_accelerator", target_resource="Proj/RepoA")
+    result = await wrapped(
+        _tool_name="call_accelerator", method="POST", target_resource="Proj/RepoA",
+    )
     assert result["status"] == "success"
     assert len(logged) == 1
     assert logged[0][0] == "ses1"
@@ -378,3 +391,95 @@ def test_plan_scope_refuses_an_entry_it_cannot_identify():
     assert plan_scope({"repos": [None]}) is None
     assert plan_scope({"repos": [{"id": "Proj/A"}, 7]}) is None
     assert plan_scope({"repos": ["Proj/A", " Proj/B "]}) == {"Proj/A", "Proj/B"}
+
+
+# ─── GAP-086 follow-up: the guardrail's method default must match the tools ───
+
+@pytest.mark.asyncio
+async def test_accelerator_call_without_a_method_is_read_through_the_wrapper():
+    """An omitted `method` is a GET everywhere else, so the guardrail must agree.
+
+    `CallAcceleratorArgs.method` and `executor_tools.call_accelerator` both default to
+    GET; a guardrail that still read the omission as POST would refuse a read for
+    want of live authority.
+    """
+    ran = []
+
+    async def call_accelerator(**kwargs):
+        ran.append(kwargs)
+        return {"status": "ok"}
+
+    wrapped = wrap_tool_with_guardrail(
+        call_accelerator, agent_role="executor", session_getter=lambda: {"dry_run": True},
+    )
+    result = await wrapped(_tool_name="call_accelerator", endpoint="/v1/settings/profiles/p/discovery")
+
+    assert "error" not in result
+    assert len(ran) == 1
+
+
+def test_accelerator_write_still_needs_an_explicit_method():
+    """The GET default must not weaken the write path: POST is still a write."""
+    decision = evaluate_guardrail(
+        "executor", "call_accelerator",
+        {"method": "POST", "endpoint": "/v1/migrate/git-mirror"},
+        session={"dry_run": True},
+    )
+    assert decision.blocked
+    assert "dry-run" in decision.reason
+
+
+# ─── THR-09-002 follow-up: approval must be bound to the plan revision ────
+
+def _approved_session(plan):
+    """Session with an operator approval recorded against `plan`'s revision."""
+    from ado2gh.agents.migration_agent.hitl.blockers import plan_revision_key
+    from ado2gh.agents.migration_agent.hitl.intake import PLAN_APPROVAL_KEY
+
+    return {
+        "migration_plan": plan,
+        "dry_run": False,
+        "plan_approved": True,
+        PLAN_APPROVAL_KEY: plan_revision_key(plan),
+    }
+
+
+@pytest.mark.asyncio
+async def test_wrapped_tool_rejects_an_approval_made_for_an_older_plan_revision():
+    """The wrapper must revoke a stale approval itself, not trust an upstream node."""
+    async def github_api(**kwargs):
+        return {"status": "written"}
+
+    plan = {"plan_id": "p1", "revision": 1, "dry_run": False, "repos": [{"id": "Proj/A"}]}
+    session = _approved_session(plan)
+
+    # The planner revises the plan after the operator approved it.
+    plan["revision"] = 2
+    plan["repos"] = [{"id": "Proj/A"}, {"id": "Proj/B"}]
+
+    wrapped = wrap_tool_with_guardrail(
+        github_api, agent_role="executor", session_getter=lambda: session,
+    )
+    result = await wrapped(_tool_name="github_api", method="POST", repository_id="Proj/A")
+
+    assert result["error"] == "guardrail_blocked"
+    assert "approved" in result["message"].lower()
+    assert session["plan_approved"] is False
+
+
+@pytest.mark.asyncio
+async def test_wrapped_tool_still_honours_an_approval_of_the_current_revision():
+    """No-regression half: an unrevised plan keeps its approval."""
+    async def github_api(**kwargs):
+        return {"status": "written"}
+
+    plan = {"plan_id": "p1", "revision": 1, "dry_run": False, "repos": [{"id": "Proj/A"}]}
+    session = _approved_session(plan)
+
+    wrapped = wrap_tool_with_guardrail(
+        github_api, agent_role="executor", session_getter=lambda: session,
+    )
+    result = await wrapped(_tool_name="github_api", method="POST", repository_id="Proj/A")
+
+    assert result["status"] == "written"
+    assert session["plan_approved"] is True

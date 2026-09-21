@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import unquote
 
 from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
 from ado2gh.agents.migration_agent.nodes.intent import _begin_new_agent_migration
+from ado2gh.agents.migration_agent.nodes.planner_research import _DISCOVERY_PATH_RE
+from ado2gh.agents.migration_agent.tools.shared_tools import join_api_path
 from ado2gh.agents.migration_agent.utils import (
     _append_event,
     _drain_message_queue,
@@ -92,9 +95,15 @@ async def _execute_orchestrator_tools(
         if not isinstance(args, dict):
             args = {}
 
+        # Exact decoded-path match, not a substring test: any model-chosen endpoint
+        # ending in "/discovery" used to be taken for the profile discovery route and
+        # skip the tool-call telemetry with it (R10b, THR-04-001). The pattern is
+        # imported rather than restated — it is security-relevant and a second copy
+        # would drift; `nodes/planner_research.py` owns it.
+        endpoint_path = "/" + unquote(str(args.get("endpoint", "")).split("?", 1)[0]).lstrip("/")
         is_cached_discovery = (
             tool_name == "call_accelerator"
-            and "/discovery" in str(args.get("endpoint", ""))
+            and bool(_DISCOVERY_PATH_RE.match(endpoint_path))
             and session.get("discovery_snapshot")
         )
         if not is_cached_discovery:
@@ -138,15 +147,15 @@ async def _execute_orchestrator_tools(
                 results.append({"tool": tool_name, "error": str(e)})
         elif tool_name == "ado_api_query" and accel_get:
             try:
-                endpoint = str(args.get("endpoint", "")).lstrip("/")
-                result = await accel_get(f"/v1/ado/{endpoint}", session_token=session_token)
+                path = join_api_path("/v1/ado", str(args.get("endpoint", "")))
+                result = await accel_get(path, session_token=session_token)
                 results.append({"tool": tool_name, "result": result})
             except Exception as e:
                 results.append({"tool": tool_name, "error": str(e)})
         elif tool_name == "github_api_query" and accel_get:
             try:
-                endpoint = str(args.get("endpoint", "")).lstrip("/")
-                result = await accel_get(f"/v1/github/{endpoint}", session_token=session_token)
+                path = join_api_path("/v1/github", str(args.get("endpoint", "")))
+                result = await accel_get(path, session_token=session_token)
                 results.append({"tool": tool_name, "result": result})
             except Exception as e:
                 results.append({"tool": tool_name, "error": str(e)})

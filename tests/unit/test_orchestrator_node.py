@@ -198,8 +198,9 @@ async def test_planner_handoff_never_stores_a_malformed_execution_mode(tool):
     """A non-boolean `dry_run` must not become the session's execution mode (CA-001).
 
     The intake layer normalises the flag upstream today, so this is defence in depth
-    at the single-reader helper GAP-076 introduced: readiness is forced here so the
-    handoff's own read of `session["dry_run"]` is what the assertion measures.
+    at the helper that centralised this single read of the dry-run flag (GAP-076):
+    readiness is forced here so the handoff's own read of `session["dry_run"]` is
+    what the assertion measures.
     """
     from ado2gh.agents.migration_agent.nodes.orchestrator_tools import _execute_orchestrator_tools
 
@@ -239,3 +240,69 @@ async def test_orchestrator_tool_dispatch_refuses_an_unclassified_tool():
     emitted = [m.get("content", "") for m in session["messages"]]
     assert any("blocked by default" in c for c in emitted), emitted
 
+
+
+# ─── GAP-089 / GAP-096 follow-up: path joins and the discovery match ─
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool,prefix", [("ado_api_query", "/v1/ado"), ("github_api_query", "/v1/github")])
+async def test_orchestrator_query_endpoint_cannot_escape_its_prefix(tool, prefix):
+    """The dispatcher's own prefix joins go through join_api_path like the tools'."""
+    from ado2gh.agents.migration_agent.nodes.orchestrator_tools import _execute_orchestrator_tools
+
+    called = []
+
+    async def accel_get(path, **kwargs):
+        called.append(path)
+        return {"ok": True}
+
+    session = {"messages": []}
+    await _execute_orchestrator_tools(
+        {"session": session, "accel_get": accel_get, "user_message": ""},
+        [{"name": tool, "arguments": {"endpoint": "../../v1/migrate/git-mirror"}}],
+    )
+
+    assert all("/v1/migrate/" not in p for p in called), called
+
+
+@pytest.mark.asyncio
+async def test_cached_discovery_needs_the_exact_discovery_route():
+    """A substring test let any model-chosen path ending in /discovery skip telemetry."""
+    from ado2gh.agents.migration_agent.nodes.orchestrator_tools import _execute_orchestrator_tools
+
+    session = {"messages": [], "discovery_snapshot": {"repos": []}}
+    await _execute_orchestrator_tools(
+        {"session": session, "user_message": ""},
+        [{"name": "call_accelerator", "arguments": {"endpoint": "/v1/migrate/evil/discovery"}}],
+    )
+
+    assert any(m.get("kind") == "tool_call" for m in session["messages"]), session["messages"]
+
+    # The real route with a snapshot on record still skips the telemetry, which is
+    # what the cached-discovery branch exists for.
+    cached = {"messages": [], "discovery_snapshot": {"repos": []}}
+    await _execute_orchestrator_tools(
+        {"session": cached, "user_message": ""},
+        [{"name": "call_accelerator", "arguments": {"endpoint": "/v1/settings/profiles/p1/discovery"}}],
+    )
+
+    assert not any(m.get("kind") == "tool_call" for m in cached["messages"]), cached["messages"]
+
+
+@pytest.mark.parametrize("revised,expected", [(True, "orchestrator"), (False, "executor")])
+def test_planner_route_rechecks_the_approval_against_the_plan_revision(revised, expected):
+    """A plan revised after approval must go back to the operator, not the executor."""
+    from ado2gh.agents.migration_agent.graph.builder import _route_after_planner
+    from ado2gh.agents.migration_agent.hitl.blockers import plan_revision_key
+    from ado2gh.agents.migration_agent.hitl.intake import PLAN_APPROVAL_KEY
+
+    plan = {"plan_id": "p1", "revision": 1, "dry_run": True, "repos": [{"id": "Proj/A"}]}
+    session = {
+        "migration_plan": plan,
+        "plan_approved": True,
+        PLAN_APPROVAL_KEY: plan_revision_key(plan),
+    }
+    if revised:
+        plan["revision"] = 2
+
+    assert _route_after_planner({"session": session, "migration_plan": plan}) == expected
