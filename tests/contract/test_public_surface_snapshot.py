@@ -25,6 +25,17 @@ migration note.
 Not frozen here (see the contract): agent ``StructuredTool`` names/schemas, the
 importable Python API, and payload/response *shapes* — the latter are covered by
 the other ``tests/contract/`` modules.
+
+``cli_commands`` never renders Click's own help text; it records option names,
+flags, types and defaults picked off the ``click.Parameter`` object directly, so
+a Click upgrade that only changes wording cannot fail this test. One value still
+moved across a Click patch release: whether a bare boolean flag's default
+(``--version``, which takes no explicit ``default=``) is eagerly stamped as
+``False`` at decoration time or left as Click's internal ``UNSET`` sentinel
+until first use. Both mean the same thing on the command line — the flag is off
+unless passed — so ``_default_repr`` normalizes an unresolved sentinel on a flag
+to ``False`` rather than freezing which Click patch release happened to resolve
+it eagerly.
 """
 
 from __future__ import annotations
@@ -57,19 +68,29 @@ MINIMUM_ENTRIES = {
 # --------------------------------------------------------------------------- #
 
 
-def _default_repr(default: object) -> str:
+def _default_repr(default: object, *, is_bool_flag: bool = False) -> str:
     """Stable text for a Click default.
 
     Click 8.3 uses an ``UNSET`` sentinel whose ``repr`` is stable, but several
     options default to a lambda whose ``repr`` embeds a memory address. Both are
     collapsed to fixed markers so two runs agree byte for byte.
+
+    A plain boolean flag with no explicit ``default=`` keyword resolves to
+    ``False`` when omitted on the command line — that is true in every Click
+    version. Which Click release actually stamps ``False`` onto the option
+    object at decoration time versus leaving the ``UNSET`` sentinel in place
+    has moved between patch releases (see the module docstring). Recording the
+    sentinel verbatim would freeze that internal timing instead of the
+    observable default, so a flag's unresolved sentinel is normalized to
+    ``False`` here; every other option keeps recording ``<unset>`` verbatim
+    since a non-flag option without a default has no such fallback.
     """
     if default is None:
         return "None"
     if callable(default):
         return "<callable>"
     if type(default).__name__ == "Sentinel":  # click.core.UNSET
-        return "<unset>"
+        return "False" if is_bool_flag else "<unset>"
     if isinstance(default, (str, bool, int, float)):
         return repr(default)
     if isinstance(default, (list, tuple)):
@@ -89,11 +110,14 @@ def collect_cli_commands() -> list[str]:
         lines.append(f"{path} :: {kind}")
         for param in command.params:
             opts = "/".join(sorted(param.opts) + sorted(param.secondary_opts))
+            is_flag = bool(getattr(param, "is_flag", False))
+            is_bool_flag = bool(getattr(param, "is_bool_flag", False))
             lines.append(
                 f"{path} :: param {param.name} :: opts={opts} "
-                f":: type={param.type.name} :: default={_default_repr(param.default)} "
+                f":: type={param.type.name} "
+                f":: default={_default_repr(param.default, is_bool_flag=is_bool_flag)} "
                 f":: required={bool(param.required)} "
-                f":: is_flag={bool(getattr(param, 'is_flag', False))} "
+                f":: is_flag={is_flag} "
                 f":: multiple={bool(getattr(param, 'multiple', False))}"
             )
         if isinstance(command, click.Group):
