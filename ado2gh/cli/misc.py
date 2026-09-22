@@ -150,8 +150,9 @@ def register(cli: click.Group) -> None:
     )
     @click.option("--base", default=None, help="Base branch (default: repo default branch)")
     @click.option(
-        "--dry-run", is_flag=True, default=False,
-        help="Report what would be pushed without creating a branch or pull request.",
+        "--dry-run/--live", default=True,
+        help="Report what would be pushed without creating a branch or pull request "
+             "(the default). Pass --live to actually push and open the pull request.",
     )
     def push_workflows(  # noqa: PLR0913 - six frozen CLI options; no existing config object groups them (exception-register.md)
         config: str,
@@ -162,7 +163,11 @@ def register(cli: click.Group) -> None:
         *,
         dry_run: bool,
     ) -> None:
-        """Push locally generated workflow YAML to GitHub via branch + PR."""
+        """Push locally generated workflow YAML to GitHub via branch + PR.
+
+        --dry-run is the default: without --live it reports what would be pushed
+        and opens no branch or pull request.
+        """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.models import ExecutionMode
         from ado2gh.pipelines.push_workflows import push_workflows_for_repos

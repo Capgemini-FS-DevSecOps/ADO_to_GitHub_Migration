@@ -62,7 +62,7 @@
     "ado2gh push-workflows :: param base :: opts=--base :: type=text :: default=None :: required=False :: is_flag=False :: multiple=False",
     "ado2gh push-workflows :: param branch :: opts=--branch :: type=text :: default='ado2gh/migrated-workflows' :: required=False :: is_flag=False :: multiple=False",
     "ado2gh push-workflows :: param config :: opts=--config/-c :: type=text :: default=<unset> :: required=True :: is_flag=False :: multiple=False",
-    "ado2gh push-workflows :: param dry_run :: opts=--dry-run :: type=boolean :: default=False :: required=False :: is_flag=True :: multiple=False",
+    "ado2gh push-workflows :: param dry_run :: opts=--dry-run/--live :: type=boolean :: default=True :: required=False :: is_flag=True :: multiple=False",
     "ado2gh push-workflows :: param input_file :: opts=--input/-i :: type=text :: default=None :: required=False :: is_flag=False :: multiple=False",
     "ado2gh push-workflows :: param workflows_dir :: opts=--workflows-dir/-d :: type=text :: default=<callable> :: required=False :: is_flag=False :: multiple=False",
     "ado2gh report :: command",

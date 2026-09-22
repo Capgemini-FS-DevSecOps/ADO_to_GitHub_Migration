@@ -1,10 +1,13 @@
-"""GAP-018: ``run``, ``phase run`` and ``ado-cleanup`` default to dry-run.
+"""GAP-018: ``run``, ``phase run``, ``ado-cleanup`` and ``push-workflows`` default
+to dry-run.
 
 Each command used to declare ``--dry-run`` as ``is_flag=True, default=False``, so
 an operator who typed nothing migrated for real. The option is now the boolean
 pair ``--dry-run/--live`` with ``default=True``: no flag means no write, and only
-``--live`` executes. Approved by operator instruction, 2026-09-13 (plan.md
-§ Approved contract changes, entry 9).
+``--live`` executes. ``run``, ``phase run`` and ``ado-cleanup`` were converted by
+operator instruction, 2026-09-13 (plan.md § Approved contract changes, entry 9);
+``push-workflows`` carried the same defect and is converted the same way (register
+cross-reference: GAP-018 follow-up, final-review-findings.md finding 4).
 
 Every case fakes the accelerator or the ADO client, so a regression that restores
 the live default fails here instead of touching Azure DevOps or GitHub.
@@ -19,6 +22,7 @@ from click.testing import CliRunner
 import ado2gh.api.accelerator as accelerator_module
 import ado2gh.core.ado_cleanup as cleanup_module
 import ado2gh.core.config_loader as config_loader_module
+import ado2gh.pipelines.push_workflows as push_workflows_module
 import ado2gh.reporting.reporter as reporter_module
 import ado2gh.state.factory as state_factory_module
 from ado2gh.cli import misc
@@ -138,6 +142,42 @@ def test_ado_cleanup_dry_run_default(cleanup_modes, extra, expected):
     assert cleanup_modes == [expected]
 
 
+@pytest.fixture
+def push_workflow_calls(monkeypatch):
+    """Capture the ExecutionMode ``ado2gh push-workflows`` pushes with, writing nothing."""
+    seen = []
+
+    def fake_push_workflows_for_repos(gh, repos, workflows_dir, *, branch, base, mode, db):
+        seen.append(mode)
+        return len(repos)
+
+    monkeypatch.setattr(
+        config_loader_module.ConfigLoader, "load", staticmethod(lambda _path: ({}, [])),
+    )
+    monkeypatch.setattr(misc, "load_clients", lambda *_a, **_kw: (object(), object()))
+    monkeypatch.setattr(misc, "load_repos", lambda *_a, **_kw: [SimpleNamespace()])
+    monkeypatch.setattr(
+        push_workflows_module, "push_workflows_for_repos", fake_push_workflows_for_repos,
+    )
+    monkeypatch.setattr(state_factory_module, "create_state_db", lambda *_a, **_kw: object())
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ([], ExecutionMode.DRY_RUN),
+        (["--dry-run"], ExecutionMode.DRY_RUN),
+        (["--live"], ExecutionMode.LIVE),
+    ],
+)
+def test_push_workflows_dry_run_default(push_workflow_calls, extra, expected):
+    result = CliRunner().invoke(cli, ["push-workflows", "-c", "migration_phase.yaml", *extra])
+
+    assert result.exit_code == 0, result.output
+    assert push_workflow_calls == [expected]
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -147,6 +187,8 @@ def test_ado_cleanup_dry_run_default(cleanup_modes, extra, expected):
         ["phase", "run", "--live"],
         ["ado-cleanup", "--dry-run"],
         ["ado-cleanup", "--live"],
+        ["push-workflows", "--dry-run"],
+        ["push-workflows", "--live"],
     ],
 )
 def test_both_spellings_still_parse(argv):
