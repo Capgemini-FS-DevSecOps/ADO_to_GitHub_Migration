@@ -713,11 +713,12 @@ class LiveApprovalStore:
             run_id: Identifier of the pipeline run that was denied.
             reason: The approver's justification, surfaced as the run's error.
         """
+        from ado2gh.api.pipeline_models import PipelineRunStatus
         from ado2gh.api.pipeline_runner import PipelineRunStore
 
         run = PipelineRunStore.get(run_id)
         if run:
-            run.status = "denied"
+            run.status = PipelineRunStatus.DENIED
             run.live_approval_status = "denied"
             run.error = reason
             run.updated_at = datetime.now(timezone.utc).isoformat()

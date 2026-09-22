@@ -41,6 +41,7 @@ class PipelineRunStatus(str, Enum):
     COMPLETED = "completed"
     DRY_RUN_COMPLETE = "dry_run_complete"
     AWAITING_APPROVAL = "awaiting_approval"
+    DENIED = "denied"
 
 
 @dataclass(frozen=True)
@@ -198,10 +199,7 @@ class PipelineRun:
 
     id: str
     name: str
-    # Almost always one of the PipelineRunStatus members, but a denied
-    # live-execution approval stamps the plain string "denied" here (see
-    # live_approval_store.py), a run outcome the enum does not declare.
-    status: PipelineRunStatus | str = PipelineRunStatus.PENDING
+    status: PipelineRunStatus = PipelineRunStatus.PENDING
     dry_run: bool = True
     phase: str = ""
     wave_id: Optional[int] = None

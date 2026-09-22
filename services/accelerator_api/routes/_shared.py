@@ -25,6 +25,7 @@ from ado2gh.api.migration_scan import (
 from ado2gh.api.migration_scan import (
     scan_with_credentials as _scan_with_credentials,
 )
+from ado2gh.api.pipeline_models import PipelineRunStatus
 from ado2gh.api.pipeline_runner import PipelineRunner, PipelineRunStore
 from ado2gh.api.platform_rbac import operator_requires_live_approval, require_manage_settings
 from ado2gh.api.profile_governance import ProfileGovernanceError
@@ -365,7 +366,7 @@ def _execute_approved_pipeline(context: dict) -> None:
     if run_id:
         run = PipelineRunStore.get(run_id)
         if run:
-            run.status = "pending"
+            run.status = PipelineRunStatus.PENDING
         _runner.start_async(run_id)
 
 

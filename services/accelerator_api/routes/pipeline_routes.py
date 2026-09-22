@@ -22,6 +22,7 @@ from ado2gh.api.live_approval_store import (
     PIPELINE_RUN_SCOPE_TYPE,
     pipeline_run_scope_id,
 )
+from ado2gh.api.pipeline_models import PipelineRunStatus
 from ado2gh.api.pipeline_runner import (
     ACCELERATOR_PIPELINE_STEPS,
     MIGRATE_UI_PIPELINE_STEPS,
@@ -88,7 +89,7 @@ def _park_for_approval(
         ),
     )
     run.live_approval_status = "pending"
-    run.status = "awaiting_approval"
+    run.status = PipelineRunStatus.AWAITING_APPROVAL
     run.updated_at = run.created_at
     if run.steps:
         run.steps[0].message = "Waiting for live execution approval"
@@ -308,7 +309,7 @@ def start_existing_pipeline_run(run_id: str, request: Request) -> PipelineRunRes
             raise HTTPException(status_code=409, detail="awaiting_approval")
         run.live_approval_status = "auto_approved" if not run.dry_run else "not_required"
 
-    run.status = "pending"
+    run.status = PipelineRunStatus.PENDING
     run.updated_at = run.created_at
     _runner.start_async(run_id, step_ids)
     db = create_state_db(_settings.load().advanced.db_path)
