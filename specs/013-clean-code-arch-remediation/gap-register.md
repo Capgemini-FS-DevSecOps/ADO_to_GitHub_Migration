@@ -12,9 +12,9 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-127 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+143 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
 assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, GAP-076 through GAP-079 on 2026-09-13 from the Sol `ExecutionMode` review, GAP-080 on 2026-09-13 from operator decision 9, GAP-081 through GAP-088 on 2026-09-13 from the R10a remediation of the threat-model hook artefact `threat-model-2026-09-13-001.md`, GAP-089 through GAP-096 on 2026-09-13 from the R10b remediation of the same artefact — the agent's tool package, planner research loop, validator investigation loop and intent context builder — GAP-097 on 2026-09-20 from a second-round review of the accelerator's proxy routes made while registering the R10b second-round remediations, GAP-098 through GAP-100 on 2026-09-20 from the R1b follow-up batch (the batch executor's mode-agreement guard, the `RunWaveRequest`/`PhaseRunRequest` dry-run defaults, and the `ado-cleanup --live` confirmation), GAP-101 on 2026-09-20 from the R5 state-isolation follow-up (the connectivity, settings and LLM-catalog stores resolving their data directory once at construction instead of per call), GAP-102 through GAP-105 on 2026-09-13 from the R10c2 remediation of the HITL package's threat-model findings THR-09-002 through THR-09-005, GAP-106 on 2026-09-13 from the R10c1 remediation of THR-02-004 (the agent service's `/health` route), GAP-107 on 2026-09-22, appended by the register scribe under standing instruction, recording the Vurnix 0.3.0 honest-gate tool limitation found while closing out this batch, and GAP-108 through GAP-122 on 2026-09-22 from this second scribe pass — GAP-108 through GAP-111 and GAP-112 through GAP-119 from `register-pending/review-fixes.md` (a Terra/Codex review of the agent package: four remediated guardrail/masking/fingerprint findings, then eight open follow-ups found during the same review), and GAP-120 through GAP-122 from `register-pending/astra-fixes.md` (a final whole-branch review: a pipeline-run live-approval scope bypass, a redaction pattern gap, and an agent-session live-approval parity gap), the latter three renumbered up from that file's own provisional GAP-108/109/110 labels — each with the next free id), and GAP-123 through GAP-127 on 2026-09-22 from this third scribe pass, merged from `register-pending/finisher-notes.md` — GAP-123 through GAP-125 from the second post-fix review round's Findings A/B/C (an escaped-quote masking gap, a denial that did not close its platform approval row, and a creation-time scope mismatch that wrote no audit event), GAP-126 from the CI test-job hang and its fix, and GAP-127 (combined) from the three CI-only failures the Python-3.11 `test` job had been hiding behind that hang, only one of which is a genuine Python-3.11 incompatibility); the per-component placeholder each id
-replaced is kept in parentheses so earlier cross-references stay resolvable. A fourth scribe pass on 2026-09-22 added no new ids: it merged the owed second-reviewer pass (Terra, read-only, `codex exec`, artefact `run-codex-terra-abc.txt`) onto GAP-123 through GAP-125, recording a `second_review` field on all three, and folded that review's two follow-up fixes into `reopened_and_closed` fields on the entries they close — a trailing-backslash masking gap on GAP-123 (commit `5663b11`) and a denial-forward-failure gap on GAP-124 (commit `5938388`). GAP-125's own minor finding from the same review (context-derived identifiers embedded unminimized in its new audit event) was left open and recorded rather than fixed or silently dropped.
+replaced is kept in parentheses so earlier cross-references stay resolvable. A fourth scribe pass on 2026-09-22 added no new ids: it merged the owed second-reviewer pass (Terra, read-only, `codex exec`, artefact `run-codex-terra-abc.txt`) onto GAP-123 through GAP-125, recording a `second_review` field on all three, and folded that review's two follow-up fixes into `reopened_and_closed` fields on the entries they close — a trailing-backslash masking gap on GAP-123 (commit `5663b11`) and a denial-forward-failure gap on GAP-124 (commit `5938388`). GAP-125's own minor finding from the same review (context-derived identifiers embedded unminimized in its new audit event) was left open and recorded rather than fixed or silently dropped. A fifth scribe pass on 2026-09-22 (the final pass) added sixteen new entries, GAP-128 through GAP-143, from the Astra final-branch review and the Terra rule sweep; see that pass's own paragraph below the critical-and-high status table for the full breakdown.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
 table below rather than by re-rating an entry here.
@@ -22,10 +22,12 @@ table below rather than by re-rating an entry here.
 | Severity | Count |
 |----------|-------|
 | critical | 24 |
-| high | 49 |
-| medium | 35 |
-| low | 19 |
-| **total** | **127** |
+| high | 57 |
+| medium | 41 |
+| low | 21 |
+| **total** | **143** |
+
+Open versus closed, across all 143: open 27, deferred 3, remediated 113 (27 + 3 + 113 = 143).
 
 All 24 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
 one of the 127 entries carries at least one path:line citation or a reproduction command
@@ -106,6 +108,14 @@ one of the 127 entries carries at least one path:line citation or a reproduction
 | GAP-123 (GAP-TOKEN-09) | An escaped quote inside a secret value ended the masking match early, leaking the remainder of the value into the audit record | remediated |
 | GAP-124 (GAP-AGT-33) | A locally denied agent-session live request never closed the platform approval row it had opened | remediated |
 | GAP-126 (GAP-TOOL-10) | The CI test job hung indefinitely on the full coverage run instead of completing or failing | remediated |
+| GAP-128 (GAP-AGT-41) | The GitHub write tool's approval guard checked the requested repository but execution wrote to an independently supplied endpoint | remediated |
+| GAP-129 (GAP-AGT-42) | A plan installed by the plan-building tool inherited the previous plan's approval instead of starting unapproved | remediated |
+| GAP-131 (GAP-TOKEN-10) | The serialised-JSON secret-masking pattern stopped at an escaped quote, leaking the remainder of the value | remediated |
+| GAP-132 (GAP-AUTH-15) | Live-approval request and decision reasons were persisted and returned unmasked | remediated |
+| GAP-135 (GAP-AUTH-17) | A migrate-job approval scope identifier concatenated field values with no field names, so different scopes could collide | remediated |
+| GAP-136 (GAP-AGT-44) | A form submission answered whatever form the server currently held instead of the specific form instance and plan revision the operator was shown | remediated |
+| GAP-137 (GAP-AGT-45) | A plan swapped in by the plan-building tool inherited its predecessor's approval whenever the two plans' revision keys happened to match | remediated |
+| GAP-138 (GAP-AGT-46) | A replaced plan cleared the session's approval but left the LangGraph turn state routing on the old plan's run | remediated |
 
 Zero critical or high entries remain `open`, `deferred` or `disputed`, with one exception:
 GAP-069 (GAP-STATE-06), opened on 2026-09-13 from the Astra branch review, stays `deferred`
@@ -176,6 +186,36 @@ critical-and-high set is unchanged by this pass either. This pass also closes th
 residual (`PipelineRunStartRequest.dry_run`,
 commit `8bc89dd`) and adds worktree-revert `revert_proof` evidence to GAP-120, GAP-121 and
 GAP-122, none of which changes any status or severity already counted above.
+
+This fifth scribe pass (2026-09-22, final pass) adds sixteen entries, GAP-128 through GAP-143,
+from two sources: the Astra final-branch review (`run-astra-final-2026-09-22.txt`, eleven
+numbered findings) and the Terra rule sweep (`run-terra-rules-2026-09-22.txt`, 73 hardcoded-value,
+duplicate-registry and comment-jargon findings, folded into one grouped entry). GAP-128 through
+GAP-135, GAP-137 through GAP-139 come from the Astra findings: a GitHub write endpoint not bound
+to the approved repository (GAP-128, high), a plan-building-tool replacement inheriting the
+previous plan's approval (GAP-129, high, and its narrower same-revision-key remainder, GAP-137,
+high), a plan-approval fingerprint blind to a changed configuration file's contents (GAP-130,
+medium) and that fingerprint's own exception-safety gap (GAP-139, medium), an escaped-quote
+masking gap in the serialised-JSON pattern (GAP-131, high), unmasked live-approval reasons at
+rest (GAP-132, high), an unmasked audit `actor` field (GAP-133, medium), an unaudited
+live-approver refusal (GAP-134, medium), a migrate-job approval scope id that concatenated field
+values with no field names (GAP-135, high), and a replaced plan leaving stale LangGraph turn
+state pointed at the old plan's run (GAP-138, high). GAP-136 (high) records the form-submission
+binding gap the same Astra pass found; GAP-140 and GAP-141 (both low) and GAP-142 (medium) were
+found during the fix work these findings' commits triggered, not in the Astra artefact itself.
+GAP-143 (medium, grouped) records the Terra rule sweep's 73 findings — 41 hardcoded values that
+should have been named settings or constants, 10 duplicate registries, and 22 comments carrying
+task-ticket ids or unexplained jargon — closed by eleven commits with four residual items
+recorded on the entry itself (now three, after the audit-event-name registry residual closed
+within this same pass — see GAP-143 `resolution`/`residual`). GAP-136 was found `open` (service
+half pending) when this pass began drafting and is recorded here as `remediated`: the service
+half landed as commit `b20a6eb` (new module `services/agent/routes/form_guard.py`, the
+`FormSubmitRequest.form_instance_id` field, and the `agent.form.stale_submission_refused` audit
+event) alongside the console half already shipped as `3069d14`; `plan.md` § Approved contract
+changes entry 19 records the approval for both halves together. All sixteen new entries are
+`remediated`; eight are high severity (GAP-128, GAP-129, GAP-131, GAP-132, GAP-135, GAP-136,
+GAP-137, GAP-138) and none is critical, so the open critical-and-high set is unchanged by this
+pass either — it is still exactly {GAP-069}, `deferred`, as in every pass before it.
 
 ## Disputes
 
@@ -2543,6 +2583,232 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - revert_proof: no throwaway-worktree/stash revert was separately performed for these three by this pass; the CI proof stands instead — run `35729268841` (triggered by the push containing these three commits) completed `success` on all three jobs (`lint`, `ui-permissions`, `test`), where the immediately preceding run (`35727384031`, post-hang-fix) had failed with exactly `4 failed, 33 errors` from these same three causes.
 - contract_change: false — test-only and CI-workflow-only changes; no CLI, route, environment variable or DB table changes. `public_surface_snapshot.json` is byte-identical after regeneration and was not committed.
 - closed_on: 2026-09-22
+
+### GAP-128 (GAP-AGT-41) The GitHub write tool's approval guard checked the requested repository but execution wrote to an independently supplied endpoint
+
+- components: agent guardrails (`ado2gh/agents/migration_agent/guardrails.py`), executor tools (`ado2gh/agents/migration_agent/tools/executor_tools.py`)
+- violates: CA-002 (an approver reviews a specific repository; what executes has to be the same repository, not merely a repository the tool call happened to name)
+- evidence: the `github_api` tool function (`ado2gh/agents/migration_agent/tools/executor_tools.py:124`) received a `repository_id` argument, discarded it (`del repository_id  # read off the call arguments by the guardrail wrapper, not here`), and issued the write against a separately supplied `endpoint` string with no re-check that the endpoint actually pointed at the approved repository. A model-chosen endpoint naming a different owner/repo than the one the guard had validated would still execute. Found by the Astra final-branch review, finding #2 (`run-astra-final-2026-09-22.txt`).
+- severity: high — meets critical_test (a) on its face (a write can land on a repository the operator never approved), rated high rather than critical for the same reasoning the register applies to GAP-089/GAP-108 (a model has to choose a mismatched endpoint for the gap to fire; the default single-repository session narrows how often that mismatch is reachable).
+- blast_radius: every GitHub write tool call in the executor's deterministic and model-driven paths; until this fix, approval was scoped to whatever `repository_id` argument accompanied the call, not to the endpoint the write actually hit.
+- status: remediated
+- resolution: two commits. `28a530b` adds `_extract_github_repo_endpoint_target(endpoint)` (parses the `owner/repo` pair out of the literal endpoint string against the `_GITHUB_REPO_ENDPOINT_SHAPE` = `f"{_GITHUB_REPO_ENDPOINT_SEGMENT}/{{owner}}/{{repo}}"` shape, `_GITHUB_REPO_ENDPOINT_SEGMENT = "repos"`) and `_approved_plan_repo_entry(migration_plan, target_resource)`, and wires the guardrail to compare the endpoint's own target against the approved plan's repository entry before allowing the call through — the `repository_id` argument no longer matters; the endpoint itself is what gets checked. `9d8d130` closes a follow-up bypass on the same check: the endpoint parser now runs the path through `posixpath.normpath` and the query/fragment through `urllib.parse.unquote` first, so a dot-segment (`/repos/approved-org/approved-repo/../../other-org/other-repo`) or a percent-encoded/query-string variant of the same trick can no longer slip past the plain-string comparison.
+- regression_check: `tests/agent/test_gap_128_github_write_endpoint_bound_to_approved_repo.py`
+- revert_proof: not independently re-verified by the register scribe this pass (no worktree revert run); both commits and the regression test file were confirmed present via `git show 28a530b` / `git show 9d8d130`, and the diffs match the evidence above exactly.
+- contract_change: false — internal guardrail logic only; no CLI, HTTP route, environment variable or DB table changes.
+- closed_on: 2026-09-22
+
+### GAP-129 (GAP-AGT-42) A plan installed by the plan-building tool inherited the previous plan's approval instead of starting unapproved
+
+- components: agent orchestrator tools (`ado2gh/agents/migration_agent/nodes/orchestrator_tools.py`), HITL intake (`ado2gh/agents/migration_agent/hitl/intake.py`)
+- violates: CA-002 (an approval covers the plan the operator reviewed, not whatever plan a tool later swaps in under the same session)
+- evidence: the `generate_plan` tool path in `orchestrator_tools.py` replaced `session["migration_plan"]` directly without calling `clear_stale_plan_approval`, so a session already carrying `plan_approved: True` from an earlier plan kept that approval after the plan itself changed underneath it. Found by the Astra final-branch review, finding #4 (`run-astra-final-2026-09-22.txt`), recurring on this specific bypass path the already-registered GAP-102 sticky-approval finding described.
+- severity: high — meets critical_test (a) on its face (an unreviewed plan can execute under a stale approval), rated high rather than critical for the same non-default-path reasoning GAP-102 was rated under: the bypass needs the `generate_plan` tool to be invoked mid-session against an already-approved plan, not the default single-approval-then-run flow.
+- blast_radius: every session where the plan-building tool runs again after the operator already approved an earlier plan.
+- status: remediated
+- resolution: commit `030503c`. `clear_stale_plan_approval` (`hitl/intake.py`) gains a keyword-only `replaced_plan: bool = False` parameter; `orchestrator_tools.py`'s `generate_plan` handling now calls `clear_stale_plan_approval(session, plan=result, replaced_plan=True)` before installing the new plan into the session, clearing `plan_approved` and the approval-fingerprint key. (This fix's own remaining key-comparison gap — a same-revision-key replacement still inheriting approval — was found and closed separately as GAP-137 below.)
+- regression_check: `tests/unit/test_gap_129_replaced_plan_starts_unapproved.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `030503c`'s diff and the regression test file were confirmed present via `git show 030503c`.
+- contract_change: false — internal session-state logic only.
+- closed_on: 2026-09-22
+
+### GAP-130 (GAP-AGT-43) The plan-approval fingerprint bound only to the migration configuration's file name, not its contents
+
+- components: HITL blockers (`ado2gh/agents/migration_agent/hitl/blockers.py`)
+- violates: CA-002 (an approval fingerprint has to change when anything the approved plan depends on changes; a configuration file can be edited in place between approval and execution without its name changing)
+- evidence: `plan_revision_key` folded the migration configuration's path string into the approval fingerprint, but not a hash of what the file actually contained (`hitl/blockers.py`), so editing the file's contents after approval — for instance retargeting a destination organization — left the fingerprint, and therefore the approval, unchanged. Found by the Astra final-branch review, finding #9 (`run-astra-final-2026-09-22.txt`).
+- severity: medium — the configuration values a plan depends on (destination org, tokens, profile settings) are not the plan's own approval-relevant fields the way a repository or work-item list is, and no default flow edits the configuration file mid-session; rated below the high-severity plan-swap gaps (GAP-129, GAP-137) that let an entirely different plan execute.
+- blast_radius: any session where the migration configuration file on disk is edited after the plan built from it was approved but before it runs.
+- status: remediated
+- resolution: commit `030503c`. Adds `_CONFIG_FINGERPRINT_LENGTH = 16` and `_config_content_fingerprint(config_path)` — reads the file's bytes, takes a truncated SHA-256 digest, and returns the empty string on any failure (missing file, unreadable path) rather than raising, since this is an identity input the fingerprint calculation must never fail on. `plan_revision_key` now folds this content fingerprint into the approval key alongside the existing path string, so an edit to the file's contents invalidates the approval even when the file name is unchanged.
+- regression_check: `tests/unit/test_gap_130_plan_approval_bound_to_config_contents.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `030503c`'s diff and the regression test file were confirmed present via `git show 030503c`.
+- contract_change: false — internal fingerprint calculation only.
+- closed_on: 2026-09-22
+
+### GAP-131 (GAP-TOKEN-10) The serialised-JSON secret-masking pattern stopped at an escaped quote, leaking the remainder of the value
+
+- components: audit redaction (`ado2gh/audit/redaction.py`)
+- violates: CA-003 (secret masking must cover the whole value, not stop partway through it)
+- evidence: `_SECRET_VALUE_RE`'s `jsonkv` branch (`ado2gh/audit/redaction.py:39`) matched a quoted `"token"`/`"password"`/`"secret"`/`"pat"`/`"api_key"` value with a plain `[^"]*` character class, so a value that escapes its own closing quote (`"password": "abc\"def"`) stopped the match at that escaped quote and left `def"` in the output unmasked — the sibling `_SECRET_KEY_VALUE_RE` pattern used for the unquoted-assignment case already handled this correctly with an escape-aware group. Found by the Astra final-branch review, finding #5 (`run-astra-final-2026-09-22.txt`); distinct from the already-registered GAP-121/GAP-123, which cover a different quote-mismatch shape.
+- severity: high — meets critical_test (b) on its face (part of a secret value can reach audit output unmasked); this is the same vulnerability class as GAP-121/GAP-123, both rated high.
+- blast_radius: every already-serialised JSON blob passed through `redact_text`/`redact_payload` whose secret value contains an escaped quote character.
+- status: remediated
+- resolution: commit `16bdf05`. Changed the `jsonkv` branch's value capture group from `[^"]*` to the same escape-aware `(?:\\.|[^"\\])*\\?` group `_SECRET_KEY_VALUE_RE` already uses, so an escaped quote inside the value no longer ends the match early.
+- regression_check: `tests/auth/test_gap_131_json_escaped_quote_secret_value.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `16bdf05`'s diff and the regression test file were confirmed present via `git show 16bdf05`.
+- contract_change: false — internal masking pattern only.
+- closed_on: 2026-09-22
+
+### GAP-132 (GAP-AUTH-15) Live-approval request and decision reasons were persisted and returned unmasked
+
+- components: platform approval store (`ado2gh/api/live_approval_store.py`)
+- violates: CA-003 (a free-text reason field is exactly the kind of caller-composed string masking exists for; persisting and returning it verbatim defeats the purpose)
+- evidence: `LiveApprovalStore.create_or_get_pending` stored `reason_request` exactly as the caller supplied it, and `approve`/`deny` (`live_approval_store.py:362`, `:477`) stored `reason_decision` the same way, while `_public_row` (`live_approval_store.py:106`) returned both straight back out through the API. The audit event written alongside each call already masked its own payload through `redact_payload`, so masking looked complete from the audit trail alone — only the approval row itself, and the API response built from it, carried the raw value, and the row does not expire, so a secret typed into either reason field outlived the run it released. Found by the Astra final-branch review, finding #6 (`run-astra-final-2026-09-22.txt`).
+- severity: high — meets critical_test (b) on its face (a secret typed into a reason field is stored and returned unmasked, and outlives the request through the standing approval row); capped at high rather than critical only because it requires an operator or approver to type a secret into a free-text reason field rather than a code path handling one automatically.
+- blast_radius: every live-approval request and decision reason, persisted and echoed by `_public_row`, on every approval and denial since the store existed; also forwarded unmasked to the agent service via `_notify_agent`'s `deny-live` payload.
+- status: remediated
+- resolution: commit `16bdf05`. `create_or_get_pending` now masks `request.reason_request` with `redact_text` before persisting it. `approve` and `deny` each compute `masked_reason = redact_text(reason) if reason else reason` once up front and use it everywhere the raw `reason` previously appeared: the database write, the `_notify_agent` `deny-live` payload, and the `write_profile_audit` call. `_public_row` additionally masks `reason_request`/`reason_decision` on read, so a row written before this fix existed is masked the moment it is next read through the API, not only going forward.
+- regression_check: `tests/auth/test_gap_132_approval_reasons_masked_at_rest.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `16bdf05`'s diff and the regression test file were confirmed present via `git show 16bdf05`.
+- contract_change: false — the `_public_row` response shape is unchanged; only the masking of two existing string fields.
+- closed_on: 2026-09-22
+
+### GAP-133 (GAP-TOKEN-11) The audit writer's `actor` field bypassed payload masking
+
+- components: audit writer (`ado2gh/audit/writer.py`)
+- violates: CA-003 (every externally supplied string field on an audit row needs masking, not only the payload)
+- evidence: `AuditWriter.write` (`ado2gh/audit/writer.py`) passed `payload` through `redact_payload` before persisting it, but wrote `actor` to the database exactly as given. `actor` is sometimes free text a caller assembled (a username with an embedded token, for example), so nothing stopped a secret shape from reaching that column unmasked even though the same call's payload was safe. Found by the Astra final-branch review, finding #10 (`run-astra-final-2026-09-22.txt`).
+- severity: medium — the payload, which is where a secret is expected to appear, was already masked; `actor` is a narrower surface and typically a username or service-account label rather than a value routinely containing a raw credential.
+- blast_radius: every audit event's `actor` column, for any caller that composes the actor string from something other than a fixed, trusted label.
+- status: remediated
+- resolution: commit `16bdf05`. `AuditWriter.write` now passes `actor=redact_text(actor) if actor else actor` to `insert_audit_event`, matching how `payload` is already masked; `event_type` is deliberately left unmasked, since it is a fixed machine name chosen by code, never free text a caller composed.
+- regression_check: `tests/unit/test_gap_133_audit_actor_masked.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `16bdf05`'s diff and the regression test file were confirmed present via `git show 16bdf05`.
+- contract_change: false — internal audit-write masking only.
+- closed_on: 2026-09-22
+
+### GAP-134 (GAP-AUTH-16) A live-execution refusal at the platform RBAC layer wrote no audit event
+
+- components: platform RBAC (`ado2gh/api/platform_rbac.py`)
+- violates: CA-004 (a refusal is exactly the outcome that needs a durable record, so a different approver or a later audit can see it was refused and why)
+- evidence: the platform RBAC layer's live-execution guard raised an authentication or permission error on refusal (`ado2gh/api/platform_rbac.py`) with no audit write of its own — unlike the scope-mismatch refusals this same pass closed as GAP-125, a live-approver's outright refusal to authorize left no trace at all. Found by the Astra final-branch review, finding #11 (`run-astra-final-2026-09-22.txt`).
+- severity: medium — the refusal itself is already correct (the error is raised, nothing executes); the gap is a missing forensic trail, the same class of finding as the already-registered GAP-125, which this entry mirrors at a different layer.
+- blast_radius: every live-execution request refused at the platform RBAC layer — until this fix, no audit event recorded that the refusal happened at all.
+- status: remediated
+- resolution: commit `f284e0f`. Adds `LIVE_APPROVAL_REFUSAL_EVENT = "platform.live_execution.approval_refused"` and `_audit_live_approval_refusal(request, user, reason)`, called immediately before each refusal is raised, so the event is written whether the refusal is an authentication failure or a permission failure. Commit `4a8b05c` (GAP-143) later replaced that literal with `LIVE_APPROVAL_REFUSAL_EVENT = AuditEvent.LIVE_EXECUTION_APPROVAL_REFUSED`, folding it into the new audit event registry with no change to the event name or the write itself.
+- regression_check: `tests/auth/test_gap_134_live_approver_refusal_audited.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `f284e0f`'s diff and the regression test file were confirmed present via `git show f284e0f`.
+- contract_change: false — internal audit coverage only; the refusal's HTTP status and body are unchanged.
+- closed_on: 2026-09-22
+
+### GAP-135 (GAP-AUTH-17) A migrate-job approval scope identifier concatenated field values with no field names, so different scopes could collide on the same approval
+
+- components: accelerator migrate-guard routes (`services/accelerator_api/routes/migrate_guard.py`)
+- violates: CA-002 (an approval has to name a scope the approver can distinguish from a different one; a scope id that collides on unrelated inputs lets an approval for one destination cover another)
+- evidence: `_live_scope_id` (`services/accelerator_api/routes/migrate_guard.py:99`) built its scope identifier by concatenating the scope's field values in order with no field names attached, and `_SCOPE_FIELDS` (`:33`) omitted `work_item_types` entirely. Supplying only a GitHub organization, or only a GitHub repository, could therefore produce the same scope id as a different combination of fields, and a work-item-type filter change was invisible to the scope id altogether. Found by the Astra final-branch review, finding #1 (`run-astra-final-2026-09-22.txt`).
+- severity: high — meets critical_test (a) on its face (an approval for one destination scope can be satisfied by a different, colliding scope with no operator awareness); rated high rather than critical under the same non-default-combination reasoning as the register's other scope-collision entries (GAP-072).
+- blast_radius: every migrate-job live-approval scope built by `_live_scope_id`, for any combination of fields that can collide when concatenated bare.
+- status: remediated
+- resolution: commit `f284e0f`. `_SCOPE_FIELDS` gains `"work_item_types"`; `_live_scope_id` now encodes each field as an explicit `name=value` pair instead of a bare concatenated value, so two different field combinations can no longer collide on the same identifier and a work-item-type change is now reflected in the scope id.
+- regression_check: `tests/unit/test_gap_135_migrate_scope_id_names_fields.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `f284e0f`'s diff and the regression test file were confirmed present via `git show f284e0f`.
+- contract_change: false — the scope id is an internal identifier, not a documented public contract; existing pending approvals keyed on the old bare-concatenation format are not migrated, but a mismatched id simply fails to match rather than matching the wrong scope.
+- closed_on: 2026-09-22
+
+### GAP-136 (GAP-AGT-44) A form submission answered whatever form the server currently held instead of the specific form instance and plan revision the operator was shown
+
+- components: agent service form routes (`services/agent/routes/form_routes.py`, `services/agent/routes/form_guard.py`), HITL forms (`ado2gh/agents/migration_agent/hitl/forms.py`, `ado2gh/agents/migration_agent/hitl/operator_input.py`), agent console (`apps/migration-ui/src/components/AgentChat.tsx`)
+- violates: CA-002 (an operator's answer has to bind to the specific form and plan revision they were looking at; a submission that only names the session can be replayed against whatever the server has since replaced it with)
+- evidence: `services/agent/routes/form_routes.py:138` accepted a form submission identified only by session id, so an old browser tab or a delayed retry could submit an answer that the server would apply to whatever form or plan the session currently held, rather than the one the operator actually saw and answered — including a plan the operator never reviewed, if the plan had been replaced in the meantime. Found by the Astra final-branch review, finding #3 (`run-astra-final-2026-09-22.txt`).
+- severity: high — meets critical_test (a) on its face (a stale answer can be applied to, and can thereby approve, a plan the operator never saw); rated high rather than critical because it needs a genuinely stale client (a second tab, a delayed retry, or a replay) against a session whose form or plan has since changed, not the default single-form-then-answer flow.
+- blast_radius: every form submission on every agent session; until this fix, no submission carried any evidence of which form instance or plan revision it was answering.
+- status: remediated
+- resolution: two commits, console and service. Console (`3069d14`): `AgentChat.tsx` sends the form's `form_instance_id` on submit and, on an HTTP 409 `stale_form` response, refetches the session instead of retrying the stale answer. Service (`b20a6eb`): new module `services/agent/routes/form_guard.py` adds `reject_if_stale_form(session_id, session, form, req)`, called from both `submit_session_form` and `submit_session_form_stream` before any answer is applied — it compares the submitted `form_instance_id` against the form's own `instance_id`, and the form's stored `plan_revision` against the session's current `plan_revision_key(plan)`, raising 409 `stale_form` (audited as `agent.form.stale_submission_refused`) on either mismatch. `FormSubmitRequest` gains an optional `form_instance_id` field (`services/agent/routes/_helpers.py`); `hitl/forms.py`'s `sanitize_form` now stamps every form with a fresh `instance_id` (`new_form_instance_id()`, `f"form_{uuid.uuid4().hex[:12]}"`) and, when the session already has a plan, its `plan_revision`; `hitl/operator_input.py`'s `operator_input_to_form` forwards the session through so that stamping can happen there too.
+- regression_check: `tests/agent/test_gap_136_form_submission_bound_to_form_instance.py`
+- revert_proof: not independently re-verified by the register scribe this pass; both commits and the regression test file were confirmed present via `git show 3069d14` / `git show b20a6eb`.
+- contract_change: true — `POST /v1/sessions/{id}/form-submit` and `form-submit-stream` gain an optional `form_instance_id` request field and a new 409 `stale_form` response case; a pending form's shape gains `instance_id` and `plan_revision`. Approved by operator instruction, 2026-09-22 (remediate all findings); see `plan.md` § Approved contract changes entry 19. `tests/contract/test_public_surface_snapshot.py` freezes HTTP routes by path and method only, not request-body fields or response status codes, so the snapshot itself needed no edit — confirmed by that file's own scope, consistent with the reasoning already applied to GAP-079/entry 17.
+- closed_on: 2026-09-22
+
+### GAP-137 (GAP-AGT-45) A plan swapped in by the plan-building tool inherited its predecessor's approval whenever the two plans' revision keys happened to match
+
+- components: agent orchestrator tools (`ado2gh/agents/migration_agent/nodes/orchestrator_tools.py`), HITL intake (`ado2gh/agents/migration_agent/hitl/intake.py`), HITL blockers (`ado2gh/agents/migration_agent/hitl/blockers.py`)
+- violates: CA-002 (an approval covers the specific plan the operator reviewed; a same-key coincidence is not the operator reviewing the replacement)
+- evidence: after GAP-129 taught `clear_stale_plan_approval(replaced_plan=True)` to run on every tool-installed plan replacement, it still compared the incoming plan's revision key against the approved key and skipped clearing when they matched. `plan_revision_key` deliberately excludes a work item's `status` from that key on purpose — so that running a plan does not invalidate the approval that authorized the run — but that same exclusion meant a tool-installed replacement whose only difference was a work item's status (a previously skipped item flipped back to `ready`, for example) kept the identical key and silently inherited an approval for a plan the operator never reviewed. Found by a follow-up review of the GAP-129 fix during the Astra final-branch pass.
+- severity: high — meets critical_test (a) on its face (a plan the operator never reviewed can execute under an inherited approval); same class and rating as GAP-129, which this entry closes the remaining gap in.
+- blast_radius: any tool-installed plan replacement whose revision key happens to match the previously approved plan's key — in practice, any replacement that only changes a work item's status.
+- status: remediated
+- resolution: commit `9c70332`. `clear_stale_plan_approval`'s `replaced_plan=True` branch (`hitl/intake.py`) now clears the approval unconditionally — `plan_approved`, the approval-fingerprint key, and both PEV execution flags — without first comparing revision keys; the key comparison is left in place only for the normal (not-replaced) replan path, where it correctly guards against clearing an approval that still applies to the plan currently running.
+- regression_check: `tests/unit/test_gap_137_status_only_replacement_starts_unapproved.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `9c70332`'s diff and the regression test file were confirmed present via `git show 9c70332`.
+- contract_change: false — internal session-state logic only.
+- closed_on: 2026-09-22
+
+### GAP-138 (GAP-AGT-46) A replaced plan cleared the session's approval but left the LangGraph turn state routing on the old plan's run
+
+- components: agent orchestrator tools (`ado2gh/agents/migration_agent/nodes/orchestrator_tools.py`), LangGraph builder (`ado2gh/agents/migration_agent/graph/builder.py`)
+- violates: CA-002 (clearing the session's own approval bookkeeping does not help if the graph's routing decision for the current turn still points at the plan that was just replaced)
+- evidence: the `generate_plan` tool replaces `session["migration_plan"]` directly, but the LangGraph state for the turn is a separate dict — `graph/builder.py`'s `_route_after_orchestrator` reads `state.get("migration_plan")` and `state.get("start_execution")`, not the session. Left unpatched, a stale `start_execution=True` plus the old plan still sitting in `state` (carried over from a previous turn's checkpoint, or a run already queued within the same turn) would route the executor straight to the old migration queue instead of presenting the freshly-installed plan for approval, regardless of what GAP-129/GAP-137 had just done to the session's own approval flags. Found by a follow-up review of the GAP-129 fix during the Astra final-branch pass.
+- severity: high — meets critical_test (a) on its face (the executor can run against a replaced plan's queue despite the session no longer being approved for it); same class and rating as GAP-129/GAP-137, which this entry protects from being undone by stale turn state.
+- blast_radius: any turn in which the plan-building tool replaces the plan while the graph state it returns still carries a prior turn's `start_execution`, `migration_queue`, `executor_result`, `validation_result` or `validation_feedback`.
+- status: remediated
+- resolution: commit `9c70332`. The `generate_plan` handling in `orchestrator_tools.py` now also returns a `migration_plan`/`start_execution: False`/`migration_queue: None`/`executor_result: None`/`validation_result: None`/`validation_feedback: None` patch as part of the node's `AgentState` update whenever the plan was replaced outright, so the state the router sees for that turn matches what was just done to the session — the executor can never receive a stale queue built from the plan that was just swapped out.
+- regression_check: `tests/unit/test_gap_138_replaced_plan_resets_graph_run_state.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `9c70332`'s diff and the regression test file were confirmed present via `git show 9c70332`.
+- contract_change: false — internal graph-state logic only.
+- closed_on: 2026-09-22
+
+### GAP-139 (GAP-AGT-47) The configuration-content fingerprint could raise instead of degrading to the empty string on a malformed path
+
+- components: HITL blockers (`ado2gh/agents/migration_agent/hitl/blockers.py`)
+- violates: Principle IV (an identity input feeding an approval decision must never itself be able to crash the approval path it is meant to protect)
+- evidence: `_config_content_fingerprint` (`hitl/blockers.py`, added by the GAP-130 fix) caught only `OSError`, which covers a missing or unreadable file, but not a path holding an embedded NUL byte (`Path.read_bytes()` raises `ValueError` for that case) or a non-string path (`TypeError`). Either would make the whole `plan_revision_key` calculation raise instead of degrading to the empty fingerprint the way every other unreadable-path case already does. Found by a follow-up review of the GAP-130 fix during the Astra final-branch pass.
+- severity: medium — a raised exception here fails the approval-key calculation outright rather than fails open into a wrong-but-safe state; no live execution is enabled by this gap, but a crash mid-approval is a Principle IV robustness gap on a path several other CA-002 fixes (GAP-130, GAP-137) now depend on.
+- blast_radius: any configuration path derived from settings that could contain an embedded NUL byte or resolve to a non-string value before reaching `_config_content_fingerprint`.
+- status: remediated
+- resolution: commit `9c70332`. The `except OSError` clause on `_config_content_fingerprint`'s digest calculation widens to `except (OSError, ValueError, TypeError)`, so a NUL byte or a non-string path degrades to the empty-string fingerprint like every other unreadable-path case, rather than raising.
+- regression_check: `tests/unit/test_gap_139_config_fingerprint_never_raises.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `9c70332`'s diff and the regression test file were confirmed present via `git show 9c70332`.
+- contract_change: false — internal fingerprint calculation only.
+- closed_on: 2026-09-22
+
+### GAP-140 (GAP-TOKEN-12) A truncated serialised-JSON secret value was not recognized by the masking pattern at all
+
+- components: audit redaction (`ado2gh/audit/redaction.py`)
+- violates: CA-003 (a log line cut off mid-value is exactly the kind of degraded input masking has to still catch)
+- evidence: `_SECRET_VALUE_RE`'s `jsonkv` branch required a literal closing quote on the value (even after the GAP-131 escape-aware fix); a log line truncated mid-value (`{"password": "abc`, no closing quote at all, as happens when a log line is cut off) never matched the pattern, so the visible part of the value reached output completely unmasked. Found during the same masking-pattern review that produced GAP-131.
+- severity: low — requires the specific combination of a truncated log line and a secret value sitting exactly at the truncation point; the untruncated, well-formed case (the common one) was already fixed by GAP-131.
+- blast_radius: any already-serialised JSON blob passed through `redact_text`/`redact_payload` that is truncated partway through a recognized secret value's quoted string.
+- status: remediated
+- resolution: commit `afd6e45`. The `jsonkv` branch's closing quote becomes optional (`"?`, the same convention `_SECRET_KEY_VALUE_RE` already uses), so a truncated value with no closing quote at all still has whatever part of it exists masked; the value's character class already excludes an unescaped quote, so a well-formed document with two keys still stops each match at its own real closing quote rather than running on into the next key.
+- regression_check: `tests/auth/test_gap_140_truncated_json_secret_value.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `afd6e45`'s diff and the regression test file were confirmed present via `git show afd6e45`.
+- contract_change: false — internal masking pattern only.
+- closed_on: 2026-09-22
+
+### GAP-141 (GAP-TOKEN-13) The audit writer's `profile_id` field, and a secret-shaped dictionary key rather than value, both bypassed masking
+
+- components: audit writer (`ado2gh/audit/writer.py`), audit redaction (`ado2gh/audit/redaction.py`)
+- violates: CA-003 (every caller-supplied string reaching an audit row needs masking, and a secret can appear as a dictionary key, not only as a value)
+- evidence: `AuditWriter.write` (`ado2gh/audit/writer.py`) inserted `profile_id` exactly as given, unlike `actor` and the payload, which the GAP-133 fix already masked — `profile_id` is a caller-supplied string, not a fixed value, so the same reasoning applies. Separately, `redact_payload`'s dict branch (`ado2gh/audit/redaction.py`) only ran `_is_secret_key`/masking against a secret-looking key's value; a raw token used as the dictionary key itself (`{"ghp_...": "seen"}`, rather than the more usual named field) reached the stored payload untouched, because nothing ran the key string through the same value-shape scan `redact_text` performs on ordinary string values. Found during the same audit-masking review that produced GAP-133.
+- severity: low — a profile identifier is a narrower surface than the payload or actor fields, and a raw secret used as a dictionary key rather than a value is an unusual shape; not the primary path a credential would reach audit output through, but a gap in the general CA-003 guarantee that every string a caller supplies gets scanned.
+- blast_radius: every audit event's `profile_id` column, plus every payload dictionary whose key (not value) happens to look like a secret.
+- status: remediated
+- resolution: commit `afd6e45`. `AuditWriter.write` now passes `profile_id=redact_text(profile_id) if profile_id else profile_id`, matching `actor`. `redact_payload`'s dict branch now runs each string key through `redact_text` as well (`(redact_text(k) if isinstance(k, str) else k): ...`), so a secret-shaped key is masked the same way a secret-shaped value already was.
+- regression_check: `tests/unit/test_gap_141_audit_profile_id_and_keys_masked.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `afd6e45`'s diff and the regression test file were confirmed present via `git show afd6e45`.
+- contract_change: false — internal masking coverage only.
+- closed_on: 2026-09-22
+
+### GAP-142 (GAP-TOOL-12) The settings store returned nested settings sections as plain dictionaries instead of their dataclasses after a disk round trip
+
+- components: settings store (`ado2gh/api/settings_store.py`)
+- violates: Principle IV (a caller reading settings back after a save should get the same typed shape it saved, not a dictionary that happens to have the same keys)
+- evidence: `SettingsStore.load` deserialized a settings file's nested sections (`AdvancedSettings`, `AgentRuntimeSettings`, `ConcurrencySettings`, `CheckpointStorageSettings`, and similar) as plain dictionaries rather than rebuilding the dataclass instances they were saved from, so any caller that read settings back after a save and then accessed a nested section with attribute syntax (`settings.advanced.dry_run_default`) rather than dictionary syntax would raise `AttributeError` on a freshly loaded store, even though the same attribute access worked fine on a store that had never been persisted and reloaded. Found while wiring the Terra rule-sweep settings refactor (below, GAP-143) into code that reads settings through the accessor pattern.
+- severity: medium — no safety-relevant value is lost (the data round-trips correctly at the dictionary level), but any settings-consuming code written against the dataclass attribute contract silently breaks the moment a real save-then-load cycle happens, which every deployment restart triggers.
+- blast_radius: every nested settings dataclass field read via attribute access after a load-from-disk; in-process code that never persists and reloads within the same run does not see it.
+- status: remediated
+- resolution: commit `d2b6561`. `SettingsStore.load` now rebuilds each nested settings dataclass from its loaded dictionary explicitly after deserializing the outer settings object, instead of leaving the nested sections as the raw dictionaries the general deserializer produced for them.
+- regression_check: `tests/unit/test_gap_142_settings_store_rehydrates_nested_dataclasses.py`
+- revert_proof: not independently re-verified by the register scribe this pass; commit `d2b6561`'s diff and the regression test file were confirmed present via `git show d2b6561`.
+- contract_change: false — internal settings-store deserialization only; the persisted file format is unchanged.
+- closed_on: 2026-09-22
+
+### GAP-143 (GAP-TOOL-13) The Terra rule sweep found 73 hardcoded-value, duplicate-registry and comment-jargon violations across the codebase
+
+- components: agent runtime settings, checkpoint storage, tool registry, concurrency settings, LLM provider registry, GitHub client settings, service origins/timeouts, pipeline statuses/step definitions, and comment text across `ado2gh/` and `services/`
+- violates: Principle IV (Intuitive Architecture & Naming) — three rules from the Terra rule sweep: rule 1, a literal value repeated or buried in code instead of named once in a settings/constants location (41 findings); rule 2, a duplicate registry — two separate tables or dispatch structures naming the same set of things, liable to drift apart (10 findings); rule 3, a comment referencing a task-ticket id or unexplained jargon instead of a durable plain-language explanation (22 findings)
+- evidence: `specs/013-clean-code-arch-remediation/run-terra-rules-2026-09-22.txt` — 73 numbered findings, each citing a `file:line`, the rule violated, a description, and a proposed fix; final tally line "Rule 1: 41  Rule 2: 10  Rule 3: 22".
+- severity: medium — every finding is readability/maintainability drift (a hardcoded value that should be a named setting, a registry that could drift from its sibling, a comment that assumes context a later reader will not have); none carries a safety, masking or approval consequence on its own, per the FR-020 medium definition.
+- blast_radius: broad but shallow — dozens of files touched, each change mechanical and independently reviewable; no single finding changes runtime behaviour by itself except where a hardcoded value's extraction into a settings field also made it independently configurable (e.g. concurrency defaults, checkpoint storage timeouts).
+- status: remediated (residual recorded)
+- resolution: twelve commits grouped by area. Comment-jargon sweep (rule 3, 22 findings): `85adc2a`, `c1f7ee3`, `d4a23c8` — spell out task-ticket-id openers and abbreviated jargon into plain-word explanations across tests, the agent's graph/nodes/HITL modules, and the runtime/session/api/service modules. Hardcoded-value and duplicate-registry sweep (rules 1 and 2, 51 findings): `2bbf5f4` (form limits, failure codes, event kinds, roles and message types named once instead of repeated per call site), `cc5bf55` (one orchestrator tool registry replacing two that could drift, concurrency defaults read from settings instead of literals, checkpoint storage resolved through one settings-backed function), `35c95a4` (service origins, timeouts, default paths and statuses read from one place each instead of repeated per route module), `1864114` (one LLM provider registry for capabilities/base URLs/catalog fetchers, replacing per-provider literal tables; one GitHub client settings source), `a8e0459` (kept the fast 15-second timeout for GitHub credential checks explicit rather than letting the provider-registry refactor silently widen it), `641fb39` (pipeline run statuses, step statuses, token slots and step definitions named once), `c866a56` (agent runtime limits — max iterations, PEV retries, and similar — become settings fields with the prior constants as their defaults), `253fea9` (the runtime-limit settings and the checkpoint-storage resolver wired through the settings accessor at every call site that previously read the raw constant or built its own path), `4a8b05c` (one `AuditEvent` enum in the new `ado2gh/audit/events.py` collecting all 46 audit event names that were previously typed as bare string literals at each call site, with a drift test — `tests/unit/test_audit_event_registry.py` — that greps both packages for a literal event name outside the registry; also names the migrate-job scope-type string as `MIGRATE_JOB_SCOPE_TYPE` in `live_approval_scopes.py`, the agent-notification URL and timeout in `live_approval_store.py`, the two repository-matching fuzzy-cutoff values in `hitl/intake.py`/`hitl/schemas.py`, and the agent service's reported version string in `services/agent/main.py`).
+- residual: two items from the 73 findings are not yet closed by the commits above. (1) `services/agent/routes/_helpers.py`'s `_accel_get_impl` still hardcodes its own request timeout rather than reading it from a settings field. (2) `ado2gh/api/llm/http_llm.py`'s language-model request timeout is deferred pending a connectivity-settings field to hold it — no such field exists yet. A third, smaller item: `ado2gh/agents/migration_agent/hitl/operator_input.py`'s `_slug(...)[:32]` truncation length is still a bare literal. A fourth: five LangGraph builder constants (checkpointer timeouts, retry policy) remain candidates for settings fields but have not been moved. The audit-event-name registry item that was open when this entry was first drafted closed within the same pass, as commit `4a8b05c` above; a further cleanup pass narrowing the four remaining items was still running, uncommitted, as this entry was written, and is not reflected in the commit list above.
+- regression_check: each commit above carries its own test changes (see individual commit diffs); no single new regression test file covers the sweep as a whole, since it is a naming/registry refactor rather than a new behaviour.
+- revert_proof: not applicable — a naming and registry-consolidation sweep has no single behavioural property to revert-prove; each commit's own test suite, already run as part of that commit, is the check that the refactor did not change behaviour.
+- contract_change: false — internal naming, settings-field extraction and comment text only; no CLI, HTTP route, environment variable or DB table changes.
+- follow_up: the four residual items above (two deferred timeout settings fields, one bare-literal truncation length, five builder constants) remain open. No successor task filed.
+- closed_on: 2026-09-22 (four residual items above remain open)
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 

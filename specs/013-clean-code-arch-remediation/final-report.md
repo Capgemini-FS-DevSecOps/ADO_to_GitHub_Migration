@@ -162,6 +162,29 @@ and GAP-124, a `second_review` field on all three of GAP-123/124/125.
 Register totals unchanged: 127 gaps, 24/49/35/19. CI run `35733597922`
 (covering `5663b11`) completed `success` on all three jobs.
 
+**Final pass (2026-09-22).** Two source artefacts: `run-astra-final-2026-09-22.txt`
+(the Astra final-branch review, eleven numbered findings) and
+`run-terra-rules-2026-09-22.txt` (the Terra rule sweep, 73 hardcoded-value,
+duplicate-registry and comment-jargon findings). The fixing work for the
+eleven Astra findings — plus three more found while fixing them — landed
+across commits `28a530b`, `9d8d130`, `030503c`, `16bdf05`, `f284e0f`,
+`9c70332`, `afd6e45`, `3069d14` and `b20a6eb`; the Terra sweep's 73 findings
+landed across `85adc2a`, `c1f7ee3`, `d4a23c8`, `2bbf5f4`, `cc5bf55`,
+`35c95a4`, `1864114`, `a8e0459`, `641fb39`, `c866a56`, `253fea9` and `4a8b05c`.
+The register scribe (fifth pass) recorded sixteen new entries, GAP-128
+through GAP-143 (fifteen individual findings plus one grouped entry for the
+Terra sweep), and two new `plan.md` § Approved contract changes entries:
+entry 18 corrects entry 17's now-outdated note that
+`PipelineRunStartRequest.dry_run` had never shipped (it has, commit
+`8bc89dd`, already recorded as a closed GAP-079 residual in the register
+itself), and entry 19 records the form-submission binding fix (GAP-136),
+both console (`3069d14`) and service (`b20a6eb`) halves now shipped. New
+register totals: 24 critical / 57 high / 41 medium / 21 low, 143 total (was
+24/49/35/19/127); open 27 / deferred 3 / remediated 113. The open
+critical-or-high set is unchanged: one entry, GAP-069, `deferred`. Detail:
+`gap-register.md` § Summary and `plan.md` § Approved contract changes
+entries 18-19, both dated 2026-09-22 (fifth/final scribe pass).
+
 ### 📄 Generated Files Summary
 
 - `tests/auth/test_gap_123_escaped_quote_secret_value_leak.py` — new, 3 tests
@@ -193,6 +216,15 @@ Modified (second-reviewer follow-up and fourth scribe pass, Phase 9):
 `specs/013-clean-code-arch-remediation/gap-register.md`,
 `specs/013-clean-code-arch-remediation/plan.md`.
 
+Modified (fifth/final register scribe pass): `specs/013-clean-code-arch-remediation/gap-register.md`,
+`specs/013-clean-code-arch-remediation/plan.md`, this file
+(`final-report.md`); staged alongside the two source artefacts,
+`specs/013-clean-code-arch-remediation/run-astra-final-2026-09-22.txt` and
+`specs/013-clean-code-arch-remediation/run-terra-rules-2026-09-22.txt`
+(both untracked before this pass). The register scribe did not touch code
+or tests this pass — every fix commit named above was already on disk and
+independently verified via `git show <hash>` before being recorded.
+
 ### ⚠️ Action Required (Incomplete Parts)
 
 - **The second-reviewer pass on findings A/B/C is complete.** Terra
@@ -219,12 +251,33 @@ Modified (second-reviewer follow-up and fourth scribe pass, Phase 9):
   naming and non-safety-impact items, e.g. GAP-035 through GAP-050,
   GAP-062, GAP-080, GAP-097, GAP-112 through GAP-119) — none blocks merge;
   each carries its own entry and rationale in the register.
-- PR #7's ready-for-review status: verified this pass via `gh pr view 7` —
-  `isDraft: false`, `state: OPEN`, `mergeable: MERGEABLE`,
-  `mergeStateStatus: CLEAN`. It is already marked ready; there is nothing
-  left to flip.
+- GAP-143's Terra-sweep grouping carries four residual items, recorded on
+  the entry itself: `services/agent/routes/_helpers.py`'s `_accel_get_impl`
+  timeout, `ado2gh/api/llm/http_llm.py`'s language-model request timeout
+  (deferred pending a connectivity-settings field), the bare-literal
+  truncation length in `hitl/operator_input.py`'s `_slug(...)[:32]`, and
+  five LangGraph builder constants (checkpointer timeouts, retry policy)
+  that remain candidates for settings fields. The audit-event-name registry
+  item that was open when this pass began is now closed (commit `4a8b05c`).
+- The full test suite has not been re-run since this pass's fix commits
+  landed; run it before merge (`.venv\Scripts\python.exe -m pytest`,
+  redirected to a file per the repo's own testing guidance) to confirm the
+  coverage ratchet still clears 69% with all sixteen new gaps' regression
+  tests included.
+- This branch has not been pushed since the commits covering GAP-128
+  through GAP-143 landed; push is still needed, and a CI run against the
+  pushed head has not yet been triggered or observed for this pass.
+- PR #7's ready-for-review status: verified in an earlier pass via
+  `gh pr view 7` — `isDraft: false`, `state: OPEN`, `mergeable: MERGEABLE`,
+  `mergeStateStatus: CLEAN`. Not re-verified against the commits this pass
+  adds; the merge itself remains pending on the push, CI run and full-suite
+  confirmation above.
 
 ### ⏭️ Next Steps
 
-1. Merge PR #7 into `main` — it is ready, mergeable and CI is green, and the
-   owed second-reviewer pass is complete; nothing else blocks it.
+1. Run the full test suite locally and confirm the coverage ratchet still
+   clears 69% with the sixteen new gaps' regression tests included.
+2. Push the branch (including this pass's five documentation-only files)
+   and confirm a green CI run against the pushed head.
+3. Merge PR #7 into `main` once the above are confirmed; nothing else is
+   known to block it.

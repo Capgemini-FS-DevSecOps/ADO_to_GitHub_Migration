@@ -1136,12 +1136,65 @@ method), environment variables and DB table names; it does not freeze a Pydantic
 field's default, so no snapshot edit is needed or was made. GAP-079's prior claim of a
 snapshot recording for this change is corrected in the same pass in `gap-register.md`.
 
+**18. `PipelineRunStartRequest.dry_run` widened from `bool = True` to `Optional[bool] = None`, so an omitted field resolves through the deployment's configured default (GAP-079 residual).**
+Decision (operator, 2026-09-22, remediate all findings): approved. Entry 17's own note above
+claimed this half of GAP-079 had never shipped — "`PipelineRunStartRequest.dry_run` is still
+`bool = True` today ... no commit ever changed it" — and that claim was correct when entry 17
+was written, but it is wrong today: commit `8bc89dd` (2026-09-22, from the Finisher's
+coordinator-assigned follow-up work) made the identical change entry 17 already describes for
+`SessionRequest.dry_run`. `PipelineRunStartRequest.dry_run` (`ado2gh/api/contracts.py:571`) is
+now `Optional[bool] = None`; `start_pipeline_run`'s `else adv.dry_run_default` fallback
+(`services/accelerator_api/routes/pipeline_routes.py:220`) is reachable for the first time.
+Confirmed via `git log -S"dry_run: Optional[bool] = None" -- ado2gh/api/contracts.py`, which
+now returns commit `8bc89dd`. `gap-register.md`'s GAP-079 entry already recorded this fix as a
+closed residual from the third scribe pass; this entry corrects entry 17's now-outdated note in
+`plan.md` itself, which had not been updated to match.
+
+*Migration note.* Same shape as entry 17: an external caller of a pipeline-run start route that
+omits `dry_run` now gets the deployment's configured `dry_run_default` instead of always
+getting a dry run; a caller that always sent the field explicitly sees no behaviour change.
+
+*Snapshot impact: none.* Same reasoning as entry 17 — the snapshot test freezes CLI commands,
+HTTP routes (path and method), environment variables and DB table names, not a Pydantic
+request field's default.
+
+**19. Form submission gains an optional `form_instance_id`; a pending form gains `instance_id` and `plan_revision`; a mismatch answers 409 `stale_form` (GAP-136).**
+Decision (operator, 2026-09-22, remediate all findings): approved. A form submission
+previously carried only the session id, so an old browser tab or a delayed retry could apply
+its answer to whatever form or plan the session currently held rather than the one the
+operator actually saw — including a plan replaced since the form was issued. Both halves of
+the fix have now shipped. Console (commit `3069d14`): `apps/migration-ui/src/components/AgentChat.tsx`
+sends the form's `form_instance_id` on submit and, on an HTTP 409 `stale_form` response,
+refetches the session instead of retrying the stale answer. Service (commit `b20a6eb`): new
+module `services/agent/routes/form_guard.py` adds `reject_if_stale_form(session_id, session,
+form, req)`, called from both `submit_session_form` and `submit_session_form_stream` before any
+answer is applied; it compares the submitted `form_instance_id` against the form's own
+`instance_id`, and the form's stored `plan_revision` against the session's current
+`plan_revision_key(plan)`, raising 409 `stale_form` (audited as
+`agent.form.stale_submission_refused`) on either mismatch. `FormSubmitRequest`
+(`services/agent/routes/_helpers.py`) gains an optional `form_instance_id` field; `hitl/forms.py`'s
+`sanitize_form` stamps every form with a fresh `instance_id` and, when the session already has a
+plan, its `plan_revision`.
+
+*Migration note.* An external caller of `POST /v1/sessions/{id}/form-submit` or
+`form-submit-stream` that does not send `form_instance_id` sees no behaviour change (the field
+is optional and the stale-form check only fires on a mismatch, not on an absence). A caller
+that retries a stale answer against a form or plan the server has since replaced now gets 409
+`stale_form` instead of having that stale answer silently applied.
+
+*Snapshot impact: none.* `tests/contract/test_public_surface_snapshot.py` freezes HTTP routes
+by path and method only, not request-body fields or response status codes, so neither the new
+optional field nor the new 409 case needed a snapshot edit — the same reasoning already applied
+to entry 17/GAP-079.
+
 **Contract changes still awaiting sign-off.** None. The four that were — GAP-007, GAP-008,
 GAP-003 and GAP-017 — were signed off by operator instruction on 2026-09-13 and are entries
 5–8 above. Entries 16 and 17, added 2026-09-22 by the register scribe (pass two), were both
 approved by operator instruction on 2026-09-13, contemporaneous with the batch that produced
 them; they were merged into this register two passes later from `register-pending/` hand-off
-files.
+files. Entries 18 and 19, added 2026-09-22 by the register scribe (final pass), were both
+approved by operator instruction on 2026-09-22 (remediate all findings), contemporaneous with
+the commits that produced them.
 
 ## Coverage measurement
 
