@@ -5,7 +5,7 @@
 - invoke_planner: route to the Planner agent for discovery + plan building
 
 The orchestrator collects parameters from the user via request_user_input,
-then calls invoke_planner to hand off to the PEV chain.
+then calls invoke_planner to hand off to the plan-execute-validate loop (PEV) chain.
 """
 from __future__ import annotations
 

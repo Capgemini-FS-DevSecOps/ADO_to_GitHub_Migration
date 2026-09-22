@@ -459,7 +459,7 @@ class MigrationSessionStore:
             )
         return pid
 
-    # ── PEV cycle summaries ─────────────────────────────────────────────
+    # ── Plan-execute-validate loop (PEV) cycle summaries ─────────────────
 
     def save_cycle_summary(self, session_id: str, summary: dict[str, Any]) -> str:
         """Persist the outcome of one plan-execute-validate cycle.

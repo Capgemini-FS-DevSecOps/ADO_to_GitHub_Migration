@@ -9,7 +9,7 @@ RECOMMENDED_GH_SCOPES = {"repo", "read:org", "admin:org"}
 
 
 def validate_github_token(token: str, gh_org: str = "") -> dict[str, Any]:
-    """Validate a GitHub PAT — Jenkins-style test connection."""
+    """Validate a GitHub personal access token (PAT) — Jenkins-style test connection."""
     if not token or token.strip() == "***":
         return {"valid": False, "message": "Token is required", "scopes": [], "warnings": []}
 

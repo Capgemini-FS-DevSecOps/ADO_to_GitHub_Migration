@@ -309,7 +309,7 @@ def _planner_operator_input_return(
         session: Session dict; the request is stored on it and announced.
         plan: The plan produced so far, carried through unchanged.
         migration_queue: The batch queue, carried through unchanged.
-        iteration: Current PEV iteration count.
+        iteration: Current plan-execute-validate loop (PEV) iteration count.
         op_req: The operator-input request, dumped to a dict when it is a
             Pydantic model.
 

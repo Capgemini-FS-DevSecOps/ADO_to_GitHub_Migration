@@ -1,4 +1,4 @@
-"""LangGraph HITL node using interrupt() + Command(resume=...) per 2026 LangGraph docs.
+"""LangGraph node for a human-in-the-loop operator prompt (HITL), using interrupt() + Command(resume=...) per 2026 LangGraph docs.
 
 Side effects must run only after interrupt() returns — the node re-executes from the top on resume.
 """

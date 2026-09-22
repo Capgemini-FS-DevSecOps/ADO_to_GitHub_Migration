@@ -70,8 +70,8 @@ def register(cli: click.Group) -> None:
 
         Only the names of a service connection are readable through the ADO API,
         never its credentials, so the connections themselves cannot be migrated.
-        The manifest lists the GitHub secrets and the OIDC setup an ops team has
-        to create by hand on the target side.
+        The manifest lists the GitHub secrets and the OpenID Connect (OIDC) setup
+        an ops team has to create by hand on the target side.
         """
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.service_connection_manifest import ServiceConnectionManifest

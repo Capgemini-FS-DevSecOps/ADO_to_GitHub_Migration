@@ -1,4 +1,4 @@
-"""Shared helpers for all PEV graph nodes."""
+"""Shared helpers for all plan-execute-validate loop (PEV) graph nodes."""
 from __future__ import annotations
 
 import json

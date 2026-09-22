@@ -17,7 +17,7 @@ SSE_HEARTBEAT_INTERVAL_SECONDS = 15
 
 # ─── Agent-service HTTP boundary limits ───────────────────────────────
 # Every value below bounds something a client controls: how much text one
-# request may carry, how long an SSE stream may run, and how much session
+# request may carry, how long a server-sent event stream (SSE) may run, and how much session
 # state the process keeps resident (THR-10-001, THR-10-002).
 MAX_CHAT_MESSAGE_CHARS = 20_000
 MAX_FORM_SUBMISSION_CHARS = 100_000

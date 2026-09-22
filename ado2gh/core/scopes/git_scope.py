@@ -1,4 +1,4 @@
-"""Git mirror / GEI migration scope."""
+"""Git mirror / GitHub Enterprise Importer (GEI) migration scope."""
 from __future__ import annotations
 
 import base64
@@ -150,8 +150,8 @@ class GitScopeHandler:
             A report pairing the measured size and branch count with a
             recommended strategy ("mirror", "gei" or "manual"), an overall
             status from "ok" through "fail_hard", and the human-readable
-            warnings that justify that status. The LFS object count is reported
-            as -1 because it cannot be known without cloning.
+            warnings that justify that status. The Git Large File Storage (LFS)
+            object count is reported as -1 because it cannot be known without cloning.
         """
         size_kb = source.get("size", 0)
         size_mb = size_kb / 1024

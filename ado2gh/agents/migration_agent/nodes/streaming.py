@@ -20,7 +20,7 @@ async def _stream_llm_response(
     subagent: str = "orchestrator",
     capabilities: ModelCapabilities | None = None,
 ) -> str:
-    """Stream an LLM response, collecting tokens and emitting live SSE events.
+    """Stream an LLM response, collecting tokens and emitting live server-sent events (SSE).
 
     Falls back to ``ainvoke()`` if ``astream()`` is unavailable or raises. Uses
     the stream bus (registered by the orchestrator) to push tokens in real time.

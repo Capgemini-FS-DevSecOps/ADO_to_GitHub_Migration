@@ -1,4 +1,4 @@
-"""Platform RBAC guards for accelerator and agent routes.
+"""Platform role-based access control (RBAC) guards for accelerator and agent routes.
 
 Every guard here except the two live-execution ones is an *identity* gate: it stays
 permissive when ``ADO2GH_AUTH_ENABLED`` is unset so that local development, which the

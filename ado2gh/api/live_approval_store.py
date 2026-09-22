@@ -1,4 +1,4 @@
-"""Unified live execution approval queue (Agent PEV, migrate, pipeline)."""
+"""Unified live execution approval queue (agent plan-execute-validate loop (PEV), migrate, pipeline)."""
 from __future__ import annotations
 
 import json

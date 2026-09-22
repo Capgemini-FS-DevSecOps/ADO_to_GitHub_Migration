@@ -1,7 +1,7 @@
 """Context window management for LangGraph nodes.
 
 Uses LangChain trim_messages with approximate token counting (2026 best practice).
-Keeps last 2 PEV cycles full + JSON summary of prior cycles.
+Keeps last 2 plan-execute-validate loop (PEV) cycles full + JSON summary of prior cycles.
 """
 from __future__ import annotations
 

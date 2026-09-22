@@ -1,4 +1,4 @@
-"""LangGraph topology: PEV StateGraph, routing, compiled graph singleton."""
+"""LangGraph topology: plan-execute-validate loop (PEV) StateGraph, routing, compiled graph singleton."""
 from ado2gh.agents.migration_agent.constants import GRAPH_RECURSION_LIMIT
 from ado2gh.agents.migration_agent.graph.builder import (
     ALL_NODES,

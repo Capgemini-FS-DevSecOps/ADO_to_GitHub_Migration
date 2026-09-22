@@ -46,7 +46,7 @@ class AgentState(TypedDict, total=False):
     accumulated_tokens: int
     max_token_budget: int
 
-    # PEV-related fields
+    # Plan-execute-validate loop (PEV) related fields
     start_pev: bool
     start_execution: bool
     pending_form: dict[str, Any] | None

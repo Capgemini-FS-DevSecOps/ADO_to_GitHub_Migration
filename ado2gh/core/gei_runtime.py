@@ -1,4 +1,4 @@
-"""Runtime environment for gh-ado2gh / .NET GEI extensions in Linux containers."""
+"""Runtime environment for gh-ado2gh / .NET GitHub Enterprise Importer (GEI) extensions in Linux containers."""
 from __future__ import annotations
 
 import os

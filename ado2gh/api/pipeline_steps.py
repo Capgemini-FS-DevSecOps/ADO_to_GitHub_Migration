@@ -537,7 +537,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
 
         Covers only what affects the git transfer itself: upstream repos that
         must migrate first, repository size and the strategy it implies (mirror,
-        GEI or manual), branch counts that will stretch the run, branch policies
+        the GitHub Enterprise Importer (GEI) or manual), branch counts that will stretch the run, branch policies
         that need their own scope, and per-project metadata such as wikis and
         work items. Pipeline secret mapping is deliberately not reported here —
         that belongs to :meth:`_pipeline_conversion_dry_run_warnings`.
@@ -679,7 +679,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
 
         Reports the credential-bearing dependencies that a converted workflow
         will need on the GitHub side: each service connection the repo's
-        pipelines use, which must become a GitHub secret or an OIDC login, and
+        pipelines use, which must become a GitHub secret or an OpenID Connect (OIDC) login, and
         each variable group, which must become Actions secrets or variables.
         These belong to pipeline conversion rather than to the repo content
         migration step, so they are reported separately.

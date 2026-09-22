@@ -46,7 +46,7 @@ def resolve_dry_run(
     migration_plan: dict[str, Any] | None = None,
     executor_result: dict[str, Any] | None = None,
 ) -> bool:
-    """Resolve whether the current PEV cycle is dry-run (default True).
+    """Resolve whether the current plan-execute-validate loop (PEV) cycle is dry-run (default True).
 
     The first source carrying a real boolean wins; a present-but-malformed flag is
     skipped rather than coerced, so it can never turn a dry run into a live one.
@@ -71,7 +71,7 @@ def _append_event(  # noqa: PLR0913 - exception-register.md: the message record'
     """Append a message event to the session's message list.
 
     Sole entry point for the in-memory message list, so this is where CA-003
-    masking is applied — everything downstream (SSE, the persisted
+    masking is applied — everything downstream (the server-sent event stream (SSE), the persisted
     ``messages_json`` column, the chat feed) reads the masked entry it returns.
 
     Args:
@@ -399,7 +399,7 @@ def mask_secrets(text: str) -> str:
 
     Thin delegate to the platform's single masking choke point (FR-025) so the
     agent recognises every shape the audit writer does — GitHub prefixes, bare
-    ADO PATs, `Bearer <token>` and `key=value` pairs.
+    ADO personal access tokens (PATs), `Bearer <token>` and `key=value` pairs.
     """
     if not text:
         return text

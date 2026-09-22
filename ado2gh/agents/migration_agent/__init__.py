@@ -1,4 +1,4 @@
-"""LangGraph migration agent — PEV loop with domain subpackages.
+"""LangGraph migration agent — plan-execute-validate loop (PEV) with domain subpackages.
 
 Layout:
 - ``graph/`` — StateGraph topology + ``AgentState``

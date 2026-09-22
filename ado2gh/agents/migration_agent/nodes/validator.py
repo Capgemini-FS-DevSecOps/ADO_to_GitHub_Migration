@@ -1,4 +1,4 @@
-"""Validator node: verifies executor outcomes scope by scope and feeds the PEV loop."""
+"""Validator node: verifies executor outcomes scope by scope and feeds the plan-execute-validate loop (PEV)."""
 from __future__ import annotations
 
 from typing import Any

@@ -96,7 +96,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
 
     migration_plan = state.get("migration_plan") or session.get("migration_plan")
 
-    # PEV completion callback — must run before start_execution re-trigger check
+    # Plan-execute-validate loop (PEV) completion callback — must run before start_execution re-trigger check
     validation_result = state.get("validation_result") or {}
     if validation_result.get("passed") and session.get("status") in (
         "planning", "executing", "validating", "thinking",
@@ -477,7 +477,7 @@ async def _handle_general_chat(
             # intentionally rather than removed (no behavior change).
             if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
-                # _append_event, so the SSE frame must match (CA-003, FR-025).
+                # _append_event, so the server-sent event (SSE) frame must match (CA-003, FR-025).
                 w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
 
     tool_calls = parsed.get("tool_calls", [])
@@ -559,7 +559,7 @@ async def _handle_migration_info(
             # intentionally rather than removed (no behavior change).
             if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
-                # _append_event, so the SSE frame must match (CA-003, FR-025).
+                # _append_event, so the server-sent event (SSE) frame must match (CA-003, FR-025).
                 w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
         reply = _safe_reply(parsed, response_text)
     else:
@@ -704,7 +704,7 @@ async def _handle_migration_action(
             # intentionally rather than removed (no behavior change).
             if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
-                # _append_event, so the SSE frame must match (CA-003, FR-025).
+                # _append_event, so the server-sent event (SSE) frame must match (CA-003, FR-025).
                 w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
 
         if tool_calls:

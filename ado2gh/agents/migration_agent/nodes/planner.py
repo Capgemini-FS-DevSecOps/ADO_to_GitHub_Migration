@@ -323,7 +323,7 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
         subagent="planner",
     )
 
-    # Increment iteration for PEV cycle tracking
+    # Increment iteration for plan-execute-validate loop (PEV) cycle tracking
     iteration += 1
 
     # If we have validation feedback, this is a revised plan

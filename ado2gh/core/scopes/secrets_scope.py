@@ -95,8 +95,8 @@ class SecretsScopeHandler:
                 name and type are readable; no credential material is present.
 
         Returns:
-            Guidance text naming the GitHub secrets or the OIDC login action to
-            configure for this connection type, or a prompt to review the
+            Guidance text naming the GitHub secrets or the OpenID Connect (OIDC)
+            login action to configure for this connection type, or a prompt to review the
             connection by hand when the type is not recognised. Names only,
             never a credential value (CA-003).
         """

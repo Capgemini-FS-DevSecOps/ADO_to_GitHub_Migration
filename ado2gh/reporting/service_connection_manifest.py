@@ -8,7 +8,7 @@ environments, and other dependencies. Use the `analyze_deps` step result data in
 Migration guide:
 - Replace `ServiceConnectionManifest.generate()` calls with pipeline step execution
 - Use `analyze_deps` step result `dependencies` field for structured dependency data
-- Use `OIDCProvisioner` for automated OIDC credential provisioning (spec 009)
+- Use `OIDCProvisioner` for automated OpenID Connect (OIDC) credential provisioning (spec 009)
 
 See: specs/009-pipeline-step-decoupling/spec.md
 """
@@ -32,13 +32,13 @@ warnings.warn(
 
 
 class ServiceConnectionManifest:
-    """Generate a detailed manifest mapping ADO service connections to GitHub secrets/OIDC.
+    """Generate a detailed manifest mapping ADO service connections to GitHub secrets or OpenID Connect (OIDC) setup.
 
     ADO service connections CANNOT be programmatically migrated (values are not
     readable via API). This manifest provides ops teams with:
     - What connections exist per project
     - Suggested GitHub secret names
-    - OIDC setup instructions for Azure/AWS
+    - OpenID Connect (OIDC) setup instructions for Azure/AWS
     - Which pipelines depend on each connection
     """
 

@@ -21,7 +21,7 @@ from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
 # ─── Orchestrator tool execution (inlined — no separate graph node) ───
 
 def _planner_handoff_state_clear() -> dict[str, Any]:
-    """Drop stale graph plan/PEV fields when invoke_planner requests a fresh plan.
+    """Drop stale graph plan / plan-execute-validate loop (PEV) fields when invoke_planner requests a fresh plan.
 
     Returns:
         An ``AgentState`` patch clearing the plan, queue, executor result and

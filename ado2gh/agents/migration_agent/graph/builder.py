@@ -1,6 +1,6 @@
 """LangGraph StateGraph for the migration agent (Google ADK + LangGraph layout).
 
-Direct PEV flow with strict agent boundaries:
+Direct plan-execute-validate loop (PEV) flow with strict agent boundaries:
 
     orchestrator <-> planner -> executor -> validator
                               ^              |

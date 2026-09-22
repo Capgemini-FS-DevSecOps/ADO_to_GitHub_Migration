@@ -1,4 +1,4 @@
-"""LangGraph PEV nodes — orchestrator, planner, executor, validator, finalize.
+"""LangGraph plan-execute-validate loop (PEV) nodes — orchestrator, planner, executor, validator, finalize.
 
 Role-based modules (Google ADK layout). Streaming uses LangGraph ``get_stream_writer``.
 """

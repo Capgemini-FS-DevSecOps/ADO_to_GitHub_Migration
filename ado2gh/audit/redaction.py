@@ -16,14 +16,14 @@ _MASK = "***"
 _MAX_DEPTH = 20
 
 # Secret *value* shapes. One combined alternation, deliberately: this runs on
-# every audit write, agent message, SSE frame and log record, so it must stay a
+# every audit write, agent message, server-sent event (SSE) frame and log record, so it must stay a
 # single scan rather than one pass per pattern.
 _SECRET_VALUE_RE = re.compile(
     # GitHub token prefixes (ghp_/gho_/ghu_/ghs_/ghr_), fine-grained PATs, pat-
     r"(?P<pfx>gh[a-z]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|pat-[A-Za-z0-9]+)"
     # `Authorization: Bearer <token>` copied into free text
     r"|(?P<bearer>bearer\s+[A-Za-z0-9._~+/=-]+)"
-    # bare Azure DevOps PAT: 52 opaque alphanumerics, no prefix at all
+    # bare Azure DevOps personal access token (PAT): 52 opaque alphanumerics, no prefix at all
     r"|(?P<opaque>(?<![A-Za-z0-9])[A-Za-z0-9]{52}(?![A-Za-z0-9]))"
     # "token": "…" inside an already-serialised JSON blob
     r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"[^"]*"',

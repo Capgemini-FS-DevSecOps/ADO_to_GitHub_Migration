@@ -1,6 +1,6 @@
 """Prometheus-compatible metrics collector.
 
-In-memory counters and histograms for agent sessions, PEV cycles,
+In-memory counters and histograms for agent sessions, plan-execute-validate loop (PEV) cycles,
 LLM calls, guardrails, and tool calls.
 """
 from __future__ import annotations

@@ -85,7 +85,7 @@ def _build_initial_state(
 
     Returns:
         A fresh AgentState dict seeded from the session (iteration counters,
-        migration plan, PEV retry count) with all per-turn fields reset.
+        migration plan, plan-execute-validate loop (PEV) retry count) with all per-turn fields reset.
     """
     degraded, unconfigured, capabilities = _bind_runtime_deps(session, deps)
     max_budget = capabilities.max_token_budget if capabilities else 0
@@ -158,7 +158,7 @@ async def _merge_checkpoint_state(
 
 
 def _state_has_interrupt(final_state: dict[str, Any]) -> bool:
-    """Detect a LangGraph interrupt (HITL form) recorded in a state dict.
+    """Detect a LangGraph interrupt used for a human-in-the-loop operator prompt (HITL form) recorded in a state dict.
 
     Returns:
         True when the state carries ``__interrupt__`` or a non-empty
@@ -381,7 +381,7 @@ async def _stream_graph_events(
             to continue a thread paused at an interrupt.
 
     Yields:
-        SSE-shaped event dicts: the ``token`` and ``thinking`` events written by
+        Server-sent event stream (SSE)-shaped event dicts: the ``token`` and ``thinking`` events written by
         nodes via ``get_stream_writer()`` are relayed verbatim, plus ``message``,
         ``tool_call``, ``status`` and ``form_request`` events derived from state
         updates, then one final ``done`` event carrying ``reply`` and

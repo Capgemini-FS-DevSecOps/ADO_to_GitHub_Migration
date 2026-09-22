@@ -128,7 +128,7 @@ def clear_session_migration_state(
     *,
     current_run_id: str | None = None,
 ) -> int:
-    """Clear FR-036 in_progress rows for repos tied to this session.
+    """Clear in-progress rows for repos tied to this session, enforcing the one-live-migration-per-repo rule (FR-036).
 
     Returns:
         How many in-progress migration rows were cleared.

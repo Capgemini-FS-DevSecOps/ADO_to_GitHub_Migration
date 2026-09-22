@@ -1,4 +1,4 @@
-"""Azure DevOps multi-PAT rotation, mirroring the GitHub ``TokenManager`` pattern."""
+"""Azure DevOps multi-personal-access-token (multi-PAT) rotation, mirroring the GitHub ``TokenManager`` pattern."""
 from __future__ import annotations
 
 import logging

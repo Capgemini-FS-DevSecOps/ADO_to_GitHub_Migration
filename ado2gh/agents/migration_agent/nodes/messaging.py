@@ -1,4 +1,4 @@
-"""Structured inter-agent messages and PEV cycle summaries."""
+"""Structured inter-agent messages and plan-execute-validate loop (PEV) cycle summaries."""
 from __future__ import annotations
 
 from typing import Any

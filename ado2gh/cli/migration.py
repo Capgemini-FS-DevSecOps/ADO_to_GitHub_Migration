@@ -46,7 +46,8 @@ def register(cli: click.Group) -> None:
 
         \b
           repo         mirror strategy force-pushes over the GitHub repo again,
-                       discarding anything pushed there since; GEI instead
+                       discarding anything pushed there since; the GitHub
+                       Enterprise Importer (GEI) strategy instead
                        skips when the target's HEAD already matches ADO, and
                        stops the repo when it exists with a different HEAD
           pipelines    skips the pipelines this wave already recorded as

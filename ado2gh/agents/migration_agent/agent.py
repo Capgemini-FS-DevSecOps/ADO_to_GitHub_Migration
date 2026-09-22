@@ -1,4 +1,4 @@
-"""Root agent definition — Google ADK layout over LangGraph PEV.
+"""Root agent definition — Google ADK layout over the LangGraph plan-execute-validate loop (PEV).
 
 Industry-standard agent projects expose a single ``root_agent`` (or graph)
 entry point. This migration agent keeps **LangGraph** as the orchestration

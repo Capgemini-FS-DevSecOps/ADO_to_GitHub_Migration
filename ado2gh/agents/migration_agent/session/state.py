@@ -96,7 +96,7 @@ def release_session_for_chat(
     *,
     outcome: str = "idle",
 ) -> None:
-    """Return session to idle after PEV completes so the operator can chat normally."""
+    """Return session to idle after the plan-execute-validate loop (PEV) completes so the operator can chat normally."""
     set_session_idle(session)
     if outcome == "failed":
         session["last_pev_outcome"] = "failed"
