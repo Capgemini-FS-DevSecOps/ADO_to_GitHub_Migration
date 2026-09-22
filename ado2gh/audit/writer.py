@@ -9,7 +9,7 @@ import json
 from typing import TYPE_CHECKING, Optional
 from uuid import uuid4
 
-from ado2gh.audit.redaction import redact_payload
+from ado2gh.audit.redaction import redact_payload, redact_text
 
 if TYPE_CHECKING:
     from ado2gh.state.base import StateDBBase
@@ -32,9 +32,13 @@ class AuditWriter:
         """Persist one audit event after masking secrets in its payload.
 
         Args:
-            event_type: Short machine name of what happened.
+            event_type: Short machine name of what happened. A fixed name chosen
+                by code, never free text a caller composed, so it is left as
+                written rather than passed through ``redact_text`` (GAP-133).
             profile_id: The profile the event belongs to.
-            actor: Who caused it; empty when unknown.
+            actor: Who caused it; empty when unknown. Masked before insert like
+                the payload, since a username or an email address is sometimes
+                free text a caller assembled rather than a fixed value (GAP-133).
             payload: Event details, redacted before they are serialised.
 
         Returns:
@@ -46,7 +50,7 @@ class AuditWriter:
             event_id=event_id,
             event_type=event_type,
             profile_id=profile_id,
-            actor=actor,
+            actor=redact_text(actor) if actor else actor,
             payload_json=json.dumps(safe),
         )
         return event_id

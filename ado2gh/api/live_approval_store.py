@@ -25,7 +25,7 @@ from ado2gh.api.live_approval_scopes import (
     pipeline_run_scope_id,
 )
 from ado2gh.api.profile_governance import write_profile_audit
-from ado2gh.audit import redact_payload
+from ado2gh.audit import redact_payload, redact_text
 from ado2gh.auth.models import PlatformUser
 from ado2gh.state.factory import create_state_db
 
@@ -107,7 +107,13 @@ def _public_row(row: dict) -> dict:
         the request and decision reasons, both timestamps and the approver
         username. Internal columns — the requester's user id and the serialised
         context — are deliberately left out.
+
+    Both reasons are masked here too, not only at write time: a row persisted
+    before that masking existed would otherwise still hand a raw secret shape
+    back out through the API (GAP-132, CA-003).
     """
+    reason_request = row.get("reason_request")
+    reason_decision = row.get("reason_decision")
     return {
         "id": row["id"],
         "requester_username": row["requester_username"],
@@ -115,8 +121,8 @@ def _public_row(row: dict) -> dict:
         "scope_id": row["scope_id"],
         "profile_id": row.get("profile_id"),
         "status": row["status"],
-        "reason_request": row.get("reason_request"),
-        "reason_decision": row.get("reason_decision"),
+        "reason_request": redact_text(reason_request) if reason_request else reason_request,
+        "reason_decision": redact_text(reason_decision) if reason_decision else reason_decision,
         "requested_at": row["requested_at"],
         "decided_at": row.get("decided_at"),
         "approver_username": row.get("approver_username"),
@@ -214,7 +220,9 @@ class LiveApprovalStore:
             scope_id=request.scope_id,
             requested_at=now,
             profile_id=request.profile_id,
-            reason_request=request.reason_request,
+            reason_request=(
+                redact_text(request.reason_request) if request.reason_request else request.reason_request
+            ),
             context_json=json.dumps(context),
         )
         write_profile_audit(
@@ -379,9 +387,15 @@ class LiveApprovalStore:
                 status_code=409,
                 detail={"message": "Already decided", "status": row["status"]},
             )
+        # Masked once, up front: the decision reason is client-supplied free
+        # text, stored, audited and (for a deny) forwarded to the agent, so
+        # every one of those has to see the same masked text rather than the
+        # raw value slipping through whichever path forgets to mask it
+        # (GAP-132, CA-003).
+        masked_reason = redact_text(reason) if reason else reason
         now = datetime.now(timezone.utc).isoformat()
         updated = self.db.decide_live_execution_approval(
-            approval_id, "approved", approver, reason, now,
+            approval_id, "approved", approver, masked_reason, now,
         )
         assert updated is not None
         if updated["scope_type"] == "pipeline_run":
@@ -398,7 +412,7 @@ class LiveApprovalStore:
                 "scope_type": updated["scope_type"],
                 "scope_id": updated["scope_id"],
                 "role": approver.role.value,
-                "reason": reason,
+                "reason": masked_reason,
             },
             db_path=self.db_path,
         )
@@ -487,16 +501,19 @@ class LiveApprovalStore:
                 status_code=409,
                 detail={"message": "Already decided", "status": row["status"]},
             )
+        # See `approve` for why this is masked once, up front, rather than at
+        # each of the three places `reason` is used below (GAP-132, CA-003).
+        masked_reason = redact_text(reason) if reason else reason
         now = datetime.now(timezone.utc).isoformat()
         updated = self.db.decide_live_execution_approval(
-            approval_id, "denied", approver, reason, now,
+            approval_id, "denied", approver, masked_reason, now,
         )
         assert updated is not None
         if updated["scope_type"] == AGENT_SESSION_SCOPE_TYPE:
-            self._notify_agent(updated, "deny-live", {"reason": reason})
+            self._notify_agent(updated, "deny-live", {"reason": masked_reason})
         elif updated["scope_type"] == "pipeline_run":
             self._stamp_pipeline_approval(updated, "denied", approver)
-            self._mark_pipeline_denied(updated["scope_id"], reason)
+            self._mark_pipeline_denied(updated["scope_id"], masked_reason)
         write_profile_audit(
             "platform.live_execution.denied",
             profile_id=updated.get("profile_id") or "_platform",
@@ -504,7 +521,7 @@ class LiveApprovalStore:
             payload={
                 "approval_id": approval_id,
                 "scope_type": updated["scope_type"],
-                "reason": reason,
+                "reason": masked_reason,
             },
             db_path=self.db_path,
         )

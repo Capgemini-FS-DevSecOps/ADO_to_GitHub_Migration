@@ -25,8 +25,12 @@ _SECRET_VALUE_RE = re.compile(
     r"|(?P<bearer>bearer\s+[A-Za-z0-9._~+/=-]+)"
     # bare Azure DevOps personal access token (PAT): 52 opaque alphanumerics, no prefix at all
     r"|(?P<opaque>(?<![A-Za-z0-9])[A-Za-z0-9]{52}(?![A-Za-z0-9]))"
-    # "token": "…" inside an already-serialised JSON blob
-    r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"[^"]*"',
+    # "token": "…" inside an already-serialised JSON blob. The value itself is
+    # escape-aware (`(?:\\.|[^"\\])*\\?`, the same group `_SECRET_KEY_VALUE_RE`
+    # uses below) rather than plain `[^"]*`: a value that escapes its own
+    # closing quote (`"password": "abc\"def"`) otherwise stops the match at
+    # that escaped quote and leaves `def"` in the output (GAP-131).
+    r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*\\?"',
     re.IGNORECASE,
 )
 
