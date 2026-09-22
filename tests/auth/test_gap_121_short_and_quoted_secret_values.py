@@ -1,4 +1,4 @@
-"""GAP-109 (GAP-AUDIT-08) — short, quoted and punctuated secret values leaked.
+"""GAP-121 (GAP-TOKEN-08) — short, quoted and punctuated secret values leaked.
 
 ``redact_text``'s ``kv`` shape required at least eight characters from a
 narrow charset (``[A-Za-z0-9_\\-./+=]``) after a secret-looking key. A short

@@ -1,4 +1,4 @@
-"""GAP-110 — an agent session's live request opens a real platform approval.
+"""GAP-122 (GAP-AGT-32) — an agent session's live request opens a real platform approval.
 
 Before this fix, ``_enqueue_session_live_approval`` only flipped
 ``live_approval_status`` to ``pending`` in memory: it never called the

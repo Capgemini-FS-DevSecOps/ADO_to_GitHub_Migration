@@ -1105,3 +1105,21 @@ Implementing the GAP-110 fix itself grew `_enqueue_session_live_approval` in `se
 |-----------|----------|-------------|--------|----------|-------------|-----------|
 | (new) | `services/agent/routes/_session_registry.py` | added module | Holds the process-global `_runs`/`_sessions` caches and their bound: `_session_activity_epoch`, `_forget_session`, `_NON_RECONSTRUCTIBLE_KEYS`, `_is_reconstructible`, `_evict_stale_state`, `_remember_session`, `_remember_run`. `_helpers.py` imports every one of them back and re-exports the public names, so every other route module's `from services.agent.routes._helpers import _sessions, _runs, ...` kept working unchanged. One whitebox test target did move: `tests/agent/test_agent_route_boundary_limits.py` monkeypatched `_helpers.MAX_IN_MEMORY_SESSIONS` to shrink the cap, but `_evict_stale_state` now reads that constant from its own module's namespace, not `_helpers`'s re-exported copy — the two size-cap tests now patch `_session_registry.MAX_IN_MEMORY_SESSIONS` instead. `SESSION_IDLE_TTL_SECONDS` is read-only in that same test and stayed a plain re-export from `_helpers.py`, needing no test change. | yes | pass (`_pretest_gap100_wide3.txt`, 174 passed, 5 skipped) | 2026-09-22 |
 | shrunk | `services/agent/routes/_helpers.py` | — | Down to 749 lines after the split (cap is 800); keeps the route request/response models, the accelerator HTTP client helpers, session hydration/payload assembly and `_enqueue_session_live_approval` itself — the request/response half of the module. | yes | pass (`_pretest_gap100_wide3.txt`, 174 passed, 5 skipped) | 2026-09-22 |
+
+## 2026-09-22 — correction: rename the two `GAP-110` test files to their final register ids
+
+The two entries above (`## GAP-110 approval-store split` and `## GAP-110 agent-route-helpers
+split`) both cite the provisional id `GAP-110`, which the register scribe's second pass
+renumbered to its final id, `GAP-122`, when merging the astra-fixes.md batch (the last three
+entries of that batch — provisional `GAP-108`/`GAP-109`/`GAP-110` — became final
+`GAP-120`/`GAP-121`/`GAP-122`, since the review-fixes batch already claimed `GAP-108` and
+`GAP-109` for two different findings). This is an append-only correcting row; the two entries
+above are left as written since they describe file moves that already happened correctly, not
+a renumbering. The three regression-test files the register's own GAP-120/GAP-121/GAP-122
+entries flagged as not yet renamed have now been renamed to match:
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| `tests/auth/test_gap_108_pipeline_approval_scope_match.py` | `tests/auth/test_gap_120_pipeline_approval_scope_match.py` | renamed | Provisional id `GAP-108` in the filename superseded by the final register id `GAP-120` (`GAP-AUTH-13`); the in-file docstring label was updated to match. | yes | pass (`tests/auth/test_gap_120_pipeline_approval_scope_match.py`, targeted run) | 2026-09-22 |
+| `tests/auth/test_gap_109_short_and_quoted_secret_values.py` | `tests/auth/test_gap_121_short_and_quoted_secret_values.py` | renamed | Provisional id `GAP-109` in the filename superseded by the final register id `GAP-121` (`GAP-TOKEN-08`); the in-file docstring label was updated to match. | yes | pass (`tests/auth/test_gap_121_short_and_quoted_secret_values.py`, targeted run) | 2026-09-22 |
+| `tests/agent/test_gap_110_session_live_request_audited.py` | `tests/agent/test_gap_122_session_live_request_audited.py` | renamed | Provisional id `GAP-110` in the filename superseded by the final register id `GAP-122` (`GAP-AGT-32`); the in-file docstring label was updated to match. | yes | pass (`tests/agent/test_gap_122_session_live_request_audited.py`, targeted run) | 2026-09-22 |
