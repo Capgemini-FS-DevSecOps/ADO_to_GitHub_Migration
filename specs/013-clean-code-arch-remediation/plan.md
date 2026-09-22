@@ -460,6 +460,92 @@ The open critical-or-high set after this pass is one entry: GAP-069, `deferred`.
 Status is updated in the same pass to match.
 
 
+**Addendum (2026-09-22) — register-pending merge, second scribe pass.** Two hand-off batches
+queued in `register-pending/` since the prior addendum were merged into `gap-register.md` and
+this file in one pass: fifteen new ids (GAP-108 through GAP-122), one existing entry's detail
+block corrected with a status refinement (GAP-079: `open`→`remediated` was already recorded in
+the prior pass, corrected here to `remediated (residual recorded)`), and one existing entry
+extended to cover a command its original fix missed (GAP-018).
+
+New totals: 23 critical / 47 high / 33 medium / 19 low, 122 total (was 20/43/29/15/107).
+
+Fifteen new ids, one line each — the task instruction for this addendum said "eight ids"; the
+two source files actually contain fifteen combined (four remediated + eight open follow-ups in
+`register-pending/review-fixes.md`, three remediated in `register-pending/astra-fixes.md`),
+so all fifteen are recorded below rather than an arbitrary subset of eight, and this count
+mismatch is flagged the same way the "seven OPEN follow-ups" instruction was found to actually
+be eight in `review-fixes.md`:
+
+- GAP-108 (GAP-AGT-28, high, remediated) — the deterministic executor scope path posted live
+  writes with no guardrail evaluation
+- GAP-109 (GAP-AGT-29, high, remediated) — `plan_revision_key` missed the ADO source
+  project/repo and a work item's `gh_target`, so a retarget survived approval
+- GAP-110 (GAP-AGT-30, high, remediated) — `_refuse_path` truncated an audited endpoint to 200
+  characters before masking, splitting a secret across the cut
+- GAP-111 (GAP-AGT-31, critical, remediated) — two discovery-snapshot load paths bypassed the
+  `bf1a07c` masking commit and stored the accelerator's response unmasked
+- GAP-112 (GAP-AGT-33, medium, open) — `untrusted.py`'s delimiter closes on a literal string an
+  attacker's own data can contain
+- GAP-113 (GAP-AGT-34, medium, open) — the guardrail decision audit sink has no production
+  caller
+- GAP-114 (GAP-AGT-35, medium, open) — `generate_plan` writes a new plan without revoking a
+  stale approval
+- GAP-115 (GAP-AGT-36, medium, open) — form submissions carry no form id or revision nonce
+- GAP-116 (GAP-AGT-37, low, open) — blocker-resolution revocation writes no audit record
+- GAP-117 (GAP-AGT-38, low, open) — string booleans pass through form fields unconverted
+- GAP-118 (GAP-AGT-39, low, open) — test gaps: no cross-referencing coverage of the GAP-108
+  guardrail path from the guardrail/orchestrator side
+- GAP-119 (GAP-AGT-40, low, open) — the plan-revision config path is fingerprinted as a string,
+  not by its resolved contents
+- GAP-120 (GAP-AUTH-13, critical, remediated) — `_execute_pipeline` ran an approved live
+  pipeline run from its persisted context with no re-derived scope check
+- GAP-121 (GAP-TOKEN-08, critical, remediated) — `_SECRET_KEY_VALUE_RE` missed short, quoted,
+  and punctuated secret values, and a quote-specific branch under-masked a mixed-quote value
+- GAP-122 (GAP-AGT-32, high, remediated) — an agent session's live-execution request never
+  opened a real platform approval
+
+GAP-018 was extended, not given a new id: `push-workflows` (`ado2gh/cli/misc.py:153`) was the
+one command its original `--dry-run/--live` sweep missed; commit `a2d7a28` brings it in line
+with `run`, `phase run` and `ado-cleanup`. Recorded as § Approved contract changes entry 16.
+
+GAP-079 was found half-remediated on inspection, not fully remediated as its prior text
+claimed. Its resolution cited commit `179b2f1` and stated both `SessionRequest.dry_run`
+(`services/agent/routes/_helpers.py`) and `PipelineRunStartRequest.dry_run`
+(`ado2gh/api/contracts.py`) were widened from `bool = True` to `Optional[bool] = None`.
+Verification (`git show --stat`, `git log -p --follow`, `git log -S`, and a direct read of the
+current tree) confirmed the `SessionRequest` half genuinely shipped, in commit `189d73f`, not
+`179b2f1`; the `PipelineRunStartRequest` half was never applied — the field is still
+`bool = True` today and the dead branch it feeds
+(`services/accelerator_api/routes/pipeline_routes.py:220`) is still unreachable. Both are
+corrected in `gap-register.md`'s GAP-079 entry (status now `remediated (residual recorded)`,
+with the `PipelineRunStartRequest` half recorded as a `residual` rather than silently dropped),
+and § Approved contract changes entry 17 above describes only the half that actually shipped.
+Severity stays `low` (unchanged) — the register scribe found this while doing exactly what was
+asked (reading GAP-079's resolution to write its plan.md entry), not by widening scope beyond
+the brief.
+
+Three test files carry provisional ids from `register-pending/astra-fixes.md` that no longer
+match their entries' final ids after renumbering (the astra-fixes.md batch used GAP-108/109/110
+provisionally, which collided with this pass's own GAP-108-111 from the review-fixes batch, so
+they were renumbered to GAP-120/121/122): `tests/auth/test_gap_108_pipeline_approval_scope_match.py`
+(now GAP-120), `tests/auth/test_gap_109_short_and_quoted_secret_values.py` (now GAP-121), and
+`tests/agent/test_gap_110_session_live_request_audited.py` (now GAP-122). Per this pass's
+instruction, these were reported rather than renamed — renaming source/test files and the two
+`docs/STRUCTURAL_CHANGELOG.md` rows that also carry the stale `GAP-110` label is outside the
+register scribe's remit and left for the finisher or a future pass.
+
+No revert-proof was independently re-performed by the register scribe for the three
+astra-fixes.md entries (GAP-120 through GAP-122) — `register-pending/astra-fixes.md` itself
+recorded revert-proof as "not yet performed... pending before this batch's commits land" for
+all four of its entries, and the batch's commits have since landed at HEAD (`2b3b12a`) with no
+follow-up note confirming it was done. The four review-fixes.md entries (GAP-108 through
+GAP-111) do carry a confirmed revert-proof, performed by the fixing agent per that file's own
+text. This gap is recorded here rather than silently treated as confirmed.
+
+The open critical-or-high set after this pass is unchanged: one entry, GAP-069, `deferred`.
+All three new critical entries (GAP-111, GAP-120, GAP-121) are `remediated`.
+
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
@@ -908,9 +994,71 @@ HTTP routes (path and method), environment variables and DB table names; it does
 Pydantic request field's default, so no snapshot edit is needed. Confirmed green in the
 targeted verify run (commit `bd5a03c`).
 
+**16. `push-workflows --dry-run` defaults to preview, matching the other three GAP-018 commands (GAP-018 follow-up).**
+Decision (operator, 2026-09-13, extending the same instruction `operator-decisions.md` § 1
+option A recorded for entries 9's three commands): approved. `push-workflows`
+(`ado2gh/cli/misc.py:153`) was the one command GAP-018's original sweep missed — it still
+declared a plain `is_flag=True, default=False` `--dry-run`, so an operator who typed neither
+flag pushed generated workflow YAML straight to GitHub and opened a pull request, live, with
+no confirmation. It now declares `--dry-run/--live`, `default=True`, matching `run`,
+`phase run` and `ado-cleanup`; internal call sites convert via
+`ExecutionMode.from_dry_run(dry_run=dry_run)`. Applied in commit `a2d7a28`.
+
+*Migration note.* A caller invoking `push-workflows` with neither flag now previews instead of
+pushing; the explicit `--live` opt-in is required to push. `README.md` and the docs worked
+examples were not audited for `push-workflows` call sites in this pass — recorded here in case
+a follow-up sweep is needed to match the five docs files entry 9 already updated for the other
+three commands.
+
+*Snapshot impact:* one `cli_commands` line in `tests/contract/public_surface_snapshot.json`
+(`ado2gh push-workflows :: param dry_run`) changes `opts=--dry-run` → `opts=--dry-run/--live`,
+`default=False` → `default=True`. Confirmed present at line 65 of the snapshot as of this
+entry (2026-09-22).
+
+**17. `SessionRequest.dry_run` widened from `bool = True` to `Optional[bool] = None`, so an omitted field resolves through the deployment's configured default (GAP-079).**
+Decision (operator, 2026-09-13, per `plan.md` § Approved contract changes' general
+"Remediate all findings" instruction covering this batch): approved. `SessionRequest.dry_run`
+(`services/agent/routes/_helpers.py`) previously declared `bool = True`, so
+`dry_run = req.dry_run if req.dry_run is not None else profile.dry_run_default`
+(`services/agent/routes/session_routes.py:59`) could never reach its `else` arm — a request
+that omitted `dry_run` always got `True`, not the profile's configured `dry_run_default`. The
+field is now `Optional[bool] = None`, and `create_session` reads it through the shared
+boundary reader `coerce_dry_run(req.dry_run, default=...)`, which also rejects a malformed
+value (e.g. the string `"not-a-bool"`) with 422 instead of silently coercing it. Applied in
+commit `189d73f`.
+
+*Register scribe note (2026-09-22, pass two):* GAP-079's register entry previously cited this
+change to commit `179b2f1` and claimed an identical change to `PipelineRunStartRequest.dry_run`
+(`ado2gh/api/contracts.py`). Both claims were checked against the tree and found wrong:
+`179b2f1` never touches `_helpers.py` or `contracts.py` (confirmed via `git show --stat`); the
+actual `SessionRequest.dry_run` change is in `189d73f` (confirmed via
+`git log -p --follow -- services/agent/routes/_helpers.py`). `PipelineRunStartRequest.dry_run`
+is still `bool = True` today (`ado2gh/api/contracts.py:563`, confirmed by direct read); no
+commit ever changed it (`git log -S"dry_run: Optional[bool] = None"` on that file returns
+nothing), and the identical dead branch it feeds
+(`services/accelerator_api/routes/pipeline_routes.py:220`) is still unreachable. This entry
+describes only the `SessionRequest` half, which is the change that actually shipped. The
+`PipelineRunStartRequest` half is recorded as a residual on GAP-079 in `gap-register.md`, not
+as part of this contract change.
+
+*Migration note.* An external caller of `POST /v1/sessions` that omits `dry_run` now gets the
+profile's or advanced setting's configured `dry_run_default` instead of always getting a
+dry-run session; a caller that always sent the field explicitly (every shipped in-repo caller)
+sees no behaviour change. A malformed `dry_run` value now gets 422 instead of being silently
+treated as a decision.
+
+*Snapshot impact: none.* Consistent with entry 15's precedent,
+`tests/contract/test_public_surface_snapshot.py` freezes CLI commands, HTTP routes (path and
+method), environment variables and DB table names; it does not freeze a Pydantic request
+field's default, so no snapshot edit is needed or was made. GAP-079's prior claim of a
+snapshot recording for this change is corrected in the same pass in `gap-register.md`.
+
 **Contract changes still awaiting sign-off.** None. The four that were — GAP-007, GAP-008,
 GAP-003 and GAP-017 — were signed off by operator instruction on 2026-09-13 and are entries
-5–8 above.
+5–8 above. Entries 16 and 17, added 2026-09-22 by the register scribe (pass two), were both
+approved by operator instruction on 2026-09-13, contemporaneous with the batch that produced
+them; they were merged into this register two passes later from `register-pending/` hand-off
+files.
 
 ## Coverage measurement
 

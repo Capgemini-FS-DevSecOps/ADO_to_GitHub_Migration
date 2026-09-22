@@ -12,8 +12,8 @@ working-tree changes listed in `plan.md`; every `path:line` below refers to that
 
 ## Summary
 
-107 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
-assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, GAP-076 through GAP-079 on 2026-09-13 from the Sol `ExecutionMode` review, GAP-080 on 2026-09-13 from operator decision 9, GAP-081 through GAP-088 on 2026-09-13 from the R10a remediation of the threat-model hook artefact `threat-model-2026-09-13-001.md`, GAP-089 through GAP-096 on 2026-09-13 from the R10b remediation of the same artefact — the agent's tool package, planner research loop, validator investigation loop and intent context builder — GAP-097 on 2026-09-20 from a second-round review of the accelerator's proxy routes made while registering the R10b second-round remediations, GAP-098 through GAP-100 on 2026-09-20 from the R1b follow-up batch (the batch executor's mode-agreement guard, the `RunWaveRequest`/`PhaseRunRequest` dry-run defaults, and the `ado-cleanup --live` confirmation), GAP-101 on 2026-09-20 from the R5 state-isolation follow-up (the connectivity, settings and LLM-catalog stores resolving their data directory once at construction instead of per call), GAP-102 through GAP-105 on 2026-09-13 from the R10c2 remediation of the HITL package's threat-model findings THR-09-002 through THR-09-005, GAP-106 on 2026-09-13 from the R10c1 remediation of THR-02-004 (the agent service's `/health` route), and GAP-107 on 2026-09-22, appended by the register scribe under standing instruction, recording the Vurnix 0.3.0 honest-gate tool limitation found while closing out this batch — each with the next free id); the per-component placeholder each id
+122 gaps recorded across the thirteen components of FR-016 / FR-016a. Sequential ids were
+assigned at T035 in file order and are never reused (GAP-051 and GAP-052 were appended on 2026-09-08, GAP-053 on 2026-09-09, GAP-054 on 2026-09-12, GAP-055 through GAP-058 on 2026-09-13 from the behaviour review of the T077 mypy commits, GAP-059 through GAP-061 on 2026-09-13 from the console safeguard review, GAP-062 on 2026-09-13 from the test-client deadlock seen during the T090 and T077-review runs, GAP-063 on 2026-09-13 from the live-approval replay review, GAP-064 on 2026-09-13 from the log-handler masking review, GAP-065 through GAP-070 on 2026-09-13 from the Astra branch review, GAP-071 through GAP-075 on 2026-09-13 from the Astra security review of the post-fix tree, GAP-076 through GAP-079 on 2026-09-13 from the Sol `ExecutionMode` review, GAP-080 on 2026-09-13 from operator decision 9, GAP-081 through GAP-088 on 2026-09-13 from the R10a remediation of the threat-model hook artefact `threat-model-2026-09-13-001.md`, GAP-089 through GAP-096 on 2026-09-13 from the R10b remediation of the same artefact — the agent's tool package, planner research loop, validator investigation loop and intent context builder — GAP-097 on 2026-09-20 from a second-round review of the accelerator's proxy routes made while registering the R10b second-round remediations, GAP-098 through GAP-100 on 2026-09-20 from the R1b follow-up batch (the batch executor's mode-agreement guard, the `RunWaveRequest`/`PhaseRunRequest` dry-run defaults, and the `ado-cleanup --live` confirmation), GAP-101 on 2026-09-20 from the R5 state-isolation follow-up (the connectivity, settings and LLM-catalog stores resolving their data directory once at construction instead of per call), GAP-102 through GAP-105 on 2026-09-13 from the R10c2 remediation of the HITL package's threat-model findings THR-09-002 through THR-09-005, GAP-106 on 2026-09-13 from the R10c1 remediation of THR-02-004 (the agent service's `/health` route), GAP-107 on 2026-09-22, appended by the register scribe under standing instruction, recording the Vurnix 0.3.0 honest-gate tool limitation found while closing out this batch, and GAP-108 through GAP-122 on 2026-09-22 from this second scribe pass — GAP-108 through GAP-111 and GAP-112 through GAP-119 from `register-pending/review-fixes.md` (a Terra/Codex review of the agent package: four remediated guardrail/masking/fingerprint findings, then eight open follow-ups found during the same review), and GAP-120 through GAP-122 from `register-pending/astra-fixes.md` (a final whole-branch review: a pipeline-run live-approval scope bypass, a redaction pattern gap, and an agent-session live-approval parity gap), the latter three renumbered up from that file's own provisional GAP-108/109/110 labels — each with the next free id); the per-component placeholder each id
 replaced is kept in parentheses so earlier cross-references stay resolvable.
 Severities are as rated by the assessment passes (T022-T034); the review pass (T036) may
 contest a critical or high rating, and any change it produces is recorded in the Disputes
@@ -21,14 +21,14 @@ table below rather than by re-rating an entry here.
 
 | Severity | Count |
 |----------|-------|
-| critical | 20 |
-| high | 43 |
-| medium | 29 |
-| low | 15 |
-| **total** | **107** |
+| critical | 23 |
+| high | 47 |
+| medium | 33 |
+| low | 19 |
+| **total** | **122** |
 
-All 20 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
-one of the 107 entries carries at least one path:line citation or a reproduction command
+All 23 critical entries name a critical_test letter (a)-(e) per FR-019 / FR-020, and every
+one of the 122 entries carries at least one path:line citation or a reproduction command
 (FR-020). Critical and high entries, in sequential id order:
 
 | Id | Title | Status |
@@ -96,6 +96,13 @@ one of the 107 entries carries at least one path:line citation or a reproduction
 | GAP-093 (GAP-AGT-22) | Discovery repository names entered the prompt unscrubbed, uncapped and unlabelled | remediated |
 | GAP-094 (GAP-AGT-23) | Base64 repository file content was decoded without bound and placed in the validator's prompt | remediated |
 | GAP-102 (GAP-AGT-26) | Plan approval is sticky and survives every replan | remediated |
+| GAP-108 (GAP-AGT-28) | The deterministic executor scope path posted live writes with no guardrail evaluation | remediated |
+| GAP-109 (GAP-AGT-29) | `plan_revision_key` missed the ADO source project/repo and a work item's `gh_target`, so a retarget survived approval | remediated |
+| GAP-110 (GAP-AGT-30) | `_refuse_path` truncated an audited endpoint to 200 characters before masking, splitting a secret across the cut | remediated |
+| GAP-111 (GAP-AGT-31) | Two discovery-snapshot load paths bypassed the `bf1a07c` masking commit and stored the accelerator's response unmasked | remediated |
+| GAP-120 (GAP-AUTH-13) | `_execute_pipeline` ran an approved live pipeline run from its persisted context with no re-derived scope check | remediated |
+| GAP-121 (GAP-TOKEN-08) | `_SECRET_KEY_VALUE_RE` missed short, quoted, and punctuated secret values, and a quote-specific branch under-masked a mixed-quote value | remediated |
+| GAP-122 (GAP-AGT-32) | An agent session's live-execution request never opened a real platform approval row | remediated |
 
 Zero critical or high entries remain `open`, `deferred` or `disputed`, with one exception:
 GAP-069 (GAP-STATE-06), opened on 2026-09-13 from the Astra branch review, stays `deferred`
@@ -116,7 +123,8 @@ operator approved option A of `operator-decisions.md` § 1 by instruction. That 
 settles the whole default-execution-mode policy: GAP-018 was `deferred` on its `--dry-run`
 half and is now `remediated`, and GAP-068 and GAP-078 (GAP-ENG-10), both held against the
 same question, are `remediated` with it. `plan.md` § Approved contract changes entry 9
-records the decision.
+records the decision. `plan.md` § Approved contract changes entry 16 (2026-09-22) records
+a fourth command, `push-workflows`, that the same GAP-018 sweep missed; commit `a2d7a28`.
 
 The five entries opened on 2026-09-13 from the Astra security review of the post-fix tree
 do not change that count. GAP-071 (critical), GAP-072, GAP-073 and GAP-075 (high) are all
@@ -131,9 +139,21 @@ The four entries opened on 2026-09-13 from the Sol `ExecutionMode` review do not
 either. GAP-076 (high) and GAP-077 (medium) were `remediated` in the same pass; GAP-078
 (`medium`) was held against the FR-024 default-execution-mode decision alongside GAP-018 and
 GAP-068 and is `remediated` with them as of 2026-09-13; GAP-079 was `low` and `open` and is
-now `remediated` (R10c1, 2026-09-13, commit `179b2f1`), closed together with the
-`SessionRequest.dry_run` fix in the same commit. The open critical-and-high set is now one:
-GAP-069, `deferred`.
+now `remediated (residual recorded)` (R10c1, 2026-09-13, commit `189d73f` — corrected
+2026-09-22 by the register scribe from a prior mis-citation of `179b2f1`), closed on its
+`SessionRequest.dry_run` half only; its `PipelineRunStartRequest.dry_run` half was never
+applied and remains open as a residual inside the entry, see GAP-079 `residual`. The open
+critical-and-high set is still one: GAP-069, `deferred` (GAP-079 stays `low`, so its residual
+does not join this count).
+
+This second scribe pass (2026-09-22) adds fifteen entries, GAP-108 through GAP-122, merged
+from two remediation batches: `register-pending/review-fixes.md` (a Terra/Codex review of the
+agent package — four remediated findings, GAP-108 through GAP-111, plus eight open follow-ups,
+GAP-112 through GAP-119) and `register-pending/astra-fixes.md` (a final whole-branch review —
+three remediated findings, GAP-120 through GAP-122, renumbered up from that file's provisional
+GAP-108/109/110 labels to avoid colliding with this pass's own GAP-108). Three of the new
+entries are critical (GAP-111, GAP-120, GAP-121); all three are `remediated`, so the open
+critical-and-high set is unchanged by this pass.
 
 ## Disputes
 
@@ -504,11 +524,11 @@ in this register. T037 therefore had no dispute to put to the operator.
 - severity: high (critical_test: —)
 - blast_radius: any operator or script invoking `ado2gh run --wave N` without `--dry-run` immediately performs live repo creation, git mirror/GEI transfer, and scoped pipeline and work-item writes with no interactive confirmation and no server-side approval check on this path. Not rated critical because a documented `--dry-run` option exists on every command named and invoking the command is itself the operator's explicit act; the dangling `live_approval_id` is the sharper defect and the reason this is high rather than medium.
 - status: remediated
-- resolution: `5f799e7` (fix(GAP-018)) closes the `live_approval_id` half of this gap only: `Accelerator.run_wave` — the single function shared by the CLI, the queue worker, the pipeline runner and both accelerator routes — now looks up a quoted `request.live_approval_id` against `live_execution_approvals` before it loads the migration config or resolves any credential, and raises `ConfigurationError` (surfaced as an HTTP 400 on the route) when the row is missing or not `status == "approved"`; a request that quotes no token is unaffected. Previously the only reader of that field lived in the `POST /v1/migrate` route, whose own RBAC check already ran for every caller that reached it, so a pending, denied, or fabricated approval id reaching `run_wave` through any other caller (CLI, queue worker) was never checked at all. The other three evidence bullets — `run --dry-run`, `phase run --dry-run` and `ado-cleanup --dry-run` all defaulting to `False` with no `click.confirm` anywhere in `ado2gh/cli/run_cmd.py` (now `ado2gh/cli/migration.py`) — are unchanged: flipping those defaults is a contract change against the frozen CLI surface in `tests/contract/public_surface_snapshot.json`, and per FR-024 is held for an explicit operator decision rather than landed unilaterally. Blocker: operator decision pending on the FR-024 contract change (`plan.md` § Approved contract changes, awaiting item: `--dry-run` default). Compensating control: the landed approval-token verification in `Accelerator.run_wave`, plus CA-001's dry-run default on the accelerator path. **Closed 2026-09-13** (approved by operator instruction, 2026-09-13; `operator-decisions.md` § 1 option A, `plan.md` § Approved contract changes entry 9): the second half is applied. `run` (`ado2gh/cli/migration.py`), `phase run` (`ado2gh/cli/phase.py`) and `ado-cleanup` (`ado2gh/cli/misc.py`) each declare the Click boolean pair `--dry-run/--live` with `default=True`, so an operator who types neither flag gets a preview and `--live` is the explicit opt-in. `--dry-run` keeps its name and its meaning, every existing runbook line still parses, and `ExecutionMode.from_dry_run(dry_run=…)` still converts at the boundary; the approval-token path is untouched. Three `cli_commands` lines in `tests/contract/public_surface_snapshot.json` change (`opts=--dry-run` → `opts=--dry-run/--live`, `default=False` → `default=True`); the entry count stays 96 and no command or option is added or removed. `README.md`, `docs/COMMAND_REFERENCE.md`, `docs/EXECUTION_MANUAL.md`, `docs/MIGRATION_RUNBOOK.md` and `docs/TROUBLESHOOTING.md` gained `--live` on the 55 worked examples that previously relied on the live default; no example was deleted.
-- regression_check: `tests/unit/test_gap_018_live_approval_id.py` (token half) and `tests/unit/test_gap_018_dry_run_default.py` (default half — 15 cases: each of the three commands asserted dry-run with no flag, dry-run with `--dry-run` and live only with `--live`, against a fake accelerator and fake ADO client, plus a parse check on both spellings of the pair).
+- resolution: `5f799e7` (fix(GAP-018)) closes the `live_approval_id` half of this gap only: `Accelerator.run_wave` — the single function shared by the CLI, the queue worker, the pipeline runner and both accelerator routes — now looks up a quoted `request.live_approval_id` against `live_execution_approvals` before it loads the migration config or resolves any credential, and raises `ConfigurationError` (surfaced as an HTTP 400 on the route) when the row is missing or not `status == "approved"`; a request that quotes no token is unaffected. Previously the only reader of that field lived in the `POST /v1/migrate` route, whose own RBAC check already ran for every caller that reached it, so a pending, denied, or fabricated approval id reaching `run_wave` through any other caller (CLI, queue worker) was never checked at all. The other three evidence bullets — `run --dry-run`, `phase run --dry-run` and `ado-cleanup --dry-run` all defaulting to `False` with no `click.confirm` anywhere in `ado2gh/cli/run_cmd.py` (now `ado2gh/cli/migration.py`) — are unchanged: flipping those defaults is a contract change against the frozen CLI surface in `tests/contract/public_surface_snapshot.json`, and per FR-024 is held for an explicit operator decision rather than landed unilaterally. Blocker: operator decision pending on the FR-024 contract change (`plan.md` § Approved contract changes, awaiting item: `--dry-run` default). Compensating control: the landed approval-token verification in `Accelerator.run_wave`, plus CA-001's dry-run default on the accelerator path. **Closed 2026-09-13** (approved by operator instruction, 2026-09-13; `operator-decisions.md` § 1 option A, `plan.md` § Approved contract changes entry 9): the second half is applied. `run` (`ado2gh/cli/migration.py`), `phase run` (`ado2gh/cli/phase.py`) and `ado-cleanup` (`ado2gh/cli/misc.py`) each declare the Click boolean pair `--dry-run/--live` with `default=True`, so an operator who types neither flag gets a preview and `--live` is the explicit opt-in. `--dry-run` keeps its name and its meaning, every existing runbook line still parses, and `ExecutionMode.from_dry_run(dry_run=…)` still converts at the boundary; the approval-token path is untouched. Three `cli_commands` lines in `tests/contract/public_surface_snapshot.json` change (`opts=--dry-run` → `opts=--dry-run/--live`, `default=False` → `default=True`); the entry count stays 96 and no command or option is added or removed. `README.md`, `docs/COMMAND_REFERENCE.md`, `docs/EXECUTION_MANUAL.md`, `docs/MIGRATION_RUNBOOK.md` and `docs/TROUBLESHOOTING.md` gained `--live` on the 55 worked examples that previously relied on the live default; no example was deleted. **Extended 2026-09-22** (register scribe, pass two, commit `a2d7a28`): `push-workflows` (`ado2gh/cli/misc.py:153`) was the one command this sweep missed — it still declared a plain `--dry-run` as `is_flag=True, default=False`, so an operator who typed neither flag pushed generated workflow YAML straight to GitHub and opened a pull request, live, with no confirmation. It now declares the same `--dry-run/--live` pair, `default=True`, matching `run`, `phase run` and `ado-cleanup`; internal call sites convert via `ExecutionMode.from_dry_run(dry_run=dry_run)`. `tests/contract/public_surface_snapshot.json` line 65 records the new shape (`opts=--dry-run/--live :: default=True`). See `plan.md` § Approved contract changes entry 16.
+- regression_check: `tests/unit/test_gap_018_live_approval_id.py` (token half) and `tests/unit/test_gap_018_dry_run_default.py` (default half — 15 cases: each of the three commands asserted dry-run with no flag, dry-run with `--dry-run` and live only with `--live`, against a fake accelerator and fake ADO client, plus a parse check on both spellings of the pair; extended 2026-09-22 with `push-workflows` cases, 20/20 passing).
 - revert_proof: No proof was recorded when `5f799e7` landed. Self-performed 2026-09-12 by Claude (sonnet subagent, T082 close-out): neutralized the check in `Accelerator.run_wave` (`ado2gh/api/accelerator.py`) by changing `if request.live_approval_id:` to `if False and request.live_approval_id:`. `.venv/Scripts/python.exe -m pytest tests/unit/test_gap_018_live_approval_id.py -v` then failed three of five tests — both parametrised cases of `test_undecided_or_denied_approval_migrates_nothing` (`pending`, `denied`) and `test_unknown_approval_id_migrates_nothing`, each with `Failed: DID NOT RAISE ConfigurationError` — while `test_approved_token_lets_the_wave_run` and `test_request_without_a_token_is_unaffected` still passed, since neither depends on the check firing. Restored via the same combined `git stash push -- ado2gh/cli/phase.py ado2gh/api/accelerator.py ado2gh/core/scopes/git_scope.py ado2gh/pipelines/transform/transformer.py ado2gh/pipelines/transform/job_graph.py` used for the GAP-017/GAP-030/GAP-032 proofs; the same tests re-ran green afterward. `git stash drop` was then blocked by this session's own permission classifier — the working tree is confirmed clean (`git status --short` shows no diff on any of the five files), but stash entry `5b591bf` was still sitting undropped as of this writing. Default half, self-performed 2026-09-13 by Claude (opus subagent, R1): `git stash push -- ado2gh/cli/migration.py ado2gh/cli/phase.py ado2gh/cli/misc.py`, then `.venv/Scripts/python.exe -m pytest tests/unit/test_gap_018_dry_run_default.py -q` → **9 failed, 6 passed** (every default and `--live` case for all three commands, plus the three `--live` parse checks). `git stash pop` restored the fix and the same command re-ran **15 passed**; `git stash list` afterwards shows only the unrelated pre-existing `stash@{0}: a5fbb01 test(GAP-012) …`, which was not touched.
-- contract_change: true (applied) — `plan.md` § Approved contract changes entry 9, approved by operator instruction, 2026-09-13. Snapshot impact: three `cli_commands` lines.
-- closed_on: 2026-09-13 by Claude (opus subagent, R1)
+- contract_change: true (applied) — `plan.md` § Approved contract changes entry 9, approved by operator instruction, 2026-09-13. Snapshot impact: three `cli_commands` lines. Extended 2026-09-22: a fourth `cli_commands` line (`push-workflows`), `plan.md` § Approved contract changes entry 16, same operator instruction.
+- closed_on: 2026-09-13 by Claude (opus subagent, R1); push-workflows half closed 2026-09-22 (register scribe, pass two)
 
 ### GAP-019 (GAP-AUTH-03) `/sessions/{id}/provision` and `/remediate` take no `Request` and trust a client-supplied `actor`
 
@@ -1654,13 +1674,14 @@ placeholder identifier `GAP-TOOL-05` is never reused.
   - raised by the Codex `gpt-5.6-terra` `ExecutionMode` review (`run-codex-sol-executionmode.txt`), which rated both major on the strength of the dead branch.
 - severity: low. No safety consequence in either direction — the effective value is dry-run, which is what CA-001 asks for — and no caller is misled about what ran, because the resolved value is echoed back in the response and persisted. The defect is that an operator who sets `dry_run_default: false` on a profile or in advanced settings sees it silently ignored by clients that omit the field, and that two routes carry a branch that cannot execute.
 - blast_radius: profile `dry_run_default` and the advanced `dry_run_default` setting, for any client that omits `dry_run` — the console always sends it, so this is API consumers and future callers.
-- status: remediated
-- resolution: applied 2026-09-13 by Claude (opus subagent, R10c1), commit `179b2f1`. `SessionRequest.dry_run` (`services/agent/routes/_helpers.py`) is now `Optional[bool] = None` instead of `bool = True`, so the `req.dry_run if req.dry_run is not None else profile.dry_run_default` branch it feeds can actually reach its `else` arm. `create_session` reads the field through the new shared boundary reader `coerce_dry_run(req.dry_run, default=...)`, which also rejects a malformed value (e.g. the string `"not-a-bool"`) with a 422 instead of silently treating it as a decision — the same reader is used wherever a client-supplied dry-run value crosses an HTTP boundary, so this class of defect cannot recur one route at a time. `PipelineRunStartRequest.dry_run` (`ado2gh/api/contracts.py:557`) receives the identical fix: `Optional[bool] = None`, read through `coerce_dry_run` in `services/accelerator_api/routes/pipeline_routes.py`.
-- regression_check: `tests/agent/test_gap_079_session_dry_run_default.py` (4 tests) — an omitted `dry_run` now reaches the profile's configured default (including `test_omitted_dry_run_takes_the_profile_default`, which requires an anonymous caller against a profile defaulting to live to get `dry_run: false` back with a 200), an explicit `true`/`false` still wins over the profile default, and a malformed value is refused with 422 rather than coerced.
-- revert_proof: path-limited `git stash` / targeted rerun / `git stash pop`, run by R10c1 as part of the `179b2f1` commit group; the four new tests fail with the pre-fix `bool = True` declaration restored. Combined targeted suite (`tests/agent tests/auth tests/contract`) 520 passed / 18 skipped, `ruff check ado2gh/ services/` clean, `mypy ado2gh/ --ignore-missing-imports` clean.
-- contract_change: true — the declared type and default of two request fields (`SessionRequest.dry_run`, `PipelineRunStartRequest.dry_run`) change from `bool = True` to `Optional[bool] = None`; an omitted field now resolves through the deployment's configured default instead of always defaulting to dry-run. Approved by operator instruction, 2026-09-13; recorded in `tests/contract/public_surface_snapshot.json`.
-- follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-076) from the Sol `ExecutionMode` review; closed 2026-09-13 by R10c1. No successor task filed.
-- closed_on: 2026-09-13
+- status: remediated (residual recorded)
+- resolution: applied 2026-09-13 by Claude (opus subagent, R10c1). `SessionRequest.dry_run` (`services/agent/routes/_helpers.py`) is now `Optional[bool] = None` instead of `bool = True`, so the `req.dry_run if req.dry_run is not None else profile.dry_run_default` branch it feeds can actually reach its `else` arm. `create_session` reads the field through the shared boundary reader `coerce_dry_run(req.dry_run, default=...)`, which also rejects a malformed value (e.g. the string `"not-a-bool"`) with a 422 instead of silently treating it as a decision. **Corrected 2026-09-22** (register scribe, pass two): this entry previously cited commit `179b2f1` for the fix and claimed `PipelineRunStartRequest.dry_run` (`ado2gh/api/contracts.py:557`) received an identical change. Both are wrong. `git show --stat 179b2f1` touches only `services/agent/routes/{form_routes,message_routes,run_routes}.py` and two test files — never `_helpers.py` or `contracts.py`. `git log -p --follow -- services/agent/routes/_helpers.py` shows the actual `SessionRequest.dry_run` edit landed in commit `189d73f` (subject: "fix(agent-service): one masked writer for transcript messages and the live-mode gate (THR-01-003, THR-02-002, THR-06-004)"), whose diff carries a docstring referencing "register item GAP-079" — the commit's subject line does not name this gap, which is how the citation drifted. Confirmed as of 2026-09-22, `ado2gh/api/contracts.py:563` still declares `dry_run: bool = True`; no commit ever changed it (`git log -S"dry_run: Optional[bool] = None"` on that file returns nothing). `services/accelerator_api/routes/pipeline_routes.py:220` still reads `dry = req.dry_run if req.dry_run is not None else adv.dry_run_default` — the identical dead branch this entry's own evidence described, still unreachable, still open. The `SessionRequest` half of this gap is genuinely closed; the `PipelineRunStartRequest` half was never applied.
+- residual: `PipelineRunStartRequest.dry_run` (`ado2gh/api/contracts.py:563`) remains `bool = True`; `POST /v1/pipeline/runs` (`services/accelerator_api/routes/pipeline_routes.py:220`) still cannot reach a profile's or advanced setting's configured `dry_run_default` when the caller omits the field. Same low severity as the original finding (effective value is dry-run, which fails safe) — recommended as a follow-up id in the next register pass rather than reopened here, since the scribe role does not extend to assigning new ids outside its briefed batch.
+- regression_check: `tests/agent/test_gap_079_session_dry_run_default.py` (5 tests, confirmed 2026-09-22 by reading the file) — all five use the `live_default_client` fixture against the agent-service session route only; none reference `pipeline_routes` or `PipelineRunStartRequest`. The suite never covered the accelerator half, consistent with that half never having been fixed.
+- revert_proof: path-limited `git stash` / targeted rerun / `git stash pop`, run by R10c1 as part of the commit group that produced `189d73f`; the five new tests fail with the pre-fix `bool = True` declaration restored. Combined targeted suite (`tests/agent tests/auth tests/contract`) 520 passed / 18 skipped, `ruff check ado2gh/ services/` clean, `mypy ado2gh/ --ignore-missing-imports` clean.
+- contract_change: true — scoped to `SessionRequest.dry_run` only. The declared type and default change from `bool = True` to `Optional[bool] = None`; an omitted field now resolves through the deployment's configured default instead of always defaulting to dry-run, and a malformed value gets 422 instead of silent coercion. Approved by operator instruction, 2026-09-13; see `plan.md` § Approved contract changes entry 17. **Corrected 2026-09-22**: `tests/contract/public_surface_snapshot.json` does not freeze a Pydantic request field's default (confirmed by that file's own scope and by entry 15's identical precedent) — the prior "recorded in tests/contract/public_surface_snapshot.json" claim here was inaccurate. Snapshot impact: none.
+- follow_up: raised 2026-09-13 by Claude (opus subagent, GAP-076) from the Sol `ExecutionMode` review; `SessionRequest` half closed 2026-09-13 by R10c1 (commit `189d73f`). `PipelineRunStartRequest` half not closed; no successor id filed by this pass — flagged for the next register scribe batch.
+- closed_on: 2026-09-13 (`SessionRequest` half only)
 
 ### GAP-080 (GAP-AGT-09) `services/agent/routes/_helpers.py` mixes accessors with plan-building and approval logic
 
@@ -2182,6 +2203,243 @@ placeholder identifier `GAP-TOOL-05` is never reused.
 - compensating_control: the ratchets this repository already runs and enforces in CI stand in for the honest gate that cannot currently PASS here — `ruff check ado2gh/ services/`, `mypy ado2gh/ --ignore-missing-imports`, and the `pytest --cov=ado2gh --cov-fail-under=<N>` coverage ratchet (`.github/workflows/ci.yml`), together with the mutation-testing spot-checks already recorded elsewhere in this register (for example the `ado2gh/audit/redaction.py` re-run recorded in the 2026-09-22 completion-summary addendum).
 - follow_up: reaching a genuine `vurnix gate` `PASS` on this repository needs either an upstream `vurnix` release that adds an exclude/scope option (so the 35 verified-correct residual findings can be declared and silenced) or a `.deps`-shaped layout change made for the tool's benefit alone, which is not recommended given the layout is otherwise unmotivated by this repository's own needs. No successor task filed; recorded here so a future run of `vurnix gate` against this tree is not mistaken for a real regression when it reports the same residual count.
 - closed_on: —
+
+### GAP-108 (GAP-AGT-28) The deterministic executor scope path posted live writes with no guardrail evaluation
+
+- components: agent package (`ado2gh/agents/migration_agent/nodes/executor/scope.py`, `guardrails.py`, `constants.py`)
+- violates: Principle V (fail-safe defaults) and CA-002 (an approved plan bounds what a live write may touch)
+- evidence:
+  - `ado2gh/agents/migration_agent/nodes/executor/scope.py:226` (pre-fix) — `execute_migration_scope` posted directly to the accelerator with no call to `evaluate_guardrail`, so a live write could reach a repository outside the approved plan, or run with no approved plan at all, as long as it went through the deterministic path rather than the model-driven tool path
+  - the two accelerator writes nested inside `_execute_secrets_scope` shared the same gap
+  - reported at `run-codex-terra-r10a.txt` (Terra/Codex review), a second independent read-only `codex exec` pass confirmed the fix closes it
+- severity: high (critical_test: —). Not rated critical because reaching the deterministic path at all requires a session already past plan approval into `ExecutionMode.LIVE`; the guardrail bypassed is a second gate behind that one, matching the reasoning recorded at GAP-081/GAP-082/GAP-083 (the model-driven guardrail path's own defects, all rated high on the same "requires live mode already" mitigant).
+- blast_radius: every deterministic-path live write (the non-model-driven executor scope dispatch), including both accelerator writes inside `_execute_secrets_scope` — the model-driven tool path's own guardrail was unaffected.
+- status: remediated
+- resolution: `690c775` (fix(F1)). Added `_refuse_unauthorized_live_write`, evaluated once at the scope dispatch seam before every scope branch, only when `mode is ExecutionMode.LIVE`. A block returns a `status: failed` result carrying the guardrail decision and records `agent.executor.guardrail_blocked` through the existing `IdeAuditBridge`. Dry-run previews are unaffected. The new write identity `DETERMINISTIC_SCOPE_WRITE_TOOL` was added to `constants.py` and to the `_WRITE_OPERATIONS` frozenset in `guardrails.py`, reusing the same guardrail evaluation the model-driven tool path already goes through rather than adding a second gate.
+- regression_check: `tests/unit/test_scope_executor.py` — a plan-scoped repo live write reaches the accelerator; an out-of-plan repo and a no-approved-plan session are refused and audited; a dry-run write is never guardrail-gated.
+- revert_proof: confirmed — `test_execute_live_write_blocked_for_out_of_plan_repo` and `test_execute_live_write_blocked_without_plan_approval` both fail at `690c775^`; revert proof performed by the fixing agent (review-fixes batch), not by the register scribe.
+- contract_change: false — internal defense-in-depth only; no CLI, HTTP route, environment variable or DB table changes.
+- closed_on: 2026-09-22 (commit `690c775`)
+
+### GAP-109 (GAP-AGT-29) `plan_revision_key` missed the ADO source project/repo and a work item's `gh_target`, so a retarget survived approval
+
+- components: agent package (`ado2gh/agents/migration_agent/hitl/blockers.py`)
+- violates: CA-002 (an approver decides on a specific, described action; a material change to what will run must invalidate the approval)
+- evidence:
+  - `ado2gh/agents/migration_agent/hitl/blockers.py:19` (pre-fix) — `plan_revision_key` hashed only the plan id, revision, dry-run flag and a bare source repository id/name, so an operator's approval survived a retarget to a different GitHub organisation or repository, a change to the enabled scope set, a work item pointed at a new destination, or a change to the execution mode or the config path the executor resolves organisation defaults from
+  - a first fix added the config path, plan-level `enabled_scopes`, and per-repo/work-item target org, target repo and scopes; an independent second review pass then found it still missed the ADO source coordinates (`project`, `repo_name`) and a work item's `gh_target`, which `resolve_repo_context` (`nodes/executor/scope.py`) reads independently of the plain `id`/`repo` string to resolve a live write's actual source and destination — so a plan could be silently repointed at a different source repository, or a work item's `gh_target` changed, without invalidating the approval
+  - reported at `run-codex-terra-r10b2.txt`
+- severity: high (critical_test: —). Matches the reasoning recorded at GAP-102 (plan-approval stickiness, same file, same mechanism) — a stale approval surviving a material retarget is a fail-safe-default violation, not itself a destructive action without any gate at all.
+- blast_radius: every plan revision whose fingerprint is compared against a prior approval — any retarget of source project/repo, destination org/repo, scope set, execution mode, config path, or a work item's `gh_target`.
+- status: remediated
+- resolution: `fb222f7` (fix(F2)). Both the ADO source coordinates (`project`, `repo_name`) and a work item's `gh_target` were added to the fingerprint in the same commit, with list entries sorted before hashing for order stability and the docstring updated to cross-reference `resolve_repo_context` and enumerate every covered coordinate.
+- regression_check: `tests/unit/test_blockers.py` — target org/repo, scope set, work-item destination/scope, config path, source project, work-item repo name and `gh_target` each independently invalidate the key; list/dict reordering does not.
+- revert_proof: confirmed — all six new/expanded `plan_revision_key` tests fail at `fb222f7^`; revert proof performed by the fixing agent (review-fixes batch), not by the register scribe.
+- contract_change: false
+- closed_on: 2026-09-22 (commit `fb222f7`)
+
+### GAP-110 (GAP-AGT-30) `_refuse_path` truncated an audited endpoint to 200 characters before masking, splitting a secret across the cut
+
+- components: agent package (`ado2gh/agents/migration_agent/tools/shared_tools.py`)
+- violates: CA-003 (the masking choke point must mask every secret-shaped value before it is recorded, not after)
+- evidence:
+  - `ado2gh/agents/migration_agent/tools/shared_tools.py` `_refuse_path` (pre-fix) truncated the endpoint to 200 characters before masking, so a secret straddling the truncation cut could survive in the audit record with only its first half redacted
+  - reported at `run-codex-terra-r10c2.txt`
+- severity: high (critical_test: —). Meets the shape of critical test (b) (secret exposure to a persisted audit record) but, matching the precedent recorded at GAP-073 (the live-approval context masking gap in the same package), is rated high rather than critical because the value has to be long enough, and positioned precisely enough, for the caller to put it astride the 200-character cut — not every secret in a refused path is exposed, only ones straddling that boundary.
+- blast_radius: every refused tool call whose endpoint carries a secret near the 200-character truncation boundary, recorded through `tool_error`.
+- status: remediated
+- resolution: `c41636b` (fix(F3)). Masking (`redact_text`, plus the existing `_URL_USERINFO_RE` and `_URL_QUERY_RE` substitutions `tool_error` already applies) now runs before truncation, and the truncation length is a named constant, `_MAX_AUDITED_ENDPOINT_CHARS = 200`, instead of a bare literal.
+- regression_check: `tests/unit/test_tool_bindings.py::test_refuse_path_masks_a_secret_before_truncating_it` — a token straddling the truncation cut is masked, not split.
+- revert_proof: confirmed — the new test fails at `c41636b^`; revert proof performed by the fixing agent (review-fixes batch), not by the register scribe.
+- contract_change: false
+- closed_on: 2026-09-22 (commit `c41636b`)
+
+### GAP-111 (GAP-AGT-31) Two discovery-snapshot load paths bypassed the `bf1a07c` masking commit and stored the accelerator's response unmasked
+
+- components: agent package (`ado2gh/agents/migration_agent/utils.py`, `nodes/planner.py`)
+- violates: CA-003 (the masking choke point must cover every path that stores a fetched payload into session state, not only the one path a prior fix touched)
+- evidence:
+  - `ado2gh/agents/migration_agent/utils.py::load_discovery_snapshot` and the planner node's own inline discovery fetch (`nodes/planner.py`), pre-fix, both stored the accelerator's discovery response into `session["discovery_snapshot"]` unmasked — bypassing the masking commit `bf1a07c` had already added in `nodes/planner_research.py`
+  - reported at `run-codex-terra-r10c2.txt`, a continuation of `bf1a07c`
+- severity: critical (critical_test: (b) — secret exposure to a persisted artefact). Unconditional: both paths always stored the fetched dict unmasked, with no configuration gating whether the exposure occurred, matching the precedent recorded at GAP-011 and GAP-064 (unconditional default-path exposure into masked-elsewhere state).
+- blast_radius: every session whose discovery snapshot is loaded through either `load_discovery_snapshot` (`utils.py`) or the planner node's inline fetch — a credential returned in the accelerator's discovery payload (e.g. a captured variable-group secret, see GAP-031/GAP-032) would have persisted unmasked in session state and any transcript or checkpoint that reads it.
+- status: remediated
+- resolution: `c41636b` (fix(F4), continuation of `bf1a07c`). Both `load_discovery_snapshot` (`utils.py`) and the planner node's inline discovery fetch (`nodes/planner.py`) now route the fetched dict through the same `redact_payload` helper `bf1a07c` introduced, before it is stored, rather than adding a second masking helper.
+- regression_check: `tests/unit/test_discovery_snapshot_redaction.py` (new) — a credential in a freshly fetched discovery snapshot is masked before it enters session state, on both paths.
+- revert_proof: confirmed — both new tests fail at `c41636b^`; revert proof performed by the fixing agent (review-fixes batch), not by the register scribe.
+- contract_change: false
+- closed_on: 2026-09-22 (commit `c41636b`)
+
+### GAP-112 (GAP-AGT-33) `untrusted.py`'s delimiter closes on a literal string an attacker's own data can contain
+
+- components: agent package (`ado2gh/agents/migration_agent/untrusted.py`)
+- violates: Principle V (fail-safe defaults) — untrusted content must not be able to escape its own quoting
+- evidence: `ado2gh/agents/migration_agent/untrusted.py:~76` — the untrusted-content wrapper closes on a literal `</session_context>` string. Data that itself contains that closing tag can end the wrapper early and inject content the model then treats as trusted context, rather than as quoted untrusted input.
+- severity: medium — no confirmed exploit path recorded yet; this is a prompt-injection-shaped structural gap in the quoting mechanism, not a demonstrated bypass of a specific safeguard.
+- blast_radius: every place untrusted content (ADO-sourced repository names, discovery text, etc.) is wrapped through `untrusted.py` before entering a model prompt.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch (`register-pending/review-fixes.md`), found during the F1-F4 review but out of scope for those fixes. No successor task filed.
+- closed_on: —
+
+### GAP-113 (GAP-AGT-34) The guardrail decision audit sink has no production caller
+
+- components: agent package (`ado2gh/agents/migration_agent/guardrails.py`, `session/store.py`)
+- violates: CA-003 (audit coverage) — a decision-recording function that nothing in production calls provides no actual audit trail
+- evidence: `ado2gh/agents/migration_agent/guardrails.py:~431`, `ado2gh/agents/migration_agent/session/store.py:~498` — `log_decision` exists to record guardrail decisions to the audit trail, but nothing in the production call graph invokes it; only tests exercise it. Guardrail blocks and allows are currently unaudited outside the paths that separately call `IdeAuditBridge` directly (such as the GAP-108 fix above).
+- severity: medium — the GAP-108 fix already audits the one path that most needed it (the deterministic executor's live-write block); this is a gap in the general-purpose sink, not a currently-unaudited destructive action.
+- blast_radius: any guardrail decision made outside a call site that separately audits itself.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch. No successor task filed.
+- closed_on: —
+
+### GAP-114 (GAP-AGT-35) `generate_plan` writes a new plan without revoking a stale approval
+
+- components: agent package (`ado2gh/agents/migration_agent/nodes/orchestrator_tools.py`)
+- violates: CA-002 (an approval should not outlive the plan it was granted for)
+- evidence: `ado2gh/agents/migration_agent/nodes/orchestrator_tools.py:~179` — generating a new plan does not clear any prior plan-approval state tied to the previous plan revision. Combined with the GAP-109 fix above (which changes the fingerprint so a materially different plan no longer matches the old approval key), the residual risk is narrower, but the approval record itself is never explicitly revoked when a new plan replaces the one it authorised.
+- severity: medium — GAP-109's fingerprint widening already closes the exploitable half (a materially different plan no longer matches); this is the remaining hygiene gap (a stale, non-matching approval record lingering rather than being explicitly revoked).
+- blast_radius: every session that regenerates a plan after a prior plan was approved.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch, found while fixing GAP-109. No successor task filed.
+- closed_on: —
+
+### GAP-115 (GAP-AGT-36) Form submissions carry no form id or revision nonce
+
+- components: agent service routes (`services/agent/routes/_helpers.py`)
+- violates: CA-002 (an approver's decision should bind to the specific instance and revision of what was shown)
+- evidence: `services/agent/routes/_helpers.py:~121` — a form submission is accepted with no identifier tying it to the specific form instance and revision the operator was shown, so a stale or replayed submission cannot be distinguished from a current one at the route layer.
+- severity: medium — no confirmed replay exploit recorded; this is a missing binding, not a demonstrated bypass.
+- blast_radius: every HITL form submission route.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch. No successor task filed.
+- closed_on: —
+
+### GAP-116 (GAP-AGT-37) Blocker-resolution revocation writes no audit record
+
+- components: agent package (`ado2gh/agents/migration_agent/hitl/intake.py`)
+- violates: CA-003 (audit coverage) — the revocation path should be audited symmetrically with the decline path it reverses
+- evidence: `ado2gh/agents/migration_agent/hitl/intake.py:~63` — when an operator revokes a previously declined blocker resolution, the change is applied to session state but no audit event is written, unlike the decline path it reverses.
+- severity: low — a state-hygiene gap in audit symmetry, no safety impact.
+- blast_radius: every blocker-resolution revocation.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch. No successor task filed.
+- closed_on: —
+
+### GAP-117 (GAP-AGT-38) String booleans pass through form fields unconverted
+
+- components: agent package (`ado2gh/agents/migration_agent/hitl/form_fields.py`)
+- violates: consistency with `coerce_dry_run`'s boundary-conversion pattern used elsewhere in this package
+- evidence: `ado2gh/agents/migration_agent/hitl/form_fields.py:~33` — a form field typed as boolean accepts a string value (`"true"`/`"false"`) without coercion, unlike `coerce_dry_run` elsewhere in this package, which exists specifically to guard against this shape of input (see GAP-076, CA-001, and the malformed-`dry_run` test in `tests/unit/test_blockers.py`).
+- severity: low — cosmetic/consistency gap; no demonstrated case where an unconverted string boolean produces an unsafe default.
+- blast_radius: any HITL form field typed as boolean.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch. No successor task filed.
+- closed_on: —
+
+### GAP-118 (GAP-AGT-39) Test gaps: no cross-referencing coverage of the GAP-108 guardrail path from the guardrail/orchestrator side
+
+- components: tests (`tests/unit/test_guardrails.py`, `tests/unit/test_orchestrator_node.py`)
+- violates: none directly — a test-coverage gap, not a code defect
+- evidence: `tests/unit/test_guardrails.py:~320`, `tests/unit/test_orchestrator_node.py:~168` — neither file has a test exercising the deterministic-executor guardrail path added in the GAP-108 fix, from the guardrail/orchestrator module's own test suite (only `tests/unit/test_scope_executor.py` covers it, from the executor side).
+- severity: low — coverage gap only; the behaviour itself is tested from the executor side.
+- blast_radius: none directly; reduces the number of independent test vantage points on the GAP-108 fix.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch, worth a cross-referencing test once this pass's entries are merged. No successor task filed.
+- closed_on: —
+
+### GAP-119 (GAP-AGT-40) The plan-revision config path is fingerprinted as a string, not by its resolved contents
+
+- components: agent package (`ado2gh/agents/migration_agent/hitl/blockers.py`)
+- violates: CA-002 in the narrow sense — the fingerprint should change when the thing it stands for changes
+- evidence: `ado2gh/agents/migration_agent/hitl/blockers.py:~48` (the `plan_revision_key` `config_path` line added by the GAP-109 fix above) — `plan_revision_key` now hashes the config path *string*, so pointing the plan at a different file invalidates the approval, but editing the *contents* of the same file (e.g. changing an organisation default the executor reads) does not, since the path string is unchanged. Closing this would need hashing the resolved config contents, a larger change than the smallest-diff fix GAP-109 called for.
+- severity: low — raised by the independent review pass on GAP-109 and judged out of scope for that fix; narrower residual than the original finding, not a new exposure.
+- blast_radius: any plan approval where the referenced config file's contents change between approval and execution without the path itself changing.
+- status: open
+- resolution: —
+- regression_check: not yet — no fix landed.
+- revert_proof: not applicable — no code changed.
+- contract_change: false
+- follow_up: raised 2026-09-22 from the review-fixes batch, found during the GAP-109 review. No successor task filed.
+- closed_on: —
+
+### GAP-120 (GAP-AUTH-13) `_execute_pipeline` ran an approved live pipeline run from its persisted context with no re-derived scope check
+
+- components: platform live-execution approval store (`ado2gh/api/live_approval_store.py`, `ado2gh/api/live_approval_scopes.py`)
+- violates: CA-002 (an approver decides on a specific, described action; execution must match what was shown) and CA-004 (a scope mismatch is recorded, not silently allowed or silently dropped)
+- evidence:
+  - `LiveApprovalStore._execute_pipeline` (`ado2gh/api/live_approval_store.py:588`), pre-fix, ran the approved pipeline run straight from the row's persisted context, with no re-derivation of the scope id from that context before dispatch — unlike its sibling `_execute_migrate`, which already re-derives and compares
+  - a row written before any creation-time check existed, or by a future producer that skipped it, could start a pipeline run different from the one the approver saw, with no record of the mismatch
+- severity: critical (critical_test: (a) — a destructive, credentialed action executed without matching what was confirmed). Approving one context and executing another defeats the approval gate entirely, the same shape as GAP-071 (an approved `migrate_job` executing the client's context rather than the approved scope), which this entry directly mirrors on the pipeline-run path.
+- blast_radius: every `LiveApprovalStore.approve` call whose row has `scope_type == PIPELINE_RUN_SCOPE_TYPE` (`ado2gh/api/live_approval_scopes.py`) — the pipeline-run live-approval path end to end.
+- status: remediated
+- resolution: `_execute_pipeline` now re-derives the scope id from the persisted context via `pipeline_run_scope_id(params[PIPELINE_RUN_CONTEXT_RUN_ID])` and compares it against `row["scope_id"]` before calling the registered executor, mirroring `_execute_migrate`. Only the allowlisted run id reaches the executor — nothing else from the client-supplied context is forwarded. A mismatch writes `platform.live_execution.scope_mismatch`, the same event `_execute_migrate` and `is_approved_for` already write.
+- regression_check: `tests/auth/test_gap_108_pipeline_approval_scope_match.py` — targeted tests exercising `_execute_pipeline` context/scope mismatch and match paths. **Note (register scribe):** this filename carries the astra-fixes.md batch's provisional id (`GAP-108`), which now belongs to a different entry above (the review-fixes batch's F1). The file was not renamed as part of this pass — renaming source/test files is out of the register scribe's remit — so the filename and this entry's actual id (`GAP-120`) no longer match. Flagging for the finisher or a future pass to rename to `test_gap_120_pipeline_approval_scope_match.py`.
+- revert_proof: not yet performed in a throwaway worktree as of the astra-fixes.md draft; not independently reperformed by the register scribe (git stash is outside this role's permitted operations). Confirm before relying on this entry's `remediated` status for release sign-off.
+- contract_change: false — no CLI command, HTTP route, environment variable or DB table changes; internal defense-in-depth only.
+- closed_on: 2026-09-22
+
+### GAP-121 (GAP-TOKEN-08) `_SECRET_KEY_VALUE_RE` missed short, quoted, and punctuated secret values, and a quote-specific branch under-masked a mixed-quote value
+
+- components: audit redaction (`ado2gh/audit/redaction.py`)
+- violates: the masking choke point (CA-003) must mask every secret-shaped value, not only long unquoted ones
+- evidence:
+  - the prior `_SECRET_KEY_VALUE_RE` alternation kept a fixed-length suffix for triage on every branch, including the key-value branch, so a short value (`token=abc`), a quoted value (`"password": "x"`), or a value immediately followed by punctuation (`secret=1,`) either matched too little of the value to mask it fully or missed the key-value case's own delimiter handling
+  - a second bug found during this batch's own Terra pre-commit review: the first version of the fixed pattern's quoted branch used one character class excluding both quote characters (`[^"\']*`) for the value, regardless of which quote opened it — a value quoted in one style that legitimately contains the other quote character (`password="abc's secret"`) stopped masking at the embedded character, leaving the remainder of the secret exposed in the audit record
+- severity: critical (critical_test: (b) — secret exposure to a persisted, retained audit record). A short or quoted secret is exactly as sensitive as a long unquoted one, and audit records are retained; a partially-masked secret in a retained record is a real leak. Matches the precedent at GAP-010 and GAP-064 (redaction/masking gaps in the same audit path, both rated critical on the same "retained record" reasoning).
+- blast_radius: every call path that reaches `redact_text`/`mask_secrets` with free-text logs or messages carrying a `key=value` or `key: "value"` shaped secret — the audit writer (`ado2gh/audit/writer.py`) and the agent's transcript/log masking are the two production callers.
+- status: remediated
+- resolution: split the key-value case into its own pattern (`ado2gh/audit/redaction.py:46-51`, `_SECRET_KEY_VALUE_RE`) run as a second pass after `_SECRET_VALUE_RE`. It masks the entire assigned value regardless of length or character set, handles both a quoted value (keeping the matching quote character around the mask) and an unquoted value bounded by `_SECRET_VALUE_DELIMITERS`, via `_mask_key_value_match` (`ado2gh/audit/redaction.py:73-93`). The quoted branch was then split into two quote-specific branches (`dqval` for `"`, `sqval` for `'`), each excluding only its own quote character; `_mask_key_value_match` now selects the closing quote from whichever group matched.
+- regression_check: `tests/auth/test_gap_109_short_and_quoted_secret_values.py` — cases for short, quoted, and punctuation-terminated key-value secrets, plus two cases for the mixed-quote embedded-character bug (99/99 passing at the time the astra-fixes.md batch verified it). **Note (register scribe):** this filename carries the astra-fixes.md batch's provisional id (`GAP-109`), which now belongs to a different entry above (the review-fixes batch's F2). The file was not renamed as part of this pass; flagging for the finisher or a future pass to rename to `test_gap_121_short_and_quoted_secret_values.py`.
+- revert_proof: not yet performed in a throwaway worktree as of the astra-fixes.md draft; not independently reperformed by the register scribe. Confirm before relying on this entry's `remediated` status for release sign-off.
+- contract_change: false — masking behavior only gets stricter (more values masked, never fewer); no public surface changes.
+- closed_on: 2026-09-22
+
+### GAP-122 (GAP-AGT-32) An agent session's live-execution request never opened a real platform approval
+
+- components: agent service routes (`services/agent/routes/_helpers.py`, `services/agent/routes/execution_routes.py`, `services/agent/routes/session_routes.py`, new `services/agent/routes/_session_registry.py`), accelerator approval endpoint (`services/accelerator_api/routes/approval_routes.py`), approval-store scope constants (`ado2gh/api/live_approval_scopes.py`)
+- violates: parity with the two other live-execution request paths (migrate-job, pipeline-run), both of which already open a row in the platform approval store with an id an approver can act on and an audit trail; CA-003 (audit coverage) and CA-002 (an approver needs something concrete to decide on)
+- evidence:
+  - `_enqueue_session_live_approval` (`services/agent/routes/_helpers.py`), pre-fix, only set `session["live_approval_status"] = "pending"` in memory — it never called the accelerator, so no `POST /v1/platform/approvals` row existed, no id was returned to the caller, and no audit event was written for the request itself
+  - the migrate-job and pipeline-run live-execution paths (`ado2gh/api/live_approval_store.py`) both already go through `POST /v1/platform/approvals`, guarded on the caller side by `operator_requires_live_approval`, which refuses an identity-less request; the agent-session path was the only one calling the underlying state directly, bypassing that gate
+- severity: high (critical_test: —). Matches the precedent at GAP-019 (`/sessions/{id}/provision` trusting a client-supplied actor with no `Request` parameter, same agent-service route family): an identity/audit-trail gap with no direct destructive action reachable through this gap alone, since the actual live-execution gate (`confirm-live`/`resume-live`) is a separate, still-enforced check downstream. Rated high rather than critical for the same reason GAP-019 was — no consumer of the ungated "pending" flag itself performs a live write.
+- blast_radius: every agent session that requests live execution (`services/agent/routes/execution_routes.py` `request_live` route) — the path an operator uses from the chat UI to switch a session from dry-run to live.
+- status: remediated
+- resolution:
+  - `_enqueue_session_live_approval` now calls `POST /v1/platform/approvals` with `scope_type=AGENT_SESSION_SCOPE_TYPE` (new constant, `ado2gh/api/live_approval_scopes.py`), records the returned approval id and status on the session, and writes `session.request_live` / `session.request_live.failed` audit events either way (`services/agent/routes/_helpers.py`).
+  - a second, related gap found while implementing this: `create_live_approval` (`services/accelerator_api/routes/approval_routes.py`) passed `require_operate(request)`'s result straight into `LiveApprovalStore.create_or_get_pending`, whose `requester` parameter is not optional. `require_operate` returns `None` rather than raising whenever `ADO2GH_AUTH_ENABLED` is unset — the shipped default — so an identity-less caller of this endpoint crashed with an unhandled `AttributeError` (HTTP 500) instead of a clean refusal. Fixed with an explicit `if user is None: raise HTTPException(401, ...)` guard in `create_live_approval` itself, closing the gap for every present and future caller of the endpoint, not only the new one.
+  - implementing the fix grew `services/agent/routes/_helpers.py` past this project's 800-line cap; the self-contained in-memory session/run cache cluster (`_runs`, `_sessions`, `_evict_stale_state` and helpers) was split into a new sibling module, `services/agent/routes/_session_registry.py`, re-exported from `_helpers.py` so no other module's import line needed to change. Documented in `docs/STRUCTURAL_CHANGELOG.md` under two `GAP-110`-labelled sections (this entry's provisional id at the time the split was made); the register scribe did not rename those changelog rows, since the changelog is append-only and not this role's file to edit — flagging the stale label there too.
+- regression_check: `tests/agent/test_gap_110_session_live_request_audited.py` (success, failure/audit, token-fallback, and the anonymous-caller-401 cases; 4/4 passing standalone); `tests/agent/test_agent_route_boundary_limits.py` (2 tests updated to target `_session_registry.MAX_IN_MEMORY_SESSIONS` after the split). Wide targeted run across `tests/agent/`: 174 passed, 5 skipped, 0 failed. **Note (register scribe):** this filename carries the astra-fixes.md batch's provisional id (`GAP-110`), which now belongs to a different entry above (the review-fixes batch's F3). The file was not renamed as part of this pass; flagging for the finisher or a future pass to rename to `test_gap_122_session_live_request_audited.py`.
+- revert_proof: not yet performed in a throwaway worktree as of the astra-fixes.md draft; not independently reperformed by the register scribe. Confirm before relying on this entry's `remediated` status for release sign-off.
+- contract_change: false — no CLI, HTTP route shape, environment variable, or DB table changes; `POST /v1/platform/approvals` already existed and already accepted this request shape.
+- closed_on: 2026-09-22
 
 ## Removal verdicts (US3 scenario 4 — did production lose a feature?)
 
