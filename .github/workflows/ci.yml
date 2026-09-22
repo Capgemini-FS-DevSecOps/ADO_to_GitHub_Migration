@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev,api,agent]"
+      - run: pip install -e ".[dev,api,agent,postgres]"
       # FR-027a coverage ratchet: this number is the honest whole-package figure
       # measured on the green suite with no `omit` list (see specs/013-clean-code-arch-remediation/plan.md
       # § Coverage measurement). Raise it after each increment, never lower it.
