@@ -17,7 +17,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, get_type_hints
+from typing import Any, Optional, cast, get_type_hints
 
 from ado2gh.api.phase_definitions import (
     PhaseDefinition,
@@ -74,6 +74,9 @@ def _rehydrate_nested_dataclasses(cls: type, merged: dict[str, Any]) -> dict[str
         field_type = hints.get(f.name, f.type)
         if not dataclasses.is_dataclass(field_type):
             continue
+        # is_dataclass narrows to the DataclassInstance protocol, which has no
+        # constructor; the field type itself is always a concrete class here.
+        field_type = cast("type[Any]", field_type)
         value = result.get(f.name)
         if not isinstance(value, dict):
             continue

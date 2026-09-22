@@ -9,6 +9,7 @@ from typing import Optional
 from ado2gh.api.pipeline_models import (
     ACCELERATOR_PIPELINE_STEPS,
     PipelineRun,
+    PipelineRunStatus,
     PipelineStep,
 )
 
@@ -58,7 +59,7 @@ class PipelineRunStore:
         if not run or run.status not in ("pending", "running"):
             return False
         cls.cancel_event(run_id).set()
-        run.status = "cancelled"
+        run.status = PipelineRunStatus.CANCELLED
         run.updated_at = datetime.now(timezone.utc).isoformat()
         return True
 

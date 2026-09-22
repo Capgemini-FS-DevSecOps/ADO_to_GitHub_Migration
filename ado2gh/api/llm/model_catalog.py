@@ -85,7 +85,8 @@ def _catalog_key(provider: str, api_key: str, base_url: str) -> str:
 
 
 def _fetch_anthropic_live(api_key: str) -> list[dict[str, Any]]:
-    catalog_path = get_provider_spec("anthropic").catalog_path
+    spec = get_provider_spec("anthropic")
+    catalog_path = spec.catalog_path if spec else ""
     entries: list[dict[str, Any]] = []
     params: dict[str, Any] | None = {"limit": ANTHROPIC_CATALOG_PAGE_SIZE}
     with build_cloud_llm_http_client() as client:
@@ -123,9 +124,10 @@ def _fetch_anthropic_live(api_key: str) -> list[dict[str, Any]]:
 
 
 def _fetch_openai_live(api_key: str) -> list[dict[str, Any]]:
+    spec = get_provider_spec("openai")
     with build_cloud_llm_http_client() as client:
         response = client.get(
-            get_provider_spec("openai").catalog_path,
+            spec.catalog_path if spec else "",
             headers={"Authorization": f"Bearer {api_key}"},
         )
         response.raise_for_status()

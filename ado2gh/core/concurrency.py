@@ -4,10 +4,13 @@ from __future__ import annotations
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+    from ado2gh.api.settings_models import ConcurrencySettings
 
 
-def _defaults() -> "ConcurrencySettings":  # noqa: F821 - forward ref, imported lazily below
+def _defaults() -> "ConcurrencySettings":
     """Return the one source of these numbers, imported lazily.
 
     ``ado2gh.api`` imports ``ado2gh.core.migration_engine``, which imports
