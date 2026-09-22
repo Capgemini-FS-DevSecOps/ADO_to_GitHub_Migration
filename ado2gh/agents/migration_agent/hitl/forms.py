@@ -6,6 +6,7 @@ LLM-provided recommendations (options, placeholders, recommended_value).
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from ado2gh.agents.migration_agent.hitl.form_fields import (
@@ -25,8 +26,43 @@ MAX_FIELDS = 8
 MAX_OPTIONS = 10
 
 
-def sanitize_form(form: dict[str, Any]) -> dict[str, Any]:
-    """Enforce guardrails on a dynamically-constructed form."""
+def new_form_instance_id() -> str:
+    """Generate a fresh id for one instance of a pending form.
+
+    Every form the operator is asked to answer gets its own id, separate from
+    its ``form_id`` (which just names the form's type/template). A later
+    submission can then be checked against the exact form instance it answers
+    instead of only its type, so a stale browser tab holding an old form
+    cannot be mistaken for an answer to a newer one the agent has since
+    replaced (register item GAP-136).
+
+    Returns:
+        A short random token, prefixed ``form_``.
+    """
+    return f"form_{uuid.uuid4().hex[:12]}"
+
+
+def sanitize_form(
+    form: dict[str, Any],
+    session: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Enforce guardrails on a dynamically-constructed form.
+
+    Every form built through here (the single point every form producer in
+    this package routes through) gets a fresh ``instance_id`` (GAP-136), so a
+    submission can be checked against the exact form it answers. When
+    ``session`` is given and already carries a migration plan, the form also
+    carries that plan's ``plan_revision`` — a form offered while a plan was
+    on the table is tied to that revision, so a later replan can make the
+    form stale even if its instance id still matches.
+
+    Args:
+        form: The raw form dict to sanitize.
+        session: The live agent session, used only to read the current
+            migration plan (if any) for the plan-revision stamp. Optional —
+            callers with no session in scope simply get a form with no
+            ``plan_revision``.
+    """
     form_id = str(form.get("form_id", "custom"))[:FORM_ID_MAX_CHARS]
     title = str(form.get("title", "Input required"))[:MAX_TITLE_LEN]
     description = str(form.get("description", ""))[:MAX_DESCRIPTION_LEN]
@@ -70,12 +106,21 @@ def sanitize_form(form: dict[str, Any]) -> dict[str, Any]:
             "placeholder": "Enter a value",
         }]
 
-    return {
+    result = {
         "form_id": form_id,
         "title": title,
         "description": description,
         "fields": fields,
+        "instance_id": new_form_instance_id(),
     }
+    plan = (session or {}).get("migration_plan")
+    if isinstance(plan, dict) and plan:
+        from ado2gh.agents.migration_agent.hitl.blockers import plan_revision_key
+
+        revision = plan_revision_key(plan)
+        if revision:
+            result["plan_revision"] = revision
+    return result
 
 
 def _value_is_blank(value: object) -> bool:
@@ -131,7 +176,7 @@ def plan_confirmation_form(session: dict[str, Any]) -> dict[str, Any]:
     """Backward-compatible alias — schema-driven plan review form."""
     from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
 
-    return build_plan_review_form(session)
+    return sanitize_form(build_plan_review_form(session), session)
 
 
 def _plan_confirmation_reply(session: dict[str, Any]) -> str:

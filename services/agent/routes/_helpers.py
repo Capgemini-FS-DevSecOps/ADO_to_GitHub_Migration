@@ -153,6 +153,14 @@ class FormSubmitRequest(BaseModel):
     """Request body with the operator's answers to a form the agent asked them to fill in."""
 
     values: dict[str, Any] = Field(default_factory=dict)
+    form_instance_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description=(
+            "Id of the exact form this submission answers. When given, it must match the "
+            "pending form or the submission is refused as stale. Omitted (older console): accepted."
+        ),
+    )
 
     @field_validator("values")
     @classmethod

@@ -12,8 +12,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ado2gh.agents.migration_agent.constants import (
-    SSE_HEARTBEAT_INTERVAL_SECONDS,
     SSE_MAX_EVENTS_PER_STREAM,
+    agent_runtime_settings,
 )
 from ado2gh.agents.migration_agent.hitl.forms import (
     migration_ready_reply,
@@ -47,6 +47,7 @@ from services.agent.routes._helpers import (
     _try_start_pev_run,
     client_error_detail,
 )
+from services.agent.routes.form_guard import reject_if_stale_form
 
 router = APIRouter()
 
@@ -64,7 +65,7 @@ def _resolve_pending_form(session: dict[str, Any]) -> dict[str, Any] | None:
     request = pending_operator_input(session)
     if request is None:
         return None
-    form = operator_input_to_form(request)
+    form = operator_input_to_form(request, session)
     session["pending_form"] = form
     return form
 
@@ -131,6 +132,7 @@ async def submit_session_form(
     form = _resolve_pending_form(session)
     if not form:
         raise HTTPException(status_code=409, detail="no_pending_form")
+    reject_if_stale_form(session_id, session, form, req)
 
     from ado2gh.agents.migration_agent.hitl.intake import format_form_submission_summary, prepare_form_submission
 
@@ -246,7 +248,7 @@ async def submit_session_form(
         plan = session.get("migration_plan") or {}
         plan = finalize_agent_migration_plan(plan, session)
         session["migration_plan"] = plan
-        form = sanitize_form(build_plan_review_form(session))
+        form = sanitize_form(build_plan_review_form(session), session)
         session["pending_form"] = form
         reply = _plan_confirmation_reply(session)
         _add_message(session_id, "assistant", reply, kind="message")
@@ -299,7 +301,7 @@ async def submit_session_form(
         from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
         from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
 
-        form = sanitize_form(build_plan_review_form(session))
+        form = sanitize_form(build_plan_review_form(session), session)
         session["pending_form"] = form
         reply = (
             f"Saved {len(mappings)} service connection mapping(s). "
@@ -408,6 +410,7 @@ async def submit_session_form_stream(
     form = _resolve_pending_form(session)
     if not form:
         raise HTTPException(status_code=409, detail="no_pending_form")
+    reject_if_stale_form(session_id, session, form, req)
 
     from ado2gh.agents.migration_agent.hitl.intake import format_form_submission_summary, prepare_form_submission
 
@@ -497,7 +500,7 @@ async def submit_session_form_stream(
         plan = session.get("migration_plan") or {}
         plan = finalize_agent_migration_plan(plan, session)
         session["migration_plan"] = plan
-        review_form = sanitize_form(build_plan_review_form(session))
+        review_form = sanitize_form(build_plan_review_form(session), session)
         session["pending_form"] = review_form
         reply = _plan_confirmation_reply(session)
         _add_message(session_id, "assistant", reply, kind="message")
@@ -626,7 +629,7 @@ async def submit_session_form_stream(
             repository_id=plan.get("repository_id"),
         )
         session["migration_plan"] = plan
-        review_form = sanitize_form(build_plan_review_form(session))
+        review_form = sanitize_form(build_plan_review_form(session), session)
         session["pending_form"] = review_form
         reply = (
             f"Saved {len(mappings)} service connection mapping(s). "
@@ -656,6 +659,7 @@ async def submit_session_form_stream(
     session["status"] = "idle"
     session["pending_clarification"] = None
     session["start_pev"] = False
+    heartbeat_interval_seconds = agent_runtime_settings().sse_heartbeat_interval_seconds
 
     async def event_stream() -> AsyncIterator[str]:
         last_heartbeat = asyncio.get_event_loop().time()
@@ -692,7 +696,7 @@ async def submit_session_form_stream(
                     else:
                         yield f"data: {json.dumps(event, default=str)}\n\n"
                     now = asyncio.get_event_loop().time()
-                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                    if now - last_heartbeat >= heartbeat_interval_seconds:
                         yield f"data: {json.dumps({'kind': 'heartbeat', 'content': ''}, default=str)}\n\n"
                         last_heartbeat = now
         except Exception as exc:

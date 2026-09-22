@@ -44,13 +44,10 @@ def request_id_for_blockers(blockers: list[dict[str, Any]]) -> str:
 def _field_specs_from_operator_fields(
     fields: list[OperatorInputFieldSpec],
 ) -> list[IntakeFieldSpec]:
-    """Convert operator-input field specs to intake field specs.
+    """Convert operator-input field specs to intake field specs, in the same order.
 
     ``required`` is forwarded only when the caller set it explicitly, so a field that
     never named it keeps falling through to the per-type default (THR-09-003).
-
-    Returns:
-        One :class:`IntakeFieldSpec` per operator field, in the same order.
     """
     specs: list[IntakeFieldSpec] = []
     for f in fields:
@@ -61,8 +58,11 @@ def _field_specs_from_operator_fields(
     return specs
 
 
-def operator_input_to_form(request: OperatorInputRequest) -> dict[str, Any]:
-    """Build a sanitized dynamic form from a pydantic operator-input request."""
+def operator_input_to_form(
+    request: OperatorInputRequest,
+    session: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a sanitized dynamic form; ``session`` stamps the current plan revision (GAP-136)."""
     from ado2gh.agents.migration_agent.hitl.intake import build_dynamic_form
 
     specs = _field_specs_from_operator_fields(request.fields)
@@ -73,7 +73,8 @@ def operator_input_to_form(request: OperatorInputRequest) -> dict[str, Any]:
             description=request.description,
             fields=specs,
             planner_context=request.context or None,
-        )
+        ),
+        session,
     )
 
 
@@ -794,5 +795,5 @@ async def apply_operator_input_resolution(
     return {
         "status": "operator_input_unresolved",
         "reply": "Select how to proceed.",
-        "form": operator_input_to_form(request),
+        "form": operator_input_to_form(request, session),
     }
