@@ -13,14 +13,25 @@ def _blocker_text(work_item: dict[str, Any]) -> str:
     return str(work_item.get("blocker") or work_item.get("block_reason") or "").strip()
 
 
+_FIELD_SEPARATOR = "\x1f"
+
+
 def plan_revision_key(plan: dict[str, Any] | None) -> str:
     """Identify one revision of a migration plan by the decisions it asks the operator to make.
 
-    The digest covers what an operator answers *about* — the plan id and revision
-    counter, the execution mode, the target repositories and the scope/repo pairs of
-    the work items — and deliberately excludes mutable execution state such as work
-    item ``status``, so running the plan never invalidates the approval that
-    authorised the run (THR-09-002, THR-09-005).
+    The digest covers every plan property a live write is authorised against —
+    the plan id and revision counter, the execution mode, the config path the
+    executor resolves organisation defaults from, the enabled scope set, and
+    for every repository and work item every coordinate
+    :func:`resolve_repo_context <ado2gh.agents.migration_agent.nodes.executor.scope.resolve_repo_context>`
+    reads to pick the source and destination of a live write — identifier,
+    ADO project and repository name, target organisation, target repository,
+    target reference (``gh_target``) and (for work items) migrated scope —
+    and deliberately excludes mutable execution state such as work item
+    ``status``, so running the plan never invalidates the approval that
+    authorised the run (THR-09-002, THR-09-005). Repository and work-item
+    entries are sorted before hashing so the digest is stable regardless of
+    the order the plan lists them in.
 
     Args:
         plan: The migration plan, or None when the session has none.
@@ -30,19 +41,66 @@ def plan_revision_key(plan: dict[str, Any] | None) -> str:
     """
     if not isinstance(plan, dict) or not plan:
         return ""
+
+    try:
+        from ado2gh.api.settings_store import SettingsStore
+
+        config_path = SettingsStore().load().advanced.config_path or "migration.yaml"
+    except Exception:
+        config_path = ""
+
+    plan_scopes = sorted(str(s) for s in (plan.get("enabled_scopes") or []))
     parts = [
         str(plan.get("plan_id") or ""),
         str(plan.get("revision", 0)),
         str(coerce_dry_run(plan.get("dry_run"), default=True)),
+        config_path,
+        _FIELD_SEPARATOR.join(plan_scopes),
     ]
+
+    repo_entries: list[str] = []
     for repo in plan.get("repos") or []:
         if isinstance(repo, dict):
-            parts.append(str(repo.get("id") or repo.get("repository_id") or repo.get("name") or ""))
+            repo_scopes = sorted(
+                str(s) for s in (repo.get("enabled_scopes") or repo.get("scopes") or [])
+            )
+            repo_entries.append(
+                _FIELD_SEPARATOR.join([
+                    str(repo.get("id") or repo.get("repository_id") or repo.get("name") or ""),
+                    # Source coordinates `resolve_repo_context` (nodes/executor/scope.py)
+                    # reads independently of `id` when it resolves which ADO repo a
+                    # live write reads from.
+                    str(repo.get("project") or ""),
+                    str(repo.get("repo_name") or repo.get("name") or ""),
+                    str(repo.get("gh_org") or repo.get("github_org") or ""),
+                    str(repo.get("gh_repo") or repo.get("github_repo") or ""),
+                    *repo_scopes,
+                ])
+            )
         else:
-            parts.append(str(repo))
+            repo_entries.append(str(repo))
+    parts.extend(sorted(repo_entries))
+
+    work_item_entries: list[str] = []
     for work_item in plan.get("work_items") or []:
         if isinstance(work_item, dict):
-            parts.append(f"{work_item.get('scope')}@{work_item.get('repo')}")
+            work_item_entries.append(
+                _FIELD_SEPARATOR.join([
+                    str(work_item.get("repo") or ""),
+                    str(work_item.get("scope") or ""),
+                    # Source coordinates `resolve_repo_context` reads independently of
+                    # `repo` when it resolves which ADO repo a live write reads from.
+                    str(work_item.get("project") or ""),
+                    str(work_item.get("repo_name") or ""),
+                    str(work_item.get("github_org") or work_item.get("gh_org") or ""),
+                    str(work_item.get("github_repo") or work_item.get("gh_repo") or ""),
+                    # `gh_target` can supply the GitHub destination on its own when
+                    # `github_org`/`github_repo` are unset (`resolve_repo_context`).
+                    str(work_item.get("gh_target") or ""),
+                ])
+            )
+    parts.extend(sorted(work_item_entries))
+
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 
 
