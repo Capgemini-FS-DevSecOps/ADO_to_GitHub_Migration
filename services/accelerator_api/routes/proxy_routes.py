@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ado2gh.api.platform_rbac import require_approve_live_execution, require_operate
 from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
+from ado2gh.audit.events import AuditEvent
 from services.accelerator_api.routes.migrate_guard import active_profile_id
 from services.accelerator_api.routes.migrate_routes import _get_clients
 
@@ -144,7 +145,7 @@ def _audit_github_write(user: PlatformUser | None, method: str, endpoint: str) -
     from ado2gh.api.profile_governance import write_profile_audit
 
     write_profile_audit(
-        "accelerator.github_proxy.write",
+        AuditEvent.ACCELERATOR_GITHUB_PROXY_WRITE.value,
         profile_id=active_profile_id() or "_platform",
         actor=getattr(user, "username", "") or "",
         payload={

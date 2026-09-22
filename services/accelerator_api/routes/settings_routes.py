@@ -16,6 +16,7 @@ from ado2gh.api.contracts import (
 )
 from ado2gh.api.platform_rbac import require_manage_models
 from ado2gh.api.profile_governance import write_profile_audit
+from ado2gh.audit.events import AuditEvent
 from ado2gh.auth.models import PlatformRole
 from services.accelerator_api.routes._shared import (
     _cloud_credentials,
@@ -98,7 +99,7 @@ def put_connectivity(request: Request, body: dict) -> dict[str, object]:
         elif before.get(key) != after.get(key):
             changed.append(key)
     write_profile_audit(
-        "connectivity.updated",
+        AuditEvent.CONNECTIVITY_UPDATED.value,
         profile_id="_platform",
         actor=actor,
         payload={"fields": changed},
@@ -244,7 +245,7 @@ def validate_llm_draft(request: Request, body: dict) -> dict[str, object]:
     result = validate_draft(body)
     user = _platform_user(request)
     write_profile_audit(
-        "llm.model.validated",
+        AuditEvent.LLM_MODEL_VALIDATED.value,
         profile_id="_platform",
         actor=user.username if user else "admin",
         payload={"status": result["status"], "category": result.get("category")},
@@ -282,7 +283,7 @@ def validate_llm_saved(model_id: str, request: Request) -> dict[str, object]:
         raise HTTPException(status_code=404, detail="Model not found") from exc
     user = _platform_user(request)
     write_profile_audit(
-        "llm.model.validated",
+        AuditEvent.LLM_MODEL_VALIDATED.value,
         profile_id="_platform",
         actor=user.username if user else "admin",
         payload={
@@ -350,14 +351,14 @@ def create_llm_model(request: Request, body: dict) -> dict[str, object]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     user = _platform_user(request)
     write_profile_audit(
-        "llm_model.created",
+        AuditEvent.LLM_MODEL_CREATED.value,
         profile_id="_platform",
         actor=user.username if user else "admin",
         payload={"model_id": model.id, "provider": model.provider},
     )
     if model.enabled or model.default_for_agent:
         write_profile_audit(
-            "llm.model.enabled",
+            AuditEvent.LLM_MODEL_ENABLED.value,
             profile_id="_platform",
             actor=user.username if user else "admin",
             payload={
@@ -437,7 +438,7 @@ def delete_llm_model(model_id: str, request: Request) -> dict[str, object]:
         raise HTTPException(status_code=404, detail="Model not found") from exc
     user = _platform_user(request)
     write_profile_audit(
-        "llm_model.deleted",
+        AuditEvent.LLM_MODEL_DELETED.value,
         profile_id="_platform",
         actor=user.username if user else "admin",
         payload={"model_id": model_id},
@@ -501,7 +502,7 @@ def scan_cloud_credentials(request: Request) -> dict[str, object]:
     user = _platform_user(request)
     actor = user.username if user else "admin"
     write_profile_audit(
-        "cloud_credentials.scanned",
+        AuditEvent.CLOUD_CREDENTIALS_SCANNED.value,
         profile_id="_platform",
         actor=actor,
         payload={"providers": [s.provider for s in sources]},
@@ -544,7 +545,7 @@ def patch_cloud_credentials(provider: str, request: Request, body: dict) -> dict
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     user = _platform_user(request)
     write_profile_audit(
-        "cloud_credentials.updated",
+        AuditEvent.CLOUD_CREDENTIALS_UPDATED.value,
         profile_id="_platform",
         actor=user.username if user else "admin",
         payload={"provider": provider, "fields": list(body.keys())},
@@ -587,7 +588,7 @@ def approve_cloud_credentials(provider: str, request: Request) -> dict[str, obje
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     write_profile_audit(
-        "cloud_credentials.approved",
+        AuditEvent.CLOUD_CREDENTIALS_APPROVED.value,
         profile_id="_platform",
         actor=actor,
         payload={"provider": provider},
@@ -630,7 +631,7 @@ def reject_cloud_credentials(
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Credential not found") from exc
     write_profile_audit(
-        "cloud_credentials.rejected",
+        AuditEvent.CLOUD_CREDENTIALS_REJECTED.value,
         profile_id="_platform",
         actor=actor,
         payload={"provider": provider, "reason": reason},
@@ -667,7 +668,7 @@ def revoke_cloud_credentials(provider: str, request: Request) -> dict[str, objec
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Credential not found") from exc
     write_profile_audit(
-        "cloud_credentials.revoked",
+        AuditEvent.CLOUD_CREDENTIALS_REVOKED.value,
         profile_id="_platform",
         actor=actor,
         payload={"provider": provider},

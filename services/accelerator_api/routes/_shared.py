@@ -10,6 +10,7 @@ from ado2gh.api.accelerator import Accelerator
 from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
 from ado2gh.api.credentials.credential_validation import validate_ado_pat as _validate_ado_pat
 from ado2gh.api.credentials.credential_validation import validate_github_token as _validate_github_token
+from ado2gh.api.live_approval_scopes import MIGRATE_JOB_SCOPE_TYPE
 from ado2gh.api.live_approval_store import (
     PIPELINE_RUN_CONTEXT_RUN_ID,
     LiveApprovalStore,
@@ -231,17 +232,17 @@ def require_migrate_live_approval(
     if req.live_approval_id:
         approved = store.is_approved_for(
             req.live_approval_id,
-            scope_type="migrate_job",
+            scope_type=MIGRATE_JOB_SCOPE_TYPE,
             scope_id=scope_id,
             actor=getattr(user, "username", "") or "_system",
         )
     else:
-        approved = store.has_approved("migrate_job", scope_id)
+        approved = store.has_approved(MIGRATE_JOB_SCOPE_TYPE, scope_id)
     if not approved:
         approval = store.create_or_get_pending(
             user,
             LiveApprovalCreateRequest(
-                scope_type="migrate_job",
+                scope_type=MIGRATE_JOB_SCOPE_TYPE,
                 scope_id=scope_id,
                 profile_id=profile_id,
                 reason_request="Dashboard live migrate",
@@ -388,13 +389,14 @@ def _maybe_audit_model_enabled(
         model: The model configuration as it stands after the save.
     """
     from ado2gh.api.profile_governance import write_profile_audit
+    from ado2gh.audit.events import AuditEvent
     if model.validation_status != "passed":
         return
     user = _platform_user(request)
     if model.enabled != before_enabled or model.default_for_agent != before_default:
         if model.enabled or model.default_for_agent:
             write_profile_audit(
-                "llm.model.enabled",
+                AuditEvent.LLM_MODEL_ENABLED.value,
                 profile_id="_platform",
                 actor=user.username if user else "admin",
                 payload={

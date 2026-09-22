@@ -22,6 +22,7 @@ from ado2gh.api.profile_governance import (
     assert_operator_can_submit,
     write_profile_audit,
 )
+from ado2gh.audit.events import AuditEvent
 from ado2gh.auth.models import PlatformRole
 from services.accelerator_api.routes import _shared
 from services.accelerator_api.routes._shared import (
@@ -161,7 +162,7 @@ def setup_profile(req: ProfileSetupRequest, request: Request) -> MigrationProfil
     if not ado_result["valid"]:
         if user:
             write_profile_audit(
-                "profile.validation_failed",
+                AuditEvent.PROFILE_VALIDATION_FAILED.value,
                 profile_id="_pending",
                 actor=user.username,
                 payload={"step": "ado", "message": ado_result["message"]},
@@ -171,7 +172,7 @@ def setup_profile(req: ProfileSetupRequest, request: Request) -> MigrationProfil
     if not gh_result["valid"]:
         if user:
             write_profile_audit(
-                "profile.validation_failed",
+                AuditEvent.PROFILE_VALIDATION_FAILED.value,
                 profile_id="_pending",
                 actor=user.username,
                 payload={"step": "github", "message": gh_result["message"]},
@@ -188,7 +189,7 @@ def setup_profile(req: ProfileSetupRequest, request: Request) -> MigrationProfil
             raise HTTPException(status_code=403, detail="operator_submit_blocked") from exc
         raise
     actor = user.username if user else "system"
-    event = "profile.created" if p.status == "active" else "profile.submitted"
+    event = AuditEvent.PROFILE_CREATED.value if p.status == "active" else AuditEvent.PROFILE_SUBMITTED.value
     write_profile_audit(event, profile_id=p.id, actor=actor, payload={"status": p.status})
     if p.status == "active":
         _settings.apply_to_process_env(p)
@@ -422,7 +423,7 @@ def delete_profile(
             raise HTTPException(status_code=400, detail=code) from exc
         raise
     write_profile_audit(
-        "profile.deleted",
+        AuditEvent.PROFILE_DELETED.value,
         profile_id=profile_id,
         actor=user.username if user else "admin",
     )
@@ -455,7 +456,7 @@ def set_profile_default(profile_id: str, request: Request) -> MigrationProfileRe
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     user = _platform_user(request)
     write_profile_audit(
-        "profile.default_changed",
+        AuditEvent.PROFILE_DEFAULT_CHANGED.value,
         profile_id=profile_id,
         actor=user.username if user else "admin",
     )
@@ -498,7 +499,7 @@ def deactivate_profile(
             raise HTTPException(status_code=409, detail=code) from exc
         raise HTTPException(status_code=400, detail=code) from exc
     write_profile_audit(
-        "profile.deactivated",
+        AuditEvent.PROFILE_DEACTIVATED.value,
         profile_id=profile_id,
         actor=user.username if user else "admin",
     )
@@ -543,7 +544,7 @@ def approve_profile(profile_id: str, request: Request) -> MigrationProfileRespon
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     user = _platform_user(request)
     write_profile_audit(
-        "profile.approved",
+        AuditEvent.PROFILE_APPROVED.value,
         profile_id=profile_id,
         actor=user.username if user else "admin",
     )
@@ -582,7 +583,7 @@ def deny_profile(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     user = _platform_user(request)
     write_profile_audit(
-        "profile.denied",
+        AuditEvent.PROFILE_DENIED.value,
         profile_id=profile_id,
         actor=user.username if user else "admin",
         payload={"reason": body.reason if body else ""},
@@ -620,7 +621,7 @@ def appeal_profile(profile_id: str, request: Request) -> MigrationProfileRespons
     except PermissionError:
         raise HTTPException(status_code=403, detail="not_submitter")
     write_profile_audit(
-        "profile.appealed",
+        AuditEvent.PROFILE_APPEALED.value,
         profile_id=profile_id,
         actor=user.username,
     )

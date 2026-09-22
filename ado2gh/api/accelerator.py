@@ -17,6 +17,7 @@ from ado2gh.api.contracts import (
     ValidateResult,
 )
 from ado2gh.api.errors import ConfigurationError
+from ado2gh.api.live_approval_scopes import MIGRATE_JOB_SCOPE_TYPE
 from ado2gh.api.live_approval_store import LiveApprovalStore, migrate_scope_id
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.ado_token_manager import ADOTokenManager
@@ -199,7 +200,7 @@ class Accelerator:
             scope_id = migrate_scope_id(None, request.wave_id, request.config_path)
             if not LiveApprovalStore(request.db_path).is_approved_for(
                 request.live_approval_id,
-                scope_type="migrate_job",
+                scope_type=MIGRATE_JOB_SCOPE_TYPE,
                 scope_id=scope_id,
             ):
                 raise ConfigurationError(

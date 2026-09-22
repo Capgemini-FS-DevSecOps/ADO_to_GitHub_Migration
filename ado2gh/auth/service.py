@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from ado2gh.audit.events import AuditEvent
 from ado2gh.auth.models import AuthSession, PlatformRole, PlatformUser, PlatformUserStatus
 from ado2gh.auth.password import hash_password, validate_password_strength, verify_password
 from ado2gh.state.factory import StateStore, create_state_db
@@ -141,7 +142,7 @@ def _audit_auth(event_type: str, actor: str, payload: dict | None = None) -> Non
     """Write an authentication event to the platform audit log.
 
     Args:
-        event_type: Event name, for example ``user.login``.
+        event_type: Event name, for example ``AuditEvent.USER_LOGIN.value``.
         actor: Username the event is attributed to.
         payload: Extra event fields. Callers must keep passwords, password
             hashes and session tokens out of this dict.
@@ -213,7 +214,7 @@ class AuthService:
             created_at=now,
         )
         session = self._create_session(user)
-        _audit_auth("user.bootstrap", user.username, {"role": user.role.value})
+        _audit_auth(AuditEvent.USER_BOOTSTRAP.value, user.username, {"role": user.role.value})
         return session
 
     def register_operator(
@@ -255,7 +256,7 @@ class AuthService:
         from ado2gh.api.profile_governance import write_profile_audit
 
         write_profile_audit(
-            "user.registered",
+            AuditEvent.USER_REGISTERED.value,
             profile_id="_platform",
             actor=normalized,
             payload={
@@ -296,7 +297,7 @@ class AuthService:
         self._login_failures.pop(normalized, None)
         user = _user_from_row(row)
         session = self._create_session(user)
-        _audit_auth("user.login", user.username, {"role": user.role.value})
+        _audit_auth(AuditEvent.USER_LOGIN.value, user.username, {"role": user.role.value})
         return session
 
     def _check_not_locked_out(self, username: str) -> None:
@@ -342,7 +343,7 @@ class AuthService:
         """
         session = self.get_session(token)
         if session:
-            _audit_auth("user.logout", session.user.username)
+            _audit_auth(AuditEvent.USER_LOGOUT.value, session.user.username)
         self.db.delete_auth_session(token)
 
     def list_users(self) -> list[dict]:
@@ -400,7 +401,7 @@ class AuthService:
             created_at=now,
         )
         _audit_auth(
-            "user.created",
+            AuditEvent.USER_CREATED.value,
             actor,
             {"username": normalized, "role": platform_role.value},
         )
@@ -468,7 +469,7 @@ class AuthService:
             payload["role"] = role
         if status is not None:
             payload["status"] = status
-        _audit_auth("user.updated", actor, payload)
+        _audit_auth(AuditEvent.USER_UPDATED.value, actor, payload)
         return _user_public(fresh or row)
 
     def approve_user(self, user_id: str, *, actor: str = "admin") -> dict:

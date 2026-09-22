@@ -30,14 +30,11 @@ _EVENT_LITERAL = re.compile(r'(?:write_profile_audit|\.write)\(\s*(?:event_type\
 # literal instead of the registry member. Every literal they hold is already
 # a registry value — this only records that they have not been migrated to
 # `AuditEvent.<member>.value` yet, so a future pass can pick them up.
-_PENDING_FILES = {
-    "ado2gh/auth/service.py",
-    "ado2gh/state/job_store.py",
-    "services/accelerator_api/routes/_shared.py",
-    "services/accelerator_api/routes/profile_routes.py",
-    "services/accelerator_api/routes/proxy_routes.py",
-    "services/accelerator_api/routes/settings_routes.py",
-}
+#
+# Empty: every file that used to hold a bare literal has been migrated onto
+# `AuditEvent.<member>.value`. Left as a set (not deleted) so a future bare
+# literal has somewhere to be acknowledged instead of loosening the check above.
+_PENDING_FILES: set[str] = set()
 
 
 def _literal_events_by_file() -> dict[str, list[str]]:
@@ -76,3 +73,27 @@ def test_only_acknowledged_pending_files_still_use_bare_literals() -> None:
         f"AuditEvent.<member>.value, and are not in the acknowledged pending "
         f"list: {sorted(unexpected)}"
     )
+
+
+def test_live_approval_scope_type_literal_matches_the_scope_type_constants() -> None:
+    """``LiveApprovalCreateRequest.scope_type`` must name the same three scopes as the registry.
+
+    Pydantic needs an actual ``Literal`` for that field, not a variable, so the
+    three scope-type strings are typed a second time in ``ado2gh/api/contracts.py``.
+    This asserts the two never drift apart.
+    """
+    from typing import get_args
+
+    from ado2gh.api.contracts import LiveApprovalCreateRequest
+    from ado2gh.api.live_approval_scopes import (
+        AGENT_SESSION_SCOPE_TYPE,
+        MIGRATE_JOB_SCOPE_TYPE,
+        PIPELINE_RUN_SCOPE_TYPE,
+    )
+
+    annotation = LiveApprovalCreateRequest.model_fields["scope_type"].annotation
+    assert set(get_args(annotation)) == {
+        AGENT_SESSION_SCOPE_TYPE,
+        MIGRATE_JOB_SCOPE_TYPE,
+        PIPELINE_RUN_SCOPE_TYPE,
+    }

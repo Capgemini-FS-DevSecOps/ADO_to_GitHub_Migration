@@ -5,11 +5,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from ado2gh.audit.events import AuditEvent
 from services.agent.routes._helpers import FormSubmitRequest, _audit
 
 #: Audit event name for a form submission refused because it answers a form
 #: (or a plan revision) the agent has since replaced (register item GAP-136).
-STALE_FORM_SUBMISSION_EVENT = "agent.form.stale_submission_refused"
+STALE_FORM_SUBMISSION_EVENT = AuditEvent.AGENT_FORM_STALE_SUBMISSION_REFUSED.value
 
 
 def reject_if_stale_form(

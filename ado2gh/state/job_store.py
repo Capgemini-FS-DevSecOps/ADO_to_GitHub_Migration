@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
+from ado2gh.audit.events import AuditEvent
 from ado2gh.models import JobRecord, JobStatus
 from ado2gh.models import JobTypeEnum as JobType
 
@@ -526,7 +527,7 @@ class DynamoDBJobStore(JobStore):
             return
         try:
             self._audit_writer.write(
-                event_type="job.claim_conflict",
+                event_type=AuditEvent.JOB_CLAIM_CONFLICT.value,
                 profile_id="",
                 actor="job-worker",
                 payload={

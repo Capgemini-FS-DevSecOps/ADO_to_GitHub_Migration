@@ -28,6 +28,9 @@ DEFAULT_ACCELERATOR_REQUEST_TIMEOUT_SECONDS = 120.0
 DEFAULT_ACCELERATOR_HEALTH_TIMEOUT_SECONDS = 3.0
 """Timeout for the agent's short accelerator reachability probe, used when a profile omits it."""
 
+DEFAULT_ACCELERATOR_GET_TIMEOUT_SECONDS = 60.0
+"""Timeout for a plain read-only GET call from the agent to the accelerator, used when a profile omits it."""
+
 
 @dataclass
 class LocalAgentProfile:
@@ -45,6 +48,7 @@ class LocalAgentProfile:
     redis_url: str = ""
     accelerator_request_timeout_seconds: float = DEFAULT_ACCELERATOR_REQUEST_TIMEOUT_SECONDS
     accelerator_health_timeout_seconds: float = DEFAULT_ACCELERATOR_HEALTH_TIMEOUT_SECONDS
+    accelerator_get_timeout_seconds: float = DEFAULT_ACCELERATOR_GET_TIMEOUT_SECONDS
 
     def validate(self) -> None:
         """Raise ValueError if profile constraints are violated."""
@@ -81,6 +85,9 @@ def _from_dict(profile_id: str, raw: dict) -> LocalAgentProfile:
         ),
         accelerator_health_timeout_seconds=float(
             raw.get("accelerator_health_timeout_seconds", DEFAULT_ACCELERATOR_HEALTH_TIMEOUT_SECONDS),
+        ),
+        accelerator_get_timeout_seconds=float(
+            raw.get("accelerator_get_timeout_seconds", DEFAULT_ACCELERATOR_GET_TIMEOUT_SECONDS),
         ),
     )
 

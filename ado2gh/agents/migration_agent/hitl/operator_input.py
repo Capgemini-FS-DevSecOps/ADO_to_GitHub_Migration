@@ -17,6 +17,7 @@ from ado2gh.agents.migration_agent.hitl.schemas import (
     OPERATOR_CONTEXT_MAX_ITEMS,
     OPERATOR_DIGEST_MAX_CHARS,
     OPERATOR_IDENTIFIER_MAX_CHARS,
+    OPERATOR_SLUG_MAX_CHARS,
     IntakeFieldSpec,
     MigrationFailureCode,
     OperatorInputFieldSpec,
@@ -576,7 +577,7 @@ def operator_input_from_validator_failures(
         or primary.get("failure")
         or "Validation could not complete automatically."
     )
-    request_id = f"validator_{_slug(summary)[:32] or 'failure'}"
+    request_id = f"validator_{_slug(summary)[:OPERATOR_SLUG_MAX_CHARS] or 'failure'}"
 
     options = [
         {

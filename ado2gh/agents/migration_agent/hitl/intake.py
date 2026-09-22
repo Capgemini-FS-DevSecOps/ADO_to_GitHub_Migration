@@ -6,6 +6,7 @@ from typing import Any, Awaitable, Callable
 from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
 from ado2gh.agents.migration_agent.hitl.schemas import (
     INTAKE_FIELD_REGISTRY,
+    PLANNER_CONTEXT_MATCH_CUTOFF,
     REPOSITORY_MATCH_BASENAME_CUTOFF,
     REPOSITORY_MATCH_FULL_NAME_CUTOFF,
     FormIntakeSubmission,
@@ -358,7 +359,9 @@ async def consult_planner_context(
     requested = (intake.resolved_repository_id() if intake else None) or ""
     last_completed = str(session.get("last_completed_repository_id") or "").strip()
     if requested and names:
-        ctx["repo_suggestions"] = difflib.get_close_matches(requested, list(names), n=5, cutoff=0.4)
+        ctx["repo_suggestions"] = difflib.get_close_matches(
+            requested, list(names), n=5, cutoff=PLANNER_CONTEXT_MATCH_CUTOFF,
+        )
     elif requests_new_migration and names:
         remaining = [n for n in names if n != last_completed]
         if last_completed:

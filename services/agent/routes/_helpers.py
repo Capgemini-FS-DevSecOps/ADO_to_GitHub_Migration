@@ -32,6 +32,7 @@ from ado2gh.agents.migration_agent.utils import IdeAuditBridge, _append_event, m
 from ado2gh.api.live_approval_scopes import AGENT_SESSION_SCOPE_TYPE
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
 from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, PLATFORM_APPROVALS_PATH
+from ado2gh.audit.events import AuditEvent
 from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
 from services.agent.profiles import DEFAULT_ACCELERATOR_URL, LocalAgentProfile, get_profile
 from services.agent.routes._session_registry import (
@@ -83,6 +84,9 @@ _ACCEL_REQUEST_TIMEOUT_SECONDS = (
 )
 _ACCEL_HEALTH_TIMEOUT_SECONDS = (
     _ACTIVE_PROFILE.accelerator_health_timeout_seconds if _ACTIVE_PROFILE else 3.0
+)
+_ACCEL_GET_TIMEOUT_SECONDS = (
+    _ACTIVE_PROFILE.accelerator_get_timeout_seconds if _ACTIVE_PROFILE else 60.0
 )
 
 _audit = IdeAuditBridge()
@@ -278,7 +282,7 @@ async def _accel_post_impl(path: str, body: dict, *, session_token: str | None =
 
 async def _accel_get_impl(path: str, *, session_token: str | None = None) -> dict:
     async with httpx.AsyncClient(
-        base_url=ACCEL_URL, timeout=60.0, headers=_accel_headers(session_token),
+        base_url=ACCEL_URL, timeout=_ACCEL_GET_TIMEOUT_SECONDS, headers=_accel_headers(session_token),
     ) as client:
         r = await client.get(path)
         r.raise_for_status()
@@ -706,7 +710,7 @@ async def _enqueue_session_live_approval(
     except httpx.HTTPError as exc:
         session["live_approval_status"] = "pending"
         _audit.record(
-            "session.request_live.failed",
+            AuditEvent.SESSION_REQUEST_LIVE_FAILED.value,
             profile_id=session.get("profile_id"),
             session_id=session["session_id"],
             metadata={"error": str(exc)},
@@ -715,7 +719,7 @@ async def _enqueue_session_live_approval(
         session["live_approval_id"] = row.get("id")
         session["live_approval_status"] = row.get("status", "pending")
         _audit.record(
-            "session.request_live",
+            AuditEvent.SESSION_REQUEST_LIVE.value,
             profile_id=session.get("profile_id"),
             session_id=session["session_id"],
             metadata={"approval_id": row.get("id")},

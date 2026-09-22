@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 
+from ado2gh.api.live_approval_scopes import PIPELINE_RUN_SCOPE_TYPE
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ado2gh.state.factory import StateStore
 
@@ -310,7 +312,7 @@ def enrich_pipeline_run_dict(
 
     status = run_dict.get("live_approval_status")
     if not status and db and hasattr(db, "get_live_execution_approval_for_scope"):
-        row = db.get_live_execution_approval_for_scope("pipeline_run", run_dict.get("id", ""))
+        row = db.get_live_execution_approval_for_scope(PIPELINE_RUN_SCOPE_TYPE, run_dict.get("id", ""))
         if row:
             raw = str(row.get("status") or "")
             if raw == "approved":
