@@ -73,12 +73,12 @@ other.
 <!-- ts:begin -->
 ## Web console (TypeScript)
 
-- exports: 211
-- clean (no tags, no proposals): 201
+- exports: 212
+- clean (no tags, no proposals): 203
 - protected (`next_route_export`): 29
 
 | Tag | Count |
 |---|---:|
 | `bool_data` | 8 |
-| `bool_flag` | 2 |
+| `bool_flag` | 1 |
 <!-- ts:end -->

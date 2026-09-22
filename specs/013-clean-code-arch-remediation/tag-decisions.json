@@ -4368,14 +4368,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "apps/migration-ui/src/lib/llmSettings.ts::proxyPasswordUpdate",
-    "tag": "bool_flag",
-    "decision": "confirm",
-    "rationale": "options.clear genuinely branches return value (empty string vs typed-or-keep-mask), real behavioural mode switch, not approval state; already uses named-options-object mitigation. Needs exception-register.md row rather further rename/refactor, matching migration_scan_profile precedent (FBT001/FBT002 noqa + register row).",
-    "state_hash": "f06e7efccec5ecd89484a57c8477e46dcaa1dc54",
-    "decided_by": "operator"
-  },
-  {
     "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::gateOverrideReason",
     "tag": "bool_flag",
     "decision": "confirm",

@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   canEnableModel,
-  proxyPasswordUpdate,
+  proxyPasswordCleared,
+  proxyPasswordFromInput,
   updateConnectivity,
   validationBadgeLabel,
 } from './llmSettings';
@@ -32,16 +33,15 @@ describe('proxy password clearing', () => {
   });
 
   it('keeps the stored password when the box is left blank', () => {
-    expect(proxyPasswordUpdate('')).toBe('***');
+    expect(proxyPasswordFromInput('')).toBe('***');
   });
 
   it('sends a typed password as the replacement', () => {
-    expect(proxyPasswordUpdate('not-a-real-proxy-pass')).toBe('not-a-real-proxy-pass');
+    expect(proxyPasswordFromInput('not-a-real-proxy-pass')).toBe('not-a-real-proxy-pass');
   });
 
-  it('sends the clear sentinel for the clear control, whatever is in the box', () => {
-    expect(proxyPasswordUpdate('', { clear: true })).toBe('');
-    expect(proxyPasswordUpdate('half-typed', { clear: true })).toBe('');
+  it('sends the clear sentinel for the clear control, regardless of the input box', () => {
+    expect(proxyPasswordCleared()).toBe('');
   });
 
   it('puts the clear sentinel and nothing else, so no half-typed field is saved with it', async () => {
@@ -49,7 +49,7 @@ describe('proxy password clearing', () => {
       new Response(JSON.stringify({ proxy_password: '' }), { status: 200 }),
     );
 
-    await updateConnectivity({ proxy_password: proxyPasswordUpdate('', { clear: true }) });
+    await updateConnectivity({ proxy_password: proxyPasswordCleared() });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/v1\/settings\/connectivity$/);

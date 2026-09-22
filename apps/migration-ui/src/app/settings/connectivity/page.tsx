@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
   fetchConnectivity,
-  proxyPasswordUpdate,
+  proxyPasswordCleared,
+  proxyPasswordFromInput,
   testConnectivity,
   updateConnectivity,
   type ConnectivityProfile,
@@ -54,7 +55,7 @@ export default function ConnectivitySettingsPage() {
         proxy_host: proxyHost,
         proxy_port: proxyPort,
         proxy_username: proxyUsername,
-        proxy_password: proxyPasswordUpdate(proxyPassword),
+        proxy_password: proxyPasswordFromInput(proxyPassword),
         custom_ca_pem: customCaPem || (data?.custom_ca_configured ? '***' : ''),
         allow_custom_model_id: allowCustomModelId,
       }),
@@ -72,7 +73,7 @@ export default function ConnectivitySettingsPage() {
   });
 
   const clearPasswordMut = useMutation({
-    mutationFn: () => updateConnectivity({ proxy_password: proxyPasswordUpdate('', { clear: true }) }),
+    mutationFn: () => updateConnectivity({ proxy_password: proxyPasswordCleared() }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['connectivity-settings'] });
       qc.invalidateQueries({ queryKey: ['connectivity-readonly'] });
