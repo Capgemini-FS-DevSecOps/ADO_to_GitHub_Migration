@@ -6,7 +6,8 @@ declares seven ``_SECRET_PATTERNS`` that all match GitHub token prefixes
 JSON-key pattern, and a ``_SECRET_KEY_NAMES`` set matched by exact equality
 (``k.lower() in _SECRET_KEY_NAMES``). Neither path recognises:
 
-* a bare Azure DevOps PAT, which is a 52-character opaque string with no prefix;
+* a bare Azure DevOps personal access token (PAT), a 52-character opaque string
+  with no prefix;
 * a generic ``Authorization: Bearer <token>`` value in free text;
 * the platform's own environment-variable key names -- ``ado_pat``,
   ``access_token``, ``github_token``, ``gh_token`` (CLAUDE.md documents all of

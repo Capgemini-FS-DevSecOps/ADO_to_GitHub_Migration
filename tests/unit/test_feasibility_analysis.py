@@ -5,7 +5,7 @@ from ado2gh.core.scopes.git_scope import FeasibilityReport
 
 
 class TestFeasibilityAnalysisThresholds:
-    """Tests for T029: Verify warn at >2GB, fail_soft at >10GB, warn at file >100MB, LFS flag at >2GB."""
+    """Verify warn at >2GB, fail_soft at >10GB, warn at file >100MB, and a Git Large File Storage (LFS) flag at >2GB (T029)."""
 
     def test_warn_at_repo_size_gt_2gb(self):
         """Verify warn status when repo size > 2GB."""
@@ -81,7 +81,7 @@ class TestFeasibilityAnalysisThresholds:
 
 
 class TestStrategySelection:
-    """Tests for T030: Verify mirror for <2GB no LFS, GEI for 2-10GB, manual for >10GB or LFS >2GB."""
+    """Verify mirror for <2GB with no LFS, GitHub Enterprise Importer (GEI) for 2-10GB, and manual for >10GB or LFS >2GB (T030)."""
 
     def test_mirror_strategy_for_small_repo_no_lfs(self):
         """Verify mirror strategy for repo < 2GB with no LFS."""

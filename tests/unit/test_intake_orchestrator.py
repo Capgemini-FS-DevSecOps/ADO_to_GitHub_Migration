@@ -33,7 +33,7 @@ def test_route_after_orchestrator_does_not_reenter_planner_with_plan():
 
 @pytest.mark.asyncio
 async def test_dry_run_reply_invokes_planner_when_repo_selected():
-    """Operator saying 'dry run' after repo selection must start PEV, not idle out."""
+    """Operator saying 'dry run' after repo selection must start the plan-execute-validate loop (PEV), not idle out."""
     session = {
         "plan_repository_id": "azure-pipelines/bicep-template-migration",
         "dry_run": True,

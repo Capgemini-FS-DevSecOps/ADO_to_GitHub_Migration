@@ -1,4 +1,4 @@
-"""Agent PEV session API contract smoke tests."""
+"""Agent plan-execute-validate loop (PEV) session API contract smoke tests."""
 import pytest
 from fastapi.testclient import TestClient
 

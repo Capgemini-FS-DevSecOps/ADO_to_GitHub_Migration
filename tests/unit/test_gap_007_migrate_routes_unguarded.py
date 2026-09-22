@@ -1,5 +1,5 @@
 """GAP-007 (GAP-ACC-01) — nine ``/v1/migrate/*`` feature routes perform live
-mutations with no RBAC, approval, or audit.
+mutations with no role-based access control (RBAC), approval, or audit.
 
 Reproduction described by the gap register: the router in
 ``services/accelerator_api/routes/migrate_routes.py`` is declared with no

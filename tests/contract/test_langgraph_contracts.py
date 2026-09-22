@@ -1,4 +1,4 @@
-"""Contract tests for LangGraph agent — SSE event schema, graph structure, API contracts.
+"""Contract tests for LangGraph agent — server-sent event (SSE) schema, graph structure, API contracts.
 
 Validates that the migration agent conforms to the contracts defined in
 specs/012-langgraph-agent-refactor/contracts/api-contracts.md.
@@ -59,7 +59,7 @@ def test_recursion_limit_meets_contract():
 # ─── AgentState contracts ─────────────────────────────────────────────
 
 def test_agent_state_has_pev_fields():
-    """AgentState must have PEV-related fields per data-model.md."""
+    """AgentState must have plan-execute-validate loop (PEV) fields per data-model.md."""
     required_fields = [
         "messages", "user_message", "session", "intent",
         "iteration", "max_iterations", "start_pev", "pending_form",

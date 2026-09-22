@@ -66,7 +66,7 @@ def test_redact_auth_event_payload():
         ("ghr_abcdefghijklmnopqrst", "ghr_***"),
         ("github_pat_11ABCDEFG0123456789", "gith***"),
         ("pat-abc123xyz", "pat-***"),
-        # opaque — a bare 52-character ADO PAT.
+        # opaque — a bare 52-character Azure DevOps personal access token (PAT).
         ("q" * 52, "qqqq***"),
         # bearer — the scheme word survives, the credential does not.
         ("Bearer eyJhbGciOiJIUzI1NiJ9.abc.def", f"Bearer {MASK}"),

@@ -108,10 +108,10 @@ def test_bind_tools_integration():
     assert len(llm_with_tools._bound_tools) >= 4
 
 
-# --- R10b threat-model remediations -----------------------------------------
-# THR-05-001 path traversal, THR-05-002 query encoding, THR-02-003 raw
-# exception text, THR-06-007 mutating default, THR-01-002 unbounded file
-# content. See specs/013-clean-code-arch-remediation/threat-model-2026-09-13-001.md
+# --- Threat-model remediation batch (R10b) -----------------------------------
+# Fixes: path traversal (THR-05-001), query encoding (THR-05-002), raw
+# exception text (THR-02-003), a mutating default (THR-06-007), unbounded file
+# content (THR-01-002). See specs/013-clean-code-arch-remediation/threat-model-2026-09-13-001.md
 
 
 def _recorder():
@@ -275,7 +275,7 @@ async def test_fetch_github_workflow_caps_repository_file_content():
 
 @pytest.mark.asyncio
 async def test_executor_github_api_never_leaves_the_github_prefix():
-    """THR-05-001: the guardrail authorises repository_id, the URL must match it."""
+    """The guardrail authorises repository_id, the URL must match it (THR-05-001)."""
     seen, accel_get = _recorder()
     tools = get_executor_tools({"accel_get": accel_get})
     tool = next(t for t in tools if t.name == "github_api")
@@ -308,7 +308,7 @@ async def test_tool_error_drops_url_userinfo_and_query_credentials():
     assert "/v1/ado/x" in result["detail"]
 
 
-# --- THR-06-007: call_accelerator defaulted to the mutating verb --------------
+# --- call_accelerator defaulted to the mutating verb (THR-06-007) --------------
 
 
 def test_call_accelerator_schema_defaults_to_get():
@@ -336,7 +336,8 @@ async def test_call_accelerator_without_a_method_does_not_write():
     assert seen == ["/v1/migrate/git-mirror"]
 
 
-# --- Second-review findings (fragment traversal, redact-before-truncate, CA-004)
+# --- Second-review findings: fragment traversal, redact-before-truncate, and a
+# missing audit record on refusal (CA-004)
 
 
 @pytest.mark.parametrize("endpoint", ["..#", "..#junk", "x/../..#j", "..%23"])
@@ -371,7 +372,7 @@ def test_join_api_path_agrees_with_what_httpx_would_send(prefix, endpoint):
 
 
 def test_join_api_path_refusal_is_audited():
-    """CA-004: a blocked traversal must leave a durable record, not just a tool result."""
+    """A blocked traversal must leave a durable record, not just a tool result (CA-004)."""
     from ado2gh.agents.migration_agent.tools import shared_tools
 
     recorded = []
@@ -397,10 +398,11 @@ def test_join_api_path_refusal_is_audited():
 
 
 def test_refuse_path_masks_a_secret_before_truncating_it():
-    """CA-003: the endpoint is masked before the audit-record cut, not after.
+    """The endpoint is masked before the audit-record cut, not after (CA-003).
 
-    A bare 52-character token (the Azure DevOps PAT shape ``redact_text``
-    recognises) is placed so it straddles ``_MAX_AUDITED_ENDPOINT_CHARS``.
+    A bare 52-character token (the Azure DevOps personal access token, or PAT,
+    shape ``redact_text`` recognises) is placed so it straddles
+    ``_MAX_AUDITED_ENDPOINT_CHARS``.
     Truncating first would cut the token in half, leaving a plausible-looking
     fragment too short to be recognised and masked; masking first removes the
     whole secret before the cut ever applies.

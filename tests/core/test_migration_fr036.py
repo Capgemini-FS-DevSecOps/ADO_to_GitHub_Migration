@@ -1,4 +1,4 @@
-"""FR-036 stale state recovery and concurrent live migration guards."""
+"""Stale state recovery and concurrent live migration guards (FR-036)."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

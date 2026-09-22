@@ -30,7 +30,7 @@ def test_state_has_scalar_fields():
 
 
 def test_state_has_pev_fields():
-    """Verify PEV-related fields exist."""
+    """Verify plan-execute-validate loop (PEV) fields exist."""
     hints = AgentState.__annotations__
     for field in ("migration_plan", "executor_result", "validation_result",
                   "validation_feedback", "pending_clarification", "migration_queue"):

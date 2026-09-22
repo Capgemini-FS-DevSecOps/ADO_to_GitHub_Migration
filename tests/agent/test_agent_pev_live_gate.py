@@ -1,4 +1,4 @@
-"""Agent PEV live gate ordering tests."""
+"""Agent plan-execute-validate loop (PEV) live gate ordering tests."""
 import pytest
 from unittest.mock import AsyncMock, patch
 

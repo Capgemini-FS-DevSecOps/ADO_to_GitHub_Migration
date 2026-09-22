@@ -183,7 +183,7 @@ def _by_id(out):
 
 
 def test_nested_defs_and_lambdas_get_no_row(run, fixture_tree):
-    """FR-001a: only module-level and class-level named defs are rows."""
+    """Only module-level and class-level named defs are rows (FR-001a)."""
     _tmp, out = fixture_tree
     assert run() == 0
     ids = set(_by_id(out))
@@ -223,7 +223,7 @@ def test_stale_args_section_is_a_proposal(run, fixture_tree):
 
 
 def test_two_runs_are_byte_identical(run, fixture_tree):
-    """FR-004."""
+    """Two runs of the generator produce byte-identical output (FR-004)."""
     _tmp, out = fixture_tree
     assert run() == 0
     first = (out / "inventory.json").read_bytes()
@@ -298,7 +298,7 @@ def test_click_and_main_guard_functions_are_protected(run, fixture_tree):
 
 
 def test_one_module_name_review_proposal_per_module_and_decisions_are_reused(run, fixture_tree, capsys):
-    """FR-013: one proposal per module; a recorded decision removes it from ``--pending``."""
+    """One proposal per module; a recorded decision removes it from ``--pending`` (FR-013)."""
     _tmp, out = fixture_tree
     assert run() == 0
     assert run("--pending") == 1
@@ -321,7 +321,7 @@ def test_one_module_name_review_proposal_per_module_and_decisions_are_reused(run
 
 
 def test_excluded_file_yields_no_rows_but_is_counted(run, fixture_tree):
-    """FR-003b: exclusions never shrink the denominator silently."""
+    """Exclusions never shrink the denominator silently (FR-003b)."""
     _tmp, out = fixture_tree
     assert run() == 0
     assert not [i for i in _by_id(out) if "thing_generated" in i]
@@ -335,7 +335,7 @@ def test_excluded_file_yields_no_rows_but_is_counted(run, fixture_tree):
 
 
 def test_pending_exits_1_while_proposals_exist(run, fixture_tree, capsys):
-    """``--pending`` is the SC-001 gate."""
+    """``--pending`` is the pending-work exit-status gate (SC-001)."""
     _tmp, out = fixture_tree
     assert run() == 0
     assert run("--pending") == 1

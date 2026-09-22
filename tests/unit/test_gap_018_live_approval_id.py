@@ -9,8 +9,8 @@ caller routes through (the CLI, the queue worker, the pipeline runner and both
 accelerator routes) — never read the field. A caller could therefore quote an
 approval that was pending, denied or entirely invented and the wave would run
 anyway, because the only code that ever looked at the token lived in one HTTP
-route and ran only for operators the RBAC layer had already decided needed an
-approval.
+route and ran only for operators the role-based access control (RBAC) layer had
+already decided needed an approval.
 
 The fix is a refusal at that choke point: a quoted token must name an
 ``approved`` row or nothing is migrated. It deliberately does **not** make an

@@ -106,7 +106,7 @@ class TestQuickstartScenario2LlmOnboarding:
 
 
 class TestQuickstartScenario3OperatorDryRunPev:
-    """Scenario 3: Operator dry-run PEV from Agent tab."""
+    """Scenario 3: Operator dry-run plan-execute-validate loop (PEV) from Agent tab."""
 
     def test_dry_run_session_fields(self, agent_client):
         with patch("services.agent.routes.session_routes._accel_post", new_callable=AsyncMock) as mock_post, patch(

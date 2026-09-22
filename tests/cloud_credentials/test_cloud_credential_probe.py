@@ -26,7 +26,7 @@ def test_probe_unknown_provider():
     assert result["status"] == "failed"
 
 
-# ── GAP-057: the Vertex probe could never report success ──────────────────────
+# ── The Vertex probe could never report success (GAP-057) ──────────────────────
 #
 # `_probe_gcp` called `google.auth.transport.requests.Request()` after importing
 # only `google.auth`. A submodule is an attribute of its package only once it has

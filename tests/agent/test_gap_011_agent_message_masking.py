@@ -1,4 +1,4 @@
-"""GAP-011 (GAP-AGT-02): agent chat, SSE and persisted messages are unmasked.
+"""GAP-011 (GAP-AGT-02): agent chat, the server-sent event stream (SSE) and persisted messages are unmasked.
 
 Reproduction from the gap register's evidence. ``mask_secrets``
 (``ado2gh/agents/migration_agent/utils.py:335``) is called from exactly two
@@ -15,7 +15,7 @@ places repo-wide -- ``utils.py:384`` and ``utils.py:388``, both inside
   SQLite column, so unmasked content reaches a durable, queryable artefact
   rather than just a transient stream.
 
-Blast radius: an operator pastes a PAT into free-text chat (a realistic path --
+Blast radius: an operator pastes a personal access token (PAT) into free-text chat (a realistic path --
 automated flows use name-only secret mappings). The value is then persisted
 verbatim to SQLite and broadcast unmasked over SSE to every viewer of the
 session, unconditionally, in the default configuration.

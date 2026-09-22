@@ -15,7 +15,7 @@ from ado2gh.agents.executor import AgentExecutor
 
 
 class TestValidationResult:
-    """T045: ValidationResult structure tests."""
+    """ValidationResult structure tests (T045)."""
 
     def test_validation_result_has_required_fields(self):
         r = ValidationResult()
@@ -36,7 +36,7 @@ class TestValidationResult:
 
 
 class TestValidateExecution:
-    """T045: Validator execution validation tests."""
+    """Validator execution validation tests (T045)."""
 
     def _make_plan_and_output(self):
         planner = AgentPlanner()
@@ -114,7 +114,7 @@ class TestValidateExecution:
 
 
 class TestPlanConsistencyCheck:
-    """T050: Plan-vs-execution consistency tests."""
+    """Plan-vs-execution consistency tests (T050)."""
 
     def test_unauthorized_workflow_detected(self):
         validator = AgentValidator()
@@ -147,7 +147,7 @@ class TestPlanConsistencyCheck:
 
 
 class TestPerScopeReporting:
-    """T051: Per-scope pass/fail reporting tests."""
+    """Per-scope pass/fail reporting tests (T051)."""
 
     def test_all_scopes_reported(self):
         validator = AgentValidator()

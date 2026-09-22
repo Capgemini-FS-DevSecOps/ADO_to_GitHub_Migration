@@ -9,7 +9,7 @@ from ado2gh.agents.planner import AgentPlanner
 
 
 class TestExecutionResult:
-    """T035: ExecutionResult structure tests."""
+    """ExecutionResult structure tests (T035)."""
 
     def test_execution_result_has_required_fields(self):
         r = ExecutionResult()
@@ -39,7 +39,7 @@ class TestExecutionResult:
 
 
 class TestExecutePlan:
-    """T035: Executor plan execution tests."""
+    """Executor plan execution tests (T035)."""
 
     def _make_plan(self):
         planner = AgentPlanner()
@@ -102,7 +102,7 @@ class TestExecutePlan:
 
 
 class TestExecutorGuardrailIntegration:
-    """T035: Executor guardrail integration tests."""
+    """Executor guardrail integration tests (T035)."""
 
     def test_invoke_blocks_on_guardrail(self):
         executor = AgentExecutor()
@@ -131,7 +131,7 @@ class TestExecutorGuardrailIntegration:
 
 
 class TestExecutorClarification:
-    """T043: Executor clarification request tests."""
+    """Executor clarification request tests (T043)."""
 
     def test_request_clarification_to_planner(self):
         executor = AgentExecutor()

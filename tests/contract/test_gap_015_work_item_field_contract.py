@@ -151,7 +151,7 @@ def plan_summary(monkeypatch):
 
 
 def test_plan_summary_flags_destructive_scope_on_producer_work_item(plan_summary):
-    """CA-002: a work item on a destructive scope must reach destructive_operations."""
+    """A work item on a destructive scope must reach destructive_operations (CA-002)."""
     destructive = _retarget_scope(
         _pick(_build_work_items(), READY_REPO, "ready"),
         MigrationScope.REPO.value,

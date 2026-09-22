@@ -29,7 +29,7 @@ def test_resolve_agent_repository_id_from_discovery():
 
 
 def test_agent_never_self_certifies_live_approval_in_run_body():
-    """GAP-004: the agent sends no client-side live-approval claim (FR-006a)."""
+    """The agent sends no client-side live-approval claim (GAP-004, FR-006a)."""
     sent: list[tuple[str, dict]] = []
 
     async def accel_post(path, body, *, session_token=None):

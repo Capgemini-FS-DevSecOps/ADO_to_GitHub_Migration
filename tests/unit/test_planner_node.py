@@ -352,7 +352,7 @@ def test_discovery_snapshot_requires_the_exact_route_and_shape(endpoint, result,
 
 @pytest.mark.asyncio
 async def test_planner_research_does_not_seed_discovery_from_any_discovery_suffix():
-    """THR-04-001: the snapshot is rendered into the system prompt on every later turn."""
+    """The snapshot is rendered into the system prompt on every later turn (THR-04-001)."""
     calls = {"n": 0}
 
     class FakeLLM:

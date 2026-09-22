@@ -1,4 +1,4 @@
-"""Contract tests for 004 agent PEV RBAC feature."""
+"""Contract tests for 004 agent plan-execute-validate loop (PEV) role-based access control (RBAC) feature."""
 from __future__ import annotations
 
 import pytest

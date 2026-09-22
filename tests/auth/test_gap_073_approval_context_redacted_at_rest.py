@@ -38,7 +38,8 @@ _OPERATOR = PlatformUser("op-1", "operator1", PlatformRole.OPERATOR, "Operator O
 _APPROVER = PlatformUser("ap-1", "approver1", PlatformRole.APPROVER, "Approver One")
 
 # Shapes `redact_text` recognises. Neither is a credential; both are 20 fake
-# characters chosen to match the GitHub token and ADO PAT patterns.
+# characters chosen to match the GitHub token and Azure DevOps personal access
+# token (PAT) patterns.
 _FAKE_GH_TOKEN = "ghp_" + "0123456789abcdefghij"
 _FAKE_PAT = "pat-" + "0123456789abcdefghij"
 

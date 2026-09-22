@@ -44,7 +44,7 @@ def _ctx(mode: ExecutionMode = ExecutionMode.LIVE) -> ScopeContext:
 
 
 def _fake_run(cmd, **_kwargs):
-    """Succeed for every git call, reporting one LFS object so the push runs."""
+    """Succeed for every git call, reporting one Git Large File Storage (LFS) object so the push runs."""
     stdout = "one-object.bin" if cmd[1:3] == ["lfs", "ls-files"] else ""
     return MagicMock(returncode=0, stdout=stdout, stderr="")
 
@@ -114,7 +114,7 @@ def test_ado_clone_auth_is_unchanged():
 
 
 def test_dry_run_starts_no_subprocess():
-    """CA-001: nothing may execute until the operator has chosen live mode."""
+    """Nothing may execute until the operator has chosen live mode (CA-001)."""
     ctx = _ctx(ExecutionMode.DRY_RUN)
     ctx.ado.get_repo.return_value = {"remoteUrl": ADO_CLONE_URL, "size": 0, "id": "1"}
     ctx.ado.get_repo_stats.return_value = {"branch_count": 1}

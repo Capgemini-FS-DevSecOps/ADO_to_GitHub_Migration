@@ -1,4 +1,4 @@
-"""Platform RBAC capability matrix tests."""
+"""Platform role-based access control (RBAC) capability matrix tests."""
 import pytest
 from fastapi.testclient import TestClient
 

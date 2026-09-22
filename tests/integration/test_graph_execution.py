@@ -18,7 +18,7 @@ from ado2gh.agents.migration_agent.session.state import (
 
 
 def test_graph_has_all_nodes():
-    """Graph has six core PEV nodes."""
+    """Graph has six core plan-execute-validate loop (PEV) nodes."""
     assert len(ALL_NODES) == 6
 
 

@@ -63,7 +63,7 @@ def test_scrub_inline_coerces_non_strings():
     assert scrub_inline(7) == "7"
 
 
-# --- THR-01-001: discovery repo names reach the orchestrator's system prompt --
+# --- Discovery repo names reach the orchestrator's system prompt (THR-01-001) --
 
 
 def test_session_context_marks_discovery_repo_names_untrusted():

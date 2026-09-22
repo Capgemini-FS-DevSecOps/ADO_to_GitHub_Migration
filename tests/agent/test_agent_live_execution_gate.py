@@ -1,4 +1,4 @@
-"""Agent must not start live PEV for operators without approval."""
+"""Agent must not start a live plan-execute-validate loop (PEV) for operators without approval."""
 from unittest.mock import AsyncMock, patch
 
 import pytest

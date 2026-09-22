@@ -1,4 +1,4 @@
-"""Unit tests for SSE streaming — event generation, kinds, subagent labels."""
+"""Unit tests for server-sent event (SSE) streaming — event generation, kinds, subagent labels."""
 import pytest
 
 from ado2gh.agents.migration_agent.runtime.orchestrator import (

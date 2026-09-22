@@ -1,8 +1,8 @@
-"""THR-09-003 / THR-09-004: required fields are enforced and resume payloads must match.
+"""Required fields are enforced and resume payloads must match (THR-09-003 / THR-09-004).
 
-`required` was advertised to the console but never checked server-side, and the HITL
-interrupt node relabelled whatever resume payload arrived as an answer to the form it
-happened to be waiting on.
+`required` was advertised to the console but never checked server-side, and the
+human-in-the-loop (HITL) interrupt node relabelled whatever resume payload arrived
+as an answer to the form it happened to be waiting on.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _field(form, name):
     return next(f for f in form["fields"] if f["name"] == name)
 
 
-# ─── THR-09-003: per-type default and server-side enforcement ──────────
+# ─── Per-type default and server-side enforcement (THR-09-003) ──────────
 
 
 def test_default_required_is_explicit_per_field_type():
@@ -128,7 +128,7 @@ async def test_prepare_form_submission_rejects_an_unanswered_operator_decision()
     assert outcome["missing_fields"] == ["resolution"]
 
 
-# ─── THR-09-004: the resume payload must name the pending form ─────────
+# ─── The resume payload must name the pending form (THR-09-004) ─────────
 
 
 def _human_input_state(form_id: str) -> dict:

@@ -1,4 +1,4 @@
-"""Integration test for PEV loop — full PEV cycle via LangGraph, retry count, max iterations."""
+"""Integration test for the plan-execute-validate loop (PEV) — full PEV cycle via LangGraph, retry count, max iterations."""
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 

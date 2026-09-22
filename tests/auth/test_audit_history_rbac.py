@@ -1,4 +1,4 @@
-"""Audit history RBAC — operators see only their own events."""
+"""Audit history role-based access control (RBAC) — operators see only their own events."""
 from __future__ import annotations
 
 import pytest

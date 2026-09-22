@@ -1,4 +1,4 @@
-"""Admin users may start live PEV without the approval queue."""
+"""Admin users may start a live plan-execute-validate loop (PEV) without the approval queue."""
 from unittest.mock import AsyncMock, patch
 
 import pytest

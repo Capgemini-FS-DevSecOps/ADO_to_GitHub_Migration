@@ -16,7 +16,7 @@ from ado2gh.agents.pev_cycle import PevCycleOrchestrator
 
 
 class TestSessionPersistence:
-    """T053: Session persistence and resume after restart."""
+    """Session persistence and resume after restart (T053)."""
 
     def _make_store(self, tmpdir):
         db_path = os.path.join(tmpdir, "test_sessions.db")
@@ -78,7 +78,7 @@ class TestSessionPersistence:
         assert messages[0]["message_type"] == "instruction"
 
     def test_pev_cycle_summary_persists(self, tmp_path):
-        """PEV cycle summaries persist across restart."""
+        """Plan-execute-validate loop (PEV) cycle summaries persist across restart."""
         store = self._make_store(str(tmp_path))
         record = store.create_session(profile_id="lightweight")
         sid = record["session_id"]

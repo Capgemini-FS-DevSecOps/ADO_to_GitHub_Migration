@@ -1,4 +1,4 @@
-"""GEI (ado2gh) migration command tests."""
+"""GitHub Enterprise Importer (GEI) (ado2gh) migration command tests."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

@@ -3,7 +3,7 @@
 ``_migrate_scoped`` builds its own wave for a single-repo dry run
 (``ado2gh/api/pipeline_steps.py``), and that branch does not require an active
 migration profile — ``gh_org`` falls back to a literal on the line above. The
-credential merge is what puts the ADO PAT and the GitHub token into
+credential merge is what puts the Azure DevOps personal access token (PAT) and the GitHub token into
 ``global_cfg``; the connectivity probes that follow read exactly those keys.
 
 T077 (`d1427fd`) wrapped the merge in ``if profile:`` to silence mypy. With no

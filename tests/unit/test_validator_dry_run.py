@@ -148,7 +148,7 @@ def test_build_validator_context_fences_live_executor_metadata():
 
 
 def test_validator_tool_call_failures_do_not_carry_raw_exception_text():
-    """THR-02-003: the tool-result entry is both prompted and checkpointed."""
+    """The tool-result entry is both prompted and checkpointed (THR-02-003)."""
     import asyncio
 
     from ado2gh.agents.migration_agent.nodes.validator_investigation import (

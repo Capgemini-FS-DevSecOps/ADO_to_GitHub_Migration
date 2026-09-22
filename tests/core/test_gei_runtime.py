@@ -1,4 +1,4 @@
-"""Tests for GEI/.NET runtime environment helpers."""
+"""Tests for GitHub Enterprise Importer (GEI) / .NET runtime environment helpers."""
 from __future__ import annotations
 
 import os

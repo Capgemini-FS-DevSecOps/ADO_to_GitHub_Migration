@@ -1,4 +1,4 @@
-"""The full conditional-edge matrix of the PEV graph (COV-DRIFT-007).
+"""The full conditional-edge matrix of the plan-execute-validate loop (PEV) graph (COV-DRIFT-007).
 
 `nodes/orchestrator.py` sits at 20 % with 292 statements unexercised, and the
 drift report's point is that "the routing logic between orchestrator, planner,
@@ -191,7 +191,7 @@ def test_the_planner_routes_this_state_here(state, expected):
 
 
 def test_an_unapproved_plan_never_reaches_the_executor():
-    """CA-001: nothing runs until the plan has been approved."""
+    """Nothing runs until the plan has been approved (CA-001)."""
     assert _route_after_planner({"migration_plan": PLAN}) != "executor"
 
 

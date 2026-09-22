@@ -1,4 +1,4 @@
-"""Integration test for PEV loop (spec 011).
+"""Integration test for the plan-execute-validate loop (PEV) (spec 011).
 
 T036: Integration test for executor with guardrails.
 Tests the full plan→execute→result flow with guardrail interception.
@@ -14,7 +14,7 @@ from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
 
 
 class TestExecutorWithGuardrails:
-    """T036: Integration tests for executor with guardrail layer."""
+    """Integration tests for executor with guardrail layer (T036)."""
 
     def _make_plan(self):
         planner = AgentPlanner()
@@ -118,10 +118,10 @@ class TestExecutorWithGuardrails:
         assert hasattr(result, "guardrail_decisions")
 
 
-# ─── T052: Continuous PEV loop with retry ───
+# ─── Continuous plan-execute-validate loop (PEV) with retry (T052) ───
 
 class TestContinuousPevLoop:
-    """T052: Integration tests for continuous PEV loop with retry."""
+    """Integration tests for continuous plan-execute-validate loop (PEV) with retry (T052)."""
 
     def test_pev_loop_completes_on_success(self):
         """PEV loop completes when validation passes."""
@@ -217,7 +217,7 @@ class TestContinuousPevLoop:
         assert sm.state == SessionState.THINKING
 
     def test_inter_agent_message_creation(self):
-        """T055: Inter-agent messages have required structured fields."""
+        """Inter-agent messages have required structured fields (T055)."""
         from ado2gh.agents.pev_cycle import PevCycleOrchestrator
         from ado2gh.agents.session_state_machine import SessionStateMachine
 
@@ -241,7 +241,7 @@ class TestContinuousPevLoop:
         assert "timestamp" in msg
 
     def test_batch_queue_sequential_processing(self):
-        """T059: Batch queue processes repos sequentially."""
+        """Batch queue processes repos sequentially (T059)."""
         from ado2gh.agents.pev_cycle import PevCycleOrchestrator
         from ado2gh.agents.session_state_machine import SessionStateMachine
 
@@ -273,10 +273,10 @@ class TestContinuousPevLoop:
         assert pev.batch_queue_is_complete(queue)
 
 
-# ─── T060: End-to-end hands-off migration ───
+# ─── End-to-end hands-off migration (T060) ───
 
 class TestEndToEndMigration:
-    """T060: Integration test for end-to-end hands-off single repo migration."""
+    """Integration test for end-to-end hands-off single repo migration (T060)."""
 
     def test_full_plan_execute_validate_cycle(self):
         """Full PEV cycle: plan → execute → validate → complete."""

@@ -72,7 +72,7 @@ def test_session_context_survives_a_null_repo_name():
     assert "billing" in ctx
 
 
-# ─── THR-06-003: rollback deletes only on explicit confirmation ───────
+# ─── Rollback deletes only on explicit confirmation (THR-06-003) ───────
 
 def _rollback_state(values):
     session = {"status": "idle", "messages": []}
@@ -162,7 +162,7 @@ async def test_execute_rollback_requires_the_confirmed_flag():
     assert result["error"] == "confirmation_required"
 
 
-# ─── THR-01-001: ADO-sourced names stay out of the system role ────────
+# ─── Azure DevOps-sourced names stay out of the system role (THR-01-001) ────────
 
 @pytest.mark.asyncio
 async def test_discovery_repo_names_are_not_interpolated_into_the_system_message():
@@ -190,7 +190,7 @@ async def test_discovery_repo_names_are_not_interpolated_into_the_system_message
     assert any(injected in m.content for m in messages if not isinstance(m, SystemMessage))
 
 
-# ─── THR-06-006 / THR-06-008: orchestrator tool dispatch ──────────────
+# ─── Orchestrator tool dispatch (THR-06-006 / THR-06-008) ──────────────
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool", ["invoke_planner", "invoke_bulk_planner"])
@@ -242,7 +242,7 @@ async def test_orchestrator_tool_dispatch_refuses_an_unclassified_tool():
 
 
 
-# ─── GAP-089 / GAP-096 follow-up: path joins and the discovery match ─
+# ─── Path joins and the discovery match (GAP-089 / GAP-096 follow-up) ─
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool,prefix", [("ado_api_query", "/v1/ado"), ("github_api_query", "/v1/github")])

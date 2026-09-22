@@ -42,7 +42,7 @@ def test_outstanding_blockers_excludes_declined():
 
 
 def test_declined_blocker_does_not_carry_into_the_next_plan_revision():
-    """THR-09-005: a decision answers one plan revision, not every future one."""
+    """A decision answers one plan revision, not every future one (THR-09-005)."""
     plan = {"work_items": [_pipeline_blocked_item()], "revision": 0}
     session: dict = {}
     record_declined_blockers(session, [blocker_key(_pipeline_blocked_item())], plan=plan)

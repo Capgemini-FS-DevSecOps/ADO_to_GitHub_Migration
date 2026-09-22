@@ -1,4 +1,4 @@
-"""Contract tests for agent PEV architecture (spec 011).
+"""Contract tests for the agent's plan-execute-validate loop (PEV) architecture (spec 011).
 
 T016: Contract tests for POST /v1/sessions, POST /v1/sessions/{id}/message,
 POST /v1/sessions/{id}/form-submit, POST /v1/sessions/{id}/form-cancel.
@@ -152,7 +152,7 @@ def test_list_sessions_contract(client):
     assert len(data["sessions"]) >= 1
 
 
-# ─── T023: Planner→Executor message format contract ───
+# ─── Planner-to-executor message format contract (T023) ───
 
 @pytest.mark.skip(reason="Legacy planner module deleted in spec 012 — rewrite for migration_agent")
 def test_planner_executor_instruction_payload_contract():
@@ -227,7 +227,7 @@ def test_planner_revised_plan_contract():
         assert "affected_repos" in step
 
 
-# ─── T030: Guardrail interception contract ───
+# ─── Guardrail interception contract (T030) ───
 # NOTE: Guardrail contract tests below use legacy tool names (spec 011).
 # The spec 012 guardrails use operation types instead of tool names.
 # These tests are skipped pending rewrite for the new guardrail API.
@@ -272,7 +272,7 @@ def test_guardrail_decision_has_required_fields_contract():
     assert hasattr(d, "plan_reference")
 
 
-# ─── T046: Validator→Planner feedback message format contract ───
+# ─── Validator-to-planner feedback message format contract (T046) ───
 
 @pytest.mark.skip(reason="Legacy validator/planner/executor modules deleted in spec 012 — rewrite for migration_agent")
 def test_validator_feedback_on_pass_contract():
@@ -358,7 +358,7 @@ def test_validator_result_has_evidence_contract():
         assert "evidence" in evidence
 
 
-# ─── T061: Full migration flow contract ───
+# ─── Full migration flow contract (T061) ───
 
 @pytest.mark.skip(reason="Legacy planner/executor/validator/pev_cycle modules deleted in spec 012 — rewrite for migration_agent")
 def test_full_migration_flow_contract():
@@ -465,7 +465,7 @@ def test_dry_run_default_enforced_contract():
     assert plan["dry_run"] is True
 
 
-# ─── T065: Session listing and polling contract ───
+# ─── Session listing and polling contract (T065) ───
 
 def test_session_listing_contract():
     """Session listing endpoint returns sessions with required fields (FR-049)."""
@@ -510,7 +510,7 @@ def test_health_endpoint_contract():
     assert "status" in data or "healthy" in data or "llm" in str(data).lower()
 
 
-# ─── T074: /metrics and /health endpoint contracts ───
+# ─── /metrics and /health endpoint contracts (T074) ───
 
 def test_metrics_endpoint_contract():
     """/metrics returns Prometheus-compatible text (FR-069)."""

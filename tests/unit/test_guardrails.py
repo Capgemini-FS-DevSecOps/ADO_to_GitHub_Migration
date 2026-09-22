@@ -243,7 +243,7 @@ async def test_wrap_tool_logs_decision():
     assert logged[0][1]["action"] == "allow"
 
 
-# ─── THR-06-001: the approved-plan scope check must fail closed ───────
+# ─── The approved-plan scope check must fail closed (THR-06-001) ───────
 
 _LIVE_SESSION = {"dry_run": False}
 
@@ -293,7 +293,7 @@ def test_write_allowed_for_a_repo_the_plan_names():
     assert decision.allowed
 
 
-# ─── THR-06-002: unregistered tools must fail closed ──────────────────
+# ─── Unregistered tools must fail closed (THR-06-002) ──────────────────
 
 def test_unknown_operation_blocked_by_default():
     """An allowlist whose fall-through is "permit" guards nothing (THR-06-002)."""
@@ -328,7 +328,7 @@ def test_every_bound_tool_has_a_guardrail_classification():
     assert bound <= classified, f"unclassified tools: {sorted(bound - classified)}"
 
 
-# ─── THR-06-005: an absent session is not live authority ──────────────
+# ─── An absent session is not live authority (THR-06-005) ──────────────
 
 @pytest.mark.parametrize("session", [None, {}, {"dry_run": None}, {"dry_run": "false"}])
 @pytest.mark.parametrize("tool_name", ["github_api", "call_accelerator"])
@@ -357,7 +357,7 @@ async def test_wrap_tool_blocks_write_when_session_getter_returns_none():
     assert result["error"] == "guardrail_blocked"
 
 
-# ─── GAP-070: no alias may set plan approval ──────────────────────────
+# ─── No alias may set plan approval (GAP-070) ──────────────────────────
 
 def test_plan_approval_cannot_be_set_through_an_alias():
     """`plan_approved` is the only way to say "the operator approved this" (GAP-070).
@@ -393,7 +393,7 @@ def test_plan_scope_refuses_an_entry_it_cannot_identify():
     assert plan_scope({"repos": ["Proj/A", " Proj/B "]}) == {"Proj/A", "Proj/B"}
 
 
-# ─── GAP-086 follow-up: the guardrail's method default must match the tools ───
+# ─── The guardrail's method default must match the tools (GAP-086 follow-up) ───
 
 @pytest.mark.asyncio
 async def test_accelerator_call_without_a_method_is_read_through_the_wrapper():
@@ -429,7 +429,7 @@ def test_accelerator_write_still_needs_an_explicit_method():
     assert "dry-run" in decision.reason
 
 
-# ─── THR-09-002 follow-up: approval must be bound to the plan revision ────
+# ─── Approval must be bound to the plan revision (THR-09-002 follow-up) ────
 
 def _approved_session(plan):
     """Session with an operator approval recorded against `plan`'s revision."""

@@ -14,7 +14,7 @@ import uuid
 
 
 class TestRollbackOnCancellation:
-    """T073: Rollback tracking and cancellation tests."""
+    """Rollback tracking and cancellation tests (T073)."""
 
     def test_rollback_tracker_records_creations(self):
         """RollbackTracker records created GitHub resources for later cleanup."""

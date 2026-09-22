@@ -47,7 +47,7 @@ class TestResourceMapping:
 
 
 class TestPlanGeneration:
-    """T022: Unit tests for plan generation with all resource types."""
+    """Unit tests for plan generation with all resource types (T022)."""
 
     def test_plan_includes_all_resource_types(self):
         """Plan includes mappings for boards, test_case, test_suite, artifact_feed, wiki_page."""
