@@ -246,7 +246,7 @@ On top of `E`, `F`, `W` and `I`, the rule set requires Google-style docstrings (
 CI also runs a coverage ratchet:
 
 ```bash
-pytest --cov=ado2gh --cov-fail-under=62
+pytest --cov=ado2gh --cov=services --cov-fail-under=69
 ```
 
 The threshold in `.github/workflows/ci.yml` is raised after each increment and never lowered, so relaxing it to make a build pass is not an option. The 85 % target is still outstanding.

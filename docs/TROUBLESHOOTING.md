@@ -264,9 +264,9 @@ Use the virtual environment's interpreter and redirect the output to a file rath
 
 Plain `pytest` works once the venv is activated. The suite is roughly 1,000 tests and takes about 100 seconds. `pytest-cov`, `ruff` and `vulture` are installed by `pip install -e ".[api,agent,dev]"`.
 
-### `Required test coverage of 61% not reached`
+### `Required test coverage of 69% not reached`
 
-CI runs `pytest --cov=ado2gh --cov-fail-under=61` (`.github/workflows/ci.yml`). Add tests for the code you changed. The threshold is raised after each increment and never lowered, so relaxing it is not a fix. The 85 % target is still outstanding.
+CI runs `pytest --cov=ado2gh --cov=services --cov-fail-under=69` (`.github/workflows/ci.yml`). Add tests for the code you changed. The threshold is raised after each increment and never lowered, so relaxing it is not a fix. The 85 % target is still outstanding.
 
 ### Ruff errors on docstrings, annotations or parameter counts
 

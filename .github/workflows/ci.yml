@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, "feature/**"]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -33,7 +34,13 @@ jobs:
       # measured on the green suite with no `omit` list (see specs/013-clean-code-arch-remediation/plan.md
       # § Coverage measurement). Raise it after each increment, never lower it.
       # The constitutional 85 % target stays outstanding as gap G-seed 4.
-      - run: pytest --cov=ado2gh --cov-fail-under=62
+      # Widened from `--cov=ado2gh` alone to also cover `services` (the FastAPI
+      # accelerator and agent routes) on 2026-09-22, per the finding in
+      # specs/013-clean-code-arch-remediation/test-coverage-drift-report.md that the
+      # narrower selector hid a whole package's worth of untested route code; the
+      # combined figure measured 69.28 %, one point below the standalone `ado2gh`
+      # figure it replaces, because the denominator grew by more than the numerator did.
+      - run: pytest --cov=ado2gh --cov=services --cov-fail-under=69
   ui-permissions:
     runs-on: ubuntu-latest
     steps:
