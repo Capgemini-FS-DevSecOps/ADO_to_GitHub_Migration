@@ -5,10 +5,12 @@ deletion confirmation, parameter validation, and GuardrailDecision logging.
 """
 from __future__ import annotations
 
+import posixpath
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, cast
+from urllib.parse import unquote
 
 from ado2gh.agents.migration_agent.constants import (
     DEFAULT_HTTP_METHOD,
@@ -145,15 +147,33 @@ _GITHUB_REPO_ENDPOINT_SHAPE = f"{_GITHUB_REPO_ENDPOINT_SEGMENT}/{{owner}}/{{repo
 def _extract_github_repo_endpoint_target(endpoint: str) -> tuple[str, str] | None:
     """Read the repository owner and name a GitHub API endpoint path writes to.
 
+    The raw endpoint is normalised the same way the transport that finally
+    sends it behaves (see ``shared_tools.join_api_path``): percent-decoded,
+    backslashes folded to forward slashes, any query string dropped, and
+    ``..`` segments collapsed. Without that, a string that names the approved
+    owner and repository here could still resolve to a different one on the
+    wire — for example ``repos/{approved}/{approved}/../../other/other``
+    reads as the approved repository to a plain split but reaches ``other``
+    once the same dot-segments are collapsed. A ``#`` is refused outright
+    rather than modelled, because httpx drops everything from the first
+    ``#`` before it builds the request, so a fragment can hide a real
+    segment from a scan that keeps it.
+
     Args:
         endpoint: The raw ``endpoint`` argument passed to the ``github_api`` tool.
 
     Returns:
-        The ``(owner, repo)`` pair, or ``None`` when the path carries no
-        ``repos/{owner}/{repo}`` triple — an org-level or other non-repository
-        endpoint is not repository-scoped and has nothing to compare to the plan.
+        The ``(owner, repo)`` pair, or ``None`` when the normalised path
+        carries no ``repos/{owner}/{repo}`` triple — an org-level, malformed,
+        or other non-repository endpoint is not repository-scoped and has
+        nothing to compare to the plan.
     """
-    segments = [segment for segment in str(endpoint or "").split("/") if segment]
+    text = str(endpoint or "")
+    if "#" in text:
+        return None
+    without_query = text.split("?", 1)[0]
+    rooted = "/" + unquote(without_query).replace("\\", "/").lstrip("/")
+    segments = [segment for segment in posixpath.normpath(rooted).split("/") if segment]
     for index, segment in enumerate(segments):
         if segment == _GITHUB_REPO_ENDPOINT_SEGMENT and index + 2 < len(segments):
             owner, repo = segments[index + 1], segments[index + 2]

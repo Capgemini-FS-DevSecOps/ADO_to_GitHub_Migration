@@ -69,6 +69,66 @@ def test_write_to_a_non_repository_endpoint_is_blocked():
     assert "repository path" in decision.reason.lower()
 
 
+def test_dot_segments_that_collapse_to_a_different_repo_are_blocked():
+    """The raw string names the approved repo, but dot-segments resolve it elsewhere.
+
+    ``join_api_path`` collapses ``..`` the same way the transport does before
+    the request goes out, so the check has to resolve them too or a string
+    that reads as the approved repository here reaches a different one on
+    the wire.
+    """
+    decision = evaluate_guardrail(
+        "executor",
+        "github_api",
+        {
+            "method": "POST",
+            "endpoint": "repos/approved-org/approved-repo/../../other-org/other-repo/issues",
+            "repository_id": "Proj/RepoA",
+        },
+        migration_plan=_PLAN,
+        plan_approved=True,
+        session=_LIVE_SESSION,
+    )
+    assert decision.action is GuardrailAction.BLOCK
+    assert "other-org/other-repo" in decision.reason
+
+
+def test_a_query_string_cannot_smuggle_a_repository_path_past_a_non_repo_endpoint():
+    """An org-level endpoint stays an org-level endpoint no matter what its query says."""
+    decision = evaluate_guardrail(
+        "executor",
+        "github_api",
+        {
+            "method": "POST",
+            "endpoint": "orgs/other-org/teams?x=/repos/approved-org/approved-repo",
+            "repository_id": "Proj/RepoA",
+        },
+        migration_plan=_PLAN,
+        plan_approved=True,
+        session=_LIVE_SESSION,
+    )
+    assert decision.action is GuardrailAction.BLOCK
+    assert "repository path" in decision.reason.lower()
+
+
+def test_a_fragment_cannot_hide_the_real_segment_from_the_scan():
+    """httpx drops everything from the first ``#``, so a fragment must not either."""
+    decision = evaluate_guardrail(
+        "executor",
+        "github_api",
+        {
+            "method": "POST",
+            "endpoint": "orgs/other-org/teams#/../../repos/approved-org/approved-repo",
+            "repository_id": "Proj/RepoA",
+        },
+        migration_plan=_PLAN,
+        plan_approved=True,
+        session=_LIVE_SESSION,
+    )
+    assert decision.action is GuardrailAction.BLOCK
+    assert "repository path" in decision.reason.lower()
+
+
 def test_get_to_a_foreign_repo_is_still_allowed_as_a_read():
     decision = evaluate_guardrail(
         "executor",
