@@ -13,6 +13,7 @@ from ado2gh.agents.migration_agent.graph import (
     _route_after_validator,
     _route_after_execute_tools,
 )
+from ado2gh.agents.migration_agent.hitl.intake import record_plan_approval
 
 
 # ─── Orchestrator routing ─────────────────────────────────────────────
@@ -60,11 +61,17 @@ def test_route_orchestrator_start_pev_takes_priority_over_should_return():
 # ─── Planner routing ──────────────────────────────────────────────────
 
 def test_route_planner_to_executor_when_plan_ready():
+    plan = {"repos": []}
+    # Approval is bound to the plan revision the operator saw, not a bare
+    # flag (THR-09-002), so the fixture has to go through record_plan_approval
+    # the same way production code does.
+    session = {"migration_plan": plan}
+    record_plan_approval(session)
     state = {
-        "migration_plan": {"repos": []},
+        "migration_plan": plan,
         "pending_clarification": None,
         "should_return": False,
-        "session": {"plan_approved": True},
+        "session": session,
     }
     assert _route_after_planner(state) == "executor"
 

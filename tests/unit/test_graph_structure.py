@@ -18,6 +18,7 @@ from ado2gh.agents.migration_agent.graph import (
     GRAPH_RECURSION_LIMIT,
 )
 from ado2gh.agents.migration_agent.constants import GRAPH_RECURSION_LIMIT as CONST_LIMIT
+from ado2gh.agents.migration_agent.hitl.intake import record_plan_approval
 
 
 def test_all_nodes_present():
@@ -64,11 +65,17 @@ def test_route_after_orchestrator_default_finalize():
 
 
 def test_route_after_planner_executor():
+    plan = {"repos": []}
+    # Approval is bound to the plan revision the operator saw, not a bare
+    # flag (THR-09-002), so the fixture has to go through record_plan_approval
+    # the same way production code does.
+    session = {"migration_plan": plan}
+    record_plan_approval(session)
     state = {
-        "migration_plan": {"repos": []},
+        "migration_plan": plan,
         "pending_clarification": None,
         "should_return": False,
-        "session": {"plan_approved": True},
+        "session": session,
     }
     assert _route_after_planner(state) == "executor"
 

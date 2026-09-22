@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
+from ado2gh.agents.migration_agent.hitl.intake import record_plan_approval
 from ado2gh.agents.migration_agent.nodes import executor_node, _execute_scope
 
 
@@ -65,8 +66,15 @@ async def test_executor_tracks_rollback_live():
     }
     async def mock_post(url, json=None, session_token=None):
         return {"status": "success"}
+    # A live write also needs the operator's plan approval, bound to this
+    # exact plan revision (THR-09-002) — the deterministic executor path now
+    # runs every live write through the same guardrail as the model-driven
+    # tool path (fix "evaluate the guardrail on the deterministic executor
+    # path"), so a session with only the execution-mode approval is refused.
+    session = {"live_approval_status": "approved", "migration_plan": plan}
+    record_plan_approval(session)
     state = _make_state(
-        session={"live_approval_status": "approved"},
+        session=session,
         migration_plan=plan,
         accel_post=mock_post,
     )
