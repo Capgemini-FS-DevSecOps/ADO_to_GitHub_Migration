@@ -103,3 +103,16 @@ def test_explicit_dry_run_still_overrides_the_profile_default(operator_client):
         "an explicit `dry_run: true` must not be overridden by the profile default; "
         f"got {resp.json()['run']['dry_run']!r}"
     )
+
+    settings.update_advanced({"dry_run_default": True})
+
+    resp = client.post(
+        "/v1/pipeline/runs",
+        json={"name": "GAP-079 run, dry_run explicit False", "dry_run": False},
+    )
+
+    assert resp.status_code == 200, resp.json()
+    assert resp.json()["run"]["dry_run"] is False, (
+        "an explicit `dry_run: false` must not be overridden by the profile default; "
+        f"got {resp.json()['run']['dry_run']!r}"
+    )
