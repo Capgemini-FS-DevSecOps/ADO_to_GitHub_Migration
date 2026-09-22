@@ -137,7 +137,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
     if _is_pev_max_retries_exhausted(state, session):
         return await _present_pev_escalation_to_operator(state, session)
 
-    # Operator-actionable validation failure (e.g. repo lock) — surface in chat immediately
+    # Operator-actionable validation failure (for example, a repository lock) — surface in chat immediately
     validation_result = state.get("validation_result") or {}
     if not validation_result.get("passed") and validation_result.get("failures"):
         escalated = await _present_validation_failure_to_operator(state, session)
@@ -256,7 +256,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             return result
 
         if msg_type == "repo_not_found":
-            # Planner couldn't find the requested repo — present error + suggestions to user
+            # Planner couldn't find the requested repository — present error and suggestions to user
             suggestions = payload.get("suggestions", [])
             error_msg = payload.get("message", "Repository not found.")
             # Emit the planner's error as a thinking event, not a chat message
@@ -280,7 +280,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             from ado2gh.agents.migration_agent.hitl.intake import build_repo_error_form
 
             form = sanitize_form(build_repo_error_form(desc, {"repo_suggestions": suggestions}))
-            # Finalize immediately — wait for user to provide a new repo name
+            # Finalize immediately — wait for user to provide a new repository name
             # No reply — the form is the user-facing output, error is already a thinking event
             return {
                 "should_return": True,
@@ -298,7 +298,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             "pending_clarification": None,
         }
 
-    # T101: Handle form submissions
+    # Handle form submissions
     form_submission = state.get("form_submission")
     if form_submission:
         form_id = form_submission.get("form_id", "")
@@ -307,9 +307,10 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
         if form_id in ("cancellation_options", "intake_cancellation_action"):
             action = values.get("action") or values.get("cancellation_action", "")
             if action == "rollback":
-                # CA-002: the checkbox's `required` flag is a client-side hint, so the
-                # submitted value is what authorises the deletion — and only a real
-                # `True` does (THR-06-003). `_execute_rollback` enforces it.
+                # The checkbox's `required` flag is a client-side hint, so the
+                # submitted value is what authorises the deletion — only a real
+                # `True` does (THR-06-003, CA-002). This confirmation is verified before
+                # any deletion runs, not merely assumed from the checkbox.
                 rollback_result = await _execute_rollback(
                     state, session, confirmed=values.get("confirm_rollback") is True,
                 )
@@ -328,9 +329,9 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
                 publish_orchestrator_chat(session, reply)
                 return {"should_return": True, "reply": reply}
 
-        # Unknown form — feed to LLM if available, otherwise acknowledge
+        # Unknown form — feed to the language model if available, otherwise acknowledge
         if llm and not llm_unconfigured:
-            # Let the LLM process the form submission dynamically
+            # Let the language model process the form submission dynamically
             pass
         else:
             return {"should_return": True, "reply": "Form submitted."}
@@ -417,7 +418,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
     if intent == "migration_action":
         return await _handle_migration_action(state, llm, user_message, session)
 
-    # Unmatched intent — let LLM handle if available, otherwise hardcoded fallback
+    # Unmatched intent — let the language model handle it if available, otherwise fall back to a hardcoded reply
     if llm and not llm_unconfigured:
         return await _handle_general_chat(state, llm, user_message, session)
     return {"should_return": True, "reply": "I didn't understand that request."}
@@ -442,7 +443,7 @@ async def _handle_general_chat(
         reply = publish_orchestrator_chat(session, NO_LLM_CONFIGURED_MESSAGE)
         return {"should_return": True, "reply": reply}
 
-    # T097: Apply context window trimming
+    # Apply context window trimming
     existing_messages = state.get("messages", [])
     cycle_summaries = state.get("cycle_summaries", [])
     max_budget = state.get("max_token_budget", 32000)
@@ -532,7 +533,7 @@ async def _handle_migration_info(
         info_text += f" Run ID: {session['run_id']}."
 
     if llm and not llm_unconfigured:
-        # T097: Apply context window trimming
+        # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
         max_budget = state.get("max_token_budget", 32000)
@@ -672,7 +673,7 @@ async def _handle_migration_action(
     # The orchestrator only collects parameters and interfaces with the user.
 
     if llm and not llm_unconfigured:
-        # T097: Apply context window trimming
+        # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
         max_budget = state.get("max_token_budget", 32000)
@@ -687,12 +688,12 @@ async def _handle_migration_action(
         response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent="orchestrator", capabilities=state.get("capabilities"))
         parsed = _parse_llm_json(response_text)
 
-        # Check for tool calls in LLM response
+        # Check for tool calls in the language model's response
         tool_calls = parsed.get("tool_calls", [])
 
-        # If LLM produced no tool calls and no reply, try to extract a reply from the raw text
+        # If the language model produced no tool calls and no reply, try to extract a reply from the raw text
         if not tool_calls and not parsed.get("reply"):
-            # LLM output was unparseable — let _safe_reply handle it
+            # The language model's output was unparseable — let `_safe_reply` handle it
             pass
         thinking = parsed.get("thinking")
         if thinking:
@@ -746,7 +747,7 @@ async def _handle_migration_action(
         # Check for reply
         reply = _safe_reply(parsed, response_text)
 
-        # Fallback: if session has plan_repository_ids (bulk) but LLM didn't
+        # Fallback: if session has plan_repository_ids (bulk) but the language model didn't
         # generate tool_calls, synthesize invoke_bulk_planner automatically.
         repo_ids = session.get("plan_repository_ids") or []
         if repo_ids and not session.get("migration_plan"):
@@ -774,7 +775,7 @@ async def _handle_migration_action(
             publish_orchestrator_chat(session, reply)
             return {"should_return": True, "reply": reply}
 
-    # No LLM — schema-driven intake routing
+    # No language model configured — schema-driven intake routing
     if not session.get("plan_repository_id") and not session.get("plan_repository_ids") and not session.get("migration_plan"):
         intake_result = await _apply_intake_routing(state, session, user_message)
         if intake_result is not None:

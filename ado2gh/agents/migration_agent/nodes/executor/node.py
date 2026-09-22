@@ -235,18 +235,18 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
             },
         )
 
-    # T107: Use LLM-driven execution when available
-    # Disabled: LLM tool-calling protocol not fully integrated — deterministic
+    # Use language-model-driven execution when available
+    # Disabled: language-model tool-calling protocol not fully integrated — deterministic
     # execution is reliable and calls _execute_scope directly.
     use_llm_execution = False
 
-    # T099: Check for migration queue for sequential processing
+    # Check for migration queue for sequential processing
     migration_queue = state.get("migration_queue")
     if migration_queue:
         queue_items = migration_queue.get("items", [])
         current_index = migration_queue.get("current_index", 0)
 
-        # Process one repo at a time
+        # Process one repository at a time
         if current_index < len(queue_items):
             queue_item = queue_items[current_index]
             discovery = session.get("discovery_snapshot")
@@ -351,7 +351,7 @@ async def executor_node(state: dict[str, Any]) -> dict[str, Any]:
                     subagent="executor",
                 )
 
-            # T100: Don't advance queue index yet - let validator run first
+            # Don't advance queue index yet - let validator run first
             # Queue index will be advanced after validation passes
             executor_result = {
                 "per_repo_results": per_repo_results,

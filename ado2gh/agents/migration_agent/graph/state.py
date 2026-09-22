@@ -24,7 +24,7 @@ class AgentState(TypedDict, total=False):
     # Session reference — the live session dict from _sessions
     session: dict[str, Any]
 
-    # LLM config. The client itself, the accelerator callables, build_plan,
+    # Language model configuration. The client itself, the accelerator callables, build_plan,
     # session_token and capabilities are deliberately NOT declared here: they are
     # not serializable into a checkpoint, so they travel per-invocation via
     # contextvars (runtime/deps.py) and are stripped from every node's return.
@@ -34,7 +34,7 @@ class AgentState(TypedDict, total=False):
     # Intent classification result
     intent: str  # general_chat | migration_info | migration_action
 
-    # LLM output for current iteration
+    # Language model output for current iteration
     thinking: str | None
     reply: str | None
     tool_calls: list[dict[str, Any]]
@@ -50,7 +50,7 @@ class AgentState(TypedDict, total=False):
     start_pev: bool
     start_execution: bool
     pending_form: dict[str, Any] | None
-    form_submission: dict[str, Any] | None  # T101: Handle form submissions (e.g., rollback)
+    form_submission: dict[str, Any] | None  # Handle form submissions (for example, rollback)
     should_return: bool
     error: str | None
     pev_active: bool

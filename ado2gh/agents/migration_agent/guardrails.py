@@ -454,13 +454,13 @@ def wrap_tool_with_guardrail(
 
         metrics = get_metrics_collector()
 
-        # T102: Record tool call
+        # Record tool call
         metrics.record_tool_call()
 
         if decision is None:
             return None
         if decision.blocked:
-            # T102: Record guardrail block
+            # Record guardrail block
             metrics.record_guardrail_block()
             return {
                 "error": "guardrail_blocked",

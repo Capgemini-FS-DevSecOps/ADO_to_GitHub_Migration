@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# ─── Inter-agent messaging (T052) ─────────────────────────────────────
+# ─── Inter-agent messaging ─────────────────────────────────────────────
 
 def _make_inter_agent_message(
     from_role: str,
@@ -38,7 +38,7 @@ def _make_inter_agent_message(
     }
 
 
-# ─── PEV Cycle Summary (T054) ─────────────────────────────────────────
+# ─── Plan-execute-validate loop cycle summary ──────────────────────────
 
 def _make_cycle_summary(
     cycle_number: int,
@@ -46,7 +46,7 @@ def _make_cycle_summary(
     validation_result: dict[str, Any],
     next_action: str,
 ) -> dict[str, Any]:
-    """Create a PevCycleSummary after each PEV cycle.
+    """Create a plan-execute-validate loop cycle summary after each cycle.
 
     Args:
         cycle_number: 1-based index of the cycle just finished.

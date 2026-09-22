@@ -514,7 +514,7 @@ async def prepare_form_submission(
     submission = FormIntakeSubmission.from_raw_values(values)
     repo_hint = str(submission.repository_id or values.get("repository_id") or "").strip()
     if repo_hint and ensure_repo_valid:
-        # Load discovery before canonicalizing Project/Repo from short repo names.
+        # Load discovery before canonicalizing Project/Repo from short repository names.
         await ensure_repo_valid(repo_hint)
 
     intake = apply_form_values_to_intake(session, values)

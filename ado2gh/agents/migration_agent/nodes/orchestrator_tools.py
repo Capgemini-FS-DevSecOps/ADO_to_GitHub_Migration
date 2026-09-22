@@ -98,7 +98,7 @@ async def _execute_orchestrator_tools(
 
         # Exact decoded-path match, not a substring test: any model-chosen endpoint
         # ending in "/discovery" used to be taken for the profile discovery route and
-        # skip the tool-call telemetry with it (R10b, THR-04-001). The pattern is
+        # skip the tool-call telemetry with it (THR-04-001). The pattern is
         # imported rather than restated — it is security-relevant and a second copy
         # would drift; `nodes/planner_research.py` owns it.
         endpoint_path = "/" + unquote(str(args.get("endpoint", "")).split("?", 1)[0]).lstrip("/")
@@ -321,11 +321,11 @@ async def _execute_orchestrator_tools(
             # Orchestrator is handing off to the Planner for bulk migration
             repo_ids = args.get("repository_ids", [])
             if not repo_ids:
-                # Fallback: extract repo IDs from user message
+                # Fallback: extract repository IDs from user message
                 user_msg = state.get("user_message", "") or ""
                 import re as _re
                 repo_ids = _re.findall(r'([\w.-]+/[\w.-]+)', user_msg)
-            # Prefer session's dry_run over LLM's argument
+            # Prefer session's dry_run over the language model's argument
             # The session carries the operator's decision; the model's tool argument
             # does not get to seed it, and a malformed value is not a decision
             # (GAP-076 single reader, CA-001, THR-06-006).
@@ -363,7 +363,7 @@ async def _execute_orchestrator_tools(
                 results.append({"tool": tool_name, "result": {"status": "no_active_run"}})
         elif tool_name == "request_user_input":
             from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
-            # Apply guardrails to LLM-generated form (truncation, field limits)
+            # Apply guardrails to the language-model-generated form (truncation, field limits)
             form_args = sanitize_form(dict(args))
             pending_form = form_args
             results.append({"tool": tool_name, "result": {"form": form_args}})
@@ -406,7 +406,7 @@ async def _execute_rollback(
     *,
     confirmed: bool,
 ) -> dict[str, Any]:
-    """T101: Execute rollback by deleting GitHub resources from rollback_records.
+    """Execute rollback by deleting GitHub resources from rollback_records.
 
     Args:
         state: Graph state; supplies ``rollback_records``, the accelerator POST

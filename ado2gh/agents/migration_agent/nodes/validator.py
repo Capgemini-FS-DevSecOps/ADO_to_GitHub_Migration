@@ -155,7 +155,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
             if scope_validation.get("evidence"):
                 evidence.append(scope_validation["evidence"])
 
-    # Check for plan-vs-execution consistency
+    # Check for plan-versus-execution consistency
     discovery = session.get("discovery_snapshot")
     if isinstance(discovery, str):
         import json
@@ -211,7 +211,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
             failure_entry["operator_input_required"] = True
         all_failures.append(failure_entry)
 
-    # Deterministic baseline probes before LLM investigation
+    # Deterministic baseline probes before language-model investigation
     baseline_findings: list[dict[str, Any]] = []
     if per_repo_results:
         try:
@@ -247,7 +247,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
                     subagent="validator",
                 )
 
-    # LLM-driven evidence validation (APIs + local workflow checks)
+    # Language-model-driven evidence validation (APIs and local workflow checks)
     llm_analysis: str | None = None
     if llm and not llm_unconfigured and accel_get:
         try:
@@ -353,7 +353,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
         "llm_analysis": llm_analysis,
     }
 
-    # T100: Advance queue index after executor consumed a queue slot (even if no scopes ran).
+    # Advance queue index after executor consumed a queue slot (even if no scopes ran).
     migration_queue = state.get("migration_queue")
     if passed and migration_queue:
         current_index = int(migration_queue.get("current_index", 0) or 0)
@@ -489,7 +489,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
     else:
         next_action = "retry_planner"
 
-    # T054: Generate PevCycleSummary
+    # Generate the cycle summary
     cycle_number = pev_retry_count + 1 if not passed else pev_retry_count
     cycle_summary = _make_cycle_summary(
         cycle_number=cycle_number,
@@ -498,7 +498,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
         next_action=next_action,
     )
 
-    # T052: Create inter-agent message from validator
+    # Create the inter-agent message from the validator
     inter_agent_msg = _make_inter_agent_message(
         from_role="validator",
         to_role="planner",

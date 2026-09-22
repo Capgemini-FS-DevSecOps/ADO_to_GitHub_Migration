@@ -371,9 +371,9 @@ def _failure_needs_operator(failure: object) -> bool:
     """Decide whether a failure record needs an operator decision.
 
     Returns:
-        True when the failure asks for operator input explicitly, is the FR-036
-        live-migration guard, or reads as a blocker a retry cannot clear.
-        Transient or benign accelerator errors return False.
+        True when the failure asks for operator input explicitly, trips the
+        one-live-migration-per-repository guard (FR-036), or reads as a blocker
+        a retry cannot clear. Transient or benign accelerator errors return False.
     """
     if not isinstance(failure, dict):
         return False
@@ -416,11 +416,11 @@ def _failure_needs_operator(failure: object) -> bool:
 
 
 def is_fr036_failure(failure: object) -> bool:
-    """Detect the one-live-migration-per-repo guard (FR-036).
+    """Detect the one-live-migration-per-repository guard (FR-036).
 
     Returns:
-        True when the failure carries an FR-036 error code or message, whether
-        it is a structured dict or plain text.
+        True when the failure carries the matching error code or message
+        (FR-036), whether it is a structured dict or plain text.
     """
     if isinstance(failure, dict):
         code = str(failure.get("error_code", "")).lower()
@@ -447,7 +447,7 @@ def is_fr036_failure(failure: object) -> bool:
 
 
 def fr036_operator_message(failures: list[Any]) -> str | None:
-    """Deterministic operator chat text for FR-036 live migration conflicts."""
+    """Deterministic operator chat text for live-migration conflicts under the one-migration-per-repository guard (FR-036)."""
     for failure in failures:
         if not is_fr036_failure(failure):
             continue

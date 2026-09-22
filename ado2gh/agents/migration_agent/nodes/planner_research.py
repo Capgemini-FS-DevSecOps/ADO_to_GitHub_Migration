@@ -360,8 +360,9 @@ async def _run_planner_research_loop(
             round's assistant reply and tool results.
         llm: Chat model to stream — the planner passes the tool-bound model, so
             this is not read off ``state``.
-        validation_feedback: Feedback from a failed PEV cycle; its presence
-            marks this as a replan and lifts the minimum-probe requirement.
+        validation_feedback: Feedback from a failed plan-execute-validate loop
+            cycle; its presence marks this as a replan and lifts the
+            minimum-probe requirement.
         mode: Execution mode the plan targets; only changes the wording of the
             probe hint given to the model. Defaults to dry run (CA-001).
 

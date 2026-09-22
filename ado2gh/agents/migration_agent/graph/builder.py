@@ -178,7 +178,7 @@ async def _get_checkpointer() -> BaseCheckpointSaver | None:
         return None
 
 
-# Per LangGraph fault-tolerance docs: retry transient LLM/API errors on async nodes.
+# Per LangGraph fault-tolerance docs: retry transient language model and API errors on async nodes.
 _LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=0.5, backoff_factor=2.0)
 
 
@@ -302,7 +302,7 @@ async def _build_graph() -> CompiledStateGraph:
     return graph.compile()
 
 
-# ─── Routing (strict PEV boundaries) ──────────────────────────────────
+# ─── Routing (strict plan-execute-validate loop boundaries) ───────────
 
 def _needs_human_input(state: AgentState) -> bool:
     """Report whether a dynamic form must be collected via LangGraph interrupt().
@@ -400,7 +400,7 @@ def _route_after_validator(state: AgentState) -> str:
 
     Returns:
         The next node name: ``orchestrator`` when validation passed, the
-        feedback asks for escalation, or the PEV retry / iteration ceiling is
+        feedback asks for escalation, or the plan-execute-validate loop's retry / iteration ceiling is
         reached; ``planner`` to replan; ``finalize`` when the turn is over.
     """
     if state.get("should_return"):

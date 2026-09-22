@@ -1,7 +1,7 @@
 """Message assembly for the orchestrator's LLM turns.
 
-Split out of ``nodes/orchestrator.py`` (800-line cap) when THR-01-001 moved the
-session context out of the system role: every orchestrator turn is opened here so
+Split out of ``nodes/orchestrator.py`` (800-line cap) when the session context was
+moved out of the system role (THR-01-001): every orchestrator turn is opened here so
 there is one place that decides what travels in which trust channel.
 """
 from __future__ import annotations
@@ -30,8 +30,8 @@ def build_orchestrator_messages(session: dict[str, Any], user_message: str) -> l
     The session context carries discovery data, repository names among it, and
     anyone able to create a repository in the scanned ADO organisation controls that
     text. It is therefore delimited and sent in the *user* role, never concatenated
-    onto the system prompt that also carries the CA-001 dry-run and plan-approval
-    rules (THR-01-001); the shape follows ``hitl/intake_llm.py``.
+    onto the system prompt that also carries the dry-run and plan-approval rules
+    (CA-001, THR-01-001); the shape follows ``hitl/intake_llm.py``.
 
     The boundary is: ``nodes/intent._build_session_context`` owns what goes into the
     block and keeps repository names a plain list of names; this function owns which

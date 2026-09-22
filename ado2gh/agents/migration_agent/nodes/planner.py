@@ -393,9 +393,9 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
 
     repos = discovery.get("repos", []) if isinstance(discovery, dict) else []
 
-    # Fallback: if discovery failed but we have requested repo(s), create
-    # synthetic repo entries so the plan isn't empty.
-    # Support both single-repo (plan_repository_id) and bulk (plan_repository_ids) modes.
+    # Fallback: if discovery failed but we have requested repository ids, create
+    # synthetic repository entries so the plan isn't empty.
+    # Support both single-repository (plan_repository_id) and bulk (plan_repository_ids) modes.
     requested_repos = session.get("plan_repository_ids") or state.get("plan_repository_ids")
     if not requested_repos:
         single_repo = session.get("plan_repository_id") or state.get("plan_repository_id")
@@ -425,7 +425,7 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
             subagent="planner",
         )
     elif repos and requested_repos:
-        # Filter repos to only the requested ones; reject unknown repos when discovery loaded
+        # Filter repositories to only the requested ones; reject unknown repositories when discovery loaded
         filtered = []
         not_found: list[str] = []
         for req_id in requested_repos:
@@ -515,7 +515,7 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
         )
 
     parsed: dict[str, Any] = {}
-    # Build plan using LLM if available
+    # Build plan using the language model if available
     if llm and not llm_unconfigured:
         from ado2gh.agents.migration_agent.tools.planner_tools import get_planner_tools
 
@@ -552,7 +552,7 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
         if existing_plan:
             context_parts.append(f"Existing plan revision {revision - 1}: {json.dumps(existing_plan, default=str)[:2000]}")
 
-        # T097: Apply context window trimming
+        # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
         max_budget = state.get("max_token_budget", 32000)
@@ -604,7 +604,7 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
                     f"Baseline probes: {json.dumps(baseline_findings, default=str)[:1500]}"
                 )
     else:
-        # No LLM — use heuristic plan builder
+        # No language model configured — use heuristic plan builder
         plan = _build_heuristic_plan(repos, session, revision)
         if baseline_findings:
             plan.setdefault("assumptions", []).append(

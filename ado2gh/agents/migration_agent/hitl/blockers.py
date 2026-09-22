@@ -68,7 +68,7 @@ def plan_revision_key(plan: dict[str, Any] | None) -> str:
                 _FIELD_SEPARATOR.join([
                     str(repo.get("id") or repo.get("repository_id") or repo.get("name") or ""),
                     # Source coordinates `resolve_repo_context` (nodes/executor/scope.py)
-                    # reads independently of `id` when it resolves which ADO repo a
+                    # reads independently of `id` when it resolves which ADO repository a
                     # live write reads from.
                     str(repo.get("project") or ""),
                     str(repo.get("repo_name") or repo.get("name") or ""),
@@ -89,7 +89,7 @@ def plan_revision_key(plan: dict[str, Any] | None) -> str:
                     str(work_item.get("repo") or ""),
                     str(work_item.get("scope") or ""),
                     # Source coordinates `resolve_repo_context` reads independently of
-                    # `repo` when it resolves which ADO repo a live write reads from.
+                    # `repo` when it resolves which ADO repository a live write reads from.
                     str(work_item.get("project") or ""),
                     str(work_item.get("repo_name") or ""),
                     str(work_item.get("github_org") or work_item.get("gh_org") or ""),

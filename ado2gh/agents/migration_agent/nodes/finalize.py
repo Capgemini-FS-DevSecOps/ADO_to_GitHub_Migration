@@ -85,7 +85,7 @@ async def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
     if pending_form:
         session["pending_form"] = pending_form
 
-    # T062: Graph turn complete — always return to idle so chat/forms work.
+    # Graph turn complete — always return to idle so chat/forms work.
     validation = state.get("validation_result") or {}
     if validation.get("passed"):
         release_session_for_chat(session)
@@ -94,7 +94,7 @@ async def finalize_node(state: dict[str, Any]) -> dict[str, Any]:
     else:
         set_session_idle(session)
 
-    # T098: Release all repo locks on session end
+    # Release all repository locks on session end
     session_id = session.get("session_id", "")
     if session_id:
         try:
