@@ -35,7 +35,7 @@ from ado2gh.agents.migration_agent.constants import (
     MAX_FORM_SUBMISSION_CHARS,
 )
 from services.agent.main import app
-from services.agent.routes import _helpers
+from services.agent.routes import _helpers, _session_registry
 
 
 @pytest.fixture
@@ -86,7 +86,9 @@ def test_an_evicted_session_releases_its_run_record(agent_client):
 
 
 def test_the_session_map_is_capped_by_size(agent_client, monkeypatch):
-    monkeypatch.setattr(_helpers, "MAX_IN_MEMORY_SESSIONS", 5)
+    # The cap constant lives in _session_registry, which _evict_stale_state reads
+    # directly — patching the copy _helpers re-exports would not reach it.
+    monkeypatch.setattr(_session_registry, "MAX_IN_MEMORY_SESSIONS", 5)
     base = datetime.now(timezone.utc)
 
     for i in range(12):
@@ -102,7 +104,7 @@ def test_the_session_map_is_capped_by_size(agent_client, monkeypatch):
 
 
 def test_creating_sessions_over_the_cap_does_not_grow_the_map(agent_client, monkeypatch):
-    monkeypatch.setattr(_helpers, "MAX_IN_MEMORY_SESSIONS", 3)
+    monkeypatch.setattr(_session_registry, "MAX_IN_MEMORY_SESSIONS", 3)
 
     for _ in range(8):
         created = agent_client.post("/v1/sessions", json={"profile_id": "lightweight"})

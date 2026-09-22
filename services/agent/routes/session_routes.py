@@ -111,11 +111,10 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
             kind="message",
         )
         try:
-            await _enqueue_session_live_approval(_sessions[session_id])
+            await _enqueue_session_live_approval(_sessions[session_id], session_token=session_token)
         except Exception:
-            pass
-        _sessions[session_id]["live_approval_status"] = "pending"
-        set_session_idle(_sessions[session_id])
+            _sessions[session_id]["live_approval_status"] = "pending"
+            set_session_idle(_sessions[session_id])
         _audit.record(
             "session.start",
             profile_id=req.profile_id,

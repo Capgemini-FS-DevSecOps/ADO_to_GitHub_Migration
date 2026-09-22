@@ -9,7 +9,7 @@ described in one place. Mounted as a sub-router of `pipeline_routes` so
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from ado2gh.api.contracts import (
     LiveApprovalCreateRequest,
@@ -92,9 +92,15 @@ def create_live_approval(req: LiveApprovalCreateRequest, request: Request) -> Li
         The pending approval request for that scope.
 
     Raises:
-        HTTPException: 403 when the caller may not operate.
+        HTTPException: 401 when the caller carries no identity — there is no
+            one to attribute the approval request to, and ``require_operate``
+            is deliberately permissive about a missing identity while
+            authentication is disabled (GAP-110). 403 when the caller may not
+            operate.
     """
     user = require_operate(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     store = _live_store()
     row = store.create_or_get_pending(user, req)
     return LiveApprovalItem(**row)

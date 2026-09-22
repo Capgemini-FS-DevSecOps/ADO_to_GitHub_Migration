@@ -1084,3 +1084,24 @@ GAP-089 through GAP-096. One new module; no moves, no deletions, no renames.
   `guardrails.py`, `nodes/orchestrator.py` and `nodes/orchestrator_tools.py` belong to R10a and
   were not edited, which is why three halves of THR-05-001, THR-04-001 and THR-02-003 are
   carried as follow-ups on GAP-089, GAP-092 and GAP-096 rather than fixed.
+
+## GAP-110 approval-store split (final-review-findings.md finding 5)
+
+Adding `AGENT_SESSION_SCOPE_TYPE` to `ado2gh/api/live_approval_store.py` for GAP-110 pushed the
+file from 876 to 884 lines, past the project's 800-line cap. Split, not trimmed: every moved
+function is unchanged prose, just relocated so `LiveApprovalStore`'s storage/decision/dispatch
+code and the scope-identifier/context-validation code live in separate files.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| (new) | `ado2gh/api/live_approval_scopes.py` | added module | Holds the scope-identifier and context-validation helpers moved out of `live_approval_store.py`: `ScopeType`, `PIPELINE_RUN_SCOPE_TYPE`, `AGENT_SESSION_SCOPE_TYPE`, `PIPELINE_RUN_CONTEXT_RUN_ID`, `pipeline_run_scope_id`, `migrate_scope_id`, `_migrate_job_params`, `_pipeline_run_params`, `_assert_migrate_context_matches`, `_assert_pipeline_context_matches`. `live_approval_store.py` imports every one of them back and re-exports the public names, so no external importer (`services/accelerator_api/routes/pipeline_routes.py`, `services/accelerator_api/routes/_shared.py`, `ado2gh/api/accelerator.py`, and the GAP-063/071/072/073/098 tests) changed its import statement. | yes | pass (`_pretest_split.txt`, 50 passed) | 2026-09-22 |
+| shrunk | `ado2gh/api/live_approval_store.py` | — | Down to 717 lines after the split (cap is 800); keeps `LiveApprovalStore` itself plus `_redacted_context`, `_public_row`, `_db_path`, `_internal_headers`, the executor registry and `_notify_agent` — the storage/decision/dispatch half of the module. | yes | pass (`_pretest_split.txt`, 50 passed) | 2026-09-22 |
+
+## GAP-110 agent-route-helpers split (final-review-findings.md finding 5, second pass)
+
+Implementing the GAP-110 fix itself grew `_enqueue_session_live_approval` in `services/agent/routes/_helpers.py` from a two-line status flip into a real call to the platform approval queue, pushing the file to 850 lines, past the project's 800-line cap. Split, not trimmed: the in-memory session/run caches and their eviction policy are self-contained (no dependency on anything else in `_helpers.py`) and moved out whole.
+
+| File Path | New Path | Change Type | Reason | Verified | Test Status | Timestamp |
+|-----------|----------|-------------|--------|----------|-------------|-----------|
+| (new) | `services/agent/routes/_session_registry.py` | added module | Holds the process-global `_runs`/`_sessions` caches and their bound: `_session_activity_epoch`, `_forget_session`, `_NON_RECONSTRUCTIBLE_KEYS`, `_is_reconstructible`, `_evict_stale_state`, `_remember_session`, `_remember_run`. `_helpers.py` imports every one of them back and re-exports the public names, so every other route module's `from services.agent.routes._helpers import _sessions, _runs, ...` kept working unchanged. One whitebox test target did move: `tests/agent/test_agent_route_boundary_limits.py` monkeypatched `_helpers.MAX_IN_MEMORY_SESSIONS` to shrink the cap, but `_evict_stale_state` now reads that constant from its own module's namespace, not `_helpers`'s re-exported copy — the two size-cap tests now patch `_session_registry.MAX_IN_MEMORY_SESSIONS` instead. `SESSION_IDLE_TTL_SECONDS` is read-only in that same test and stayed a plain re-export from `_helpers.py`, needing no test change. | yes | pass (`_pretest_gap100_wide3.txt`, 174 passed, 5 skipped) | 2026-09-22 |
+| shrunk | `services/agent/routes/_helpers.py` | — | Down to 749 lines after the split (cap is 800); keeps the route request/response models, the accelerator HTTP client helpers, session hydration/payload assembly and `_enqueue_session_live_approval` itself — the request/response half of the module. | yes | pass (`_pretest_gap100_wide3.txt`, 174 passed, 5 skipped) | 2026-09-22 |

@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field, field_validator
 from ado2gh.agents.migration_agent.constants import (
     MAX_CHAT_MESSAGE_CHARS,
     MAX_FORM_SUBMISSION_CHARS,
-    MAX_IN_MEMORY_SESSIONS,
     SESSION_IDLE_TTL_SECONDS,
 )
 from ado2gh.agents.migration_agent.policies import (
@@ -30,10 +29,39 @@ from ado2gh.agents.migration_agent.policies import (
 )
 from ado2gh.agents.migration_agent.session.state import normalize_session_status
 from ado2gh.agents.migration_agent.utils import IdeAuditBridge, _append_event, mask_secrets
+from ado2gh.api.live_approval_scopes import AGENT_SESSION_SCOPE_TYPE
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
 from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX
 from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
 from services.agent.profiles import LocalAgentProfile, get_profile
+from services.agent.routes._session_registry import (
+    _NON_RECONSTRUCTIBLE_KEYS,
+    _evict_stale_state,
+    _forget_session,
+    _is_reconstructible,
+    _remember_run,
+    _remember_session,
+    _runs,
+    _session_activity_epoch,
+    _sessions,
+)
+
+# The in-memory session/run caches and their eviction policy moved to
+# _session_registry (docs/STRUCTURAL_CHANGELOG.md); every other route module
+# still imports them from here, so they are re-exported rather than left as
+# unused imports.
+__all__ = [
+    "SESSION_IDLE_TTL_SECONDS",
+    "_NON_RECONSTRUCTIBLE_KEYS",
+    "_evict_stale_state",
+    "_forget_session",
+    "_is_reconstructible",
+    "_remember_run",
+    "_remember_session",
+    "_runs",
+    "_session_activity_epoch",
+    "_sessions",
+]
 
 AGENT_DEFAULT_PIPELINE_STEPS = [s["id"] for s in MIGRATE_UI_PIPELINE_STEPS]
 MIGRATE_STEP_IDS = frozenset({
@@ -47,14 +75,6 @@ try:
 except KeyError:
     _ACTIVE_PROFILE = None
 
-# ponytail: process-global, so the agent is single-replica only and loses these on
-# restart — MigrationSessionStore recovery in services/agent/main.py only partially
-# compensates. Deploy the agent at replicas: 1 (see deploy/kubernetes/agent-deployment.yaml).
-# DEPRECATED: this in-memory session store is being replaced by the persistent
-# MigrationSessionStore (ado2gh.agents.migration_agent.session.store) in Spec 011.
-# Do not add new consumers; existing routes will be migrated incrementally.
-_runs: dict[str, dict] = {}
-_sessions: dict[str, dict] = {}
 _audit = IdeAuditBridge()
 
 SSE_EVENT_LIMIT_REPLY = (
@@ -330,126 +350,6 @@ def _resolve_model_id(requested: str | None) -> tuple[str | None, bool, bool]:
     if unconfigured:
         degraded = True
     return resolved_id, degraded, unconfigured
-
-
-def _session_activity_epoch(session: dict[str, Any]) -> float:
-    """Read a session's last-activity timestamp as an epoch, newest-wins on failure.
-
-    Args:
-        session: The in-memory session dict.
-
-    Returns:
-        The parsed ``updated_at``/``created_at`` epoch, or *now* when neither parses —
-        an entry with no usable timestamp is treated as fresh so it is never evicted
-        by age, only ever by the size cap.
-    """
-    raw = session.get("updated_at") or session.get("created_at")
-    try:
-        return datetime.fromisoformat(str(raw)).timestamp()
-    except (TypeError, ValueError):
-        return datetime.now(timezone.utc).timestamp()
-
-
-def _forget_session(session_id: str) -> None:
-    """Drop one session and its run record from the in-memory caches."""
-    session = _sessions.pop(session_id, None)
-    run_id = (session or {}).get("run_id")
-    if run_id:
-        _runs.pop(str(run_id), None)
-
-
-# State that only exists in the in-memory dict: hydration rebuilds a session through
-# `new_isolated_agent_session`, which clears the LangGraph thread, so an interrupted
-# form, a live-approval handshake, a pending clarification and the remediation counter
-# do not survive a round trip. A session holding any of them is left alone by the TTL
-# sweep — the size cap below is still absolute. A *busy* run is already excluded above
-# by `is_session_busy`; `run_id` alone is deliberately not in this tuple, or a session
-# that ran PEV once and went idle would carry it forever and never age out.
-_NON_RECONSTRUCTIBLE_KEYS = (
-    "pending_form", "live_approval_id", "live_approval_status",
-    "remediation_attempts", "pending_clarification",
-)
-
-
-def _is_reconstructible(session: dict[str, Any]) -> bool:
-    """Report whether dropping a session from memory loses nothing but a reload.
-
-    Args:
-        session: The in-memory session dict.
-
-    Returns:
-        ``True`` when the session is idle and carries no in-memory-only state, so
-        :func:`_try_hydrate_session` can rebuild an equivalent one from the store.
-    """
-    from ado2gh.agents.migration_agent.session.state import is_session_busy
-
-    if is_session_busy(session.get("status")):
-        return False
-    return not any(session.get(key) for key in _NON_RECONSTRUCTIBLE_KEYS)
-
-
-def _evict_stale_state() -> None:
-    """Bound the in-memory session and run caches by age, then by size.
-
-    Both dicts are process-global and were only ever emptied by an explicit ``DELETE /v1/sessions/{id}``, so any
-    caller able to create sessions could grow them without limit. Every in-memory record the server keeps on a
-    caller's behalf needs both a time limit and a count limit, or a caller can exhaust server memory simply by
-    making enough requests (register item THR-10-001).
-
-    The age sweep only drops sessions :func:`_is_reconstructible` vouches for — ``persist_session_snapshot``
-    writes those to ``MigrationSessionStore`` and :func:`_try_hydrate_session` reads them back, so the eviction
-    costs a reload and nothing else.
-
-    The size cap is deliberately unconditional: an unbounded map is worse than a dropped run, and refusing to
-    evict "interesting" sessions would let a caller defeat the cap by making every session interesting. Oldest
-    first.
-    """
-    now = datetime.now(timezone.utc).timestamp()
-    for session_id, session in list(_sessions.items()):
-        if (
-            now - _session_activity_epoch(session) > SESSION_IDLE_TTL_SECONDS
-            and _is_reconstructible(session)
-        ):
-            _forget_session(session_id)
-    overflow = len(_sessions) - MAX_IN_MEMORY_SESSIONS
-    if overflow > 0:
-        by_age = sorted(_sessions.items(), key=lambda kv: _session_activity_epoch(kv[1]))
-        for session_id, _ in by_age[:overflow]:
-            _forget_session(session_id)
-    run_overflow = len(_runs) - MAX_IN_MEMORY_SESSIONS
-    if run_overflow > 0:
-        for run_id in list(_runs)[:run_overflow]:
-            _runs.pop(run_id, None)
-
-
-def _remember_session(session_id: str, session: dict[str, Any]) -> dict[str, Any]:
-    """Put a session into the in-memory cache, evicting stale entries around it.
-
-    Args:
-        session_id: The session's id.
-        session: The session dict to cache.
-
-    Returns:
-        The same session dict, for use at the call site.
-    """
-    _sessions[session_id] = session
-    _evict_stale_state()
-    return session
-
-
-def _remember_run(run_id: str, record: dict[str, Any]) -> dict[str, Any]:
-    """Put a run record into the in-memory cache, under the same bound as sessions.
-
-    Args:
-        run_id: The run's id.
-        record: The run record to cache.
-
-    Returns:
-        The same record, for use at the call site.
-    """
-    _runs[run_id] = record
-    _evict_stale_state()
-    return record
 
 
 def _get_accessible_session(
@@ -742,11 +642,60 @@ async def _build_migration_plan(
 
 
 
-async def _enqueue_session_live_approval(session: dict[str, Any]) -> None:
-    """Mark a session as waiting for live-execution approval and park it as idle."""
+async def _enqueue_session_live_approval(
+    session: dict[str, Any], *, session_token: str | None = None,
+) -> None:
+    """Open or reuse the platform approval row for this session's live request.
+
+    Before this, a session's live request only flipped ``live_approval_status``
+    to ``pending`` in memory: no row was ever created, so the request carried no
+    id an approver could act on and no audit trail recorded it (GAP-110).
+    Routing the request through the same ``POST /v1/platform/approvals``
+    endpoint the migrate and pipeline routes already use gives the session an
+    approval id — kept on ``live_approval_id`` so ``approve_session`` can
+    forward the operator's decision to it, the same way it already does when
+    the id is present — and a ``platform.live_execution.requested`` audit
+    event on the accelerator side. ``live_approval_status`` becomes a cache of
+    the row's own status rather than a value this function invents.
+
+    Args:
+        session: The agent session requesting live execution.
+        session_token: Cookie value identifying the requester to the
+            accelerator, normally read from the live request. Falls back to
+            the session's own stored token so a caller with no live request
+            in hand — the session-creation path — can still make the call.
+    """
     from ado2gh.agents.migration_agent.session.state import set_session_idle
 
-    session["live_approval_status"] = "pending"
+    token = session_token or session.get("session_token")
+    try:
+        row = await _accel_post(
+            "/v1/platform/approvals",
+            {
+                "scope_type": AGENT_SESSION_SCOPE_TYPE,
+                "scope_id": session["session_id"],
+                "profile_id": session.get("profile_id"),
+                "reason_request": "Agent session requested live execution",
+            },
+            session_token=token,
+        )
+    except httpx.HTTPError as exc:
+        session["live_approval_status"] = "pending"
+        _audit.record(
+            "session.request_live.failed",
+            profile_id=session.get("profile_id"),
+            session_id=session["session_id"],
+            metadata={"error": str(exc)},
+        )
+    else:
+        session["live_approval_id"] = row.get("id")
+        session["live_approval_status"] = row.get("status", "pending")
+        _audit.record(
+            "session.request_live",
+            profile_id=session.get("profile_id"),
+            session_id=session["session_id"],
+            metadata={"approval_id": row.get("id")},
+        )
     set_session_idle(session)
     session["updated_at"] = datetime.now(timezone.utc).isoformat()
 

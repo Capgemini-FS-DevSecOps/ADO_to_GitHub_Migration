@@ -105,7 +105,8 @@ async def request_live(session_id: str, request: Request) -> dict[str, Any]:
     """Queue a live-execution approval for this session and tell the operator."""
     session = _get_accessible_session(session_id, request)
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
-    await _enqueue_session_live_approval(session)
+    session_token = _session_token_from_request(request) or _session_accel_token(session_id)
+    await _enqueue_session_live_approval(session, session_token=session_token)
     _add_message(session_id, "system", "Live execution requested — awaiting approval")
     return _session_payload(session_id)
 
