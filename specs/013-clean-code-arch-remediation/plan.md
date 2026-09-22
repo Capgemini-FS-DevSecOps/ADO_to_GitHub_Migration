@@ -385,6 +385,81 @@ Three halves stay open for the batches that own those files and are recorded as 
 returns.
 
 
+**Addendum (2026-09-22) — register-pending merge, the register scribe's closing pass.** Eight
+hand-off batches queued in `register-pending/` since the last addendum were merged into
+`gap-register.md` and this file in one pass: ten new ids, four existing entries closed from
+`open` to `remediated`, one existing entry's status corrected from `open` to `deferred`, and
+three existing entries' detail blocks brought current with no status change.
+
+Ten new ids, one line each: GAP-098 (GAP-PHASE-05, medium, remediated) — `BatchExecutor`
+accepted an executor mode and an injected engine mode that could silently disagree; GAP-099
+(GAP-ACC-14, medium, remediated) — `RunWaveRequest`/`PhaseRunRequest.dry_run` defaulted to a
+live run on any caller that omitted the field, closed by entry 15 above; GAP-100 (GAP-CLI-07,
+medium, remediated) — `ado-cleanup --live` disabled ADO pipelines and could archive the
+repository with no confirmation; GAP-101 (GAP-STATE-07, low, remediated) — the connectivity,
+settings and LLM-catalog stores resolved their data directory once at construction instead of
+per call; GAP-102 (GAP-AGT-26, high, remediated) — plan approval is sticky and survives every
+replan (THR-09-002); GAP-103 (GAP-AGT-27, medium, remediated) — form `required` is advertised
+but never enforced (THR-09-003); GAP-104 (GAP-AGT-28, medium, remediated) — the HITL resume
+payload is relabelled instead of matched (THR-09-004); GAP-105 (GAP-AGT-29, low, remediated) —
+a declined blocker stays declined across every later plan (THR-09-005); GAP-106 (GAP-AGT-30,
+medium, remediated) — the agent service's `/health` route disclosed the accelerator URL and raw
+connection error to any caller (THR-02-004), a new entry distinct from the pre-existing GAP-062
+test-client deadlock; GAP-107 (GAP-TOOL-09, low, deferred) — the Vurnix 0.3.0 honest gate
+cannot reach PASS on this repository layout: `gate.py:60` hardcodes a `.deps` directory layout
+the vurnix CLI has no flag to override, so it reports 224 phantom findings against this tree
+without an NTFS junction and 35 residual findings with one, every one of the 35 confirmed
+correct as written (24 synthetic test fixtures, 5 sibling-script imports the layout does not
+expect, 6 guarded optional imports); the tree itself compiles clean (426 Python files, 7
+JavaScript files) and carries 1,157 non-trivial tests, so the residual findings are a tool
+limitation, not a code defect, and PASS needs either an upstream vurnix flag or reshaping this
+repository to the `.deps` layout the tool assumes — not recommended solely to satisfy the tool.
+The register's own ruff/mypy/coverage-ratchet guards remain the compensating control while this
+is deferred.
+
+Four existing entries closed from `open` to `remediated` in this pass: GAP-019 (`e5d11c4`, entry
+10 above), GAP-024 (entry 11 above), GAP-031 (`8764115`, resolved with no contract change), and
+GAP-054 (`d457ff0`, entry 13 above). One existing entry's status corrected from `open` to
+`deferred` rather than closed: GAP-069 (`34dce99`) — its DynamoDB claim-conflict audit now logs
+`job.audit_unavailable` instead of silently discarding the conflict, but the underlying
+question, where such a deployment's audit database should live, is a configuration decision the
+operator has not yet made, so R3's fix made the gap visible rather than closing it; its
+`compensating_control` and `follow_up` fields record that. Three already-remediated entries'
+detail blocks were refreshed with no status change: GAP-086, GAP-089 and GAP-096 (the R10a/R10b
+follow-up text merged from `register-pending/r10a-followup.md`).
+
+The mutation re-run on `ado2gh/audit/redaction.py` reproduces `fdeaaa6`'s own 35/41 (85 %)
+figure with the same six survivors, confirming the coverage-drift work holds steady; five
+commits (`2886cf1`, `5aedb39`, `fdeaaa6`, `178a733`, `a2ce47d`) added roughly 6,500 lines of
+test code across 19 test files since the last addendum. R5 closed GAP-074 by gating every
+forwarding header behind the new `ADO2GH_TRUSTED_PROXY` setting (entry 14 above) so no client
+can decide whether its own session cookie is `Secure`, and GAP-061 by giving operators a
+confirmed "Clear stored password" control over the empty-string sentinel the connectivity store
+already honoured, with the clear now audited by field name and never by value; it also fixed
+the connectivity store's import-time data-directory binding that made route-driven state leak
+across a whole process (commit `a863d4b`, folded into GAP-101 above), and folded in five
+findings from two read-only reviews (commits `9be088f`, `71efb61`). Batch R10c2 closed GAP-024
+by carrying boolean form recommendations as JSON booleans end to end (entry 11 above), and
+remediated THR-09-002 through THR-09-005 in the HITL package (GAP-102 through GAP-105 above) —
+binding plan approval to a plan-revision fingerprint, enforcing `required` server-side on
+submit, rejecting resume payloads that name a different form, and scoping declined blockers to
+the revision that raised them. Of the two residuals R10c2 recorded inside otherwise-remediated
+entries, the one on `graph/builder.py`/`guardrails.py` (GAP-102) is closed by the R10a
+follow-up batch; the one on `services/agent/routes/form_routes.py` — GAP-103's `form_incomplete`
+status has no route-level mapping to a 4xx response yet, so an incomplete submission gets a
+clarifying re-ask rather than the threat model's named status code — remains, owned by the
+batch that touches that file. GAP-103 itself stays `remediated`: the security property, that a
+blank required field is never applied to the session, holds regardless of which response shape
+carries the refusal.
+
+The combined `ado2gh` + `services` coverage floor remains open for the final gate pass, as
+`r9.md` recorded it: `.github/workflows/ci.yml` is owned by a concurrent agent and stays
+untouched by this merge.
+
+The open critical-or-high set after this pass is one entry: GAP-069, `deferred`. `spec.md` §
+Status is updated in the same pass to match.
+
+
 ## Technical Context
 
 **Language/Version**: Python ≥ 3.11 (`pyproject.toml`; CI runs 3.11); TypeScript 5.9.3 (console, `strict`), Node 22
@@ -699,8 +774,54 @@ Verified by `tests/contract/test_public_surface_snapshot.py`; behaviour is cover
 `tests/unit/test_gap_018_dry_run_default.py`, `tests/unit/test_gap_068_execution_mode_defaults.py`
 and `tests/unit/test_gap_078_execution_mode_defaults.py`.
 
-Entries 10, 11 and 13 are reserved for the remaining operator decisions of 2026-09-13
-(`operator-decisions.md` items 2, 3 and 8) and are appended by the batches that apply them.
+**10. `ProvisionRequest.actor` is removed; `/sessions/{id}/provision` and `/remediate` derive
+the actor server-side (GAP-019). Decision (operator, 2026-09-13): approved by operator
+instruction.** `provision_session` and `remediate_session` took no `Request` parameter and
+granted the write provisioning tier based solely on a client-supplied `req.actor` string with
+no binding to an authenticated identity; `remediate_session`'s escalation counter came from the
+equally client-supplied `req.retry_count`, so a client could reset its own escalation count by
+resending a low value. Both routes now take the `Request`, derive the actor and role from the
+authenticated platform user through `_audit_actor`, and require live-approval authority for the
+write tier; the escalation counter is read from the session's own `remediation_attempts`
+instead. `ProvisionRequest.actor` is removed from the request model entirely, closing the trust
+gap by removing the field rather than validating it. Applied in `e5d11c4`.
+
+*Migration note.* A caller that sent `actor` in the `ProvisionRequest` body now gets it
+silently ignored — the model does not set `extra="forbid"`, so the request still succeeds, but
+the actor recorded is always the authenticated platform user, never the value the client sent.
+Any external caller relying on setting an arbitrary `actor` string must instead authenticate as
+the identity it wants recorded.
+
+*Snapshot impact: none.* Neither route path, method, CLI command, environment variable nor
+database table changes; a request-model field removal is not one of the four frozen keys.
+Verified: `tests/contract/test_public_surface_snapshot.py` passes unchanged; the fix is covered
+by `tests/auth/test_gap_019_provision_actor_server_side.py` (8 tests).
+
+**11. Form fields carry boolean `recommended_value` as a JSON boolean (GAP-024). Decision
+(operator, 2026-09-13): approved by operator instruction.** `field_dict_from_spec` coerced
+every recommended value through `str(...)`, so the planner's `recommended_value: False` for
+`confirm_execute` reached the console as the string `"False"`, and `Boolean("False")` is
+`true` — the live-execution confirmation checkbox rendered pre-checked against the backend's
+intent. `ado2gh/agents/migration_agent/hitl/form_fields.py` and `.../hitl/forms.py` now pass a
+`bool` through unchanged and stringify only non-boolean values, through the single
+`normalize_recommended_value` helper both files share; `build_field_recommendations` emits the
+real boolean for `dry_run` instead of `"true"`/`"false"`.
+`apps/migration-ui/src/lib/agent.ts` widens `AgentFormField.recommended_value` back to
+`string | boolean` — GAP-059 had narrowed it to `string` to match the wire shape of the time —
+and `apps/migration-ui/src/lib/agentChat.ts` keeps `parseBooleanValue` as defence in depth
+while casting a boolean to its string form for a select, because `dry_run` is a boolean field
+drawn as a select whose option values are strings. The `confirm_execute` fallback for a field
+with no recommendation already returned unchecked, under GAP-059.
+
+*Migration note.* Any client rendering agent HITL forms must accept `true`/`false` as well as
+`"true"`/`"false"` for `recommended_value`; one that applied `Boolean(...)` to the string form
+will now, correctly, see an unchecked confirmation box. No server-side authority changes: live
+execution was and remains re-checked from server-held state before any run, independent of the
+submitted `confirm_execute`.
+
+*Snapshot impact: none.* No route path, CLI command, environment variable or table name is
+touched; the payload field type is not one of the four frozen keys. Verified:
+`tests/contract/test_public_surface_snapshot.py` passes unchanged.
 
 **12. `GET /v1/settings/cloud-credentials` no longer accepts `scan`. Decision (operator,
 2026-09-13): approved by operator instruction.** The listing endpoint accepted `?scan=true` to
@@ -722,6 +843,70 @@ capability and additionally writes a `cloud_credentials.scanned` audit event.
 recorded in `http_routes` and are not among the four frozen keys. Verified by
 `tests/contract/test_public_surface_snapshot.py`; the removal is covered by
 `tests/contract/test_cloud_credentials_contracts.py::test_listing_never_probes_the_host`.
+
+**13. `JobRecord` gains `created_at` and `updated_at` (GAP-054). Decision (operator,
+2026-09-13): approved.** Every job store already passed both timestamps to the `JobRecord`
+constructor and `DynamoDBJobStore._save` already read `record.created_at`, but the model
+declared neither field, so pydantic dropped them at construction and raised on assignment.
+`DynamoDBJobStore.enqueue` therefore failed on its first write, and `complete()`/`fail()` each
+raised `ValueError` — which, through the worker's catch-then-`fail()` fallback in
+`ado2gh/core/orchestration/worker.py`, killed the worker process instead of recording one
+failed job. `ado2gh/models.py` now declares both fields with UTC `default_factory` defaults,
+and the ten `# type: ignore` comments added across `ado2gh/state/job_store.py` to suppress the
+symptom are removed.
+
+*Migration note.* The job payload returned by `POST /v1/jobs` and `GET /v1/jobs/{job_id}` gains
+two ISO-8601 timestamp keys, `created_at` and `updated_at`, when serialized through
+`model_dump(mode="json")` or returned by a FastAPI response — a plain `model_dump()` keeps them
+as `datetime` objects (`tests/unit/test_gap_054_job_record_timestamps.py:175`). No in-repo
+client reads these routes; an external client that asserts an exact key set on the job object
+must be widened. No stored schema changes — the SQLite and Postgres `jobs` tables already carry
+both columns, and this change only stops discarding them on the way out.
+
+*Snapshot impact: none.* Both route paths are unchanged, no table is added or renamed, and
+model fields are not among the four frozen keys.
+
+**14. New environment variable `ADO2GH_TRUSTED_PROXY` (GAP-074). Decision (operator,
+2026-09-13): approved by operator instruction ("Remediate all findings").** GAP-074 found that
+`_is_https_deployment` let a client-supplied `X-Forwarded-Proto` decide whether the
+platform session cookie carries `Secure`, so any client could downgrade its own session
+credential to one a network attacker can read. The scheme the request actually arrived on
+cannot be overridden by a header any more; a deployment that terminates TLS at a reverse
+proxy opts in with `ADO2GH_TRUSTED_PROXY` (boolean, `1`/`true`/`yes`, default false), and
+only then is the last forwarded hop believed — the last element of the last
+`X-Forwarded-Proto` field, or of RFC 7239 `Forwarded` when that header is absent. Default
+false keeps every existing local and compose deployment on exactly the behaviour it had.
+Recorded in `tests/contract/public_surface_snapshot.json` `env_vars`, `.env.example` and
+`docs/LOCAL_DEVELOPMENT.md` § 8; commit `e6129a8`.
+
+*Snapshot impact: yes — one name added to `env_vars`.* `ADO2GH_TRUSTED_PROXY` joins the frozen
+list; no route, CLI command or table changes. Verified:
+`tests/contract/test_public_surface_snapshot.py` passes with the added entry recorded.
+
+**15. `RunWaveRequest.dry_run` and `PhaseRunRequest.dry_run` default to true (GAP-099).
+Decision (operator, 2026-09-13): approved by operator instruction ("Remediate all
+findings") — the same blanket approval already recorded for the other findings-driven
+contract changes in this batch.** Both fields previously defaulted to `false`, so a
+`POST /v1/migrate` or `POST /v1/phase/run` body that omitted `dry_run`, or a `POST /v1/jobs`
+body naming the migrate-repo job type whose payload the background worker forwards into
+`RunWaveRequest` unchanged (`ado2gh/core/orchestration/worker.py`), ran for real. Entry 9 above
+already flipped the three CLI flags and twelve internal `ExecutionMode` signature defaults to
+preview-first; this closes the same gap on the two Pydantic request bodies those internal
+signatures sit behind, which entry 9 did not touch. `ado2gh/api/contracts.py:38`
+(`RunWaveRequest.dry_run`) and `:67` (`PhaseRunRequest.dry_run`) now default to `true`. Applied
+in commit `bd5a03c`.
+
+*Migration note.* An external caller that builds either body from the OpenAPI schema or a
+hand-written request and relied on an omitted `dry_run` field running for real must now add
+`"dry_run": false` explicitly. Every shipped in-repo caller (the CLI, the console's step
+executor) already stated the field, so nothing in this repository changes behaviour at runtime;
+a queued migrate-repo job whose stored payload omitted the field previously ran live and now
+previews.
+
+*Snapshot impact: none.* `tests/contract/test_public_surface_snapshot.py` freezes CLI commands,
+HTTP routes (path and method), environment variables and DB table names; it does not freeze a
+Pydantic request field's default, so no snapshot edit is needed. Confirmed green in the
+targeted verify run (commit `bd5a03c`).
 
 **Contract changes still awaiting sign-off.** None. The four that were — GAP-007, GAP-008,
 GAP-003 and GAP-017 — were signed off by operator instruction on 2026-09-13 and are entries

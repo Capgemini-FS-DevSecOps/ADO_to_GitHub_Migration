@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-07
 
-**Status**: Implemented (2026-09-13) — four high gaps (GAP-019, GAP-024, GAP-031, GAP-054) and the FR-024 contract items listed in plan.md § Approved contract changes remain open pending operator decisions
+**Status**: Implemented (2026-09-13, register merge completed 2026-09-22) — one high gap (GAP-069) remains `deferred`, pending an operator decision about where a DynamoDB deployment's audit database should live; every other critical or high gap in the register, including the three FR-024 contract items (GAP-019, GAP-024, GAP-054) and GAP-031 (resolved without a contract change, all four previously left open pending the same batch of operator decisions), is `remediated`
 
 **Input**: User description: "Go through each part of the source code and identify all functions, invoke the ponytail skill and update all function signatures with clean code best practices. Go through the overall architecture, and identify and remediate all critical architecture gaps for this repository."
 
