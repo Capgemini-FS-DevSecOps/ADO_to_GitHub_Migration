@@ -139,20 +139,10 @@ class InvokeBulkPlannerArgs(BaseModel):
     )
 
 
-def get_orchestrator_tools(
-    accel_get: Callable[..., Any] | None = None,
-    session_token: str | None = None,
-    session_getter: Callable[[], dict[str, Any]] | None = None,
-) -> list[StructuredTool]:
-    """Build the tool set for the Orchestrator agent.
-
-    - ado_api_query: generic read-only ADO API access
-    - github_api_query: generic read-only GitHub API access
-    - invoke_planner / invoke_bulk_planner: route to the Planner agent
-
-    Returns:
-        The orchestrator's StructuredTool list with the shared tools prepended.
-    """
+def _build_ado_api_query_tool(
+    accel_get: Callable[..., Any] | None, session_token: str | None
+) -> StructuredTool:
+    """Build the read-only Azure DevOps API query tool."""
 
     async def ado_api_query(endpoint: str) -> dict[str, Any]:
         """Query the Azure DevOps API (read-only). Pass an endpoint path like 'projects/{project}/repos/{repo}'."""
@@ -164,6 +154,19 @@ def get_orchestrator_tools(
         except Exception as e:
             return {"error": str(e)}
 
+    return StructuredTool.from_function(
+        coroutine=ado_api_query,
+        name="ado_api_query",
+        description="Query the Azure DevOps API (read-only). Pass an endpoint path like 'projects/{project}/repos/{repo}'.",
+        args_schema=AdoApiQueryArgs,
+    )
+
+
+def _build_github_api_query_tool(
+    accel_get: Callable[..., Any] | None, session_token: str | None
+) -> StructuredTool:
+    """Build the read-only GitHub API query tool."""
+
     async def github_api_query(endpoint: str) -> dict[str, Any]:
         """Query the GitHub API (read-only). Pass an endpoint path like 'repos/{org}/{repo}'."""
         if not accel_get:
@@ -173,6 +176,19 @@ def get_orchestrator_tools(
             return await accel_get(f"{GITHUB_PROXY_PREFIX}/{path}", session_token=session_token)
         except Exception as e:
             return {"error": str(e)}
+
+    return StructuredTool.from_function(
+        coroutine=github_api_query,
+        name="github_api_query",
+        description="Query the GitHub API (read-only). Pass an endpoint path like 'repos/{org}/{repo}'.",
+        args_schema=GitHubApiQueryArgs,
+    )
+
+
+def _build_invoke_planner_tool(
+    _accel_get: Callable[..., Any] | None, _session_token: str | None
+) -> StructuredTool:
+    """Build the single-repository Planner handoff tool. Takes no accelerator access — the handoff itself carries no API call."""
 
     def invoke_planner(repository_id: str, *, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
         """Invoke the Planner agent to load discovery data, validate the repository, and build a migration plan.
@@ -191,6 +207,24 @@ def get_orchestrator_tools(
             "phase": phase,
         }
 
+    return StructuredTool.from_function(
+        func=invoke_planner,
+        name="invoke_planner",
+        description=(
+            "Invoke the Planner agent to build a migration plan for a single repository. "
+            "Call this AFTER collecting repository_id and execution mode from the user. "
+            "The Planner loads discovery data, validates the repo, and builds the plan. "
+            "If the repo is not found, it returns suggestions for valid repo names."
+        ),
+        args_schema=InvokePlannerArgs,
+    )
+
+
+def _build_invoke_bulk_planner_tool(
+    _accel_get: Callable[..., Any] | None, _session_token: str | None
+) -> StructuredTool:
+    """Build the bulk Planner handoff tool. Takes no accelerator access — the handoff itself carries no API call."""
+
     def invoke_bulk_planner(repository_ids: list[str], *, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
         """Invoke the Planner agent for bulk migration of multiple repositories.
 
@@ -206,41 +240,67 @@ def get_orchestrator_tools(
             "phase": phase,
         }
 
+    return StructuredTool.from_function(
+        func=invoke_bulk_planner,
+        name="invoke_bulk_planner",
+        description=(
+            "Invoke the Planner agent for bulk migration of multiple repositories. "
+            "Use this when the user wants to migrate several repos at once. "
+            "Each repository_id should be in Project/RepoName format. "
+            "The Planner builds a migration plan with all repos queued for sequential PEV processing."
+        ),
+        args_schema=InvokeBulkPlannerArgs,
+    )
+
+
+# The orchestrator's tool names are dispatched by name a second time, in
+# `nodes/orchestrator_tools.py` (a separate file, currently being edited by
+# another change and off limits here). That dispatcher recognizes nine tool
+# names in total, but only five of them are ever bound to the language model
+# as a callable `StructuredTool` from this module:
+#
+# - get_current_profile: built by `shared_tools.append_shared_tools`, prepended below.
+# - ado_api_query, github_api_query, invoke_planner, invoke_bulk_planner: built here.
+#
+# The remaining four names are dispatcher-only: the orchestrator node emits
+# them as tool calls directly (generate_plan, run_migration_pev,
+# fetch_migration_status, request_user_input are never in this module's
+# schema, so the language model never sees them as bound tools). They are
+# listed here with no builder so this registry stays the complete, one-place
+# record of every name the dispatcher must recognize; a test
+# (`tests/unit/test_orchestrator_tool_registry.py`) checks the two never
+# drift apart.
+ORCHESTRATOR_TOOL_REGISTRY: dict[str, Callable[[Callable[..., Any] | None, str | None], StructuredTool] | None] = {
+    "get_current_profile": None,
+    "ado_api_query": _build_ado_api_query_tool,
+    "github_api_query": _build_github_api_query_tool,
+    "invoke_planner": _build_invoke_planner_tool,
+    "invoke_bulk_planner": _build_invoke_bulk_planner_tool,
+    "generate_plan": None,
+    "run_migration_pev": None,
+    "fetch_migration_status": None,
+    "request_user_input": None,
+}
+
+
+def get_orchestrator_tools(
+    accel_get: Callable[..., Any] | None = None,
+    session_token: str | None = None,
+    session_getter: Callable[[], dict[str, Any]] | None = None,
+) -> list[StructuredTool]:
+    """Build the tool set for the Orchestrator agent from ``ORCHESTRATOR_TOOL_REGISTRY``.
+
+    - ado_api_query: generic read-only ADO API access
+    - github_api_query: generic read-only GitHub API access
+    - invoke_planner / invoke_bulk_planner: route to the Planner agent
+
+    Returns:
+        The orchestrator's StructuredTool list with the shared tools prepended.
+    """
     tools = [
-        StructuredTool.from_function(
-            coroutine=ado_api_query,
-            name="ado_api_query",
-            description="Query the Azure DevOps API (read-only). Pass an endpoint path like 'projects/{project}/repos/{repo}'.",
-            args_schema=AdoApiQueryArgs,
-        ),
-        StructuredTool.from_function(
-            coroutine=github_api_query,
-            name="github_api_query",
-            description="Query the GitHub API (read-only). Pass an endpoint path like 'repos/{org}/{repo}'.",
-            args_schema=GitHubApiQueryArgs,
-        ),
-        StructuredTool.from_function(
-            func=invoke_planner,
-            name="invoke_planner",
-            description=(
-                "Invoke the Planner agent to build a migration plan for a single repository. "
-                "Call this AFTER collecting repository_id and execution mode from the user. "
-                "The Planner loads discovery data, validates the repo, and builds the plan. "
-                "If the repo is not found, it returns suggestions for valid repo names."
-            ),
-            args_schema=InvokePlannerArgs,
-        ),
-        StructuredTool.from_function(
-            func=invoke_bulk_planner,
-            name="invoke_bulk_planner",
-            description=(
-                "Invoke the Planner agent for bulk migration of multiple repositories. "
-                "Use this when the user wants to migrate several repos at once. "
-                "Each repository_id should be in Project/RepoName format. "
-                "The Planner builds a migration plan with all repos queued for sequential PEV processing."
-            ),
-            args_schema=InvokeBulkPlannerArgs,
-        ),
+        builder(accel_get, session_token)
+        for builder in ORCHESTRATOR_TOOL_REGISTRY.values()
+        if builder is not None
     ]
     return append_shared_tools(
         tools,

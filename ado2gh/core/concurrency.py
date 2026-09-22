@@ -3,19 +3,33 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterator
+
+
+def _defaults() -> "ConcurrencySettings":  # noqa: F821 - forward ref, imported lazily below
+    """Return the one source of these numbers, imported lazily.
+
+    ``ado2gh.api`` imports ``ado2gh.core.migration_engine``, which imports
+    this module, so importing ``ConcurrencySettings`` at module load time
+    would be a circular import. Deferring the import to first use — after
+    both modules have finished loading — avoids that without duplicating
+    the defaults here.
+    """
+    from ado2gh.api.settings_models import ConcurrencySettings
+
+    return ConcurrencySettings()
 
 
 @dataclass
 class ConcurrencyConfig:
     """Worker-pool sizes and API rate ceilings for a migration run."""
 
-    max_git_workers: int = 4
-    max_repo_workers: int = 8
-    max_pipeline_workers: int = 16
-    max_ado_rps: float = 10.0
-    max_gh_rps: float = 20.0
+    max_git_workers: int = field(default_factory=lambda: _defaults().max_git_workers)
+    max_repo_workers: int = field(default_factory=lambda: _defaults().max_repo_workers)
+    max_pipeline_workers: int = field(default_factory=lambda: _defaults().max_pipeline_workers)
+    max_ado_rps: float = field(default_factory=lambda: _defaults().max_ado_rps)
+    max_gh_rps: float = field(default_factory=lambda: _defaults().max_gh_rps)
 
 
 class ConcurrencyManager:
@@ -64,14 +78,17 @@ class ConcurrencyManager:
         Returns:
             A new manager, not the shared singleton.
         """
+        defaults = _defaults()
         return cls(ConcurrencyConfig(
-            max_git_workers=int(cfg.get("max_git_workers", 4)),
-            max_repo_workers=int(cfg.get("max_repo_workers", cfg.get("repo_parallel", 8))),
-            max_pipeline_workers=int(
-                cfg.get("max_pipeline_workers", cfg.get("pipeline_parallel", 16))
+            max_git_workers=int(cfg.get("max_git_workers", defaults.max_git_workers)),
+            max_repo_workers=int(
+                cfg.get("max_repo_workers", cfg.get("repo_parallel", defaults.max_repo_workers))
             ),
-            max_ado_rps=float(cfg.get("max_ado_rps", 10.0)),
-            max_gh_rps=float(cfg.get("max_gh_rps", 20.0)),
+            max_pipeline_workers=int(
+                cfg.get("max_pipeline_workers", cfg.get("pipeline_parallel", defaults.max_pipeline_workers))
+            ),
+            max_ado_rps=float(cfg.get("max_ado_rps", defaults.max_ado_rps)),
+            max_gh_rps=float(cfg.get("max_gh_rps", defaults.max_gh_rps)),
         ))
 
     @classmethod

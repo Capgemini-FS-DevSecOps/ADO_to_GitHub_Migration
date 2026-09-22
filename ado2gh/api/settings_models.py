@@ -112,6 +112,32 @@ class MigrationProfile:
 
 
 @dataclass
+class ConcurrencySettings:
+    """The single source of the default worker-pool sizes and API rate ceilings.
+
+    ``ado2gh/core/concurrency.py`` reads these same defaults for its
+    ``ConcurrencyConfig`` dataclass and its ``from_dict`` fallback values, so a
+    limit is changed once, here, rather than in two places that can drift
+    apart.
+    """
+
+    max_git_workers: int = 4
+    """How many git clone/push operations may run at the same time."""
+
+    max_repo_workers: int = 8
+    """How many repositories may be migrated at the same time."""
+
+    max_pipeline_workers: int = 16
+    """How many pipeline conversions may run at the same time."""
+
+    max_ado_rps: float = 10.0
+    """The ceiling on Azure DevOps API requests per second."""
+
+    max_gh_rps: float = 20.0
+    """The ceiling on GitHub API requests per second."""
+
+
+@dataclass
 class AdvancedSettings:
     """Deployment-wide migration defaults shared by every profile.
 
@@ -131,6 +157,8 @@ class AdvancedSettings:
     phases: list[dict[str, Any]] = field(default_factory=list)
     workflow_layout_policy: str = "modular"
     policy_rules: dict[str, Any] = field(default_factory=dict)
+    concurrency: ConcurrencySettings = field(default_factory=ConcurrencySettings)
+    """The worker-pool and rate-limit defaults new ``ConcurrencyManager`` instances start from."""
 
 
 @dataclass

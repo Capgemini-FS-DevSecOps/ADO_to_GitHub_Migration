@@ -73,3 +73,87 @@ class StorageConfig:
             dynamodb_table=dynamodb_table,
             aws_region=aws_region,
         )
+
+
+@dataclass(frozen=True)
+class CheckpointStorageSettings:
+    """Resolved settings for the LangGraph checkpoint store used by the agent graph.
+
+    This is a separate store from the migration state database that
+    :class:`StorageConfig` resolves: the checkpoint database keeps the agent
+    conversation and plan-execute-validate loop (PEV) state, defaults to its
+    own path, and is picked independently. The fields here mirror, one for
+    one, the environment variables ``ado2gh/agents/migration_agent/graph/builder.py``
+    reads directly today; the defaults are its current hardcoded literals.
+    """
+
+    backend: str
+    """The lowercased ``ADO2GH_STORAGE_BACKEND`` value. ``"postgresql"`` and
+    ``"postgres"`` both select PostgreSQL; anything else falls back to SQLite."""
+
+    sqlite_path: str
+    """Where the SQLite checkpoint database file lives."""
+
+    database_url: str
+    """A full PostgreSQL connection string. When empty, the individual
+    ``pg_*`` fields are combined into one by :meth:`postgres_dsn`."""
+
+    pg_host: str
+    """PostgreSQL host, used only when ``database_url`` is empty."""
+
+    pg_port: int
+    """PostgreSQL port, used only when ``database_url`` is empty."""
+
+    pg_user: str
+    """PostgreSQL user, used only when ``database_url`` is empty."""
+
+    pg_password: str
+    """PostgreSQL password, used only when ``database_url`` is empty."""
+
+    pg_dbname: str
+    """PostgreSQL database name, used only when ``database_url`` is empty."""
+
+    @classmethod
+    def from_env(cls) -> CheckpointStorageSettings:
+        """Resolve checkpoint storage settings from the environment.
+
+        Reads exactly the variables the graph builder reads today
+        (``ADO2GH_STORAGE_BACKEND``, ``ADO2GH_DATABASE_URL``,
+        ``ADO2GH_SQLITE_PATH``, ``PGHOST``, ``PGPORT``, ``PGUSER``,
+        ``PGPASSWORD``, ``PGDATABASE``); adds no new ones.
+
+        Returns:
+            The resolved settings for whichever backend
+            ``ADO2GH_STORAGE_BACKEND`` selects.
+        """
+        return cls(
+            backend=(os.environ.get("ADO2GH_STORAGE_BACKEND") or "sqlite").lower(),
+            sqlite_path=os.environ.get("ADO2GH_SQLITE_PATH", "data/agent_checkpoints.db"),
+            database_url=os.environ.get("ADO2GH_DATABASE_URL", ""),
+            pg_host=os.environ.get("PGHOST", "localhost"),
+            pg_port=int(os.environ.get("PGPORT", 5432)),
+            pg_user=os.environ.get("PGUSER", "ado2gh"),
+            pg_password=os.environ.get("PGPASSWORD", ""),
+            pg_dbname=os.environ.get("PGDATABASE", "ado2gh"),
+        )
+
+    def is_postgres(self) -> bool:
+        """Whether the resolved backend selects PostgreSQL.
+
+        Returns:
+            True for ``"postgres"`` or the ``"postgresql"`` alias, matching
+            what the graph builder accepts today.
+        """
+        return self.backend in ("postgresql", "postgres")
+
+    def postgres_dsn(self) -> str:
+        """Build the connection string used when ``database_url`` is not set.
+
+        Returns:
+            A ``postgresql://user:password@host:port/dbname`` string built
+            from the individual ``pg_*`` fields.
+        """
+        return (
+            f"postgresql://{self.pg_user}:{self.pg_password}"
+            f"@{self.pg_host}:{self.pg_port}/{self.pg_dbname}"
+        )
