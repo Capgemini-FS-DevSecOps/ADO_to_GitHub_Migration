@@ -545,6 +545,70 @@ text. This gap is recorded here rather than silently treated as confirmed.
 The open critical-or-high set after this pass is unchanged: one entry, GAP-069, `deferred`.
 All three new critical entries (GAP-111, GAP-120, GAP-121) are `remediated`.
 
+**Addendum (2026-09-22) — register-pending merge, third scribe pass.** One hand-off note,
+`register-pending/finisher-notes.md`, was merged into `gap-register.md` and this file in one
+pass: five new ids (GAP-123 through GAP-127), one existing entry's residual closed (GAP-079),
+and `revert_proof` evidence added to three existing entries that lacked it (GAP-120, GAP-121,
+GAP-122).
+
+New totals: 24 critical / 49 high / 35 medium / 19 low, 127 total (was 23/47/33/19/122).
+
+Five new ids, one line each:
+
+- GAP-123 (GAP-TOKEN-09, critical, remediated) — an escaped quote inside a secret value ended
+  the masking match early, leaking the remainder of the value into the audit record
+  (`a23f216`)
+- GAP-124 (GAP-AGT-33, high, remediated) — a locally denied agent-session live request never
+  closed the platform approval row it had opened, leaving it available for a different
+  approver to grant later (`eaed276`)
+- GAP-125 (GAP-AUTH-14, medium, remediated) — a creation-time scope mismatch on a live-approval
+  request was correctly refused but wrote no audit event (`4dc1c21`)
+- GAP-126 (GAP-TOOL-10, high, remediated) — the CI test job hung indefinitely on the full
+  coverage run instead of completing or failing (`9dec5d4`, `b9cbc26`)
+- GAP-127 (GAP-TOOL-11, medium, remediated, combined) — CI hid three Python-3.11
+  incompatibilities behind the hang: a `Path.walk()` call needing 3.12, a missing `postgres`
+  extra on the test job, and a click-version-dependent literal in the public-surface snapshot
+  test (`b219176`, `29142c9`, `76eb59f`)
+
+GAP-123 through GAP-125 come from the second post-fix review round's Findings A/B/C, each
+independently verified against live source before any change and given a worktree revert
+proof (reverting the fix commit and confirming the corresponding test then fails). GAP-126 and
+GAP-127 come from the CI hang investigation and its aftermath: the hang itself (root-caused to
+an orphaned checkpoint-clear task from `new_isolated_agent_session()` wedging the ephemeral
+event loop `TestClient(app).post()` opens per request) was fixed first, which then let three
+previously invisible CI-only failures surface and be fixed in a follow-up push — of the three,
+only the `Path.walk()` call is a genuine Python-3.11 incompatibility; the other two are a
+missing dependency extra and a click-version-dependent literal.
+Final CI result: run `35729268841` completed `success` on all three jobs (`lint`,
+`ui-permissions`, `test`), the first fully green run since the hang started masking the test
+job's real outcome at commit `a18be4d`.
+
+GAP-079's residual (`PipelineRunStartRequest.dry_run` still `bool = True`, recorded as open
+inside the entry by the prior pass) is closed by this pass: commit `8bc89dd` widens the field
+to `Optional[bool] = None`, matching the `SessionRequest` half closed on 2026-09-13. The entry's
+`status` moves from `remediated (residual recorded)` to plain `remediated`; both halves of the
+original finding are now genuinely fixed.
+
+GAP-120, GAP-121 and GAP-122 each gained a real `revert_proof` in this pass — the prior pass
+flagged all three as "not yet performed... confirm before relying on this entry's `remediated`
+status for release sign-off". A throwaway detached worktree was used to revert each fix commit
+in turn (`ffe0eea`, `98c4cbf`, `2b3b12a`) and confirm the corresponding test then fails
+(collection `ImportError` for GAP-120 and GAP-122, `4 failed, 1 passed` for GAP-121), then
+discarded before the next revert; no commits landed on the real branch. The stale-filename flag
+the prior pass left on these three entries (`test_gap_108_...`/`test_gap_109_...`/
+`test_gap_110_...` naming, colliding with this pass's own GAP-108 through GAP-111) is already
+resolved: `tests/auth/test_gap_120_pipeline_approval_scope_match.py`,
+`tests/auth/test_gap_121_short_and_quoted_secret_values.py` and
+`tests/agent/test_gap_122_session_live_request_audited.py` are the files on disk today, renamed
+by the Finisher's coordinator-assigned follow-up work ahead of this scribe pass (confirmed by
+`ls`, not renamed here). The two stale `GAP-110`-labelled `docs/STRUCTURAL_CHANGELOG.md` rows
+the prior pass also flagged were left alone, unchanged — that changelog is append-only and
+outside this pass's remit too.
+
+The open critical-or-high set after this pass is unchanged: one entry, GAP-069, `deferred`.
+Three of the five new entries are critical-or-high (GAP-123, GAP-124, GAP-126); all three are
+`remediated`.
+
 
 ## Technical Context
 
@@ -1117,6 +1181,7 @@ sections of `docs/STRUCTURAL_CHANGELOG.md` and against
 | Increment 10 (`agents/`) | 59 → **60** | `ca3f3b2` |
 | Increment 12 (`services/accelerator_api/`) | 60 → **61** | `ef7a6c7` |
 | T077 review tests (2026-09-13) | 61 → **62** | `run-ratchet-62.txt`, measured 62.39 % |
+| Phase 4 closure (2026-09-22) — widened to `ado2gh` + `services` combined | 62 → **69** | `0ca7a99`; measured 69.28 % locally (`.venv/Scripts/python.exe -m pytest --cov=ado2gh --cov=services --cov-report=term-missing --cov-fail-under=0 -q`, 21,777 statements, 6,693 missed) and 69.24 % on CI Python 3.11 (`pytest --cov=ado2gh --cov=services --cov-fail-under=69 --timeout=600`, run `35729268841`). The ratchet had only ever measured `ado2gh`; widening the scope to the modules `services/agent/routes/form_routes.py` and others actually run in production corrects that, so the raised gate sits below the old `ado2gh`-only 62 baseline's raw percentage even though it is strictly more honest — the denominator grew by more than the numerator did. `.github/workflows/ci.yml` also gained `workflow_dispatch:` and a `"feature/**"` push trigger in the same commit. |
 
 The gate has never been lowered, which is the compensating control recorded against
 GAP-022 (GAP-TOOL-01). Increments 10, 11 and 12 were still in flight when this trail

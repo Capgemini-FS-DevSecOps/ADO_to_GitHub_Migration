@@ -83,6 +83,64 @@ DynamoDB claim-conflict issue in `ado2gh/state/job_store.py`
 job-store backend, not the default SQLite path this addendum touched, and was
 already tracked before this session.
 
+**Phase 6 — CI hang, root cause and fix.** The `test` job hang flagged in the
+prior section as an open action item is fixed. Root cause:
+`services/agent/routes/session_routes.py::create_session` called
+`new_isolated_agent_session()`, which unconditionally cleared any prior
+LangGraph checkpoint thread via a fire-and-forget `loop.create_task(...)` —
+safe on a long-lived server loop, but not under Starlette's bare
+`TestClient(app).post()`, which opens and tears down a fresh anyio
+blocking-portal event loop per request. The detached task opens an
+`AsyncSqliteSaver` checkpointer over `aiosqlite`, whose worker thread is
+non-daemon, and could still be pending when the portal's loop shutdown tried
+to cancel-and-gather it — cancellation does not reliably unstick a pending
+aiosqlite thread-bridged `Future`, so the portal's `thread.join()` waited
+forever. Reproduced locally against a throwaway Python-3.11 venv pinned to
+CI's exact dependency versions, with full thread stacks confirming the exact
+call chain. Fixed in three parts: removed the unconditional clear from the
+create path (relocated to the one caller that legitimately needs it,
+session rehydration); marked the checkpointer's aiosqlite worker thread
+`daemon=True` as defense in depth; and bounded the fire-and-forget clear
+with a five-second timeout as a second layer (confirmed by direct experiment
+that the timeout alone does not close the hang — the first change is what
+actually stops it). Also added a 25-minute job timeout and
+`pytest --timeout=600 --timeout-method=thread` so any future hang fails
+loudly instead of running indefinitely. Commits `9dec5d4`, `b9cbc26`. Verified
+locally: 2165 passed, 26 skipped, 0 failed, 0 errors, 69.26% coverage,
+177.80s, no hang. Pushed at `b9cbc26`; run `35727384031` completed the `test`
+job in 1m59s versus 3+ hours of no result before — the hang itself is fixed.
+
+**Phase 7 — three Python-3.11 fixes the hang had been hiding.** With the hang
+gone, run `35727384031` completed and reported `4 failed, 33 errors`, all
+three pre-existing and unrelated to the hang fix: (1) `test_no_dynamodb.py`
+called `Path.walk()`, a Python-3.12-only method, against CI's Python 3.11 —
+swapped to `os.walk()` (commit `b219176`); (2) the `test` job's install line
+never included the `postgres` extra `pyproject.toml` already declares,
+producing 33 `ModuleNotFoundError: No module named 'psycopg2'` errors —
+added `postgres` to that one line (commit `29142c9`); (3) the `--version`
+option's recorded default in the public-surface contract snapshot flipped
+between `"False"` and `"<unset>"` depending on the installed click patch
+version's eager-resolution behavior for boolean flags — narrowed the
+snapshot collector's normalization to genuine boolean flags only (commit
+`76eb59f`; regenerating the snapshot under local click 8.4.2 produced a
+byte-identical file, so `public_surface_snapshot.json` itself did not need
+to change). Verified: targeted run 60/60 under a fresh Python-3.11 venv with
+click 8.5.0 and the `postgres` extra; full suite same venv, 2165 passed, 26
+skipped, coverage 69.24% (threshold 69%); `ruff`/`mypy` both clean. Pushed;
+run `35729268841` completed `success` on all three jobs (`lint`,
+`ui-permissions`, `test`) — the first fully green CI run on this branch.
+
+**Phase 8 — third register scribe pass.** Merged
+`register-pending/finisher-notes.md` into `gap-register.md`: five new
+entries, GAP-123 through GAP-127 (Findings A/B/C as GAP-123/124/125, the CI
+hang as GAP-126, the three Python-3.11 fixes as one combined GAP-127); the
+GAP-079 residual closed (commit `8bc89dd`); worktree-revert `revert_proof`
+evidence added to GAP-120/121/122. New register totals: 24 critical / 49
+high / 35 medium / 19 low, 127 total (was 23/47/33/19/122). The open
+critical-or-high set is unchanged: one entry, GAP-069, `deferred`. Detail:
+`gap-register.md` § Summary and `plan.md` § Completion summary, addendum
+dated 2026-09-22 (third scribe pass).
+
 ### 📄 Generated Files Summary
 
 - `tests/auth/test_gap_123_escaped_quote_secret_value_leak.py` — new, 3 tests
@@ -93,8 +151,19 @@ already tracked before this session.
   record of the failed ChatGPT consult attempts)
 - This file (`final-report.md`)
 
-Modified: `ado2gh/audit/redaction.py`, `services/agent/routes/execution_routes.py`,
-`ado2gh/api/live_approval_scopes.py`, `ado2gh/api/live_approval_store.py`.
+Modified (Findings A/B/C): `ado2gh/audit/redaction.py`,
+`services/agent/routes/execution_routes.py`, `ado2gh/api/live_approval_scopes.py`,
+`ado2gh/api/live_approval_store.py`.
+
+Modified (CI hang and Python-3.11 fixes, Phases 6-7):
+`ado2gh/agents/migration_agent/session/lifecycle.py`,
+`ado2gh/agents/migration_agent/graph/builder.py`, `.github/workflows/ci.yml`,
+`tests/unit/test_no_dynamodb.py`, `tests/contract/test_public_surface_snapshot.py`.
+
+Modified (register scribe pass, Phase 8):
+`specs/013-clean-code-arch-remediation/gap-register.md`,
+`specs/013-clean-code-arch-remediation/plan.md`,
+`specs/013-clean-code-arch-remediation/spec.md`.
 
 ### ⚠️ Action Required (Incomplete Parts)
 
@@ -111,57 +180,40 @@ Modified: `ado2gh/audit/redaction.py`, `services/agent/routes/execution_routes.p
   claimed. The three fixes were instead verified through direct reproduction
   (before/after probes, worktree revert proofs) and the existing test suite,
   which is a real but narrower form of verification than a second reviewer's
-  read.
-- **CI is hung, not merely slow — needs operator attention.** Commits
-  `a23f216`, `eaed276`, `4dc1c21` (plus the earlier `0f22911` mypy fix) were
-  pushed to `feature/ado-agentic-ai`; a new run was triggered (run id
-  `35702328507`, head `4dc1c21`). `lint` and `ui-permissions` completed
-  successfully in under a minute each, but the `pytest --cov=ado2gh
-  --cov=services --cov-fail-under=69` step started at `07:59:19Z` and was
-  still `in_progress` at `11:10Z` — nearly 3 hours, against the documented
-  baseline of ~100s for the full suite. This is not isolated to this run:
-  every CI run on this branch since the PR-creation commit (`a18be4d`,
-  predating this addendum's three fixes) shows the same pattern — `lint` and
-  `ui-permissions` complete quickly, `test` never finishes. Checked
-  githubstatus.com history for a same-day Actions incident and found none, so
-  this reads as a real hang in the run, not a platform outage. It matches
-  this project's own documented flake in the Testing section of
-  `CLAUDE.md`: a leaked non-daemon aiosqlite checkpointer thread can hang
-  pytest after the last test completes, diagnosable with `py-spy dump`, with
-  `data/agent_checkpoints.db-wal` appearing mid-run as the tell for a test
-  reaching the real checkpoint database instead of its per-test temp file.
-  Locally-run subsets (this addendum's targeted tests, the related
-  `tests/core`/`tests/agent`/`tests/auth`/`tests/pipeline` surface) completed
-  normally in seconds, so the trigger is specific to a full-suite run with
-  coverage instrumentation on the GitHub-hosted runner, not something this
-  addendum's three commits introduce on their own — the identical hang
-  predates them. Recommend the operator cancel the stuck runs and re-run, and
-  if it recurs, follow the `py-spy dump` playbook `CLAUDE.md` already
-  documents for this exact symptom before merging. Runs to review:
-  `https://github.com/Capgemini-FS-DevSecOps/ADO_to_GitHub_Migration/actions/runs/35702328507`
-  and, since it is the earliest run showing the same hang,
-  `https://github.com/Capgemini-FS-DevSecOps/ADO_to_GitHub_Migration/actions/runs/35699227689`.
+  read. **This gap is still open after Phases 6-8** — no further consult
+  attempt was made in this pass, so the second-reviewer pass on findings
+  A/B/C (commits `a23f216`, `eaed276`, `4dc1c21`) is still owed before
+  merging.
+- **CI is green.** The hang described in an earlier version of this report is
+  fixed (Phase 6, commits `9dec5d4`/`b9cbc26`); the three Python-3.11
+  failures it had been hiding are fixed (Phase 7, commits `b219176`,
+  `29142c9`, `76eb59f`). Run `35729268841` completed `success` on all three
+  jobs (`lint`, `ui-permissions`, `test`) — nothing further needed here.
+- **Register totals (Phase 8).** `gap-register.md` now holds 127 gaps: 24
+  critical / 49 high / 35 medium / 19 low. The open critical-or-high set is
+  unchanged from before this pass: one entry, GAP-069 (DynamoDB claim
+  conflict), `deferred`.
 - The dirty working tree at session start (`.gitignore`, `.specify/**`,
   `AGENTS.md`, `CLAUDE.md`, and a handful of untracked files such as
-  `coverage-run-phase4.txt`, `guard-tests-phase4.txt`) was left untouched —
-  none of it was created or modified by this addendum, and it falls outside
-  the path-limited commits this session made.
+  `coverage-run-phase4.txt`, `guard-tests-phase4.txt`) is still untouched —
+  none of it was created or modified by this or the prior addendum, and it
+  falls outside the path-limited commits this session made.
 - Two stash entries (`stash@{0}: temp-check-baseline`, `stash@{1}`, a
-  throwaway mutation-testing scratch) remain in the repository from an
+  throwaway mutation-testing scratch) still remain in the repository from an
   earlier session segment; an attempt to drop `stash@{1}` was blocked by the
   auto-mode destructive-action classifier. An operator with stash-drop
-  permission can clear it once confirmed disposable.
+  permission can clear both once confirmed disposable.
 
 ### ⏭️ Next Steps
 
-1. Confirm CI run `35702328507`'s `test` job conclusion (in progress as of
-   this report).
-2. Obtain the missing second-reviewer pass on findings A/B/C — either retry
+1. Obtain the missing second-reviewer pass on findings A/B/C — either retry
    the ChatGPT/Codex MCP bridge once it is diagnosed, or route through a
    human/alternate reviewer — before merging, per the project's standing
-   review requirement.
-3. Merge PR #7 into `main` once CI is green and the review gap above is
-   closed or explicitly waived by the operator.
-4. Decide whether the open DynamoDB claim-conflict finding
+   review requirement. This is now the only blocker: CI is green.
+2. Merge PR #7 into `main` once the review gap above is closed or explicitly
+   waived by the operator.
+3. Decide whether the open DynamoDB claim-conflict finding
    (GAP-069/GAP-STATE-06) needs action before or after this merge; it is
-   independent of this addendum's scope.
+   independent of this and the prior addendum's scope.
+4. Operator: drop the two stale stash entries once confirmed disposable
+   (blocked here by the auto-mode destructive-action classifier).
