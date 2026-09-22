@@ -20,7 +20,7 @@ def validate_github_token(token: str, gh_org: str = "") -> dict[str, Any]:
         "Accept": DEFAULT_GITHUB_CLIENT_SETTINGS.accept_header,
         "X-GitHub-Api-Version": DEFAULT_GITHUB_CLIENT_SETTINGS.api_version_header,
     }
-    timeout = DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds
+    timeout = DEFAULT_GITHUB_CLIENT_SETTINGS.credential_check_timeout_seconds
     try:
         rate_r = requests.get(
             f"{DEFAULT_GITHUB_CLIENT_SETTINGS.base_url}/rate_limit", headers=headers, timeout=timeout,

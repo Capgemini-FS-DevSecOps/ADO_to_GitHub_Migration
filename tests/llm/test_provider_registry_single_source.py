@@ -74,3 +74,13 @@ def test_is_known_provider_still_covers_every_registered_id():
     """Sanity check that the registry itself is untouched in shape."""
     for provider_id in PROVIDER_SPECS:
         assert is_known_provider(provider_id)
+
+
+def test_credential_check_timeout_stays_fast_and_separate_from_request_timeout():
+    """A credential connectivity check must fail fast (15 seconds), distinct
+    from the longer per-request timeout (30 seconds) used for real data calls.
+    """
+    from ado2gh.clients.gh_client import DEFAULT_GITHUB_CLIENT_SETTINGS
+
+    assert DEFAULT_GITHUB_CLIENT_SETTINGS.credential_check_timeout_seconds == 15.0
+    assert DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds == 30

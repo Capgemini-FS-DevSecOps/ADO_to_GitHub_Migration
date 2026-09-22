@@ -37,6 +37,11 @@ class GitHubClientSettings:
     """Value of the ``X-GitHub-Api-Version`` header."""
     request_timeout_seconds: int = 30
     """Per-request timeout, in seconds, for calls to the GitHub REST API."""
+    credential_check_timeout_seconds: float = 15.0
+    """Timeout, in seconds, for a credential connectivity check (rate limit,
+    current user, org lookup). Shorter than ``request_timeout_seconds`` on
+    purpose: a connectivity check should fail fast, while a real data request
+    may need to wait longer."""
 
 
 DEFAULT_GITHUB_CLIENT_SETTINGS = GitHubClientSettings()
