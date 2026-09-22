@@ -141,6 +141,27 @@ critical-or-high set is unchanged: one entry, GAP-069, `deferred`. Detail:
 `gap-register.md` § Summary and `plan.md` § Completion summary, addendum
 dated 2026-09-22 (third scribe pass).
 
+**Phase 9 — the owed second-reviewer pass, and a fourth and final scribe
+pass.** Terra (read-only, `codex exec`, artefact
+`run-codex-terra-abc.txt`) reviewed the Finding A/B/C diff and found two of
+the three fixes incomplete: GAP-123's escape-aware masking still left a lone
+trailing backslash before a closing quote unmasked, and GAP-124's denial
+forwarding had no test coverage for the platform deny call itself failing
+(a failed forward skipped the audit and left `resume-live` free to flip the
+session live anyway). Both closed same-day: commit `5663b11` masks the
+trailing backslash in both quoted branches of `_SECRET_KEY_VALUE_RE`;
+commit `5938388` audits the local denial before the platform-deny forward is
+attempted, audits a failed forward as its own
+`session.approve.denied.forward_failed` event, and makes
+`resume_live_internal` refuse with 409 when the session was already locally
+denied. Terra also raised one minor finding on GAP-125 (context-derived
+identifiers embedded unminimized in its new audit event) — recorded on the
+entry, not fixed, since it is not a live-execution bypass. The fourth scribe
+pass folded this into the register: `reopened_and_closed` fields on GAP-123
+and GAP-124, a `second_review` field on all three of GAP-123/124/125.
+Register totals unchanged: 127 gaps, 24/49/35/19. CI run `35733597922`
+(covering `5663b11`) completed `success` on all three jobs.
+
 ### 📄 Generated Files Summary
 
 - `tests/auth/test_gap_123_escaped_quote_secret_value_leak.py` — new, 3 tests
@@ -165,55 +186,45 @@ Modified (register scribe pass, Phase 8):
 `specs/013-clean-code-arch-remediation/plan.md`,
 `specs/013-clean-code-arch-remediation/spec.md`.
 
+Modified (second-reviewer follow-up and fourth scribe pass, Phase 9):
+`ado2gh/audit/redaction.py`, `services/agent/routes/execution_routes.py`,
+`tests/auth/test_gap_123_escaped_quote_secret_value_leak.py`,
+`tests/agent/test_gap_124_session_deny_closes_platform_approval.py`,
+`specs/013-clean-code-arch-remediation/gap-register.md`,
+`specs/013-clean-code-arch-remediation/plan.md`.
+
 ### ⚠️ Action Required (Incomplete Parts)
 
-- **ChatGPT/Codex consult did not complete.** The project rule and the
-  coordinator's instruction both call for one read-only review consult before
-  reporting these three fixes done. `mcp__chatgpt__ask_chatgpt` was tried four
-  times across this addendum, including a minimal connectivity probe, and
-  every attempt returned the identical error `"Codex exited with code 1.
-  Check Codex login status and CLI settings."` A direct `codex --version` /
-  `codex login status` in the same shell succeeded (`codex-cli 0.153.4`,
-  `Logged in using ChatGPT`), so the underlying CLI is authenticated and
-  working — the failure is in the MCP bridge that invokes it, not the login
-  itself. No review was obtained; this is reported as not done rather than
-  claimed. The three fixes were instead verified through direct reproduction
-  (before/after probes, worktree revert proofs) and the existing test suite,
-  which is a real but narrower form of verification than a second reviewer's
-  read. **This gap is still open after Phases 6-8** — no further consult
-  attempt was made in this pass, so the second-reviewer pass on findings
-  A/B/C (commits `a23f216`, `eaed276`, `4dc1c21`) is still owed before
-  merging.
-- **CI is green.** The hang described in an earlier version of this report is
-  fixed (Phase 6, commits `9dec5d4`/`b9cbc26`); the three Python-3.11
-  failures it had been hiding are fixed (Phase 7, commits `b219176`,
-  `29142c9`, `76eb59f`). Run `35729268841` completed `success` on all three
-  jobs (`lint`, `ui-permissions`, `test`) — nothing further needed here.
-- **Register totals (Phase 8).** `gap-register.md` now holds 127 gaps: 24
-  critical / 49 high / 35 medium / 19 low. The open critical-or-high set is
-  unchanged from before this pass: one entry, GAP-069 (DynamoDB claim
-  conflict), `deferred`.
-- The dirty working tree at session start (`.gitignore`, `.specify/**`,
-  `AGENTS.md`, `CLAUDE.md`, and a handful of untracked files such as
-  `coverage-run-phase4.txt`, `guard-tests-phase4.txt`) is still untouched —
-  none of it was created or modified by this or the prior addendum, and it
-  falls outside the path-limited commits this session made.
-- Two stash entries (`stash@{0}: temp-check-baseline`, `stash@{1}`, a
-  throwaway mutation-testing scratch) still remain in the repository from an
-  earlier session segment; an attempt to drop `stash@{1}` was blocked by the
+- **The second-reviewer pass on findings A/B/C is complete.** Terra
+  (read-only, `codex exec`, artefact `run-codex-terra-abc.txt`) reviewed the
+  diff and found two of the three fixes incomplete — a trailing-backslash
+  masking gap on GAP-123 and a denial-forward-failure gap on GAP-124 — both
+  closed same-day (commits `5663b11`, `5938388`; see Phase 9 above). A third,
+  minor finding on GAP-125 (context-derived identifiers embedded
+  unminimized in its new audit event) was recorded on the entry rather than
+  fixed, since it is not a live-execution bypass.
+- **CI is green.** Run `35733597922` (covering `5663b11`, the last commit of
+  this pass) completed `success` on all three jobs (`lint`,
+  `ui-permissions`, `test`).
+- The operator's stash entries (`stash@{0}: temp-check-baseline`,
+  `stash@{1}`, a throwaway mutation-testing scratch) still remain in the
+  repository; an earlier attempt to drop `stash@{1}` was blocked by the
   auto-mode destructive-action classifier. An operator with stash-drop
   permission can clear both once confirmed disposable.
+- The open DynamoDB claim-conflict finding (GAP-069/GAP-STATE-06) stays
+  `deferred` — its resolution turns on where a DynamoDB deployment's audit
+  database should live, a configuration decision for the operator, not a
+  code defect.
+- 27 open medium/low follow-ups remain in `gap-register.md` (readability,
+  naming and non-safety-impact items, e.g. GAP-035 through GAP-050,
+  GAP-062, GAP-080, GAP-097, GAP-112 through GAP-119) — none blocks merge;
+  each carries its own entry and rationale in the register.
+- PR #7's ready-for-review status: verified this pass via `gh pr view 7` —
+  `isDraft: false`, `state: OPEN`, `mergeable: MERGEABLE`,
+  `mergeStateStatus: CLEAN`. It is already marked ready; there is nothing
+  left to flip.
 
 ### ⏭️ Next Steps
 
-1. Obtain the missing second-reviewer pass on findings A/B/C — either retry
-   the ChatGPT/Codex MCP bridge once it is diagnosed, or route through a
-   human/alternate reviewer — before merging, per the project's standing
-   review requirement. This is now the only blocker: CI is green.
-2. Merge PR #7 into `main` once the review gap above is closed or explicitly
-   waived by the operator.
-3. Decide whether the open DynamoDB claim-conflict finding
-   (GAP-069/GAP-STATE-06) needs action before or after this merge; it is
-   independent of this and the prior addendum's scope.
-4. Operator: drop the two stale stash entries once confirmed disposable
-   (blocked here by the auto-mode destructive-action classifier).
+1. Merge PR #7 into `main` — it is ready, mergeable and CI is green, and the
+   owed second-reviewer pass is complete; nothing else blocks it.

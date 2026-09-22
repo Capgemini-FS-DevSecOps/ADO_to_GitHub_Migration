@@ -609,6 +609,25 @@ The open critical-or-high set after this pass is unchanged: one entry, GAP-069, 
 Three of the five new entries are critical-or-high (GAP-123, GAP-124, GAP-126); all three are
 `remediated`.
 
+**Addendum (2026-09-22) — register-pending merge, fourth and final scribe pass.** Closed the
+one item the third pass left owed: the second-reviewer pass on Findings A/B/C. Terra
+(read-only, `codex exec`, artefact `run-codex-terra-abc.txt`) reviewed the diff and found two
+of the three fixes incomplete — GAP-123's escape-aware masking still left a lone trailing
+backslash unmasked, and GAP-124's denial forwarding had no coverage for the platform deny
+call itself failing — plus one minor finding on GAP-125 (context-derived identifiers embedded
+unminimized in its new audit event) that was recorded but not fixed. The two substantive
+findings were closed same-day: commit `5663b11` masks the trailing backslash in both quoted
+branches of `_SECRET_KEY_VALUE_RE`; commit `5938388` audits the local denial before the
+platform-deny forward is attempted, audits a failed forward as its own
+`session.approve.denied.forward_failed` event, and makes `resume_live_internal` refuse with
+409 when the session was already locally denied. No new gap ids were opened; GAP-123 and
+GAP-124 each gained a `reopened_and_closed` field, and all three of GAP-123/124/125 gained a
+`second_review` field recording the pass. Register totals are unchanged by this pass: still
+127 gaps, 24 critical / 49 high / 35 medium / 19 low; the open critical-or-high set is still
+just GAP-069, `deferred`.
+
+CI: run `35733597922` (the run covering `5663b11`, HEAD at pass start) completed `success` on
+all three jobs (`lint`, `ui-permissions`, `test`) — green.
 
 ## Technical Context
 
