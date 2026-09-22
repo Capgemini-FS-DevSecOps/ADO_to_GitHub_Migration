@@ -6,6 +6,8 @@ import {
   formOptionLabel,
   initialFormValues,
   isAgentInterruptible,
+  isStaleFormError,
+  STALE_FORM_MESSAGE,
   liveDecisionReady,
   mergeThinkingEvents,
   parseBooleanValue,
@@ -232,5 +234,19 @@ describe('form submission summary', () => {
     expect(
       formatFormSubmissionSummary({ scope: 'repos', notes: '', archive_ado: false, include_prs: true }),
     ).toBe('scope: repos, include_prs: true');
+  });
+});
+
+describe('stale form detection (register id GAP-136)', () => {
+  it('recognises the server-side rejection detail and only that detail', () => {
+    expect(isStaleFormError(new Error('stale_form'))).toBe(true);
+    expect(isStaleFormError(new Error('some other failure'))).toBe(false);
+    expect(isStaleFormError('stale_form')).toBe(false);
+    expect(isStaleFormError(null)).toBe(false);
+  });
+
+  it('shows a plain-word message rather than the wire error code', () => {
+    expect(STALE_FORM_MESSAGE).not.toContain('stale_form');
+    expect(STALE_FORM_MESSAGE.toLowerCase()).toContain('replaced');
   });
 });

@@ -128,6 +128,12 @@ export type AgentPendingForm = {
   description?: string;
   fields: AgentFormField[];
   submit_action?: string;
+  /**
+   * Identifier for this exact form instance (register id GAP-136). Sent back on submit so the
+   * agent service can tell a reply to this form apart from a reply to a newer form it has
+   * since replaced. Older service versions omit it, in which case nothing is sent back.
+   */
+  instance_id?: string;
 };
 
 export type AgentMessage = {
@@ -339,22 +345,39 @@ export async function approveAgentSession(
   });
 }
 
-/** Submit a pending human-in-the-loop operator prompt form (POST /v1/sessions/{id}/form-submit) and return the session. */
-export async function submitAgentForm(sessionId: string, values: Record<string, unknown>) {
+/**
+ * Submit a pending human-in-the-loop operator prompt form (POST /v1/sessions/{id}/form-submit) and return the session.
+ *
+ * `formInstanceId`, when given, is sent back as `form_instance_id` so the agent service can
+ * reject a reply to a form it has since replaced (register id GAP-136, HTTP 409 `stale_form`)
+ * instead of applying it to the wrong form.
+ */
+export async function submitAgentForm(
+  sessionId: string,
+  values: Record<string, unknown>,
+  formInstanceId?: string,
+) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/form-submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values }),
+    body: JSON.stringify(
+      formInstanceId ? { values, form_instance_id: formInstanceId } : { values },
+    ),
   });
 }
 
 /**
  * Submit a pending human-in-the-loop operator prompt form over a server-sent event stream (SSE) (POST /v1/sessions/{id}/form-submit-stream),
  * invoking the callback for each event except heartbeats, then return the final session.
+ *
+ * `formInstanceId`, when given, is sent back as `form_instance_id` so the agent service can
+ * reject a reply to a form it has since replaced (register id GAP-136, HTTP 409 `stale_form`)
+ * instead of applying it to the wrong form.
  */
 export async function streamAgentFormSubmit(
   sessionId: string,
   values: Record<string, unknown>,
+  formInstanceId: string | undefined,
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<AgentSession> {
@@ -362,7 +385,9 @@ export async function streamAgentFormSubmit(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ values }),
+    body: JSON.stringify(
+      formInstanceId ? { values, form_instance_id: formInstanceId } : { values },
+    ),
     signal,
   });
 

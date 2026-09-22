@@ -37,12 +37,14 @@ import {
   formOptionValue,
   initialFormValues,
   isAgentInterruptible,
+  isStaleFormError,
   isStatusMessage,
   liveDecisionReady,
   mergeThinkingEvents,
   parseBooleanValue,
   pendingOptimisticUserMessages,
   sessionIsBusy,
+  STALE_FORM_MESSAGE,
   thinkingEventsFromSession,
   type ChatMessage,
 } from '@/lib/agentChat';
@@ -1430,6 +1432,7 @@ export function AgentChat() {
       const s = await streamAgentFormSubmit(
         agentSession.session_id,
         values,
+        agentSession.pending_form?.instance_id,
         (evt) => {
           applyStreamEventToSnapshot(formSessionId, evt, {
             appendThinking: appendThinkingToSnapshot,
@@ -1447,7 +1450,17 @@ export function AgentChat() {
         background: chatFocusRef.current !== formSessionId,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Form submit failed');
+      if (isStaleFormError(e)) {
+        setError(STALE_FORM_MESSAGE);
+        try {
+          const s = await getAgentSession(formSessionId);
+          mergeServerIntoSnapshot(formSessionId, s);
+        } catch {
+          /* keep showing the stale-form message if the refetch itself fails */
+        }
+      } else {
+        setError(e instanceof Error ? e.message : 'Form submit failed');
+      }
     } finally {
       const snap = sessionSnapshotsRef.current.get(formSessionId);
       if (snap) {

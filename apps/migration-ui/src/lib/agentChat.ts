@@ -265,3 +265,18 @@ export function liveDecisionReady(reason: string): boolean {
 export function isStatusMessage(msg: ChatMessage): boolean {
   return msg.kind === 'status';
 }
+
+/** Error detail the agent service sends when a submitted form reply targets a form instance it has since replaced (register id GAP-136). */
+export const STALE_FORM_ERROR_DETAIL = 'stale_form';
+
+/** Plain-word message shown when a submitted form was replaced by a newer one before the reply reached the server. */
+export const STALE_FORM_MESSAGE =
+  'This form was replaced by a newer one. The latest form is shown below.';
+
+/**
+ * Report whether `error` is the agent service's stale-form rejection (register id GAP-136), so
+ * the caller can refetch the session and show the current form instead of a generic failure.
+ */
+export function isStaleFormError(error: unknown): boolean {
+  return error instanceof Error && error.message === STALE_FORM_ERROR_DETAIL;
+}
