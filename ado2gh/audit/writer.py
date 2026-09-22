@@ -35,7 +35,9 @@ class AuditWriter:
             event_type: Short machine name of what happened. A fixed name chosen
                 by code, never free text a caller composed, so it is left as
                 written rather than passed through ``redact_text`` (GAP-133).
-            profile_id: The profile the event belongs to.
+            profile_id: The profile the event belongs to. Masked before insert
+                like the actor and payload, since it is a caller-supplied
+                string rather than a fixed value (GAP-141).
             actor: Who caused it; empty when unknown. Masked before insert like
                 the payload, since a username or an email address is sometimes
                 free text a caller assembled rather than a fixed value (GAP-133).
@@ -49,7 +51,7 @@ class AuditWriter:
         self.db.insert_audit_event(
             event_id=event_id,
             event_type=event_type,
-            profile_id=profile_id,
+            profile_id=redact_text(profile_id) if profile_id else profile_id,
             actor=redact_text(actor) if actor else actor,
             payload_json=json.dumps(safe),
         )

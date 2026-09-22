@@ -29,8 +29,14 @@ _SECRET_VALUE_RE = re.compile(
     # escape-aware (`(?:\\.|[^"\\])*\\?`, the same group `_SECRET_KEY_VALUE_RE`
     # uses below) rather than plain `[^"]*`: a value that escapes its own
     # closing quote (`"password": "abc\"def"`) otherwise stops the match at
-    # that escaped quote and leaves `def"` in the output (GAP-131).
-    r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*\\?"',
+    # that escaped quote and leaves `def"` in the output (GAP-131). The
+    # closing quote itself is optional (`"?`, same as `_SECRET_KEY_VALUE_RE`
+    # below) so a log line truncated mid-value (`{"password": "abc`, no
+    # closing quote) still gets the value it does have masked (GAP-140); the
+    # value character class already excludes an unescaped quote, so on a
+    # well-formed document the match still stops at the real closing quote
+    # rather than running on into a second key.
+    r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*\\?"?',
     re.IGNORECASE,
 )
 
@@ -173,7 +179,11 @@ def redact_payload(payload: object, _depth: int = 0) -> object:
         return _MASK  # fail safe: pathological nesting / cycle -> redact
     if isinstance(payload, dict):
         return {
-            k: (
+            # A key can itself be a secret VALUE shape (a raw token used as a
+            # dict key rather than the more usual named field) even when its
+            # name gives no hint, so string keys go through the same
+            # `redact_text` value-shape scan as any other string (GAP-141).
+            (redact_text(k) if isinstance(k, str) else k): (
                 (v[:4] + _MASK if len(v) > 4 else _MASK)
                 if _is_secret_key(k) and isinstance(v, str)
                 else redact_payload(v, _depth + 1)
