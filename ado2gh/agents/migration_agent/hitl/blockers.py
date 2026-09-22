@@ -29,7 +29,11 @@ def _config_content_fingerprint(config_path: str) -> str:
     contents (GAP-130), so an edit to the file between approval and execution
     must revoke the approval even though the file NAME did not change. Returns
     the empty string when the path is blank, the file is missing, or it cannot
-    be read — this is an identity input, never something that raises.
+    be read — this is an identity input, never something that raises. Besides
+    a missing or unreadable file (``OSError``), a path holding an embedded NUL
+    byte raises ``ValueError`` and a non-string path raises ``TypeError``
+    (GAP-139); both are just as much "cannot compute a fingerprint" as a
+    missing file, so they are caught the same way.
 
     Args:
         config_path: Path to the migration configuration file.
@@ -43,7 +47,7 @@ def _config_content_fingerprint(config_path: str) -> str:
 
     try:
         digest = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
-    except OSError:
+    except (OSError, ValueError, TypeError):
         return ""
     return digest[:_CONFIG_FINGERPRINT_LENGTH]
 

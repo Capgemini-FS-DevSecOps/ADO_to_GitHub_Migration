@@ -75,8 +75,11 @@ async def _execute_orchestrator_tools(
 
     Returns:
         An ``AgentState`` update with the tool results, plus whichever of
-        ``pending_form``, ``reply``, ``start_pev`` and the planner-handoff
-        clear-out the calls produced.
+        ``pending_form``, ``reply``, ``start_pev``, the planner-handoff
+        clear-out, and — when ``generate_plan`` replaced the plan outright —
+        the new ``migration_plan`` plus a reset of ``start_execution``,
+        ``migration_queue``, ``executor_result``, ``validation_result`` and
+        ``validation_feedback`` (GAP-138) the calls produced.
     """
     session = state.get("session") or {}
     accel_get = state.get("accel_get")
@@ -89,6 +92,7 @@ async def _execute_orchestrator_tools(
     should_return = False
     reply = None
     planner_handoff_clear: dict[str, Any] = {}
+    plan_replaced_state: dict[str, Any] = {}
 
     for tc in tool_calls:
         tool_name = tc.get("name", "")
@@ -187,6 +191,23 @@ async def _execute_orchestrator_tools(
                     # run already in flight belongs to that old plan (GAP-129).
                     clear_stale_plan_approval(session, plan=result, replaced_plan=True)
                     session["migration_plan"] = result
+                    # The session was updated above, but the LangGraph state for this
+                    # turn is a separate dict that routing reads directly (graph/state.py
+                    # AgentState; graph/builder.py `_route_after_orchestrator` checks
+                    # `state.get("migration_plan")`, not the session). Left alone, a
+                    # stale `start_execution`/`migration_plan`/queue/result carried over
+                    # from a previous turn's checkpoint would route the *old* plan's
+                    # queue straight to the executor instead of presenting the new plan
+                    # for approval (GAP-138). Patch the same keys here so the state this
+                    # node returns matches what was just done to the session.
+                    plan_replaced_state = {
+                        "migration_plan": result,
+                        "start_execution": False,
+                        "migration_queue": None,
+                        "executor_result": None,
+                        "validation_result": None,
+                        "validation_feedback": None,
+                    }
                     results.append({"tool": tool_name, "result": result})
                     state["messages"] = state.get("messages", []) + [{
                         "role": "tool",
@@ -394,6 +415,7 @@ async def _execute_orchestrator_tools(
         "should_return": should_return or bool(pending_form),
         "reply": reply,
         **planner_handoff_clear,
+        **plan_replaced_state,
     }
 
 

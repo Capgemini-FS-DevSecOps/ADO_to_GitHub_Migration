@@ -53,16 +53,26 @@ def test_replaced_plan_also_clears_execution_completed():
     assert session["pev_execution_completed"] is False
 
 
-def test_replaced_plan_that_matches_the_approved_revision_is_left_alone():
-    """No swap actually happened — the same plan is not a stale approval."""
+def test_replaced_plan_clears_even_when_its_revision_key_matches():
+    """Updated for GAP-137: a replacement always clears, key comparison or not.
+
+    The revision key deliberately excludes mutable state such as a work
+    item's status, so a tool-installed replacement that only flips a status
+    (for example a skipped item put back to ready) keeps the same key. A
+    same-key check here would let that replacement inherit an approval the
+    operator never saw the new plan for, which is exactly the bypass GAP-137
+    closed. `replaced_plan=True` always clears; the key comparison only
+    matters for the normal (not replaced) path exercised elsewhere in this
+    file.
+    """
     session = {"migration_plan": _plan(), "pev_execution_started": True}
     record_plan_approval(session)
 
     same_plan = session["migration_plan"]
 
-    assert clear_stale_plan_approval(session, plan=same_plan, replaced_plan=True) is False
-    assert session["plan_approved"] is True
-    assert session["pev_execution_started"] is True
+    assert clear_stale_plan_approval(session, plan=same_plan, replaced_plan=True) is True
+    assert session["plan_approved"] is False
+    assert session["pev_execution_started"] is False
 
 
 @pytest.mark.parametrize("flag", ["pev_execution_started", "pev_execution_completed"])
