@@ -57,7 +57,7 @@ def _forget_session(session_id: str) -> None:
 # do not survive a round trip. A session holding any of them is left alone by the TTL
 # sweep — the size cap below is still absolute. A *busy* run is already excluded above
 # by `is_session_busy`; `run_id` alone is deliberately not in this tuple, or a session
-# that ran PEV once and went idle would carry it forever and never age out.
+# that ran the plan-execute-validate loop (PEV) once and went idle would carry it forever and never age out.
 _NON_RECONSTRUCTIBLE_KEYS = (
     "pending_form", "live_approval_id", "live_approval_status",
     "remediation_attempts", "pending_clarification",

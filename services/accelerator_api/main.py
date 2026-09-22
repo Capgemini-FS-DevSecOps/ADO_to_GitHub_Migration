@@ -125,7 +125,7 @@ async def platform_auth_middleware(
     register routes, which by definition run before a session exists. Every
     other ``/v1/`` request must carry a session cookie that resolves to a live
     session; the resolved account is left on ``request.state.platform_user``
-    for the handlers and the RBAC helpers to read.
+    for the handlers and the role-based access control (RBAC) helpers to read.
 
     When platform authentication is switched off the middleware short-circuits
     and lets everything through. That is deliberate — it is the single-user

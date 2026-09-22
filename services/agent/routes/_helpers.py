@@ -713,10 +713,10 @@ async def _check_accelerator() -> tuple[bool, str | None]:
         return False, str(exc)
 
 
-# Legacy PEV loop stubs for compatibility during migration
+# Legacy plan-execute-validate loop (PEV) stubs for compatibility during migration
 # These will be removed once all route handlers are fully migrated to orchestrator
 async def _try_start_pev_run(session_id: str, request: Request | None = None) -> bool:
-    """Start PEV when allowed. Returns False if live execution is blocked pending approval."""
+    """Start the plan-execute-validate loop (PEV) when allowed. Returns False if live execution is blocked pending approval."""
     from ado2gh.agents.migration_agent.runtime.orchestrator import process_user_message
 
     session = _sessions.get(session_id)
@@ -730,7 +730,7 @@ async def _try_start_pev_run(session_id: str, request: Request | None = None) ->
         _add_message(session_id, "assistant", msg, kind="message")
         return False
 
-    # Use orchestrator to start PEV
+    # Use orchestrator to start the plan-execute-validate loop
     session_token = _session_accel_token(session_id)
     result = await process_user_message(
         session,

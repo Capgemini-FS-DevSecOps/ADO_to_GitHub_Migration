@@ -1,6 +1,6 @@
 """Execution and live-approval routes for agent migration sessions.
 
-Covers starting a PEV run, the live-execution approval handshake (request,
+Covers starting a plan-execute-validate loop (PEV) run, the live-execution approval handshake (request,
 approve, confirm, and the accelerator's internal resume/deny callbacks),
 switching a session between dry-run and live, and cancelling a run."""
 from __future__ import annotations

@@ -54,7 +54,7 @@ router = APIRouter()
 
 @router.post("/v1/sessions")
 async def create_session(req: SessionRequest, request: Request) -> dict[str, Any]:
-    """Create a chat session; PEV runs only when execute_pev is true or /run-pev is called."""
+    """Create a chat session; the plan-execute-validate loop (PEV) runs only when execute_pev is true or /run-pev is called."""
     _require_operate(request)
     session_token = _session_token_from_request(request)
     await _assert_deployment_profile_active(req.profile_id)

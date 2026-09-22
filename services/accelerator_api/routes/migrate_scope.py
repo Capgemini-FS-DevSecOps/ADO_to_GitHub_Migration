@@ -180,7 +180,7 @@ def _scope_handler_response(
 
 
 async def _run_scope_migrate(handler: ScopeHandler, repo: RepoConfig, ctx: ScopeContext) -> ScopeResult:
-    """Run a scope handler off the event loop (git mirror / GEI can take many minutes).
+    """Run a scope handler off the event loop (a git mirror or a GitHub Enterprise Importer (GEI) run can take many minutes).
 
     Args:
         handler: The scope handler to invoke.

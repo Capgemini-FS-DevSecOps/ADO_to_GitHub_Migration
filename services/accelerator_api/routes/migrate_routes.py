@@ -69,9 +69,9 @@ router = APIRouter(
 
 @router.post("/git-mirror")
 async def git_mirror(req: GitMirrorRequest) -> dict[str, object]:
-    """Mirror or GEI-migrate one ADO repository to GitHub.
+    """Mirror, or migrate using the GitHub Enterprise Importer (GEI), one Azure DevOps repository to GitHub.
 
-    Copies every branch, tag and LFS object of `project/repo_name` into
+    Copies every branch, tag and Git Large File Storage (LFS) object of `project/repo_name` into
     `github_org/github_repo`, using the migration strategy configured for the
     deployment (`gei` or `mirror`). The target organisation falls back to the
     active profile and then to `global.gh_org`; the target repository name
