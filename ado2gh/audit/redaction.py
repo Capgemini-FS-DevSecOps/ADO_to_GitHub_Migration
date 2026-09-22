@@ -49,8 +49,13 @@ _SECRET_KEY_VALUE_RE = re.compile(
     # characters: a value quoted in one style can legitimately contain the
     # other (`password="abc's"`), and a shared `[^"\']` class stops at that
     # embedded character, leaving the remainder of the secret unmasked.
-    r'(?:"(?P<dqval>[^"]*)"?'
-    r"|'(?P<sqval>[^']*)'?"
+    # Each branch also honors a backslash escape of its own quote character
+    # (`(?:\\.|[^"\\])*` rather than plain `[^"]*`): otherwise a value such as
+    # `password="abc\"def"`, which escapes the quote it opened with rather
+    # than closing early, stops the match at that escaped quote and leaves
+    # `def` unmasked in the output.
+    r'(?:"(?P<dqval>(?:\\.|[^"\\])*)"?'
+    r"|'(?P<sqval>(?:\\.|[^'\\])*)'?"
     rf"|(?P<value>[^{_SECRET_VALUE_DELIMITERS}]*))",
     re.IGNORECASE,
 )
