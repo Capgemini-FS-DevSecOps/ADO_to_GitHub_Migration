@@ -6,6 +6,7 @@ from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.nodes._common import (
     _is_pev_max_retries_exhausted,
     _transition_session,
@@ -527,10 +528,11 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
         system_prompt = get_prompt("planner")
 
         # Build context with discovery data and validation feedback
+        runtime_settings = agent_runtime_settings()
         dry_run = bool(session.get("dry_run", True))
         context_parts = [
             f"Target repository keys: {json.dumps(repo_keys, default=str)}",
-            f"Discovery repos (sample): {json.dumps(repos[:20], default=str)}",
+            f"Discovery repos (sample): {json.dumps(repos[:runtime_settings.planner_repository_sample_limit], default=str)}",
             f"Baseline research (auto): {json.dumps(baseline_findings, default=str)[:6000]}",
             f"Dry run: {dry_run}",
         ]
@@ -550,12 +552,15 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
         if validation_feedback:
             context_parts.append(f"Validator feedback: {json.dumps(validation_feedback, default=str)}")
         if existing_plan:
-            context_parts.append(f"Existing plan revision {revision - 1}: {json.dumps(existing_plan, default=str)[:2000]}")
+            context_parts.append(
+                f"Existing plan revision {revision - 1}: "
+                f"{json.dumps(existing_plan, default=str)[:runtime_settings.planner_context_max_chars]}"
+            )
 
         # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
-        max_budget = state.get("max_token_budget", 32000)
+        max_budget = state.get("max_token_budget", runtime_settings.context_token_budget)
 
         new_messages = [
             SystemMessage(content=system_prompt),

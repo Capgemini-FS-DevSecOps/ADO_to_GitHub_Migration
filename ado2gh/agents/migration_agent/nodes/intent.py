@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from ado2gh.agents.migration_agent.constants import NO_LLM_CONFIGURED_MESSAGE
+from ado2gh.agents.migration_agent.graph.state import AgentEventKind, AgentRole
 from ado2gh.agents.migration_agent.hitl.schemas import OperatorIntent
 from ado2gh.agents.migration_agent.nodes._common import _transition_session
 from ado2gh.agents.migration_agent.policies import is_out_of_scope_message, scope_refusal_reply
@@ -192,12 +193,12 @@ async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
             session,
             role="system",
             content=analysis.reasoning,
-            kind="thinking",
-            subagent="orchestrator",
+            kind=AgentEventKind.THINKING.value,
+            subagent=AgentRole.ORCHESTRATOR.value,
         )
 
     if analysis.is_cancellation:
-        _append_event(session, role="system", content="Migration cancellation requested.", kind="message")
+        _append_event(session, role="system", content="Migration cancellation requested.", kind=AgentEventKind.MESSAGE.value)
         return {"intent": OperatorIntent.GENERAL_CHAT.value, "reply": "Migration cancellation requested.", "should_return": True}
 
     intent = analysis.intent.value
@@ -205,8 +206,8 @@ async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
         session,
         role="system",
         content=f"Intent classified: {intent}",
-        kind="thinking",
-        subagent="orchestrator",
+        kind=AgentEventKind.THINKING.value,
+        subagent=AgentRole.ORCHESTRATOR.value,
     )
 
     result: dict[str, Any] = {

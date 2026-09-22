@@ -11,6 +11,8 @@ from typing import Any
 from langchain_core.messages import BaseMessage, SystemMessage, trim_messages
 from langchain_core.messages.utils import count_tokens_approximately
 
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
+
 
 def _token_counter(messages: list) -> int:
     """Approximate token count for trim_messages (LangChain 2026 helper)."""
@@ -25,9 +27,18 @@ def build_context_with_cycle_summaries(
     cycle_summaries: list[dict[str, Any]],
     max_tokens: int,
     *,
-    keep_last_cycles: int = 2,
+    keep_last_cycles: int | None = None,
 ) -> list[BaseMessage]:
-    """Build context with plan-execute-validate loop (PEV) cycle summaries using LangChain trim_messages."""
+    """Build context with plan-execute-validate loop (PEV) cycle summaries using LangChain trim_messages.
+
+    ``keep_last_cycles`` defaults to the operator-tunable
+    ``AgentRuntimeSettings.context_cycle_retention_count`` (2 unless
+    overridden) rather than a fixed number, and the older/recent summary
+    clip lengths are read the same way.
+    """
+    runtime_settings = agent_runtime_settings()
+    if keep_last_cycles is None:
+        keep_last_cycles = runtime_settings.context_cycle_retention_count
     if not cycle_summaries:
         return trim_messages(
             messages,
@@ -42,9 +53,13 @@ def build_context_with_cycle_summaries(
 
     summary_parts = []
     if older:
-        summary_parts.append(f"Prior PEV cycles (JSON summary):\n{json.dumps(older, default=str)[:2000]}")
+        summary_parts.append(
+            f"Prior PEV cycles (JSON summary):\n{json.dumps(older, default=str)[:runtime_settings.old_cycle_summary_max_chars]}"
+        )
     if recent:
-        summary_parts.append(f"Recent PEV cycles:\n{json.dumps(recent, default=str)[:3000]}")
+        summary_parts.append(
+            f"Recent PEV cycles:\n{json.dumps(recent, default=str)[:runtime_settings.recent_cycle_summary_max_chars]}"
+        )
 
     summary_msg = SystemMessage(content="\n\n".join(summary_parts))
 

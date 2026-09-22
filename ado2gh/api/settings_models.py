@@ -137,6 +137,88 @@ class ConcurrencySettings:
     """The ceiling on GitHub API requests per second."""
 
 
+def _agent_constant(name: str) -> int:
+    """Read one integer default off the migration agent's constants module.
+
+    The import is deferred to when a dataclass default is actually built,
+    not done at the top of this module: ``ado2gh.agents.migration_agent``
+    transitively imports ``ado2gh.api`` (its node, tool and session modules
+    reach back into this package), so importing its ``constants`` submodule
+    here at load time would cycle back into this file before it finishes
+    loading. Same lazy-import pattern commit cc5bf55 used for
+    ``ConcurrencySettings``, just in the opposite direction.
+
+    Args:
+        name: The constant's name in ``ado2gh.agents.migration_agent.constants``.
+
+    Returns:
+        int: The constant's current value.
+
+    """
+    from ado2gh.agents.migration_agent import constants as agent_constants
+
+    return int(getattr(agent_constants, name))
+
+
+@dataclass
+class AgentRuntimeSettings:
+    """Operator-tunable overrides for the migration agent's runtime limits.
+
+    Every field defaults to the same value as the matching module constant in
+    ``ado2gh/agents/migration_agent/constants.py``, so a settings file with no
+    ``agent_runtime`` block behaves exactly as before. ``constants.py`` stays
+    the single default source; this dataclass only lets a persisted value
+    override it, read back through ``constants.agent_runtime_settings()``.
+    """
+
+    llm_timeout_seconds: int = field(default_factory=lambda: _agent_constant("LLM_TIMEOUT_SECONDS"))
+    """Seconds the language model bridge waits for one call before it times out."""
+
+    max_pev_retries: int = field(default_factory=lambda: _agent_constant("MAX_PEV_RETRIES"))
+    """Plan-execute-validate loop retries allowed before escalating to the operator."""
+
+    max_iterations: int = field(default_factory=lambda: _agent_constant("MAX_ITERATIONS"))
+    """Total graph iterations allowed in one turn before the run stops itself."""
+
+    graph_recursion_limit: int = field(default_factory=lambda: _agent_constant("GRAPH_RECURSION_LIMIT"))
+    """LangGraph recursion ceiling passed to each graph run."""
+
+    planner_max_research_rounds: int = field(default_factory=lambda: _agent_constant("PLANNER_MAX_RESEARCH_ROUNDS"))
+    """Research rounds the planner may run before it must produce a plan."""
+
+    planner_min_research_tool_calls: int = field(default_factory=lambda: _agent_constant("PLANNER_MIN_RESEARCH_TOOL_CALLS"))
+    """Read-only tool calls the planner must make before its research counts as done."""
+
+    validator_max_tool_rounds: int = field(default_factory=lambda: _agent_constant("VALIDATOR_MAX_TOOL_ROUNDS"))
+    """Evidence-gathering rounds the validator may run before it must report a result."""
+
+    validator_min_tool_calls_pipelines: int = field(
+        default_factory=lambda: _agent_constant("VALIDATOR_MIN_TOOL_CALLS_PIPELINES"),
+    )
+    """Tool calls the validator must make before a pipeline validation counts as thorough."""
+
+    sse_heartbeat_interval_seconds: int = field(default_factory=lambda: _agent_constant("SSE_HEARTBEAT_INTERVAL_SECONDS"))
+    """Seconds between heartbeat events on a server-sent event stream."""
+
+    context_token_budget: int = field(default_factory=lambda: _agent_constant("CONTEXT_TOKEN_BUDGET"))
+    """Token budget the agent trims accumulated conversation history to before calling the language model."""
+
+    planner_repository_sample_limit: int = 20
+    """Repositories from discovery included as a sample in the planner's prompt."""
+
+    planner_context_max_chars: int = 2000
+    """Characters kept of the serialised prior plan included in the planner's revision prompt."""
+
+    context_cycle_retention_count: int = 2
+    """Most recent plan-execute-validate loop cycles kept in full instead of summarised."""
+
+    old_cycle_summary_max_chars: int = 2000
+    """Characters kept of the summarised older plan-execute-validate loop cycles."""
+
+    recent_cycle_summary_max_chars: int = 3000
+    """Characters kept of the summarised recent plan-execute-validate loop cycles."""
+
+
 @dataclass
 class AdvancedSettings:
     """Deployment-wide migration defaults shared by every profile.
@@ -159,6 +241,9 @@ class AdvancedSettings:
     policy_rules: dict[str, Any] = field(default_factory=dict)
     concurrency: ConcurrencySettings = field(default_factory=ConcurrencySettings)
     """The worker-pool and rate-limit defaults new ``ConcurrencyManager`` instances start from."""
+
+    agent_runtime: AgentRuntimeSettings = field(default_factory=AgentRuntimeSettings)
+    """The migration agent's iteration, retry, research-round and context-budget limits."""
 
 
 @dataclass

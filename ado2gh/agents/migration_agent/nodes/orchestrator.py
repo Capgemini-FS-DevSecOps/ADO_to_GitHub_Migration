@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ado2gh.agents.migration_agent.constants import CONTEXT_TOKEN_BUDGET, NO_LLM_CONFIGURED_MESSAGE
+from ado2gh.agents.migration_agent.constants import NO_LLM_CONFIGURED_MESSAGE, agent_runtime_settings
 from ado2gh.agents.migration_agent.graph.state import AgentEventKind, AgentRole
+from ado2gh.agents.migration_agent.hitl.schemas import OperatorIntent
 from ado2gh.agents.migration_agent.nodes._common import (
     _is_pev_max_retries_exhausted,
     _is_start_execution_message,
@@ -90,7 +91,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
     """
     user_message = state.get("user_message", "")
     session = state.get("session") or {}
-    intent = state.get("intent", "general_chat")
+    intent = state.get("intent", OperatorIntent.GENERAL_CHAT.value)
     llm = state.get("llm")
     llm_unconfigured = state.get("llm_unconfigured", False)
     _reset_turn_status_budget(session)
@@ -401,7 +402,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
     if not (migration_plan and not session.get("plan_approved")):
         intake_phase = determine_intake_phase(session, intent=intent)
         if intake_phase is not None:
-            routing_intent = "migration_action" if intake_phase == IntakePhase.PLANNING else intent
+            routing_intent = OperatorIntent.MIGRATION_ACTION.value if intake_phase == IntakePhase.PLANNING else intent
             intake_result = await _apply_intake_routing(
                 state,
                 session,
@@ -411,13 +412,13 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             if intake_result is not None:
                 return intake_result
 
-    if intent == "general_chat":
+    if intent == OperatorIntent.GENERAL_CHAT.value:
         return await _handle_general_chat(state, llm, user_message, session)
 
-    if intent == "migration_info":
+    if intent == OperatorIntent.MIGRATION_INFO.value:
         return await _handle_migration_info(state, llm, user_message, session)
 
-    if intent == "migration_action":
+    if intent == OperatorIntent.MIGRATION_ACTION.value:
         return await _handle_migration_action(state, llm, user_message, session)
 
     # Unmatched intent — let the language model handle it if available, otherwise fall back to a hardcoded reply
@@ -448,7 +449,7 @@ async def _handle_general_chat(
     # Apply context window trimming
     existing_messages = state.get("messages", [])
     cycle_summaries = state.get("cycle_summaries", [])
-    max_budget = state.get("max_token_budget", CONTEXT_TOKEN_BUDGET)
+    max_budget = state.get("max_token_budget", agent_runtime_settings().context_token_budget)
 
     # Build new messages with system prompt and user message
     new_messages = build_orchestrator_messages(session, user_message)
@@ -538,7 +539,7 @@ async def _handle_migration_info(
         # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
-        max_budget = state.get("max_token_budget", CONTEXT_TOKEN_BUDGET)
+        max_budget = state.get("max_token_budget", agent_runtime_settings().context_token_budget)
 
         new_messages = build_orchestrator_messages(
             session, f"{user_message}\n\nContext: {info_text}",
@@ -578,7 +579,7 @@ async def _apply_intake_routing(
     session: dict[str, Any],
     user_message: str,
     *,
-    intent: str = "migration_action",
+    intent: str = OperatorIntent.MIGRATION_ACTION.value,
 ) -> dict[str, Any] | None:
     """Extract intake fields from the conversation and ask only for what is missing.
 
@@ -678,7 +679,7 @@ async def _handle_migration_action(
         # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
-        max_budget = state.get("max_token_budget", CONTEXT_TOKEN_BUDGET)
+        max_budget = state.get("max_token_budget", agent_runtime_settings().context_token_budget)
 
         new_messages = build_orchestrator_messages(session, user_message)
 

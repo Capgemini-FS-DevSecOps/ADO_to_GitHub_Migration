@@ -1,4 +1,10 @@
 """Shared constants for the migration agent."""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ado2gh.api.settings_models import AgentRuntimeSettings
 
 NO_LLM_CONFIGURED_MESSAGE = (
     "No LLM models are configured. Go to **Settings → LLM models** to add, "
@@ -44,3 +50,44 @@ DEFAULT_HTTP_METHOD = "GET"
 # because the accelerator itself previews safely, whereas the model-tool
 # path must never post at all during dry-run.
 DETERMINISTIC_SCOPE_WRITE_TOOL = "executor_scope_write"
+
+
+def agent_runtime_settings() -> "AgentRuntimeSettings":
+    """Load the effective agent runtime limits, honouring an operator override.
+
+    The module constants above stay the single default source: an
+    ``AgentRuntimeSettings`` instance built with no persisted settings carries
+    the exact same values. This accessor lets a value saved through
+    ``AdvancedSettings.agent_runtime`` take priority over the constant.
+
+    Returns:
+        AgentRuntimeSettings: The persisted override when the settings store
+        loads cleanly, otherwise the constructor's defaults (which mirror the
+        constants above). Never raises — a missing or broken settings file is
+        not a reason to fail a running agent turn.
+
+    """
+    try:
+        from dataclasses import asdict
+
+        from ado2gh.api.settings_models import AgentRuntimeSettings
+        from ado2gh.api.settings_store import SettingsStore
+
+        raw = SettingsStore().load().advanced.agent_runtime
+        if isinstance(raw, AgentRuntimeSettings):
+            return raw
+        # A settings file loaded from disk carries every ``AdvancedSettings``
+        # nested field (this one included) as a plain dict, not the
+        # dataclass instance the field is typed as — ``SettingsStore`` merges
+        # the raw JSON over ``asdict(AdvancedSettings())`` and constructs
+        # ``AdvancedSettings`` from that merged dict, which never re-hydrates
+        # nested dataclasses. Rebuild it here the same way ``SettingsStore``
+        # merges everything else: defaults first, saved keys on top, so a
+        # settings file saved before a new field existed still loads.
+        if isinstance(raw, dict):
+            return AgentRuntimeSettings(**{**asdict(AgentRuntimeSettings()), **raw})
+        return AgentRuntimeSettings()
+    except Exception:
+        from ado2gh.api.settings_models import AgentRuntimeSettings
+
+        return AgentRuntimeSettings()
