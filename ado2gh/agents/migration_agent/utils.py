@@ -8,7 +8,7 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from ado2gh.audit import redact_payload
 
@@ -634,6 +634,10 @@ async def load_discovery_snapshot(
         )
         if not isinstance(discovery, dict):
             return {}
+        # Mask any credential the accelerator's discovery response carries before
+        # it becomes session state, matching the fix applied to the planner's own
+        # discovery fetch in commit bf1a07c (nodes/planner_research.py).
+        discovery = cast("dict[str, Any]", redact_payload(discovery))
         session["discovery_snapshot"] = discovery
         from datetime import datetime, timezone
         session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()

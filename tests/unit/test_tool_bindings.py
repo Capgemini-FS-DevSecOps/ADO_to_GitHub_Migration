@@ -396,6 +396,41 @@ def test_join_api_path_refusal_is_audited():
     assert "endpoint_escapes_prefix" in kwargs["detail"]
 
 
+def test_refuse_path_masks_a_secret_before_truncating_it():
+    """CA-003: the endpoint is masked before the audit-record cut, not after.
+
+    A bare 52-character token (the Azure DevOps PAT shape ``redact_text``
+    recognises) is placed so it straddles ``_MAX_AUDITED_ENDPOINT_CHARS``.
+    Truncating first would cut the token in half, leaving a plausible-looking
+    fragment too short to be recognised and masked; masking first removes the
+    whole secret before the cut ever applies.
+    """
+    from ado2gh.agents.migration_agent.tools import shared_tools
+
+    recorded = []
+
+    class FakeBridge:
+        def record(self, action, **kwargs):
+            recorded.append((action, kwargs))
+            return "aud_test"
+
+    original = shared_tools._audit
+    shared_tools._audit = FakeBridge()
+    try:
+        token = "A" * 52
+        endpoint = "/" * 180 + token + "/rest"
+        assert 180 < shared_tools._MAX_AUDITED_ENDPOINT_CHARS < 180 + len(token)
+        shared_tools._refuse_path("/v1/ado", endpoint, "endpoint_too_long")
+    finally:
+        shared_tools._audit = original
+
+    assert recorded, "no audit event written for a refused path"
+    stored_endpoint = recorded[0][1]["metadata"]["endpoint"]
+    assert token not in stored_endpoint
+    assert "A" * 20 not in stored_endpoint, "an unmasked secret fragment survived truncation"
+    assert "***" in stored_endpoint
+
+
 @pytest.mark.asyncio
 async def test_fetch_github_workflow_redacts_before_it_truncates():
     """A PAT straddling the cap must not survive as an unrecognisable fragment."""

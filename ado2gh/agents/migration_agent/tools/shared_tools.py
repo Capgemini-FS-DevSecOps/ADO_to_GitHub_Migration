@@ -19,6 +19,9 @@ from ado2gh.audit.redaction import redact_text
 
 _MAX_ENDPOINT_CHARS = 2048
 _MAX_ERROR_DETAIL_CHARS = 500
+# Refused-path audit records keep only this many characters of the endpoint,
+# applied after masking so the cut can never split a secret shape in two.
+_MAX_AUDITED_ENDPOINT_CHARS = 200
 # redact_text catches named secret shapes; a URL can carry a credential in forms
 # it does not name — basic-auth userinfo, or an opaque `sig=`/`code=` query
 # value. Both are dropped wholesale from an error detail (THR-02-003).
@@ -38,21 +41,26 @@ def _refuse_path(prefix: str, endpoint: str, reason: str) -> ApiPathError:
     A refusal that only ever shows up as a tool result is visible to the model
     and to nobody else. The durable record goes through the same masking audit
     bridge the agent's routes use, and a failure to write it never blocks the
-    refusal itself.
+    refusal itself. The endpoint is masked before it is truncated, using the
+    same secret-shape, userinfo and query masking :func:`tool_error` applies:
+    truncating first can cut a fixed-length secret shape in two, leaving a
+    fragment too short to be recognised and masked (CA-003).
 
     Args:
         prefix: The prefix the endpoint failed to stay under.
-        endpoint: The model-supplied endpoint, truncated before it is stored.
+        endpoint: The model-supplied endpoint, masked and truncated before it
+            is stored.
         reason: Machine-readable refusal reason.
 
     Returns:
         The :class:`ApiPathError` the caller should raise.
     """
     try:
+        masked_endpoint = _URL_QUERY_RE.sub("***", _URL_USERINFO_RE.sub("***", redact_text(endpoint)))
         _audit.record(
             "agent.tool.path_refused",
             detail=reason,
-            metadata={"prefix": prefix, "endpoint": endpoint[:200]},
+            metadata={"prefix": prefix, "endpoint": masked_endpoint[:_MAX_AUDITED_ENDPOINT_CHARS]},
         )
     except Exception:  # noqa: S110 - auditing must never break the refusal it records
         pass

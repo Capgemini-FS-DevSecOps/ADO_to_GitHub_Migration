@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -367,6 +367,13 @@ async def _planner_node_impl(state: dict[str, Any], session: dict[str, Any]) -> 
                     session_token=session_token,
                 )
                 if isinstance(discovery, dict):
+                    # Mask any credential the accelerator's discovery response
+                    # carries before it becomes session state, matching the fix
+                    # applied to the planner's other discovery fetch in commit
+                    # bf1a07c (nodes/planner_research.py).
+                    from ado2gh.audit.redaction import redact_payload
+
+                    discovery = cast("dict[str, Any]", redact_payload(discovery))
                     session["discovery_snapshot"] = discovery
                     from datetime import datetime, timezone
                     session["discovery_fetched_at"] = datetime.now(timezone.utc).isoformat()
