@@ -147,7 +147,7 @@ class GHClient:
             self._get(f"/repos/{org}/{repo}")
             return True
         except requests.HTTPError as e:
-            if e.response.status_code == 404:
+            if e.response is not None and e.response.status_code == 404:
                 return False
             raise
 
