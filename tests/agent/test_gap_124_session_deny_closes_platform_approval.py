@@ -15,13 +15,24 @@ Two properties are checked: the route calls the platform's own deny path
 actually matters — a store-level deny closes the row so a later ``approve``
 call on the same id is refused outright.
 
+A second-review follow-up covers the gap in that first property: the route
+audited the local denial only *after* the forward to the platform succeeded,
+so a forward that raised — a non-2xx response, or the platform being
+unreachable — skipped the audit entirely and left the platform row pending,
+while ``resume-live`` flipped a session live unconditionally regardless of
+its own denial. The local denial is now audited before the forward is
+attempted, a failed forward gets its own audit event, and ``resume-live``
+refuses a session that carries a final local denial.
+
 Every identifier below is an obvious fake; no credential value appears (CA-003).
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -30,6 +41,8 @@ from ado2gh.api.contracts import LiveApprovalCreateRequest
 from ado2gh.api.live_approval_scopes import AGENT_SESSION_SCOPE_TYPE
 from ado2gh.api.live_approval_store import LiveApprovalStore
 from ado2gh.auth.models import PlatformRole, PlatformUser
+from ado2gh.state.audit_query import AuditEventFilters
+from ado2gh.state.factory import create_state_db
 from services.agent.main import app
 from services.agent.routes import execution_routes
 
@@ -37,6 +50,20 @@ client = TestClient(app)
 
 _REQUESTER = PlatformUser("op-1", "operator1", PlatformRole.OPERATOR, "Operator One")
 _APPROVER = PlatformUser("ap-1", "approver1", PlatformRole.APPROVER, "Approver One")
+
+
+def _audit_events_for_session(event_type: str, session_id: str) -> list[dict]:
+    """Read back audit events of one type, narrowed to one session.
+
+    Conftest points ``ADO2GH_SQLITE_PATH`` at a per-test temp file, so this
+    reads the same store the route just wrote to. The session id lives inside
+    ``payload_json`` (see ``IdeAuditBridge.record``), not a dedicated column,
+    so filtering happens after the JSON decode.
+    """
+    rows = create_state_db().search_audit_events(
+        AuditEventFilters(event_type=event_type), limit=20,
+    )
+    return [r for r in rows if json.loads(r["payload_json"]).get("session_id") == session_id]
 
 
 @pytest.mark.asyncio
@@ -90,3 +117,80 @@ def test_denied_approval_row_cannot_later_be_approved(tmp_path, monkeypatch):
     assert exc.value.status_code == 409, (
         "a denied approval must refuse a later approve call, not resume the session live"
     )
+
+
+def test_platform_denial_forward_status_failure_still_audits_and_blocks_resume(monkeypatch):
+    """A non-2xx response from the platform deny call must not erase the local denial.
+
+    The local denial is audited before the forward is attempted, the failed
+    forward gets its own audit event, and a later resume-live call — the
+    accelerator's own path back into this session, reachable if the platform
+    row were ever approved despite the failed forward — is refused because the
+    session still carries a final local denial.
+    """
+    # The audit bridge caches its writer on first use for the whole process,
+    # bound to whatever database was active then; clearing it here forces a
+    # fresh writer against *this* test's own temp database (see
+    # `_audit_events_for_session`), rather than silently writing into a
+    # different test's file.
+    execution_routes._audit._writer = None
+    created = client.post("/v1/sessions", json={"profile_id": "lightweight", "dry_run": True})
+    sid = created.json()["session_id"]
+    execution_routes._sessions[sid]["live_approval_id"] = "lve_gap124_status"
+
+    request = httpx.Request("POST", "http://accelerator/v1/platform/approvals/lve_gap124_status/deny")
+    response = httpx.Response(503, request=request)
+    status_error = httpx.HTTPStatusError("service unavailable", request=request, response=response)
+    monkeypatch.setattr(execution_routes, "_accel_post", AsyncMock(side_effect=status_error))
+
+    r = client.post(f"/v1/sessions/{sid}/approve", json={"approved": False, "reason": "not now"})
+
+    assert r.status_code == 503
+    assert execution_routes._sessions[sid]["live_approval_status"] == "denied"
+
+    denied_events = _audit_events_for_session("session.approve.denied", sid)
+    assert denied_events, "the local denial must be audited even when the platform forward fails"
+
+    failed_events = _audit_events_for_session("session.approve.denied.forward_failed", sid)
+    assert failed_events, "a failed forward must be audited as its own event"
+
+    resume = client.post(f"/v1/internal/sessions/{sid}/resume-live")
+    assert resume.status_code == 409, (
+        "resume-live must refuse a session with a final local denial, not resume it live"
+    )
+    assert execution_routes._sessions[sid]["dry_run"] is True
+
+
+def test_platform_denial_forward_transport_failure_still_audits_and_blocks_resume(monkeypatch):
+    """A transport failure (platform unreachable) reaching the deny call is the same story.
+
+    ``httpx.HTTPStatusError`` is not the only way the forward can fail — the
+    platform may simply be unreachable, raising a plain ``httpx.RequestError``
+    with no response to read a status code from. That must be audited and
+    blocked exactly like the status-failure case above.
+    """
+    execution_routes._audit._writer = None
+    created = client.post("/v1/sessions", json={"profile_id": "lightweight", "dry_run": True})
+    sid = created.json()["session_id"]
+    execution_routes._sessions[sid]["live_approval_id"] = "lve_gap124_transport"
+
+    request = httpx.Request("POST", "http://accelerator/v1/platform/approvals/lve_gap124_transport/deny")
+    transport_error = httpx.ConnectError("connection refused", request=request)
+    monkeypatch.setattr(execution_routes, "_accel_post", AsyncMock(side_effect=transport_error))
+
+    r = client.post(f"/v1/sessions/{sid}/approve", json={"approved": False, "reason": "not now"})
+
+    assert r.status_code == execution_routes._PLATFORM_UNREACHABLE_STATUS
+    assert execution_routes._sessions[sid]["live_approval_status"] == "denied"
+
+    denied_events = _audit_events_for_session("session.approve.denied", sid)
+    assert denied_events, "the local denial must be audited even when the platform is unreachable"
+
+    failed_events = _audit_events_for_session("session.approve.denied.forward_failed", sid)
+    assert failed_events, "an unreachable platform must be audited as its own forward-failure event"
+
+    resume = client.post(f"/v1/internal/sessions/{sid}/resume-live")
+    assert resume.status_code == 409, (
+        "resume-live must refuse a session with a final local denial, not resume it live"
+    )
+    assert execution_routes._sessions[sid]["dry_run"] is True

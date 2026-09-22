@@ -44,6 +44,11 @@ from services.agent.routes._helpers import (
 
 router = APIRouter()
 
+# Returned when the platform approval store cannot be reached at all (a
+# connection or timeout failure, as opposed to a response carrying its own
+# status code, which is forwarded as-is).
+_PLATFORM_UNREACHABLE_STATUS = 502
+
 
 @router.post("/v1/sessions/{session_id}/run-pev")
 async def run_pev(session_id: str, request: Request) -> dict[str, Any]:
@@ -127,12 +132,26 @@ async def approve_session(
         set_session_idle(session)
         session["approval"] = {"approved": False, "reason": req.reason}
         session["live_approval_status"] = "denied"
+        approval_id = session.get("live_approval_id")
+        # Audited before the platform forward is attempted, not after: the local
+        # denial has to survive even when the call below raises, so a session
+        # that says no is on durable record regardless of whether the platform
+        # row could be reached (GAP-124 follow-up — see resume-live below for
+        # the other half, refusing a resume once this record exists).
+        _audit.record(
+            "session.approve.denied",
+            profile_id=session["profile_id"],
+            session_id=session_id,
+            metadata={"reason": req.reason, "outcome": "denied", "approval_id": approval_id},
+        )
         # Close the matching platform approval row through the same deny path
         # the internal deny-live route uses, not just the local session state:
         # a denial that only sets local state leaves the platform row pending,
         # so a separately-privileged approver could later approve that stale
-        # row and resume the session live despite this denial.
-        approval_id = session.get("live_approval_id")
+        # row. The local denial above already stands on its own record, and
+        # resume-live now refuses a session with a final local denial, so a
+        # forwarding failure here is reported and retriable rather than a
+        # silent bypass.
         if approval_id:
             session_token = _session_token_from_request(request) or _session_accel_token(session_id)
             # The platform decision contract requires a non-empty reason
@@ -148,16 +167,38 @@ async def approve_session(
                     session_token=session_token,
                 )
             except httpx.HTTPStatusError as exc:
+                _audit.record(
+                    "session.approve.denied.forward_failed",
+                    profile_id=session["profile_id"],
+                    session_id=session_id,
+                    metadata={
+                        "approval_id": approval_id,
+                        "error": "http_status",
+                        "status_code": exc.response.status_code,
+                    },
+                )
                 raise HTTPException(
                     status_code=exc.response.status_code,
                     detail="platform_denial_failed",
                 ) from exc
-        _audit.record(
-            "session.approve.denied",
-            profile_id=session["profile_id"],
-            session_id=session_id,
-            metadata={"reason": req.reason, "outcome": "denied", "approval_id": approval_id},
-        )
+            except httpx.HTTPError as exc:
+                # Anything other than a response with a status code: a
+                # connection or timeout failure reaching the platform. The
+                # local denial is already durably audited above, so this is
+                # reported rather than silently dropped.
+                _audit.record(
+                    "session.approve.denied.forward_failed",
+                    profile_id=session["profile_id"],
+                    session_id=session_id,
+                    metadata={
+                        "approval_id": approval_id,
+                        "error": type(exc).__name__,
+                    },
+                )
+                raise HTTPException(
+                    status_code=_PLATFORM_UNREACHABLE_STATUS,
+                    detail="platform_denial_failed",
+                ) from exc
         return {"session_id": session_id, "status": session["status"]}
 
     approval_id = session.get("live_approval_id")
@@ -308,11 +349,16 @@ async def resume_live_internal(session_id: str) -> dict[str, str]:
         ``{"session_id": session_id, "status": "executing"}``.
 
     Raises:
-        HTTPException: 404 when the session does not exist.
+        HTTPException: 404 when the session does not exist, 409 when the
+            session carries a final local denial (``approve_session`` already
+            recorded one, durably, before this call could arrive) — a stale
+            platform approval row must not override that record.
     """
     session = _sessions.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if session.get("live_approval_status") == "denied":
+        raise HTTPException(status_code=409, detail="session_locally_denied")
     session["dry_run"] = False
     session["live_approval_status"] = "approved"
     run_id = session.get("run_id")
