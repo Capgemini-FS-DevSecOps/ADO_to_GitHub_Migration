@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from ado2gh.api.contracts import LiveApprovalCreateRequest
 from ado2gh.api.live_approval_scopes import (
     AGENT_SESSION_SCOPE_TYPE,
+    MIGRATE_JOB_SCOPE_TYPE,
     PIPELINE_RUN_CONTEXT_RUN_ID,
     PIPELINE_RUN_SCOPE_TYPE,
     ScopeType,
@@ -25,7 +26,7 @@ from ado2gh.api.live_approval_scopes import (
     pipeline_run_scope_id,
 )
 from ado2gh.api.profile_governance import write_profile_audit
-from ado2gh.audit import redact_payload, redact_text
+from ado2gh.audit import AuditEvent, redact_payload, redact_text
 from ado2gh.auth.models import PlatformUser
 from ado2gh.state.factory import create_state_db
 
@@ -50,6 +51,12 @@ ExecuteCallback = Callable[[dict], Any]
 
 _migrate_executor: ExecuteCallback | None = None
 _pipeline_executor: ExecuteCallback | None = None
+
+DEFAULT_AGENT_NOTIFICATION_URL = "http://agent:8090"
+"""Agent base URL used when ``AGENT_URL`` is unset (docker-compose service name)."""
+
+AGENT_NOTIFICATION_TIMEOUT_SECONDS = 30.0
+"""How long ``_notify_agent`` waits for the agent to accept a resume/deny notification."""
 
 
 def _internal_headers() -> dict[str, str]:
@@ -226,7 +233,7 @@ class LiveApprovalStore:
             context_json=json.dumps(context),
         )
         write_profile_audit(
-            "platform.live_execution.requested",
+            AuditEvent.LIVE_EXECUTION_REQUESTED.value,
             profile_id=request.profile_id or "_platform",
             actor=requester.username,
             payload={
@@ -337,7 +344,7 @@ class LiveApprovalStore:
         ):
             return True
         write_profile_audit(
-            "platform.live_execution.scope_mismatch",
+            AuditEvent.LIVE_EXECUTION_SCOPE_MISMATCH.value,
             profile_id=row.get("profile_id") or "_platform",
             actor=actor,
             payload={
@@ -398,13 +405,13 @@ class LiveApprovalStore:
             approval_id, "approved", approver, masked_reason, now,
         )
         assert updated is not None
-        if updated["scope_type"] == "pipeline_run":
+        if updated["scope_type"] == PIPELINE_RUN_SCOPE_TYPE:
             self._stamp_pipeline_approval(updated, "approved", approver)
         # Audited before the scope resumes, not after: the decision row is already
         # committed, so an executor that raises must not be able to take the record
         # of who granted it down with it (CA-004, GAP-067).
         write_profile_audit(
-            "platform.live_execution.approved",
+            AuditEvent.LIVE_EXECUTION_APPROVED.value,
             profile_id=updated.get("profile_id") or "_platform",
             actor=approver.username,
             payload={
@@ -444,7 +451,7 @@ class LiveApprovalStore:
             )
             try:
                 write_profile_audit(
-                    "platform.live_execution.resume_failed",
+                    AuditEvent.LIVE_EXECUTION_RESUME_FAILED.value,
                     profile_id=row.get("profile_id") or "_platform",
                     actor=row.get("approver_username") or "_system",
                     payload={
@@ -511,11 +518,11 @@ class LiveApprovalStore:
         assert updated is not None
         if updated["scope_type"] == AGENT_SESSION_SCOPE_TYPE:
             self._notify_agent(updated, "deny-live", {"reason": masked_reason})
-        elif updated["scope_type"] == "pipeline_run":
+        elif updated["scope_type"] == PIPELINE_RUN_SCOPE_TYPE:
             self._stamp_pipeline_approval(updated, "denied", approver)
             self._mark_pipeline_denied(updated["scope_id"], masked_reason)
         write_profile_audit(
-            "platform.live_execution.denied",
+            AuditEvent.LIVE_EXECUTION_DENIED.value,
             profile_id=updated.get("profile_id") or "_platform",
             actor=approver.username,
             payload={
@@ -537,9 +544,9 @@ class LiveApprovalStore:
         scope_type = row["scope_type"]
         if scope_type == AGENT_SESSION_SCOPE_TYPE:
             self._notify_agent(row, "resume-live")
-        elif scope_type == "migrate_job":
+        elif scope_type == MIGRATE_JOB_SCOPE_TYPE:
             self._execute_migrate(row)
-        elif scope_type == "pipeline_run":
+        elif scope_type == PIPELINE_RUN_SCOPE_TYPE:
             self._execute_pipeline(row)
 
     def _context(self, row: dict) -> dict:
@@ -590,7 +597,7 @@ class LiveApprovalStore:
         )
         if derived != row["scope_id"]:
             write_profile_audit(
-                "platform.live_execution.scope_mismatch",
+                AuditEvent.LIVE_EXECUTION_SCOPE_MISMATCH.value,
                 profile_id=row.get("profile_id") or "_platform",
                 actor=row.get("approver_username") or "_system",
                 payload={
@@ -628,7 +635,7 @@ class LiveApprovalStore:
         derived = pipeline_run_scope_id(params[PIPELINE_RUN_CONTEXT_RUN_ID])
         if derived != row["scope_id"]:
             write_profile_audit(
-                "platform.live_execution.scope_mismatch",
+                AuditEvent.LIVE_EXECUTION_SCOPE_MISMATCH.value,
                 profile_id=row.get("profile_id") or "_platform",
                 actor=row.get("approver_username") or "_system",
                 payload={
@@ -661,13 +668,13 @@ class LiveApprovalStore:
         internal token (CA-003). The status code and the exception type are enough.
         """
         session_id = row["scope_id"]
-        agent_url = os.environ.get("AGENT_URL", "http://agent:8090")
+        agent_url = os.environ.get("AGENT_URL", DEFAULT_AGENT_NOTIFICATION_URL)
         try:
             resp = httpx.post(
                 f"{agent_url}/v1/internal/sessions/{session_id}/{route}",
                 json=payload,
                 headers=_internal_headers(),
-                timeout=30.0,
+                timeout=AGENT_NOTIFICATION_TIMEOUT_SECONDS,
             )
             if resp.is_success:
                 return
@@ -684,7 +691,7 @@ class LiveApprovalStore:
         )
         try:
             write_profile_audit(
-                "platform.live_execution.notify_failed",
+                AuditEvent.LIVE_EXECUTION_NOTIFY_FAILED.value,
                 profile_id=row.get("profile_id") or "_platform",
                 actor=row.get("approver_username") or "_system",
                 payload={

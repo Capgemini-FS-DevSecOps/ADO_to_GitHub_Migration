@@ -12,7 +12,9 @@ from fastapi import HTTPException, Request
 from pydantic import TypeAdapter, ValidationError
 
 from ado2gh.api.contracts import LiveApprovalCreateRequest
+from ado2gh.api.live_approval_scopes import MIGRATE_JOB_SCOPE_TYPE
 from ado2gh.api.platform_rbac import operator_requires_live_approval, platform_user
+from ado2gh.audit import AuditEvent
 from ado2gh.models import ExecutionMode
 from services.accelerator_api.routes._shared import _settings
 
@@ -141,7 +143,7 @@ def audit_live_migration(path: str, user: PlatformUser | None, body: dict[str, A
     from ado2gh.api.profile_governance import write_profile_audit
 
     write_profile_audit(
-        "accelerator.migrate.live_execution",
+        AuditEvent.ACCELERATOR_MIGRATE_LIVE_EXECUTION.value,
         profile_id=active_profile_id() or "_platform",
         actor=getattr(user, "username", "") or "",
         payload={
@@ -185,13 +187,13 @@ async def guard_live_migration(request: Request) -> None:
     profile_id = active_profile_id()
     scope_id = _live_scope_id(path, body, profile_id)
     store = LiveApprovalStore()
-    if store.has_approved("migrate_job", scope_id):
+    if store.has_approved(MIGRATE_JOB_SCOPE_TYPE, scope_id):
         audit_live_migration(path, user, body)
         return
     approval = store.create_or_get_pending(
         user,
         LiveApprovalCreateRequest(
-            scope_type="migrate_job",
+            scope_type=MIGRATE_JOB_SCOPE_TYPE,
             scope_id=scope_id,
             profile_id=profile_id,
             reason_request=f"Live {path}",

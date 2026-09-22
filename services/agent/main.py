@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx  # noqa: F401 -- re-exported; tests patch services.agent.main.httpx.AsyncClient
 
+from ado2gh import __version__
 from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 
 ensure_gei_dotnet_env()
@@ -43,7 +44,7 @@ from services.agent.routes.session_routes import router as session_router
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ADO2GH Agent API", version="5.1.0")
+app = FastAPI(title="ADO2GH Agent API", version=__version__)
 app.include_router(run_router)
 app.include_router(session_router)
 app.include_router(message_router)

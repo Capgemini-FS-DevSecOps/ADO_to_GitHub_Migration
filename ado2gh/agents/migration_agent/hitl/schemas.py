@@ -43,6 +43,16 @@ OPERATOR_BLOCKER_SUMMARY_MAX_ITEMS = 6
 #: Most blockers or failures kept in an operator-input request's context payload.
 OPERATOR_CONTEXT_MAX_ITEMS = 8
 
+#: Similarity cutoff (``difflib.get_close_matches``) for matching a requested
+#: repository id against a discovered repository's full ``Project/Repo`` name.
+REPOSITORY_MATCH_FULL_NAME_CUTOFF = 0.45
+
+#: Similarity cutoff (``difflib.get_close_matches``) for matching a requested
+#: repository id, with its project stripped, against a discovered repository's
+#: bare name. Lower than the full-name cutoff because a basename carries less
+#: context to match on.
+REPOSITORY_MATCH_BASENAME_CUTOFF = 0.4
+
 
 FieldType = Literal["text", "textarea", "select", "checkbox"]
 

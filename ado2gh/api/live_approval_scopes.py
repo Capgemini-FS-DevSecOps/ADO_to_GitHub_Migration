@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
 from ado2gh.api.profile_governance import write_profile_audit
+from ado2gh.audit import AuditEvent
 
 ScopeType = str
 
@@ -24,6 +25,9 @@ ScopeType = str
 # in, which every caller of the unguarded ``POST /v1/plan`` already chooses; it
 # selects no migration target and so grants nothing the scope withholds.
 _MIGRATE_CONTEXT_KEYS = ("config_path", "wave_id", "db_path")
+
+MIGRATE_JOB_SCOPE_TYPE: ScopeType = "migrate_job"
+"""Approval scope type for one dashboard migrate run or ``/v1/migrate/*`` feature route call."""
 
 PIPELINE_RUN_SCOPE_TYPE: ScopeType = "pipeline_run"
 """Approval scope type for one persisted pipeline run."""
@@ -163,7 +167,7 @@ def _assert_migrate_context_matches(
             refusal is as visible in the audit trail as one caught later
             (GAP-071 covered the check; this closes the missing audit record).
     """
-    if request.scope_type != "migrate_job":
+    if request.scope_type != MIGRATE_JOB_SCOPE_TYPE:
         return
     params = _migrate_job_params(context)
     if params is None:
@@ -174,7 +178,7 @@ def _assert_migrate_context_matches(
     if derived == request.scope_id and not context.get("dry_run"):
         return
     write_profile_audit(
-        "platform.live_execution.scope_mismatch",
+        AuditEvent.LIVE_EXECUTION_SCOPE_MISMATCH.value,
         profile_id=request.profile_id or "_platform",
         actor=actor,
         payload={
@@ -235,7 +239,7 @@ def _assert_pipeline_context_matches(
     if derived == request.scope_id:
         return
     write_profile_audit(
-        "platform.live_execution.scope_mismatch",
+        AuditEvent.LIVE_EXECUTION_SCOPE_MISMATCH.value,
         profile_id=request.profile_id or "_platform",
         actor=actor,
         payload={
@@ -260,6 +264,7 @@ def _assert_pipeline_context_matches(
 
 __all__ = [
     "AGENT_SESSION_SCOPE_TYPE",
+    "MIGRATE_JOB_SCOPE_TYPE",
     "PIPELINE_RUN_CONTEXT_RUN_ID",
     "PIPELINE_RUN_SCOPE_TYPE",
     "ScopeType",

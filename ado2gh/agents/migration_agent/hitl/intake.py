@@ -6,6 +6,8 @@ from typing import Any, Awaitable, Callable
 from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
 from ado2gh.agents.migration_agent.hitl.schemas import (
     INTAKE_FIELD_REGISTRY,
+    REPOSITORY_MATCH_BASENAME_CUTOFF,
+    REPOSITORY_MATCH_FULL_NAME_CUTOFF,
     FormIntakeSubmission,
     IntakeFieldSpec,
     IntakePhase,
@@ -187,9 +189,9 @@ def normalize_repository_id(
     if not match and repos:
         names = sorted(discovery_repo_names(repos))
         repo_part = repo_id.split("/")[-1]
-        close = difflib.get_close_matches(repo_id, names, n=1, cutoff=0.45)
+        close = difflib.get_close_matches(repo_id, names, n=1, cutoff=REPOSITORY_MATCH_FULL_NAME_CUTOFF)
         if not close:
-            close = difflib.get_close_matches(repo_part, names, n=1, cutoff=0.4)
+            close = difflib.get_close_matches(repo_part, names, n=1, cutoff=REPOSITORY_MATCH_BASENAME_CUTOFF)
         if close:
             match = find_discovery_repo(close[0], repos)
     if match:

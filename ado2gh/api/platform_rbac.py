@@ -15,13 +15,14 @@ import logging
 
 from fastapi import HTTPException, Request
 
+from ado2gh.audit import AuditEvent
 from ado2gh.auth.models import PlatformUser
 from ado2gh.auth.service import auth_enabled, permissions_for
 from ado2gh.models import ExecutionMode
 
 logger = logging.getLogger(__name__)
 
-LIVE_APPROVAL_REFUSAL_EVENT = "platform.live_execution.approval_refused"
+LIVE_APPROVAL_REFUSAL_EVENT = AuditEvent.LIVE_EXECUTION_APPROVAL_REFUSED
 """Audit event name written by `require_approve_live_execution` on every refusal (GAP-134).
 
 A safeguard that every real action is audited only holds if every refusal is
