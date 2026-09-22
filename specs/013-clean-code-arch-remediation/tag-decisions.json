@@ -123,9 +123,9 @@
     "id": "ado2gh/agents/migration_agent/guardrails.py::evaluate_guardrail",
     "tag": "bool_flag",
     "decision": "reject",
-    "rationale": "`plan_approved` is the approval state of the plan being evaluated, one of five sequential authorization conditions, not a switch between two code paths. Re-asked after the docstring rewrite changed the state_hash; reaches the operator's own 2026-09-08 conclusion that the parameter is data rather than a mode, so the row carries `bool_data`.",
-    "state_hash": "a2a1ceff94b6396c910907395f7a8375308e7307",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "plan_approved is approval state, not a behavioural mode switch; matches the reviewer's and operator's 2026-09-08 conclusion already recorded against this same function's gt5_params exception row in exception-register.md, which notes bool_flag was rejected here for the identical reason.",
+    "state_hash": "3cba902356c24c1b49a6acc3df5591608f278aa4",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/hitl/",
@@ -150,6 +150,14 @@
     "rationale": "private helper extracting blocker text; noun names are correct for property/accessor functions.",
     "state_hash": "c9ebe020bb1fe3cb6f226e7730afe462b4ee91b8",
     "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/hitl/blockers.py::_declined_key",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "cc4eceff5800a1f20205994ecdc9cfa6e197cb1d",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/hitl/blockers.py::blocker_key",
@@ -216,6 +224,14 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/hitl/form_fields.py::default_required_for_type",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "70f14e649c0386795ab4c588bb4914e9c73fb70f",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/hitl/form_fields.py::field_dict_from_spec",
     "tag": "name_review",
     "decision": "reject",
@@ -248,12 +264,28 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/hitl/forms.py::_value_is_blank",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "d98dc7965c8bbcc349ff7c15364912beb6a8eb90",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/hitl/forms.py::migration_ready_reply",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "factory function building assistant message; descriptive noun is correct.",
     "state_hash": "0c38023fad8724c4f7406945be9d25f0ffb7215c",
     "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/hitl/forms.py::missing_required_form_fields",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "57bd8aca29ffb186887e74485f95942fae3a4e99",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/hitl/forms.py::sanitize_form",
@@ -371,9 +403,9 @@
     "id": "ado2gh/agents/migration_agent/hitl/interrupt_node.py::human_input_node",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "framework-fixed LangGraph node signature `(state) -> dict` protected under HITL interrupt node exception.",
-    "state_hash": "4dac635a1c3b2754b24101267dac4d2dbcfdd35e",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "e14f7ed0264b97e544f83cdccb8949bf0680ccd7",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/hitl/operator_input.py",
@@ -395,9 +427,9 @@
     "id": "ado2gh/agents/migration_agent/hitl/operator_input.py::_field_specs_from_operator_fields",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "private converter factory; descriptive noun appropriate.",
-    "state_hash": "f7b79202c30f6482e341913a2ebba57a5e1ad823",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "890bf26a590a0a71b3f143974f04d8e0a0400b7d",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/hitl/operator_input.py::_github_not_found_error",
@@ -419,9 +451,9 @@
     "id": "ado2gh/agents/migration_agent/hitl/operator_input.py::assess_operator_input_needed",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "first token is verb \"assess\"; no issue.",
-    "state_hash": "a78646ba367effe7ac7795ba424e01bdc3664e63",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "2071f90145032534968907e1f6a03aba53dc49ac",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/hitl/operator_input.py::blockers_from_baseline_probes",
@@ -816,6 +848,14 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/nodes/executor/scope.py::_refuse_unauthorized_live_write",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "eb0514ab0139e3d528ab71404d426a2c92a6316c",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/nodes/executor/scope.py::default_agent_enabled_scopes",
     "tag": "name_review",
     "decision": "reject",
@@ -920,6 +960,14 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/nodes/orchestrator_prompt.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name accurately describes its contents; reviewed against the file's actual symbols, no rename warranted.",
+    "state_hash": "beb93f8e4b59293f8c8ecbe6ec2b077dabd9f340",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/nodes/orchestrator_tools.py",
     "tag": "module_name_review",
     "decision": "reject",
@@ -928,12 +976,20 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/nodes/orchestrator_tools.py::_execute_rollback",
+    "tag": "bool_flag",
+    "decision": "reject",
+    "rationale": "confirmed is the operator's explicit consent to an irreversible deletion (CA-002/THR-06-003), keyword-only and required to be exactly True; it is approval state, not a mode switch, the same category the reviewer already rejected bool_flag for on evaluate_guardrail's plan_approved.",
+    "state_hash": "aa6fdce1869f5b088241ebad2c56a7db9a735254",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/nodes/orchestrator_tools.py::_planner_handoff_state_clear",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Name is an accurate verb, predicate or noun-phrase accessor for what the function does; the generator's verb list is the false positive.",
-    "state_hash": "419338d2fb25881a4d596b8d52eb4cbac8d44c19",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "451662c82b875904e871934a20616b1eba710416",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/agents/migration_agent/nodes/planner.py",
@@ -992,6 +1048,14 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/nodes/planner_research.py::_discovery_snapshot",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "220ae8c7942c997785c3447d306a147d9dc0a982",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/nodes/planner_research.py::_planner_append_thinking",
     "tag": "name_review",
     "decision": "reject",
@@ -1003,9 +1067,9 @@
     "id": "ado2gh/agents/migration_agent/nodes/planner_research.py::_planner_operator_input_return",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "private builder returning the AgentState-update dict for an operator-input hand-off; name and docstring make the shape and purpose clear.",
-    "state_hash": "33112f091d81d8e6c709862b34803196a8eb04ae",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "aa8f674662e4bbb38ce74e4f41b9030522c22c5d",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/agents/migration_agent/nodes/planner_research.py::_planner_text_indicates_blocker",
@@ -1251,9 +1315,9 @@
     "id": "ado2gh/agents/migration_agent/runtime/orchestrator.py::_state_has_interrupt",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Name is an accurate verb, predicate or noun-phrase accessor for what the function does; the generator's verb list is the false positive.",
-    "state_hash": "c6ab2d0d429ca0142bd37ad98f0166a7d2c50da4",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "154ed2432e0674a18cf3dccc957e42ceb322b02c",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/agents/migration_agent/runtime/orchestrator.py::continue_session_graph",
@@ -1472,12 +1536,60 @@
     "decided_by": "caveman:cavecrew-reviewer"
   },
   {
+    "id": "ado2gh/agents/migration_agent/tools/shared_tools.py::_refuse_path",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "a9a80aa52ac6438d2f7a559ba7d8526af6898a24",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/tools/shared_tools.py::tool_error",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "9b40ba09b3f4424a30f0ac40fc20e455aa47a6f7",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "ado2gh/agents/migration_agent/tools/validator_tools.py",
     "tag": "module_name_review",
     "decision": "reject",
     "rationale": "`validator_tools` accurately describes validator-specific tool definitions.",
     "state_hash": "9eca3c7d8cc0d7fa0573772c68156ff665420370",
     "decided_by": "caveman:cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/untrusted.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name accurately describes its contents; reviewed against the file's actual symbols, no rename warranted.",
+    "state_hash": "5f267ac8cde1afc40c83dcd28b0df0fd2006ca48",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/untrusted.py::_defuse",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "29ad05fd316efa915ddeda6d2bb7c6788a75753c",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/untrusted.py::fence_untrusted",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "2d9ff446b45dd885899bca08c2a9caf47346e03b",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/untrusted.py::scrub_inline",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "e380d0f1bbc3999cee3c9154a3d5263956b036ed",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/agents/migration_agent/utils.py",
@@ -1766,6 +1878,30 @@
     "rationale": "Clearly describes custom error definitions.",
     "state_hash": "9009518b3df4159f91d8ebd61518846c21845269",
     "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/live_approval_scopes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name accurately describes its contents; reviewed against the file's actual symbols, no rename warranted.",
+    "state_hash": "42d4a6fffff3ddd5404b06f3e8be1c161014f409",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "ado2gh/api/live_approval_scopes.py::_pipeline_run_params",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "1111397c9c2302c4bcfd757bd9a3ea840e777c5d",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "ado2gh/api/live_approval_scopes.py::pipeline_run_scope_id",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "90740c6c451d2940b2b4e1cdadae60c8d9911a20",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/api/live_approval_store.py",
@@ -2299,17 +2435,17 @@
     "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._pipeline_conversion_dry_run_warnings",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "same shape as its sibling collector; renaming would break the deliberate naming pair.",
-    "state_hash": "9cb68ceb0a4f0a3da456c27ada94f87e13082c7f",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "1940e09eab6dd60c7dd7a3dbde9ad0b23aef803d",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._repo_migration_dry_run_warnings",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "private pure collector whose noun-phrase name is exactly the `list[str]` it returns.",
-    "state_hash": "e149100995ed5db57dd312b18a9287294a30a0f1",
-    "decided_by": "caveman:cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "321ee11efe826600bc17112c3c054dfb0dd7bab4",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/api/pipeline_steps.py::PipelineStepsMixin._step_analyze_deps",
@@ -2470,6 +2606,14 @@
     "rationale": "Noun correctly describing what is returned (payload).",
     "state_hash": "44ce49a6d80ce0b5d7a60a18dbae71d97b6dd236",
     "decided_by": "review-agent"
+  },
+  {
+    "id": "ado2gh/api/proxy_prefixes.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name accurately describes its contents; reviewed against the file's actual symbols, no rename warranted.",
+    "state_hash": "8980de90546ea6b77687888b80ad9f38aea5632d",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/api/repo_input.py",
@@ -3115,9 +3259,9 @@
     "id": "ado2gh/core/scopes/git_scope.py::GitScopeHandler._analyze_feasibility",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Descriptive private method name; it clearly states its responsibility.",
-    "state_hash": "5eb3a23ad8ca50e04fcefc27cae2b20239ba4d4a",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "f6f771db6a93ef9d014c118364f7598182c9c428",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/core/scopes/pipelines_scope.py",
@@ -3147,9 +3291,9 @@
     "id": "ado2gh/core/scopes/secrets_scope.py::SecretsScopeHandler._suggest",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Private helper method; the name is clear in the context of service-connection type suggestion.",
-    "state_hash": "d7c3eca5ce48e859aa9f0cd4b1ffadb631dc621a",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "fc6173be7433ada8f464ea8f6d6f1f398032ce57",
+    "decided_by": "operator"
   },
   {
     "id": "ado2gh/core/scopes/wiki_scope.py",
@@ -3326,6 +3470,14 @@
     "rationale": "the module name describes its single responsibility: extract pipeline metadata from raw ADO API responses.",
     "state_hash": "1d7c4a4c64b08c45805cc93abf9a669416d514b8",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/pipelines/extractor.py::_variable_group_record",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "6c3e1c04364928ee668f4204dcc87751a817ce17",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/pipelines/inventory.py",
@@ -3752,14 +3904,6 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
-    "id": "ado2gh/state/job_store.py::DynamoDBJobStore._audit",
-    "tag": "name_review",
-    "decision": "reject",
-    "rationale": "private lazy getter that builds and returns an AuditWriter; textbook accessor.",
-    "state_hash": "cca73106cb13b0b4beda0a218106b66bbfd64b64",
-    "decided_by": "cavecrew-reviewer"
-  },
-  {
     "id": "ado2gh/state/job_store.py::DynamoDBJobStore._table",
     "tag": "name_review",
     "decision": "reject",
@@ -3894,6 +4038,14 @@
     "rationale": "same as the DynamoDB and Postgres enqueue rows; consistent naming across backends.",
     "state_hash": "2c2f8e5781a8ead122a5b732ea114fbb0ba67742",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "ado2gh/state/job_store.py::_configured_audit_writer",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "7e51cb5d82523f604e4d3bb0ec43eb11895428c7",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "ado2gh/state/postgres_agentic_users_mixin.py",
@@ -4179,17 +4331,17 @@
     "id": "apps/migration-ui/src/lib/agentChat.ts::initialFormValues",
     "tag": "bool_flag",
     "decision": "reject",
-    "rationale": "requiresLiveApproval is session state read off the server (whether this session still needs a platform live-execution approval), not a behaviour the caller selects: it decides only whether the confirm_execute default is forced off (CA-001/CA-002). Splitting it into two functions would duplicate the whole field loop for one defaulted value. Recorded at R4, the row is new since the TS inventory was last regenerated.",
-    "state_hash": "91d1fcb2e686e9affe127c0a4f7ce4d723bf3123",
-    "decided_by": "review-agent"
+    "rationale": "requiresLiveApproval is session state read off the server (whether this session still needs a platform live-execution approval), not a behaviour the caller selects: it decides only whether the confirm_execute default is forced off (CA-001/CA-002). Splitting it into two functions would duplicate the whole field loop for one defaulted value. Re-recorded by the finisher: state_hash moved because the TS inventory had not been regenerated since round R4 and the plain-word sweep touched this file's comments; the signature and judgment are unchanged.",
+    "state_hash": "8799946a0b943c415a254716912ee958e2944fd8",
+    "decided_by": "operator"
   },
   {
     "id": "apps/migration-ui/src/lib/agentChat.ts::isAgentInterruptible",
     "tag": "bool_flag",
     "decision": "confirm",
-    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08. (Re-recorded at R4: the state_hash moved when the TS inventory was regenerated; the signature is unchanged.)",
-    "state_hash": "c3ad53575c5633cc02e4f94755ab6bed8bfe0a41",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "flags object controls early return paths (line 42) and final return value computation; each flag is a behavior switch. Confirmed then excepted: the flags parameter is already the options object FR-012 prescribes, no signature that keeps those flags clears the tag, and a new type is forbidden by T052 - see exception-register.md. Exception decided by the coordinator on the operator behalf, 2026-09-08. Re-recorded by the finisher: state_hash moved because the TS inventory had not been regenerated since round R4 and the plain-word sweep touched this file's comments; the signature and judgment are unchanged.",
+    "state_hash": "25f3b26d7c48a6e77883d03dd6cc079684d59cc2",
+    "decided_by": "operator"
   },
   {
     "id": "apps/migration-ui/src/lib/api.ts::fetchReadiness",
@@ -4216,6 +4368,14 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "apps/migration-ui/src/lib/llmSettings.ts::proxyPasswordUpdate",
+    "tag": "bool_flag",
+    "decision": "confirm",
+    "rationale": "options.clear genuinely branches return value (empty string vs typed-or-keep-mask), real behavioural mode switch, not approval state; already uses named-options-object mitigation. Needs exception-register.md row rather further rename/refactor, matching migration_scan_profile precedent (FBT001/FBT002 noqa + register row).",
+    "state_hash": "f06e7efccec5ecd89484a57c8477e46dcaa1dc54",
+    "decided_by": "operator"
+  },
+  {
     "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::gateOverrideReason",
     "tag": "bool_flag",
     "decision": "confirm",
@@ -4227,9 +4387,9 @@
     "id": "apps/migration-ui/src/lib/pipelineRunStatus.ts::liveStartNeedsConfirm",
     "tag": "bool_flag",
     "decision": "reject",
-    "rationale": "Both parameters are observed state the caller already holds - whether the run is a dry run and whether the confirm step is already armed - and the function is a pure predicate OR-ing them into one answer, the shape FR-012 prescribes rather than a mode selector. Neither is derivable inside the function. Recorded at R4, the row is new since the TS inventory was last regenerated.",
-    "state_hash": "749db5f8ed230a2579055f3f99be6c3e29f8b9d6",
-    "decided_by": "review-agent"
+    "rationale": "Both parameters are observed state the caller already holds - whether the run is a dry run and whether the confirm step is already armed - and the function is a pure predicate OR-ing them into one answer, the shape FR-012 prescribes rather than a mode selector. Neither is derivable inside the function. Re-recorded by the finisher: state_hash moved because the TS inventory had not been regenerated since round R4 and the plain-word sweep touched this file's comments; the signature and judgment are unchanged.",
+    "state_hash": "cab417d1069cb8c2cceb467d4b52874dcab5db26",
+    "decided_by": "operator"
   },
   {
     "id": "services/accelerator_api/auth_routes.py",
@@ -4240,12 +4400,44 @@
     "decided_by": "cavecrew-reviewer"
   },
   {
+    "id": "services/accelerator_api/auth_routes.py::_forwarded_protos",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "7b168b298fdad62dcd2308f51ff2ea959d48e0b8",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::_last_hop",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "841662e5d2cd9bc9e0b9c29cdf2a54f90cc5652c",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
     "id": "services/accelerator_api/auth_routes.py::_onboarding_redirect",
     "tag": "name_review",
     "decision": "reject",
     "rationale": "noun names exactly what it returns, the onboarding redirect path or None; private helper, body matches docstring.",
     "state_hash": "7488a6aaa059b329985a553fca5d12e23b7aabb7",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::_rfc7239_proto",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "ebe4db41fef1094128c93ed17edb7aed12acee6f",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::_trusted_proxy",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "421dd80c3ecf1341ce71d9daa456051697625a01",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/accelerator_api/auth_routes.py::_user_payload",
@@ -4387,9 +4579,9 @@
     "id": "services/accelerator_api/main.py::platform_auth_middleware",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "names precisely what it is; registered by `@app.middleware(\"http\")`, framework-fixed shape.",
-    "state_hash": "dcc7054f694685907244816a5ebfe14f6b25b689",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "a5bd1960823e20388c7ad15e0ce01ef4783ade54",
+    "decided_by": "operator"
   },
   {
     "id": "services/accelerator_api/main.py::ready",
@@ -4619,9 +4811,9 @@
     "id": "services/accelerator_api/routes/migrate_routes.py::git_mirror",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "handler for POST /v1/migrate/git-mirror; name mirrors the path segment exactly.",
-    "state_hash": "441ed8e41e562118da95fb8b330a05fdae17e81c",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name accurate verb, predicate or noun-phrase accessor function does; generator's verb list false positive.",
+    "state_hash": "819227940ba60080700558503fb33d620ff0f24c",
+    "decided_by": "operator"
   },
   {
     "id": "services/accelerator_api/routes/migrate_routes.py::pipeline_convert",
@@ -4691,9 +4883,9 @@
     "id": "services/accelerator_api/routes/pipeline_routes.py::_park_for_approval",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "`park` is a verb and the docstring and body agree: it is the single place a live pipeline run enters the approval queue and is parked there (GAP-066, CA-004). Recorded at R4, the function is new since the last regeneration.",
-    "state_hash": "72264a636508657ffd64dccf9bae675a7c09b474",
-    "decided_by": "review-agent"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "584602e477d591524d38104e6ffc6ab2d4a8f526",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/accelerator_api/routes/pipeline_routes.py::pipeline_steps",
@@ -4907,9 +5099,9 @@
     "id": "services/agent/main.py::_recover_sessions_on_restart",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Name is imperative and accurately describes loading persisted sessions and marking active ones for resume on startup.",
-    "state_hash": "9dab39ac43a3ff4f4e9bd93451e6e13256ac0a92",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "377a10be29fe9b706b246747fb2e8cfbf33830ba",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/agent/main.py::agent_auth_middleware",
@@ -4950,6 +5142,14 @@
     "rationale": "Operator decision 2026-09-13 (operator-decisions.md section 9, recommended option B applied as instructed), superseding the reviewer's confirm: keep the name and file the extraction as a follow-up. T079 prescribed _helpers.py deliberately when it moved the module out of ado2gh/agents/migration_agent/route_helpers.py, and a rename does not fix what the reviewer objected to - _build_migration_plan, _enqueue_session_live_approval and _try_start_pev_run being business logic in a helpers module. Tracked as GAP-080; session_runtime.py becomes the right name only once those three have moved out.",
     "state_hash": "3be6269ee9c8cb283a4f9760fcec5c5a8b483c5c",
     "decided_by": "operator"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::FormSubmitRequest._within_size_limit",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "a176f11e1554c874f5d106a477db8d7b5afd825c",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/agent/routes/_helpers.py::_accel_get",
@@ -5003,9 +5203,9 @@
     "id": "services/agent/routes/_helpers.py::_enqueue_session_live_approval",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "enqueue is a plain verb (same whitelist gap as the job_store rows); matches the sibling routes own docstring wording of queuing a live-execution approval.",
-    "state_hash": "3c8bd272bcbd757c6ae8636992bf5ce08035e1bd",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "02c8f82e12897b4d06e73ef257b409b70a998c41",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/agent/routes/_helpers.py::_platform_user",
@@ -5054,6 +5254,62 @@
     "rationale": "filter/getter over the message list; noun name is a normal accessor idiom.",
     "state_hash": "e4ba66993e1419f39abd5dfa4d2eba27e0343538",
     "decided_by": "cavecrew-reviewer"
+  },
+  {
+    "id": "services/agent/routes/_helpers.py::client_error_detail",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "472958db8a63bb4906979101b7f4e8781c6641fe",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/agent/routes/_session_registry.py",
+    "tag": "module_name_review",
+    "decision": "reject",
+    "rationale": "Module name accurately describes its contents; reviewed against the file's actual symbols, no rename warranted.",
+    "state_hash": "c3a328a55fd45d17dc6f957b327cb71d784dc05f",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/agent/routes/_session_registry.py::_evict_stale_state",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "dc0e7b4f474a81c20241eeca6573231044310879",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/agent/routes/_session_registry.py::_forget_session",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "a99b62a53a30769f15702a54cb1d0fe4e24d9ff5",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/agent/routes/_session_registry.py::_remember_run",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "a4fef9c5f454709e266c11855b272031a874f3bb",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/agent/routes/_session_registry.py::_remember_session",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "6fdca1bf2b13e05890e45a77c072deafd226f2a3",
+    "decided_by": "finisher (feature 013)"
+  },
+  {
+    "id": "services/agent/routes/_session_registry.py::_session_activity_epoch",
+    "tag": "name_review",
+    "decision": "reject",
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "8de5425e7b98e24154e1cfb00744115627e587cf",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/agent/routes/execution_routes.py",
@@ -5107,9 +5363,9 @@
     "id": "services/agent/routes/message_routes.py::session_message_stream",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Framework-fixed FastAPI route handler; name accurately describes streaming session messages over SSE.",
-    "state_hash": "ea4dfa2f437af2b707cfc669d2943098c0210773",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "206ebaa01b95756a07a4d52b8dcf67deb161c76e",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/agent/routes/model_routes.py",
@@ -5155,9 +5411,9 @@
     "id": "services/agent/routes/run_routes.py::health",
     "tag": "name_review",
     "decision": "reject",
-    "rationale": "Framework-fixed FastAPI route handler; standard naming for a health endpoint and part of the frozen HTTP surface.",
-    "state_hash": "16f7d6f5a6419b9977b0bf357d70cd70b56e64e5",
-    "decided_by": "cavecrew-reviewer"
+    "rationale": "Name is an accurate verb/predicate for what the function computes or does; reviewed against its signature and body, no rename warranted.",
+    "state_hash": "41f5f7d608c445e70c95ea08fb6fcfb4bdbdafc4",
+    "decided_by": "finisher (feature 013)"
   },
   {
     "id": "services/agent/routes/run_routes.py::metrics",

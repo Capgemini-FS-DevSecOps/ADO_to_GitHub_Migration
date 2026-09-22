@@ -108,6 +108,10 @@
     "reason": "orphan_allowlist"
   },
   {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.path",
+    "reason": "orphan_allowlist"
+  },
+  {
     "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.save",
     "reason": "orphan_allowlist"
   },
@@ -165,6 +169,10 @@
   },
   {
     "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.patch_provider",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.path",
     "reason": "orphan_allowlist"
   },
   {
@@ -249,6 +257,10 @@
   },
   {
     "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.load",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.path",
     "reason": "orphan_allowlist"
   },
   {
