@@ -555,12 +555,20 @@ class PipelineRunStartRequest(BaseModel):
     disabled the live-execution gate; that field is gone, and a caller still
     sending it — or any other field this model does not declare — now gets a
     loud validation error instead of a silent 200 that ignored it.
+
+    ``dry_run`` is a three-state field: ``True``/``False`` decide, and an omitted
+    field defers to the deployment profile's ``dry_run_default``. A preview run
+    is the default and a real run needs an explicit opt-in, so that profile
+    default must stay reachable (register item GAP-079). The field used to be
+    declared ``bool = True``, which made the fallback in
+    ``services/accelerator_api/routes/pipeline_routes.py`` unreachable, the same
+    bug ``SessionRequest.dry_run`` already had and was fixed for.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str = "Manual migration"
-    dry_run: bool = True
+    dry_run: Optional[bool] = None
     phase: str = ""
     wave_id: Optional[int] = None
     steps: Optional[list[str]] = None
