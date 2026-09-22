@@ -1,8 +1,8 @@
 """Test that DynamoDB backend is fully removed."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,12 +17,12 @@ def test_no_dynamodb_imports_remain():
     import ast
 
     for root_dir in ("ado2gh", "services"):
-        for dirpath, dirs, files in Path(REPO_ROOT / root_dir).walk():
+        for dirpath, dirs, files in os.walk(REPO_ROOT / root_dir):
             dirs[:] = [d for d in dirs if d != "__pycache__"]
             for f in files:
                 if not f.endswith(".py"):
                     continue
-                filepath = dirpath / f
+                filepath = Path(dirpath) / f
                 try:
                     tree = ast.parse(filepath.read_text(encoding="utf-8"), str(filepath))
                 except Exception:
