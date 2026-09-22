@@ -90,12 +90,17 @@ def _seed_local_workflows(root):
     return wf_dir
 
 
-def test_cli_push_workflows_does_not_report_blocked_push_as_zero_count_success(tmp_path):
-    """CLI direction: a live ``push-workflows`` must not swallow the approval gate.
+def test_cli_push_workflows_default_run_labels_itself_as_preview(tmp_path):
+    """CLI direction, preview (default) run: nothing pushed must read as a preview, not a silent no-op.
 
-    Either the operator can satisfy the gate (a push happens) or they are told
-    why nothing was pushed. Printing ``Pushed workflows for 0 repo(s)`` with a
-    zero exit code and no mention of the approval requirement is the bug.
+    Since the push-workflows opt-in change (commit a2d7a28), omitting ``--live``
+    is a preview run by design — the zero-push, zero-exit-code outcome checked
+    by the original GAP-016 report is now the intended default, so this test
+    only has to confirm the output says so plainly instead of claiming success
+    with no explanation. The paired test below,
+    ``test_cli_push_workflows_live_does_not_report_blocked_push_as_zero_count_success``,
+    passes ``--live`` to exercise the actual approval-gate bug GAP-016
+    describes.
     """
     _seed_local_workflows(tmp_path / "workflows")
     gh = _gh_mock()
@@ -115,6 +120,53 @@ def test_cli_push_workflows_does_not_report_blocked_push_as_zero_count_success(t
                 "push-workflows",
                 "--config", str(tmp_path / "migration.yaml"),
                 "--workflows-dir", str(tmp_path / "workflows"),
+            ],
+        )
+
+    out = result.output
+    pushed = gh.create_branch.called or gh.create_pull_request.called
+
+    assert not pushed, (
+        f"default push-workflows run must stay a preview: create_branch="
+        f"{gh.create_branch.call_args_list} create_pull_request="
+        f"{gh.create_pull_request.call_args_list}"
+    )
+    assert "dry run" in out.lower(), (
+        "default push-workflows run must label itself as a preview so the "
+        f"zero-push, zero-exit-code outcome is not read as a silent no-op: "
+        f"exit_code={result.exit_code!r} output={out!r}"
+    )
+
+
+def test_cli_push_workflows_live_does_not_report_blocked_push_as_zero_count_success(
+    tmp_path,
+):
+    """Same GAP-016 safety property, exercised through an explicit live run.
+
+    A preview run is the default since the push-workflows opt-in change
+    (commit a2d7a28), so this second test passes ``--live`` explicitly to
+    reach the code path the approval gate actually guards; the first test
+    above now covers the (separate, already-safe) preview-run default.
+    """
+    _seed_local_workflows(tmp_path / "workflows")
+    gh = _gh_mock()
+
+    runner = CliRunner()
+    with (
+        patch("ado2gh.cli.misc.load_clients", return_value=(MagicMock(), gh)),
+        patch("ado2gh.cli.misc.load_repos", return_value=[_repo()]),
+        patch(
+            "ado2gh.core.config_loader.ConfigLoader.load",
+            return_value=({}, []),
+        ),
+    ):
+        result = runner.invoke(
+            cli,
+            [
+                "push-workflows",
+                "--config", str(tmp_path / "migration.yaml"),
+                "--workflows-dir", str(tmp_path / "workflows"),
+                "--live",
             ],
         )
 
