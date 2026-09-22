@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
+from ado2gh.api.profile_governance import write_profile_audit
 
 ScopeType = str
 
@@ -131,7 +132,11 @@ def _pipeline_run_params(context: dict) -> dict[str, str] | None:
 
 
 def _assert_migrate_context_matches(
-    request: LiveApprovalCreateRequest, context: dict,
+    request: LiveApprovalCreateRequest,
+    context: dict,
+    *,
+    db_path: str,
+    actor: str = "_system",
 ) -> None:
     """Refuse a ``migrate_job`` whose context names work its scope id does not.
 
@@ -143,12 +148,20 @@ def _assert_migrate_context_matches(
         context: The context as it will be stored — redacted already, so the
             check runs on the bytes the executor will later read back rather than
             on a copy that masking may still change (GAP-073).
+        db_path: State database the refusal audit event is written to.
+        actor: Username recorded against the refusal. Defaults to ``_system``
+            for callers below the HTTP layer, which have no signed-in user.
 
     Raises:
         HTTPException: 422 when the context re-derives to a different scope than
             the one the approver will be shown, or asks for a dry run — a queued
             approval exists to release a live run, so ``dry_run`` true is a
-            request that contradicts itself.
+            request that contradicts itself. The refusal is written as a
+            ``platform.live_execution.scope_mismatch`` audit event first, the
+            same event name the equivalent execution-time refusal in
+            ``LiveApprovalStore._execute_migrate`` writes, so a creation-time
+            refusal is as visible in the audit trail as one caught later
+            (GAP-071 covered the check; this closes the missing audit record).
     """
     if request.scope_type != "migrate_job":
         return
@@ -160,6 +173,20 @@ def _assert_migrate_context_matches(
     )
     if derived == request.scope_id and not context.get("dry_run"):
         return
+    write_profile_audit(
+        "platform.live_execution.scope_mismatch",
+        profile_id=request.profile_id or "_platform",
+        actor=actor,
+        payload={
+            "stage": "creation",
+            "requested_scope_type": request.scope_type,
+            "requested_scope_id": derived,
+            "approval_scope_type": request.scope_type,
+            "approval_scope_id": request.scope_id,
+            "approval_status": "refused",
+        },
+        db_path=db_path,
+    )
     raise HTTPException(
         status_code=422,
         detail={
@@ -171,7 +198,11 @@ def _assert_migrate_context_matches(
 
 
 def _assert_pipeline_context_matches(
-    request: LiveApprovalCreateRequest, context: dict,
+    request: LiveApprovalCreateRequest,
+    context: dict,
+    *,
+    db_path: str,
+    actor: str = "_system",
 ) -> None:
     """Refuse a ``pipeline_run`` whose context names a run its scope id does not.
 
@@ -183,10 +214,17 @@ def _assert_pipeline_context_matches(
         request: The approval being opened.
         context: The context as it will be stored — redacted already, so the
             check runs on the bytes the executor will later read back.
+        db_path: State database the refusal audit event is written to.
+        actor: Username recorded against the refusal. Defaults to ``_system``
+            for callers below the HTTP layer, which have no signed-in user.
 
     Raises:
         HTTPException: 422 when the context re-derives to a different scope
-            than the one the approver will be shown.
+            than the one the approver will be shown. The refusal is written as
+            a ``platform.live_execution.scope_mismatch`` audit event first, the
+            same event name the equivalent execution-time refusal in
+            ``LiveApprovalStore._execute_pipeline`` writes, so a creation-time
+            refusal is as visible in the audit trail as one caught later.
     """
     if request.scope_type != PIPELINE_RUN_SCOPE_TYPE:
         return
@@ -196,6 +234,20 @@ def _assert_pipeline_context_matches(
     derived = pipeline_run_scope_id(params[PIPELINE_RUN_CONTEXT_RUN_ID])
     if derived == request.scope_id:
         return
+    write_profile_audit(
+        "platform.live_execution.scope_mismatch",
+        profile_id=request.profile_id or "_platform",
+        actor=actor,
+        payload={
+            "stage": "creation",
+            "requested_scope_type": request.scope_type,
+            "requested_scope_id": derived,
+            "approval_scope_type": request.scope_type,
+            "approval_scope_id": request.scope_id,
+            "approval_status": "refused",
+        },
+        db_path=db_path,
+    )
     raise HTTPException(
         status_code=422,
         detail={

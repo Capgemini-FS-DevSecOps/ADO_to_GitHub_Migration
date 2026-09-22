@@ -193,8 +193,12 @@ class LiveApprovalStore:
                 (GAP-071, GAP-108, CA-002).
         """
         context = _redacted_context(request.context)
-        _assert_migrate_context_matches(request, context)
-        _assert_pipeline_context_matches(request, context)
+        _assert_migrate_context_matches(
+            request, context, db_path=self.db_path, actor=requester.username,
+        )
+        _assert_pipeline_context_matches(
+            request, context, db_path=self.db_path, actor=requester.username,
+        )
         existing = self.db.find_pending_live_execution_approval(
             request.scope_type, request.scope_id,
         )
