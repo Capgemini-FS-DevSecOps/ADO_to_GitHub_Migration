@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Literal, Optional
 
 import httpx
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
 
 from ado2gh.agents.migration_agent.constants import (
@@ -31,9 +31,9 @@ from ado2gh.agents.migration_agent.session.state import normalize_session_status
 from ado2gh.agents.migration_agent.utils import IdeAuditBridge, _append_event, mask_secrets
 from ado2gh.api.live_approval_scopes import AGENT_SESSION_SCOPE_TYPE
 from ado2gh.api.pipeline_runner import MIGRATE_UI_PIPELINE_STEPS
-from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, PLATFORM_APPROVALS_PATH
 from ado2gh.auth.service import SESSION_COOKIE, auth_enabled, permissions_for
-from services.agent.profiles import LocalAgentProfile, get_profile
+from services.agent.profiles import DEFAULT_ACCELERATOR_URL, LocalAgentProfile, get_profile
 from services.agent.routes._session_registry import (
     _NON_RECONSTRUCTIBLE_KEYS,
     _evict_stale_state,
@@ -68,12 +68,22 @@ MIGRATE_STEP_IDS = frozenset({
     "migrate", "migrate_repos", "convert_pipelines", "map_secrets", "convert_metadata",
 })
 
-ACCEL_URL = os.environ.get("ACCELERATOR_URL", "http://accelerator:8080")
-
 try:
     _ACTIVE_PROFILE = get_profile(os.environ.get("ADO2GH_LOCAL_PROFILE", "lightweight"))
 except KeyError:
     _ACTIVE_PROFILE = None
+
+# services.agent.profiles.LocalAgentProfile already reads ACCELERATOR_URL (and
+# applies the same environment override), so it is the one reader of that
+# variable; this module used to parse it a second time with a different
+# fallback ("http://accelerator:8080" vs. the profile's own default).
+ACCEL_URL = _ACTIVE_PROFILE.accelerator_url if _ACTIVE_PROFILE else DEFAULT_ACCELERATOR_URL
+_ACCEL_REQUEST_TIMEOUT_SECONDS = (
+    _ACTIVE_PROFILE.accelerator_request_timeout_seconds if _ACTIVE_PROFILE else 120.0
+)
+_ACCEL_HEALTH_TIMEOUT_SECONDS = (
+    _ACTIVE_PROFILE.accelerator_health_timeout_seconds if _ACTIVE_PROFILE else 3.0
+)
 
 _audit = IdeAuditBridge()
 
@@ -251,7 +261,7 @@ def _accel_headers(session_token: str | None = None) -> dict[str, str]:
 
 async def _accel_post_impl(path: str, body: dict, *, session_token: str | None = None) -> dict:
     async with httpx.AsyncClient(
-        base_url=ACCEL_URL, timeout=120.0, headers=_accel_headers(session_token),
+        base_url=ACCEL_URL, timeout=_ACCEL_REQUEST_TIMEOUT_SECONDS, headers=_accel_headers(session_token),
     ) as client:
         r = await client.post(path, json=body)
         r.raise_for_status()
@@ -318,7 +328,7 @@ def _require_operate(request: Request) -> None:
         user = getattr(request.state, "platform_user", None) if request else None
         perms = permissions_for(user.role) if user else {}
         if not perms.get("can_operate", False):
-            raise HTTPException(status_code=403, detail="operate_permission_required")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="operate_permission_required")
 
 
 def _require_approve_live(request: Request) -> None:
@@ -334,7 +344,7 @@ def _require_approve_live(request: Request) -> None:
         user = getattr(request.state, "platform_user", None) if request else None
         perms = permissions_for(user.role) if user else {}
         if not perms.get("can_approve_live_execution", False):
-            raise HTTPException(status_code=403, detail="approve_live_permission_required")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="approve_live_permission_required")
 
 
 def _resolve_model_id(requested: str | None) -> tuple[str | None, bool, bool]:
@@ -360,7 +370,7 @@ def _get_accessible_session(
     if session_id not in _sessions:
         hydrated = _try_hydrate_session(session_id)
         if hydrated is None:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
         _remember_session(session_id, hydrated)
 
     if auth_enabled() and request:
@@ -368,7 +378,7 @@ def _get_accessible_session(
         admin = is_admin_request(request)
         owner = _sessions[session_id].get("user_username")
         if viewer and not admin and owner and owner != viewer:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     return _sessions[session_id]
 
@@ -532,7 +542,7 @@ async def _assert_deployment_profile_active(profile_id: str) -> None:
     """
     profile = _profile(profile_id)
     if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
     # Additional profile validation can be added here
 
 
@@ -676,7 +686,7 @@ async def _enqueue_session_live_approval(
     token = session_token or session.get("session_token")
     try:
         row = await _accel_post(
-            "/v1/platform/approvals",
+            PLATFORM_APPROVALS_PATH,
             {
                 "scope_type": AGENT_SESSION_SCOPE_TYPE,
                 "scope_id": session["session_id"],
@@ -711,7 +721,7 @@ async def _check_accelerator() -> tuple[bool, str | None]:
     import httpx
 
     try:
-        async with httpx.AsyncClient(base_url=ACCEL_URL, timeout=3.0) as client:
+        async with httpx.AsyncClient(base_url=ACCEL_URL, timeout=_ACCEL_HEALTH_TIMEOUT_SECONDS) as client:
             r = await client.get("/health")
             r.raise_for_status()
         return True, None
@@ -727,7 +737,7 @@ async def _try_start_pev_run(session_id: str, request: Request | None = None) ->
 
     session = _sessions.get(session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     if session_requires_live_approval(session):
         msg = live_execution_block_message(session)

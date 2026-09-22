@@ -13,6 +13,21 @@ import yaml
 
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "local-profiles.yaml"
 
+DEFAULT_ACCELERATOR_URL = "http://localhost:8080"
+"""Accelerator base URL used when a profile's YAML entry omits accelerator_url."""
+
+DEFAULT_AGENT_URL = "http://localhost:8090"
+"""Agent service base URL used when a profile's YAML entry omits agent_url."""
+
+DEFAULT_SQLITE_PATH = "./migration_state.db"
+"""SQLite state database path used when a profile's YAML entry omits sqlite_path."""
+
+DEFAULT_ACCELERATOR_REQUEST_TIMEOUT_SECONDS = 120.0
+"""Timeout for a normal agent-to-accelerator HTTP call, used when a profile omits it."""
+
+DEFAULT_ACCELERATOR_HEALTH_TIMEOUT_SECONDS = 3.0
+"""Timeout for the agent's short accelerator reachability probe, used when a profile omits it."""
+
 
 @dataclass
 class LocalAgentProfile:
@@ -28,6 +43,8 @@ class LocalAgentProfile:
     lightweight_mode: bool
     dry_run_default: bool
     redis_url: str = ""
+    accelerator_request_timeout_seconds: float = DEFAULT_ACCELERATOR_REQUEST_TIMEOUT_SECONDS
+    accelerator_health_timeout_seconds: float = DEFAULT_ACCELERATOR_HEALTH_TIMEOUT_SECONDS
 
     def validate(self) -> None:
         """Raise ValueError if profile constraints are violated."""
@@ -50,15 +67,21 @@ def _load_yaml(path: Path) -> dict:
 def _from_dict(profile_id: str, raw: dict) -> LocalAgentProfile:
     return LocalAgentProfile(
         profile_id=profile_id,
-        accelerator_url=str(raw.get("accelerator_url", "http://localhost:8080")),
-        agent_url=str(raw.get("agent_url", "http://localhost:8090")),
+        accelerator_url=str(raw.get("accelerator_url", DEFAULT_ACCELERATOR_URL)),
+        agent_url=str(raw.get("agent_url", DEFAULT_AGENT_URL)),
         storage_backend=str(raw.get("storage_backend", "sqlite")),
-        sqlite_path=str(raw.get("sqlite_path", "./migration_state.db")),
+        sqlite_path=str(raw.get("sqlite_path", DEFAULT_SQLITE_PATH)),
         auth_enabled=bool(raw.get("auth_enabled", False)),
         llm_provider=str(raw.get("llm_provider", "stub")),
         lightweight_mode=bool(raw.get("lightweight_mode", False)),
         dry_run_default=bool(raw.get("dry_run_default", True)),
         redis_url=str(raw.get("redis_url", "") or ""),
+        accelerator_request_timeout_seconds=float(
+            raw.get("accelerator_request_timeout_seconds", DEFAULT_ACCELERATOR_REQUEST_TIMEOUT_SECONDS),
+        ),
+        accelerator_health_timeout_seconds=float(
+            raw.get("accelerator_health_timeout_seconds", DEFAULT_ACCELERATOR_HEALTH_TIMEOUT_SECONDS),
+        ),
     )
 
 

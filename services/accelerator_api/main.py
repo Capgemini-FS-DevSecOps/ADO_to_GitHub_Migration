@@ -21,9 +21,10 @@ from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 
 ensure_gei_dotnet_env()
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from ado2gh import __version__
 from ado2gh.api.contracts import (
     ActiveMigrationItem,
     DashboardSnapshot,
@@ -59,6 +60,7 @@ from ado2gh.api.profile_governance import (
     assert_profile_active_for_run,
     onboarding_status_payload,
 )
+from ado2gh.api.service_settings import cors_origins
 from ado2gh.api.settings_store import SettingsStore
 from ado2gh.auth.models import PlatformRole
 from ado2gh.core.config_loader import ConfigLoader
@@ -94,7 +96,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps these off the runtime
 
     from fastapi import Response
 
-app = FastAPI(title="ADO2GH Accelerator API", version="5.1.0")
+app = FastAPI(title="ADO2GH Accelerator API", version=__version__)
 app.include_router(history_router)
 app.include_router(auth_router)
 app.include_router(settings_router)
@@ -150,17 +152,17 @@ async def platform_auth_middleware(
     token = request.cookies.get(SESSION_COOKIE, "")
     if not token:
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Not authenticated"})
     session = AuthService().get_session(token)
     if not session:
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Not authenticated"})
     request.state.platform_user = session.user
     return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=cors_origins(default="*"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

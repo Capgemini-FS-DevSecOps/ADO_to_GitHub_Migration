@@ -9,6 +9,14 @@ import httpx
 from ado2gh.api.connectivity_store import ConnectivityProfile, get_connectivity_profile
 
 DEFAULT_TIMEOUT = 30.0
+"""Per-request timeout, in seconds, for cloud and local language-model HTTP calls.
+
+Not configurable today: ``ConnectivityProfile`` (ado2gh/api/connectivity_store.py)
+carries proxy and TLS settings but no timeout field, and adding one is out of
+scope here (connectivity_store.py and settings_models.py are not touched by
+this change). Making this overridable is deferred until that profile gains a
+suitable field.
+"""
 
 
 def _build_ssl_context(profile: ConnectivityProfile) -> ssl.SSLContext | bool:

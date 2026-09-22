@@ -15,3 +15,8 @@ ADO_PROXY_PREFIX = "/v1/ado"
 # The accelerator's proxy to the GitHub REST API. Read and write; write verbs
 # are gated by role-based access control and audited (see proxy_routes.py).
 GITHUB_PROXY_PREFIX = "/v1/github"
+
+# The accelerator's live-execution approval queue. The agent service posts to
+# this path from services/agent/routes/_helpers.py to open or reuse an
+# approval row for a session's live-execution request.
+PLATFORM_APPROVALS_PATH = "/v1/platform/approvals"

@@ -7,21 +7,30 @@ from typing import TYPE_CHECKING, Optional, cast
 if TYPE_CHECKING:
     import redis
 
+DEFAULT_QUEUE_NAME = "ado2gh:jobs"
+"""Redis list key holding queued job IDs when no queue name is supplied."""
+
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+"""Redis connection URL used when the REDIS_URL environment variable is unset."""
+
+DEFAULT_POP_TIMEOUT_SECONDS = 5
+"""Seconds RedisJobQueue.pop blocks waiting for a job before giving up."""
+
 
 class RedisJobQueue:
     """Push/pop job IDs via Redis list — workers claim from JobStore."""
 
-    def __init__(self, redis_url: str | None = None, queue_name: str = "ado2gh:jobs") -> None:
+    def __init__(self, redis_url: str | None = None, queue_name: str = DEFAULT_QUEUE_NAME) -> None:
         """Configure the queue without connecting to Redis.
 
         Args:
             redis_url: Redis connection URL. Falls back to the ``REDIS_URL``
-                environment variable, then to ``redis://localhost:6379/0``.
+                environment variable, then to ``DEFAULT_REDIS_URL``.
             queue_name: Key of the Redis list holding queued job IDs.
         """
         self.queue_name = queue_name
         self._redis: redis.Redis | None = None
-        self._url = redis_url or os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        self._url = redis_url or os.environ.get("REDIS_URL", DEFAULT_REDIS_URL)
 
     @property
     def redis(self) -> "redis.Redis":
@@ -44,7 +53,7 @@ class RedisJobQueue:
         """
         self.redis.lpush(self.queue_name, job_id)
 
-    def pop(self, timeout: int = 5) -> Optional[str]:
+    def pop(self, timeout: int = DEFAULT_POP_TIMEOUT_SECONDS) -> Optional[str]:
         """Block until a job ID is available or the timeout elapses.
 
         Args:

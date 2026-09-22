@@ -13,9 +13,11 @@ from ado2gh.core.gei_runtime import ensure_gei_dotnet_env
 
 ensure_gei_dotnet_env()
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from ado2gh.agents.migration_agent.session.state import BUSY_SESSION_STATUSES, SessionState
+from ado2gh.api.service_settings import cors_origins
 from ado2gh.auth.service import SESSION_COOKIE, AuthService, auth_enabled, permissions_for
 from services.agent.routes._helpers import (
     # RunStatus, _accel_get, _accel_headers, _accel_post: re-exported so tests
@@ -73,8 +75,8 @@ def _recover_sessions_on_restart() -> None:
         store = MigrationSessionStore()
         sessions = store.list_sessions()
         for s in sessions:
-            status = s.get("status", "idle")
-            if status in ("planning", "executing", "validating", "thinking"):
+            session_status = s.get("status", SessionState.IDLE.value)
+            if session_status in BUSY_SESSION_STATUSES:
                 # Mark as awaiting_input — user can resume via next message
                 store.update_session_status(s["session_id"], "awaiting_input")
     except Exception:
@@ -136,23 +138,23 @@ async def agent_auth_middleware(
         if _INTERNAL_TOKEN and hmac.compare_digest(supplied, _INTERNAL_TOKEN):
             return await call_next(request)
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Not authenticated"})
     token = request.cookies.get(SESSION_COOKIE, "")
     if not token:
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Not authenticated"})
     session = AuthService().get_session(token)
     if not session:
 
         from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        return JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Not authenticated"})
     request.state.platform_user = session.user
     request.state.permissions = permissions_for(session.user.role)
     return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(","),
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

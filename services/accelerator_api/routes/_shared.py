@@ -27,8 +27,14 @@ from ado2gh.api.migration_scan import (
 from ado2gh.api.pipeline_runner import PipelineRunner, PipelineRunStore
 from ado2gh.api.platform_rbac import operator_requires_live_approval, require_manage_settings
 from ado2gh.api.profile_governance import ProfileGovernanceError
+from ado2gh.api.settings_models import AdvancedSettings
 from ado2gh.api.settings_store import SettingsStore
 from ado2gh.models import ExecutionMode
+
+# The stock AdvancedSettings() defaults are the fallback db/config paths below —
+# imported rather than retyped, so this module cannot drift from that one
+# definition (ado2gh/api/settings_models.py:AdvancedSettings).
+_ADVANCED_SETTINGS_DEFAULTS = AdvancedSettings()
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard, types only
     from pathlib import Path
@@ -127,7 +133,7 @@ def persist_scan_results(*args: object, **kwargs: object) -> Path:
         return _persist_scan_results(*args, **kwargs)
 
 
-def _accel(db_path: str = "migration_state.db") -> Accelerator:
+def _accel(db_path: str = _ADVANCED_SETTINGS_DEFAULTS.db_path) -> Accelerator:
     """Build an accelerator bound to one state database.
 
     Args:
@@ -144,9 +150,10 @@ def _config_path() -> str:
     """Resolve the migration configuration file the process should use.
 
     Returns:
-        The path from ``ADO2GH_CONFIG``, or ``migration.yaml`` when it is unset.
+        The path from ``ADO2GH_CONFIG``, or ``AdvancedSettings().config_path``
+        when it is unset.
     """
-    return os.environ.get("ADO2GH_CONFIG", "migration.yaml")
+    return os.environ.get("ADO2GH_CONFIG", _ADVANCED_SETTINGS_DEFAULTS.config_path)
 
 
 def _platform_user(request: Request) -> PlatformUser | None:
