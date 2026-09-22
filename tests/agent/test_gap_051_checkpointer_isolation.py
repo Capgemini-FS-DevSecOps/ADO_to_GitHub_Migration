@@ -1,4 +1,4 @@
-"""GAP-051: the suite must not open the developer's real agent checkpoint DB.
+"""Regression check for register entry GAP-051: the suite must not open the developer's real agent checkpoint DB.
 
 ``_get_checkpointer`` resolves its SQLite file from ``ADO2GH_SQLITE_PATH`` and
 falls back to ``data/agent_checkpoints.db`` in the working directory. The

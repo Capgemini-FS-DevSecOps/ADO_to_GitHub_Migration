@@ -1,4 +1,4 @@
-"""GAP-054: ``JobRecord`` must declare the two timestamps every store already writes.
+"""Regression check for register entry GAP-054: ``JobRecord`` must declare the two timestamps every store already writes.
 
 The register entry (``specs/013-clean-code-arch-remediation/gap-register.md``,
 GAP-054) faults ``ado2gh/models.py`` for declaring a ``JobRecord`` without

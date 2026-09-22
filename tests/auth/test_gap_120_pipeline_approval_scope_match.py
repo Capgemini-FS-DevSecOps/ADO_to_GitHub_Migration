@@ -1,4 +1,4 @@
-"""GAP-120 (GAP-AUTH-13) — an approved pipeline run could start work its approver never saw.
+"""Regression check for register entry GAP-120 (GAP-AUTH-13) — an approved pipeline run could start work its approver never saw.
 
 ``_assert_migrate_context_matches`` (GAP-071) binds a ``migrate_job`` approval's
 stored context to the scope its approver decided on, both at creation and again

@@ -1,4 +1,4 @@
-"""GAP-018: ``run``, ``phase run``, ``ado-cleanup`` and ``push-workflows`` default
+"""Regression check for register entry GAP-018: ``run``, ``phase run``, ``ado-cleanup`` and ``push-workflows`` default
 to dry-run.
 
 Each command used to declare ``--dry-run`` as ``is_flag=True, default=False``, so

@@ -1,4 +1,4 @@
-"""GAP-017 — ``ado2gh phase gate-check`` could not be invoked at all.
+"""Regression check for register entry GAP-017 — ``ado2gh phase gate-check`` could not be invoked at all.
 
 Reproduction, in plain English:
 

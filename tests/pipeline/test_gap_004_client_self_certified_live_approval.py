@@ -1,4 +1,4 @@
-"""GAP-004 (GAP-AUTH-04) — pipeline-run routes let the client self-certify live approval.
+"""Regression check for register entry GAP-004 (GAP-AUTH-04) — pipeline-run routes let the client self-certify live approval.
 
 The defect: ``PipelineRunStartRequest.agent_live_approved`` and
 ``PipelineRunStartApprovedRequest.agent_live_approved`` were plain client-suppliable body

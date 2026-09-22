@@ -1,4 +1,4 @@
-"""GAP-005 (GAP-AUTH-05) — ``operator_requires_live_approval`` gates only OPERATOR.
+"""Regression check for register entry GAP-005 (GAP-AUTH-05) — ``operator_requires_live_approval`` gates only OPERATOR.
 
 ``ado2gh/api/platform_rbac.py:49-52`` reads::
 

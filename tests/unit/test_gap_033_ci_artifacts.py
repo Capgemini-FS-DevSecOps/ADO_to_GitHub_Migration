@@ -1,4 +1,4 @@
-"""GAP-033 and GAP-034 — deployment and CI artefacts that ship an unguarded
+"""Regression check for register entries GAP-033 and GAP-034 — deployment and CI artefacts that ship an unguarded
 write path or a guessable default credential.
 
 Both gaps are artefact-shaped, so this module asserts the *shape* of the YAML

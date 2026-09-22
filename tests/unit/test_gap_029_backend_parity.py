@@ -1,4 +1,4 @@
-"""GAP-029: ``create_state_db()`` must select its backend explicitly and losslessly.
+"""Regression check for register entry GAP-029: ``create_state_db()`` must select its backend explicitly and losslessly.
 
 The register entry (``specs/013-clean-code-arch-remediation/gap-register.md``,
 GAP-029) faults ``ado2gh/state/factory.py`` on three counts:

@@ -1,4 +1,4 @@
-"""GAP-055 — ``ado2gh service-connections`` produced an empty manifest.
+"""Regression check for register entry GAP-055 — ``ado2gh service-connections`` produced an empty manifest.
 
 ``ServiceConnectionManifest.generate(projects, output_path)`` scans ADO
 *projects*: it passes each element straight to

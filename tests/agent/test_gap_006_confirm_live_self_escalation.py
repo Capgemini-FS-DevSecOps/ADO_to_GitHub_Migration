@@ -1,4 +1,4 @@
-"""GAP-006 (GAP-AGT-01): live execution can be self-granted and then goes unguarded.
+"""Regression check for register entry GAP-006 (GAP-AGT-01): live execution can be self-granted and then goes unguarded.
 
 Two reproductions, both currently failing:
 

@@ -1,4 +1,4 @@
-"""GAP-003 (GAP-AUTH-02) — agent internal resume-live/deny-live routes are unauthorized.
+"""Regression check for register entry GAP-003 (GAP-AUTH-02) — agent internal resume-live/deny-live routes are unauthorized.
 
 ``resume_live_internal`` (``services/agent/routes/execution_routes.py``) takes no
 ``Request`` parameter at all: it sets ``dry_run=False`` and

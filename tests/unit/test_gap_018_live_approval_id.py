@@ -1,4 +1,4 @@
-"""GAP-018 — ``RunWaveRequest.live_approval_id`` was accepted and thrown away.
+"""Regression check for register entry GAP-018 — ``RunWaveRequest.live_approval_id`` was accepted and thrown away.
 
 Reproduction, in plain English:
 

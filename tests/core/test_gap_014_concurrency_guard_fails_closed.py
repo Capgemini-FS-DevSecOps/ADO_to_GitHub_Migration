@@ -1,4 +1,4 @@
-"""GAP-014 (GAP-ENG-07) — the FR-036 concurrency guard must fail closed.
+"""Regression check for register entry GAP-014 (GAP-ENG-07) — the FR-036 concurrency guard must fail closed.
 
 Reproduction from the gap register: ``other_run_holds_repo`` in
 ``ado2gh/core/conflict_detection.py`` asks two independent sources whether another

@@ -1,4 +1,4 @@
-"""GAP-069: a DynamoDB claim conflict must reach an audit writer, or say it cannot.
+"""Regression check for register entry GAP-069: a DynamoDB claim conflict must reach an audit writer, or say it cannot.
 
 The register entry (``specs/013-clean-code-arch-remediation/gap-register.md``,
 GAP-069) faults ``DynamoDBJobStore._audit()`` for building its writer as

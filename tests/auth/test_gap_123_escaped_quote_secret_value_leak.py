@@ -1,4 +1,4 @@
-"""GAP-123 — a backslash-escaped quote inside a quoted secret value ended the mask early.
+"""Regression check for register entry GAP-123 — a backslash-escaped quote inside a quoted secret value ended the mask early.
 
 ``_SECRET_KEY_VALUE_RE``'s ``dqval``/``sqval`` branches (GAP-121) matched
 ``[^"]*``/``[^']*`` up to the first literal quote character, with no regard
@@ -34,7 +34,7 @@ ESCAPED_DOUBLE_QUOTE_EXPECTED = f'password="{MASK}"'
 ESCAPED_SINGLE_QUOTE_SECRET = "token='abc\\'def'"
 ESCAPED_SINGLE_QUOTE_EXPECTED = f"token='{MASK}'"
 
-# GAP-121 regression: a value quoted in one style containing the *other*
+# Register entry GAP-121 regression: a value quoted in one style containing the *other*
 # quote character must still mask in full — the escape handling must not
 # narrow this existing case.
 OPPOSITE_QUOTE_SECRET = "password=\"abc's\""
@@ -92,7 +92,7 @@ def test_escaped_single_quote_inside_a_single_quoted_value_is_fully_masked() -> 
 
 
 def test_opposite_quote_character_inside_a_value_still_masks_in_full() -> None:
-    """GAP-121's original case — an unescaped, opposite quote inside the value — is unaffected."""
+    """The original case for register entry GAP-121 — an unescaped, opposite quote inside the value — is unaffected."""
     assert redact_text(OPPOSITE_QUOTE_SECRET) == OPPOSITE_QUOTE_EXPECTED
 
 

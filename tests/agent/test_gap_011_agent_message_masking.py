@@ -1,4 +1,4 @@
-"""GAP-011 (GAP-AGT-02): agent chat, the server-sent event stream (SSE) and persisted messages are unmasked.
+"""Regression check for register entry GAP-011 (GAP-AGT-02): agent chat, the server-sent event stream (SSE) and persisted messages are unmasked.
 
 Reproduction from the gap register's evidence. ``mask_secrets``
 (``ado2gh/agents/migration_agent/utils.py:335``) is called from exactly two

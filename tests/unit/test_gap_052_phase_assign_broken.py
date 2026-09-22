@@ -1,4 +1,4 @@
-"""GAP-052 — ``ado2gh phase assign`` cannot run at all.
+"""Regression check for register entry GAP-052 — ``ado2gh phase assign`` cannot run at all.
 
 Reproduction, in plain English:
 

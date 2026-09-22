@@ -1,7 +1,7 @@
 """Contract tests for streamlined agent interface (feature 008, US2).
 
 Verifies that the agent API endpoints support the clean conversational
-interface without pipeline or PEV indicators.
+interface without pipeline or plan-execute-validate loop (PEV) indicators.
 """
 from __future__ import annotations
 

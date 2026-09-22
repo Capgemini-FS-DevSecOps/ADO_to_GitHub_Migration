@@ -1,4 +1,4 @@
-"""GAP-063 (GAP-AUTH-08) — a quoted ``live_approval_id`` was checked by status alone.
+"""Regression check for register entry GAP-063 (GAP-AUTH-08) — a quoted ``live_approval_id`` was checked by status alone.
 
 Both places that accept a client-supplied approval token read the row and asked one
 question of it::

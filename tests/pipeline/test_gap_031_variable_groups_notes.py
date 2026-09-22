@@ -1,4 +1,4 @@
-"""GAP-031 — referenced ADO variable groups must be named in the migration notes.
+"""Regression check for register entry GAP-031 — referenced ADO variable groups must be named in the migration notes.
 
 ``ado2gh/pipelines/extractor.py`` captures every variable group a pipeline
 references into ``PipelineMetadata.variable_groups`` as **names only**, but

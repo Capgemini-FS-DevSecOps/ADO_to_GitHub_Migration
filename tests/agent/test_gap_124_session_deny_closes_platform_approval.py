@@ -1,4 +1,4 @@
-"""GAP-124 — denying an agent session's live request locally left the platform row open.
+"""Regression check for register entry GAP-124 — denying an agent session's live request locally left the platform row open.
 
 ``POST /v1/sessions/{id}/approve`` with ``approved: false`` set the session
 idle and recorded a local ``session.approve.denied`` audit event, but never

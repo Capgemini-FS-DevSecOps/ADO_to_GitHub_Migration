@@ -1,4 +1,4 @@
-"""GAP-074 — ``X-Forwarded-Proto`` may only override the scheme behind a declared proxy.
+"""Regression check for register entry GAP-074 — ``X-Forwarded-Proto`` may only override the scheme behind a declared proxy.
 
 ``_is_https_deployment`` (``services/accelerator_api/auth_routes.py``) decides whether the
 session cookie carries ``Secure``. It used to believe ``X-Forwarded-Proto`` unconditionally

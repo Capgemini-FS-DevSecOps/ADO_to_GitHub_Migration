@@ -1,4 +1,4 @@
-"""GAP-013 (GAP-ENG-01) — the workflow-integrity check must be able to report FAIL.
+"""Regression check for register entry GAP-013 (GAP-ENG-01) — the workflow-integrity check must be able to report FAIL.
 
 Reproduction from the gap register: the producer emits flat workflow paths of the
 shape ``.github/workflows/<name>.yml`` (pinned by

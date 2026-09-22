@@ -1,4 +1,4 @@
-"""GAP-071 (GAP-AUTH-09) — an approved migrate job ran work its approver never saw.
+"""Regression check for register entry GAP-071 (GAP-AUTH-09) — an approved migrate job ran work its approver never saw.
 
 ``POST /v1/platform/approvals`` takes a free-form ``context`` dict from the caller.
 ``_public_row`` omits it, so the approver's queue shows a ``scope_id`` and nothing

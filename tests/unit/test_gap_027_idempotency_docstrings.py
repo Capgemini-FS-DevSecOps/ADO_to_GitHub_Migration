@@ -1,4 +1,4 @@
-"""GAP-027 — "Idempotent — skips completed scopes" was not true of any scope.
+"""Regression check for register entry GAP-027 — "Idempotent — skips completed scopes" was not true of any scope.
 
 Reproduction, in plain English:
 

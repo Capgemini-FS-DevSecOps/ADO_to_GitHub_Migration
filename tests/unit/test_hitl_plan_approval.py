@@ -1,4 +1,4 @@
-"""THR-09-002: plan approval is bound to the plan revision the operator approved.
+"""Regression check for register entry THR-09-002: plan approval is bound to the plan revision the operator approved.
 
 `plan_approved` was a bare sticky boolean: once set, every later plan — a replan, or a
 plan swapped in by a tool — inherited the approval and could execute without ever

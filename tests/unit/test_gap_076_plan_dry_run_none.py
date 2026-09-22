@@ -1,4 +1,4 @@
-"""GAP-076/GAP-077 — an unspecified plan ``dry_run`` must never mean "run live".
+"""Regression check for register entries GAP-076 and GAP-077 — an unspecified plan ``dry_run`` must never mean "run live".
 
 ``bool(None)`` is ``False`` and ``False`` means *live*, so every place that coerced a
 plan's ``dry_run`` field with ``bool()`` read a missing decision as a request to write

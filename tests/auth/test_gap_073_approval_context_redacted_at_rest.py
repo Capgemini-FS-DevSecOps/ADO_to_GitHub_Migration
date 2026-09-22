@@ -1,4 +1,4 @@
-"""GAP-073 (GAP-TOKEN-02) — approval contexts were persisted without masking.
+"""Regression check for register entry GAP-073 (GAP-TOKEN-02) — approval contexts were persisted without masking.
 
 `LiveApprovalStore.create_or_get_pending` serialised the caller's `context` dict
 straight into the `context_json` column::

@@ -1,4 +1,4 @@
-"""GAP-015 (GAP-SEAM-01): the work-item producer and its consumers disagree on field names.
+"""Regression check for register entry GAP-015 (GAP-SEAM-01): the work-item producer and its consumers disagree on field names.
 
 The sole work-item producer -- ``build_work_items_for_repos`` in
 ``ado2gh/api/migration_work_plan.py`` -- writes the *singular* keys ``scope``

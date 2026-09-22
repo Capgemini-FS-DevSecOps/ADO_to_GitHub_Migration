@@ -1,4 +1,4 @@
-"""Unit tests for PEV loop — conditional edges, retry logic, cycle summaries, inter-agent messaging."""
+"""Unit tests for the plan-execute-validate loop (PEV) — conditional edges, retry logic, cycle summaries, inter-agent messaging."""
 import pytest
 
 from ado2gh.agents.migration_agent.graph import (

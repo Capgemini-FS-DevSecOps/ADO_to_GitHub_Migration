@@ -127,7 +127,7 @@ class TestFailureMessage:
 
 
 class TestLabelFallback:
-    """GAP-056 — the label fallback for a step the run does not carry.
+    """Register entry GAP-056 — the label fallback for a step the run does not carry.
 
     ``_label`` falls back to the canonical accelerator step index when the run
     has no step with that id. It imported ``_PIPELINE_STEP_INDEX`` from

@@ -1,4 +1,4 @@
-"""GAP-016 (GAP-PIPE-04) — live workflow-push approval gate is a no-op in both directions.
+"""Regression check for register entry GAP-016 (GAP-PIPE-04) — live workflow-push approval gate is a no-op in both directions.
 
 ``push_repo_workflows`` guards every live push behind two booleans,
 ``readiness_ok`` and ``approver_ok``. Neither is wired to anything real, and the

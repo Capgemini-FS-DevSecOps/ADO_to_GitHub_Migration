@@ -1,4 +1,4 @@
-"""GAP-030: the GitHub credential must never reach subprocess argv.
+"""Regression check for register entry GAP-030: the GitHub credential must never reach subprocess argv.
 
 The mirror strategy used to embed the GitHub credential in the push remote, so
 the process table exposed it to any local user for the duration of the push. It

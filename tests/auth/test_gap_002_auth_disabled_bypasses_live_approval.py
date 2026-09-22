@@ -1,4 +1,4 @@
-"""GAP-002 (GAP-AUTH-01) — live-execution approval is inert in the default configuration.
+"""Regression check for register entry GAP-002 (GAP-AUTH-01) — live-execution approval is inert in the default configuration.
 
 ``auth_enabled()`` reads ``ADO2GH_AUTH_ENABLED`` and returns ``False`` when the variable
 is unset (``ado2gh/auth/service.py:21-22``). That is the code-level default, not a

@@ -1,4 +1,4 @@
-"""GAP-007 (GAP-ACC-01) — nine ``/v1/migrate/*`` feature routes perform live
+"""Regression check for register entry GAP-007 (GAP-ACC-01) — nine ``/v1/migrate/*`` feature routes perform live
 mutations with no role-based access control (RBAC), approval, or audit.
 
 Reproduction described by the gap register: the router in

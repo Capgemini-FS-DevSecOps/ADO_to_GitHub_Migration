@@ -1,4 +1,4 @@
-"""GAP-072 (GAP-AUTH-10) — falsy identifiers collapsed into their own defaults.
+"""Regression check for register entry GAP-072 (GAP-AUTH-10) — falsy identifiers collapsed into their own defaults.
 
 Both approval-scope builders dropped a value for being falsy rather than for being
 absent::

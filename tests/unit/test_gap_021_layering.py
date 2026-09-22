@@ -1,4 +1,4 @@
-"""GAP-021 (GAP-ARCH-01): the package layers may not import upward.
+"""Regression check for register entry GAP-021 (GAP-ARCH-01): the package layers may not import upward.
 
 ``ado2gh`` is layered — ``models``/``http_utils`` at the bottom, then
 ``clients``/``state``, then ``core``/``phase``/``pipelines``, then ``api``, then

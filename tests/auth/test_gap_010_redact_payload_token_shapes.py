@@ -1,4 +1,4 @@
-"""GAP-010 (GAP-TOKEN-01): audit redaction misses non-GitHub secret shapes.
+"""Regression check for register entry GAP-010 (GAP-TOKEN-01): audit redaction misses non-GitHub secret shapes.
 
 Reproduction from the gap register's evidence. ``ado2gh/audit/redaction.py``
 declares seven ``_SECRET_PATTERNS`` that all match GitHub token prefixes

@@ -1,4 +1,4 @@
-"""GAP-024: boolean form recommendations stay JSON booleans on the wire.
+"""Regression check for register entry GAP-024: boolean form recommendations stay JSON booleans on the wire.
 
 `str(False)` is `"False"`, and every browser reads that as truthy, so stringifying a
 recommendation *not* to do something turned it into a recommendation to do it. The

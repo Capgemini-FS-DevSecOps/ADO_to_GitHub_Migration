@@ -1,4 +1,4 @@
-"""GAP-058 — the single-repo dry-run path must never probe unmerged config.
+"""Regression check for register entry GAP-058 — the single-repo dry-run path must never probe unmerged config.
 
 ``_migrate_scoped`` builds its own wave for a single-repo dry run
 (``ado2gh/api/pipeline_steps.py``), and that branch does not require an active

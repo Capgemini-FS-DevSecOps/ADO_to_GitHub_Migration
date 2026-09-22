@@ -1,4 +1,4 @@
-"""GAP-028: ``DynamoDBJobStore`` must not double-claim a job under concurrency.
+"""Regression check for register entry GAP-028: ``DynamoDBJobStore`` must not double-claim a job under concurrency.
 
 The register entry (``specs/013-clean-code-arch-remediation/gap-register.md``,
 GAP-028) faults ``DynamoDBJobStore.claim_next()`` for scanning for a ``pending``

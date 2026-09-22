@@ -1,4 +1,4 @@
-"""GAP-061 — a stored proxy password must be removable from the console.
+"""Regression check for register entry GAP-061 — a stored proxy password must be removable from the console.
 
 The console sent ``proxy_password: proxyPassword || '***'`` on every save
 (``apps/migration-ui/src/app/settings/connectivity/page.tsx``), so a blank box always sent

@@ -1,4 +1,4 @@
-"""GAP-125 — a creation-time scope-mismatch refusal wrote no audit record.
+"""Regression check for register entry GAP-125 — a creation-time scope-mismatch refusal wrote no audit record.
 
 ``_assert_migrate_context_matches`` and ``_assert_pipeline_context_matches``
 (GAP-071, GAP-120) already refuse a ``create_or_get_pending`` call whose

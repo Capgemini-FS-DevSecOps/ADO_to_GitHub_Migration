@@ -1,4 +1,4 @@
-"""GAP-008 (GAP-ACC-02) — the GitHub write proxy is documented as read-only,
+"""Regression check for register entry GAP-008 (GAP-ACC-02) — the GitHub write proxy is documented as read-only,
 guarded only by ``require_operate``, and writes nothing to the audit log.
 
 Reproduction described by the gap register: the module docstring of

@@ -1,4 +1,4 @@
-"""GAP-068: `MigrationEngine` and `rollback_wave` default to dry-run.
+"""Regression check for register entry GAP-068: `MigrationEngine` and `rollback_wave` default to dry-run.
 
 Both signatures used to declare `mode: ExecutionMode = ExecutionMode.LIVE`, so a
 caller that omitted the argument migrated or deleted for real with nothing at the

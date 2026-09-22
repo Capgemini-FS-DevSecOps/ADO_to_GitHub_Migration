@@ -1,4 +1,4 @@
-"""GAP-064: exception objects and tracebacks must not reach the handler unmasked.
+"""Regression check for register entry GAP-064: exception objects and tracebacks must not reach the handler unmasked.
 
 ``SecretRedactingFilter`` passed ``record.args`` through ``redact_payload``, a
 shape-preserving walker that by design leaves types it does not recognise

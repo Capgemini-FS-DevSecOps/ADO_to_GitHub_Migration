@@ -1,4 +1,4 @@
-"""GAP-032 — a secret pipeline variable must never be inlined into generated YAML.
+"""Regression check for register entry GAP-032 — a secret pipeline variable must never be inlined into generated YAML.
 
 ``ado2gh/pipelines/transform/transformer.py::_build_env_block`` (workflow-level
 ``env``, fed from ``PipelineMetadata.variables``) and

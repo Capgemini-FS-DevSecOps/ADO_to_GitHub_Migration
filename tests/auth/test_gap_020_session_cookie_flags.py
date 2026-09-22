@@ -1,4 +1,4 @@
-"""GAP-020 (GAP-AUTH-07) — session cookie omits ``Secure``; ``max_age`` hardcoded.
+"""Regression check for register entry GAP-020 (GAP-AUTH-07) — session cookie omits ``Secure``; ``max_age`` hardcoded.
 
 ``_set_session_cookie`` (``services/accelerator_api/auth_routes.py``) is the single
 place the platform session cookie is issued, and ``_clear_session_cookie`` the single
@@ -91,7 +91,7 @@ def test_login_cookie_is_secure_over_https(accel):
 
 
 def test_login_cookie_is_secure_behind_a_tls_terminating_proxy(accel, monkeypatch):
-    """GAP-074 narrowed this: the header counts only where a proxy has been declared."""
+    """Register entry GAP-074 narrowed this: the header counts only where a proxy has been declared."""
     monkeypatch.setenv("ADO2GH_TRUSTED_PROXY", "true")
     client = _client(accel)
     _bootstrap(client)

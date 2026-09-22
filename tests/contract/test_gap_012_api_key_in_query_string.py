@@ -1,4 +1,4 @@
-"""GAP-012 (GAP-UI-01): LLM provider API key is transmitted in a URL query string.
+"""Regression check for register entry GAP-012 (GAP-UI-01): LLM provider API key is transmitted in a URL query string.
 
 Reproduction from the gap register's evidence. The console's ``fetchCatalog``
 (``apps/migration-ui/src/lib/llmSettings.ts:102-106``) builds a

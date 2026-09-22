@@ -1,4 +1,4 @@
-"""GAP-075 (GAP-ACC-05) — feature-route approvals were granted across every profile.
+"""Regression check for register entry GAP-075 (GAP-ACC-05) — feature-route approvals were granted across every profile.
 
 `migrate_guard._live_scope_id` built its scope from the request path and the target
 the body names, and nothing else::

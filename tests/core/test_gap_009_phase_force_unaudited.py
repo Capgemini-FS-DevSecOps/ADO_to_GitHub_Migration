@@ -1,4 +1,4 @@
-"""GAP-009 (GAP-CLI-02) — forcing a phase past its gate leaves no audit trail.
+"""Regression check for register entry GAP-009 (GAP-CLI-02) — forcing a phase past its gate leaves no audit trail.
 
 Reproduction, in plain English:
 

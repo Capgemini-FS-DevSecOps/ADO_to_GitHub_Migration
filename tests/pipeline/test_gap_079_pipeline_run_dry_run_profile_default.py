@@ -1,4 +1,4 @@
-"""GAP-079 — an omitted ``dry_run`` on a console pipeline run ignored the profile default.
+"""Regression check for register entry GAP-079 — an omitted ``dry_run`` on a console pipeline run ignored the profile default.
 
 ``PipelineRunStartRequest.dry_run`` was declared ``bool = True``. Pydantic fills in a
 concrete default for every field it is not given, so ``req.dry_run`` could never be
