@@ -21,6 +21,57 @@ from ado2gh.models import ExecutionMode
 
 logger = logging.getLogger(__name__)
 
+LIVE_APPROVAL_REFUSAL_EVENT = "platform.live_execution.approval_refused"
+"""Audit event name written by `require_approve_live_execution` on every refusal (GAP-134).
+
+A safeguard that every real action is audited only holds if every refusal is
+audited too — otherwise a caller repeatedly denied live-execution approval
+leaves no trace outside the request logs.
+"""
+
+
+def _audit_live_approval_refusal(
+    request: Request, user: PlatformUser | None, reason: str,
+) -> None:
+    """Write a masked audit record for a refused live-execution approval (GAP-134).
+
+    Never blocks the refusal it is recording: a broken audit backend still
+    lets `require_approve_live_execution` raise its 401 or 403, and the audit
+    failure itself is only logged, at warning level, with no request content.
+
+    Args:
+        request: The incoming request being refused.
+        user: The identity on the request, or ``None`` when it carries none.
+        reason: ``"no_identity"`` for a request with no signed-in user,
+            ``"missing_capability"`` for one whose role cannot approve live
+            execution.
+    """
+    from ado2gh.api.profile_governance import write_profile_audit
+    from ado2gh.api.settings_store import SettingsStore
+
+    try:
+        active = SettingsStore().get_active_profile()
+    except Exception:
+        active = None
+    profile_id = (active.id if active else None) or "_platform"
+
+    try:
+        write_profile_audit(
+            LIVE_APPROVAL_REFUSAL_EVENT,
+            profile_id=profile_id,
+            actor=getattr(user, "username", "") or "",
+            payload={
+                "reason": reason,
+                "capability": "can_approve_live_execution",
+                "path": request.url.path,
+            },
+        )
+    except Exception:
+        logger.warning(
+            "Failed to record audit event for a refused live-execution approval "
+            "(reason=%s)", reason,
+        )
+
 
 def platform_user(request: Request) -> PlatformUser | None:
     """Read the identity the authentication middleware attached to a request.
@@ -136,8 +187,10 @@ def require_approve_live_execution(request: Request) -> PlatformUser | None:
     user = platform_user(request)
     if not user:
         logger.warning("Refused live-execution approval: request carries no identity")
+        _audit_live_approval_refusal(request, user, "no_identity")
         raise HTTPException(status_code=401, detail="Not authenticated")
     if not permissions_for(user.role).get("can_approve_live_execution"):
+        _audit_live_approval_refusal(request, user, "missing_capability")
         raise HTTPException(
             status_code=403, detail="Missing capability: can_approve_live_execution",
         )

@@ -22,9 +22,15 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 # The identity fields the nine request models use to name their target. An
 # allowlist rather than a blocklist so no secret-bearing field (notably
 # ``secret_value``) can reach an approval scope id or an audit payload (CA-003).
+# ``work_item_types`` is here too: on the boards route it narrows which work
+# items are turned into issues, so two bodies naming the same project and
+# repository but a different filter are two different sets of writes, not the
+# same approval (GAP-135). No other route accepts a field that changes the
+# destination or the set of things written beyond what is already listed —
+# the pipeline-convert route takes no pipeline id filter to encode.
 _SCOPE_FIELDS = (
     "project", "repo", "repo_name", "github_org", "github_repo",
-    "connection_name", "feed_name", "wiki_name", "secret_name",
+    "connection_name", "feed_name", "wiki_name", "secret_name", "work_item_types",
 )
 
 # Every request model on this router declares ``dry_run: bool``, so this adapter is
@@ -97,6 +103,13 @@ def _live_scope_id(path: str, body: dict[str, Any], profile_id: str | None) -> s
     different credentials, the same standing grant (GAP-075, CA-002). The dashboard
     path has always embedded it, via ``migrate_scope_id``.
 
+    Each allowlisted field is encoded as ``name=value``, not the bare value. Joining
+    bare values with no field names meant a body naming only ``github_org`` and a
+    body naming only ``github_repo`` produced the same scope id once both trailed the
+    same string, so an approval for one destination silently covered the other
+    (GAP-135). Naming the field makes the id unambiguous regardless of which fields
+    a given route's body happens to carry.
+
     Args:
         path: Request path of the migrate route being guarded.
         body: Parsed request body; only allowlisted identity fields are read.
@@ -109,7 +122,7 @@ def _live_scope_id(path: str, body: dict[str, Any], profile_id: str | None) -> s
     """
     return ":".join([
         path, profile_id or "_platform",
-        *(str(v).strip() for v in _scope_fields(body).values()),
+        *(f"{name}={str(value).strip()}" for name, value in _scope_fields(body).items()),
     ])
 
 
