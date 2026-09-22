@@ -6,10 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from ado2gh.agents.migration_agent.constants import (
-    VALIDATOR_MAX_TOOL_ROUNDS,
-    VALIDATOR_MIN_TOOL_CALLS_PIPELINES,
-)
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.nodes.planner import _planner_text_indicates_blocker
 from ado2gh.agents.migration_agent.nodes.streaming import _stream_llm_response
 from ado2gh.agents.migration_agent.prompts import get_prompt
@@ -442,9 +439,10 @@ def _build_validator_investigation_context(
                 "local validation stats in executor_scopes; API workflow listing is optional."
             )
         else:
+            min_tool_calls_pipelines = agent_runtime_settings().validator_min_tool_calls_pipelines
             parts.append(
                 f"Pipeline scope executed in live mode — perform at least "
-                f"{VALIDATOR_MIN_TOOL_CALLS_PIPELINES} tool calls "
+                f"{min_tool_calls_pipelines} tool calls "
                 "(list/fetch/validate workflows on GitHub) before concluding."
             )
     return "\n\n".join(parts)
@@ -635,6 +633,9 @@ async def _run_validator_llm_investigation(
         except Exception:
             pass
 
+    runtime_settings = agent_runtime_settings()
+    validator_min_tool_calls_pipelines = runtime_settings.validator_min_tool_calls_pipelines
+    validator_max_tool_rounds = runtime_settings.validator_max_tool_rounds
     parsed_report: dict[str, Any] | None = None
     tool_calls_total = 0
     seen_thinking: set[str] = set()
@@ -642,14 +643,14 @@ async def _run_validator_llm_investigation(
     min_tool_calls = (
         0
         if dry_run
-        else (VALIDATOR_MIN_TOOL_CALLS_PIPELINES if pipeline_scope else 1)
+        else (validator_min_tool_calls_pipelines if pipeline_scope else 1)
     )
 
-    for round_idx in range(VALIDATOR_MAX_TOOL_ROUNDS):
+    for round_idx in range(validator_max_tool_rounds):
         _append_and_stream(
             session,
             role="system",
-            content=f"Validator: evidence gathering round {round_idx + 1}/{VALIDATOR_MAX_TOOL_ROUNDS}…",
+            content=f"Validator: evidence gathering round {round_idx + 1}/{validator_max_tool_rounds}…",
             subagent="validator",
         )
         response_text = await _stream_llm_response(
@@ -696,7 +697,7 @@ async def _run_validator_llm_investigation(
                     }],
                 }
                 break
-            if round_idx >= VALIDATOR_MAX_TOOL_ROUNDS - 1:
+            if round_idx >= validator_max_tool_rounds - 1:
                 break
             messages.append(AIMessage(content=response_text or "{}"))
             if tool_calls_total >= min_tool_calls:
@@ -742,12 +743,12 @@ async def _run_validator_llm_investigation(
 
     parsed_report.setdefault("tool_calls_total", tool_calls_total)
     if pipeline_scope and not dry_run:
-        if tool_calls_total < VALIDATOR_MIN_TOOL_CALLS_PIPELINES and parsed_report.get("passed", True):
+        if tool_calls_total < validator_min_tool_calls_pipelines and parsed_report.get("passed", True):
             parsed_report["passed"] = False
             parsed_report.setdefault("analysis", "")
             parsed_report["analysis"] += (
                 f" Insufficient tool evidence ({tool_calls_total} calls; "
-                f"need {VALIDATOR_MIN_TOOL_CALLS_PIPELINES}+ for pipeline validation)."
+                f"need {validator_min_tool_calls_pipelines}+ for pipeline validation)."
             )
             parsed_report.setdefault("failures", []).append({
                 "scope": "pipelines",

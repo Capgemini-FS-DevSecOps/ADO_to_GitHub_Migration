@@ -4,9 +4,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ado2gh.agents.migration_agent.constants import (
-    MAX_PEV_RETRIES,
-)
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.session.state import (
     SessionState,
     release_session_for_chat,
@@ -47,7 +45,7 @@ def _is_pev_max_retries_exhausted(state: dict[str, Any], session: dict[str, Any]
     if validation.get("passed"):
         return False
     retry_count = int(state.get("pev_retry_count", session.get("pev_retry_count", 0)) or 0)
-    if retry_count < MAX_PEV_RETRIES:
+    if retry_count < agent_runtime_settings().max_pev_retries:
         return False
     feedback = state.get("validation_feedback")
     if isinstance(feedback, dict) and feedback.get("escalate"):
@@ -260,7 +258,7 @@ async def _present_validation_failure_to_operator(
             )
 
             store_operator_input(session, op_req)
-            form = operator_input_to_form(op_req)
+            form = operator_input_to_form(op_req, session)
             session["pending_form"] = form
             return {
                 "should_return": True,
@@ -332,7 +330,7 @@ def _present_operator_input(
     )
 
     store_operator_input(session, request)
-    form = operator_input_to_form(request)
+    form = operator_input_to_form(request, session)
     reply = publish_orchestrator_chat(session, request.description)
     session["pending_form"] = form
     session.pop("plan_review_presented", None)
@@ -353,7 +351,7 @@ def _present_plan_confirmation(
     from ado2gh.agents.migration_agent.hitl.intake import build_plan_review_form
 
     session["migration_plan"] = migration_plan
-    form = sanitize_form(build_plan_review_form(session))
+    form = sanitize_form(build_plan_review_form(session), session)
     session["pending_form"] = form
     reply = publish_orchestrator_chat(session, _plan_confirmation_reply(session))
     return {

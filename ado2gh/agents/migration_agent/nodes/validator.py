@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ado2gh.agents.migration_agent.constants import MAX_ITERATIONS, MAX_PEV_RETRIES
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.graph.state import AgentMessageType, AgentRole
 from ado2gh.agents.migration_agent.hitl.schemas import MigrationFailureCode
 from ado2gh.agents.migration_agent.nodes._common import (
@@ -386,6 +386,8 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
     validation_feedback = None
     pending_operator_input_payload: dict[str, Any] | None = None
     pending_clarification: dict[str, Any] | None = None
+    runtime_settings = agent_runtime_settings()
+    max_pev_retries = runtime_settings.max_pev_retries
     operator_escalation = not passed and failures_require_operator_escalation(all_failures)
     if operator_escalation:
         from ado2gh.agents.migration_agent.hitl.operator_input import (
@@ -440,7 +442,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
             content="Validator: non-retryable failure — escalating to orchestrator.",
             subagent="validator",
         )
-    elif not passed and pev_retry_count < MAX_PEV_RETRIES:
+    elif not passed and pev_retry_count < max_pev_retries:
         validation_feedback = {
             "failures": all_failures,
             "analysis": llm_analysis,
@@ -451,7 +453,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
         _append_and_stream(
             session,
             role="system",
-            content=f"Validator: validation failed — sending feedback to planner (retry {pev_retry_count}/{MAX_PEV_RETRIES}).",
+            content=f"Validator: validation failed — sending feedback to planner (retry {pev_retry_count}/{max_pev_retries}).",
             subagent="validator",
         )
     elif not passed:
@@ -481,9 +483,9 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
     # Determine next action for cycle summary
     if passed:
         next_action = "complete"
-    elif pev_retry_count >= MAX_PEV_RETRIES:
+    elif pev_retry_count >= max_pev_retries:
         next_action = "fail_max_retries"
-    elif iteration >= state.get("max_iterations", MAX_ITERATIONS):
+    elif iteration >= state.get("max_iterations", runtime_settings.max_iterations):
         next_action = "fail_max_iterations"
     else:
         next_action = "retry_planner"

@@ -18,9 +18,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
-from ado2gh.agents.migration_agent.constants import (
-    GRAPH_RECURSION_LIMIT,
-)
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.graph import get_compiled_graph
 from ado2gh.agents.migration_agent.runtime.deps import clear_runtime_deps, set_runtime_deps
 from ado2gh.agents.migration_agent.runtime.llm_bridge import resolve_langchain_llm
@@ -181,7 +179,7 @@ async def is_graph_interrupted(session_id: str) -> bool:
     graph = await get_compiled_graph()
     if getattr(graph, "checkpointer", None) is None:
         return False
-    config = graph_run_config(str(session_id), recursion_limit=GRAPH_RECURSION_LIMIT)
+    config = graph_run_config(str(session_id), recursion_limit=agent_runtime_settings().graph_recursion_limit)
     try:
         snapshot = await graph.aget_state(cast("RunnableConfig", config))
     except Exception as exc:
@@ -218,7 +216,7 @@ async def resume_interrupted_graph(
     """
     graph = await get_compiled_graph()
     thread_id = str(session.get("session_id") or "default")
-    config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
+    config = graph_run_config(thread_id, recursion_limit=agent_runtime_settings().graph_recursion_limit)
     _bind_runtime_deps(session, deps)
 
     final_state: dict[str, Any] = {}
@@ -322,7 +320,7 @@ async def process_user_message(
     initial_state = _build_initial_state(session, user_message, deps=deps)
 
     thread_id = str(session.get("session_id") or "default")
-    config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
+    config = graph_run_config(thread_id, recursion_limit=agent_runtime_settings().graph_recursion_limit)
     initial_state = await _merge_checkpoint_state(graph, config, initial_state)
 
     final_state: dict[str, Any] = {}
@@ -544,7 +542,7 @@ async def stream_user_message(
     initial_state = _build_initial_state(session, user_message, deps=deps)
 
     thread_id = str(session.get("session_id") or "default")
-    config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
+    config = graph_run_config(thread_id, recursion_limit=agent_runtime_settings().graph_recursion_limit)
     initial_state = await _merge_checkpoint_state(graph, config, initial_state)
 
     async for event in _stream_graph_events(session, graph, config, initial_state):
@@ -572,7 +570,7 @@ async def stream_interrupted_graph(
 
     get_metrics_collector().record_pev_cycle()
     thread_id = str(session.get("session_id") or "default")
-    config = graph_run_config(thread_id, recursion_limit=GRAPH_RECURSION_LIMIT)
+    config = graph_run_config(thread_id, recursion_limit=agent_runtime_settings().graph_recursion_limit)
     _bind_runtime_deps(session, deps)
 
     async for event in _stream_graph_events(session, graph, config, Command(resume=resume_value)):

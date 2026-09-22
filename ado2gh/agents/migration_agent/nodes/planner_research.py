@@ -8,10 +8,7 @@ from urllib.parse import unquote
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from ado2gh.agents.migration_agent.constants import (
-    PLANNER_MAX_RESEARCH_ROUNDS,
-    PLANNER_MIN_RESEARCH_TOOL_CALLS,
-)
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.nodes.streaming import _stream_llm_response
 from ado2gh.agents.migration_agent.untrusted import fence_untrusted
 from ado2gh.agents.migration_agent.utils import (
@@ -377,12 +374,15 @@ async def _run_planner_research_loop(
     accel_get = state.get("accel_get")
     session_token = state.get("session_token")
     dry_run = mode is ExecutionMode.DRY_RUN
+    runtime_settings = agent_runtime_settings()
+    planner_max_research_rounds = runtime_settings.planner_max_research_rounds
+    planner_min_research_tool_calls = runtime_settings.planner_min_research_tool_calls
     research_tool_calls = 0
     last_parsed: dict[str, Any] = {}
     replan = bool(validation_feedback)
     seen_thinking: set[str] = set()
 
-    for round_idx in range(PLANNER_MAX_RESEARCH_ROUNDS):
+    for round_idx in range(planner_max_research_rounds):
         response_text = await _stream_llm_response(
             llm,
             conversation,
@@ -404,7 +404,7 @@ async def _run_planner_research_loop(
             research_ok = (
                 replan
                 or last_parsed.get("research_complete")
-                or research_tool_calls >= PLANNER_MIN_RESEARCH_TOOL_CALLS
+                or research_tool_calls >= planner_min_research_tool_calls
             )
             if research_ok:
                 return last_parsed
@@ -412,7 +412,7 @@ async def _run_planner_research_loop(
             conversation.append(
                 HumanMessage(
                     content=(
-                        f"Complete at least {PLANNER_MIN_RESEARCH_TOOL_CALLS} read-only API "
+                        f"Complete at least {planner_min_research_tool_calls} read-only API "
                         "probes (ADO pipelines, GitHub target repo, dependencies) using "
                         "tool_calls before finalizing. Then set research_complete: true "
                         "with the plan JSON."
@@ -423,14 +423,14 @@ async def _run_planner_research_loop(
 
         if not tool_calls:
             if (
-                research_tool_calls >= PLANNER_MIN_RESEARCH_TOOL_CALLS
+                research_tool_calls >= planner_min_research_tool_calls
                 or round_idx >= 1
             ) and _planner_text_indicates_blocker(last_parsed):
                 return last_parsed
-            if round_idx >= PLANNER_MAX_RESEARCH_ROUNDS - 1:
+            if round_idx >= planner_max_research_rounds - 1:
                 break
             conversation.append(AIMessage(content=response_text or "{}"))
-            if research_tool_calls >= PLANNER_MIN_RESEARCH_TOOL_CALLS:
+            if research_tool_calls >= planner_min_research_tool_calls:
                 conversation.append(
                     HumanMessage(
                         content=(
@@ -511,7 +511,7 @@ async def _run_planner_research_loop(
             HumanMessage(
                 content=(
                     f"research_tool_calls_so_far: {research_tool_calls}, "
-                    f"min_required: {PLANNER_MIN_RESEARCH_TOOL_CALLS}.\n"
+                    f"min_required: {planner_min_research_tool_calls}.\n"
                     + fence_untrusted("planner_tool_results", {"tool_results": batch_results})
                 )
             )

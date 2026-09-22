@@ -19,11 +19,9 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph
 from langgraph.types import RetryPolicy
 
-from ado2gh.agents.migration_agent.constants import (
-    MAX_ITERATIONS,
-    MAX_PEV_RETRIES,
-)
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
 from ado2gh.agents.migration_agent.graph.state import AgentState
+from ado2gh.state.storage_config import CheckpointStorageSettings
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -57,6 +55,16 @@ NODE_EXECUTE_TOOLS = NODE_ORCHESTRATOR
 _CHECKPOINTER: Any = None
 _CHECKPOINTER_LOOP: Any = None
 
+#: Seconds ``_close_checkpointer`` waits for a stale connection to close
+#: before abandoning it (the connection's worker thread then leaks instead
+#: of hanging the caller).
+CHECKPOINTER_CLOSE_TIMEOUT_SECONDS = 2
+
+#: Seconds ``_clear_langgraph_thread_bounded`` waits for a checkpoint clear
+#: to finish before abandoning it, so a request-scoped event loop can never
+#: be held open by a checkpointer connection that never calls back.
+CHECKPOINTER_CLEANUP_TIMEOUT_SECONDS = 5
+
 
 async def _close_checkpointer(checkpointer: BaseCheckpointSaver) -> None:
     """Close a checkpointer's DB connection so its worker thread exits.
@@ -70,7 +78,7 @@ async def _close_checkpointer(checkpointer: BaseCheckpointSaver) -> None:
     if conn is None:
         return
     try:
-        await asyncio.wait_for(conn.close(), timeout=2)
+        await asyncio.wait_for(conn.close(), timeout=CHECKPOINTER_CLOSE_TIMEOUT_SECONDS)
     except Exception:
         logger.debug("stale checkpointer connection close failed", exc_info=True)
 
@@ -108,22 +116,13 @@ async def _get_checkpointer() -> BaseCheckpointSaver | None:
         await _close_checkpointer(stale)
     _CHECKPOINTER_LOOP = current_loop
 
-    backend = os.environ.get("ADO2GH_STORAGE_BACKEND", "sqlite").lower()
-    if backend in ("postgresql", "postgres"):
+    settings = CheckpointStorageSettings.from_env()
+    if settings.is_postgres():
         try:
             import psycopg
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-            db_uri = os.environ.get("ADO2GH_DATABASE_URL")
-            if not db_uri:
-                conn_info = {
-                    "host": os.environ.get("PGHOST", "localhost"),
-                    "port": int(os.environ.get("PGPORT", 5432)),
-                    "user": os.environ.get("PGUSER", "ado2gh"),
-                    "password": os.environ.get("PGPASSWORD", ""),
-                    "dbname": os.environ.get("PGDATABASE", "ado2gh"),
-                }
-                db_uri = "postgresql://{user}:{password}@{host}:{port}/{dbname}".format(**conn_info)
+            db_uri = settings.database_url or settings.postgres_dsn()
             conn = await psycopg.AsyncConnection.connect(db_uri, autocommit=True)
             _CHECKPOINTER = AsyncPostgresSaver(conn)
             if hasattr(_CHECKPOINTER, "setup"):
@@ -139,7 +138,7 @@ async def _get_checkpointer() -> BaseCheckpointSaver | None:
         import aiosqlite
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-        db_path = os.environ.get("ADO2GH_SQLITE_PATH", "data/agent_checkpoints.db")
+        db_path = settings.sqlite_path
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         # aiosqlite's worker thread is non-daemon by default; a connection that
         # gets abandoned (cross-loop reopen, an orphaned cleanup task whose loop
@@ -178,8 +177,21 @@ async def _get_checkpointer() -> BaseCheckpointSaver | None:
         return None
 
 
+#: Retry attempts for a language model or API error raised inside a graph node.
+LLM_RETRY_MAX_ATTEMPTS = 3
+
+#: Seconds before the first retry of a language model or API error.
+LLM_RETRY_INITIAL_INTERVAL_SECONDS = 0.5
+
+#: Multiplier applied to the retry interval after each further attempt.
+LLM_RETRY_BACKOFF_FACTOR = 2.0
+
 # Per LangGraph fault-tolerance docs: retry transient language model and API errors on async nodes.
-_LLM_RETRY = RetryPolicy(max_attempts=3, initial_interval=0.5, backoff_factor=2.0)
+_LLM_RETRY = RetryPolicy(
+    max_attempts=LLM_RETRY_MAX_ATTEMPTS,
+    initial_interval=LLM_RETRY_INITIAL_INTERVAL_SECONDS,
+    backoff_factor=LLM_RETRY_BACKOFF_FACTOR,
+)
 
 
 def _with_runtime_deps(
@@ -408,11 +420,16 @@ def _route_after_validator(state: AgentState) -> str:
     validation_result = state.get("validation_result") or {}
     if validation_result.get("passed"):
         return "orchestrator"
+    runtime_settings = agent_runtime_settings()
     iteration = int(state.get("iteration") or 0)
-    max_iterations = int(state.get("max_iterations") or MAX_ITERATIONS)
+    max_iterations = int(state.get("max_iterations") or runtime_settings.max_iterations)
     retry_count = int(state.get("pev_retry_count") or 0)
     feedback = state.get("validation_feedback") or {}
-    if feedback.get("escalate") or retry_count >= MAX_PEV_RETRIES or iteration >= max_iterations:
+    if (
+        feedback.get("escalate")
+        or retry_count >= runtime_settings.max_pev_retries
+        or iteration >= max_iterations
+    ):
         return "orchestrator"
     return "planner"
 
@@ -486,7 +503,9 @@ async def _clear_langgraph_thread_bounded(session_id: str) -> None:
     shutdown. Bounding the wait lets the task self-terminate either way.
     """
     try:
-        await asyncio.wait_for(clear_langgraph_thread(session_id), timeout=5)
+        await asyncio.wait_for(
+            clear_langgraph_thread(session_id), timeout=CHECKPOINTER_CLEANUP_TIMEOUT_SECONDS
+        )
     except Exception:
         logger.debug("bounded checkpoint clear did not finish", exc_info=True)
 

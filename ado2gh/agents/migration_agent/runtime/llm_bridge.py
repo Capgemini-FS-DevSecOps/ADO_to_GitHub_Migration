@@ -10,10 +10,10 @@ from typing import TYPE_CHECKING, Any
 
 from langchain_core.language_models import BaseChatModel
 
+from ado2gh.agents.migration_agent.constants import agent_runtime_settings
+
 if TYPE_CHECKING:
     from ado2gh.api.llm.llm_model_store import LLMModelConfig
-
-LLM_TIMEOUT_SECONDS = 60
 
 
 class ModelCapabilityError(Exception):
@@ -144,7 +144,7 @@ def build_langchain_chat_model(
 
     provider = cfg.provider
     streaming = capabilities.supports_streaming
-    timeout = LLM_TIMEOUT_SECONDS
+    timeout = agent_runtime_settings().llm_timeout_seconds
 
     if provider in ("stub", "offline"):
         from langchain_core.language_models.fake_chat_models import GenericFakeChatModel

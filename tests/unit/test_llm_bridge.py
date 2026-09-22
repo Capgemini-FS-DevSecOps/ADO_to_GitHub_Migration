@@ -1,14 +1,15 @@
 """Unit tests for LLM bridge — model resolution, capabilities, streaming."""
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from ado2gh.agents.migration_agent.constants import LLM_TIMEOUT_SECONDS
 from ado2gh.agents.migration_agent.runtime.llm_bridge import (
     ModelCapabilities,
     ModelCapabilityError,
     _detect_capabilities,
     build_langchain_chat_model,
     resolve_langchain_llm,
-    LLM_TIMEOUT_SECONDS,
 )
 
 

@@ -116,9 +116,11 @@ async def session_message_stream(
         )
 
     from ado2gh.agents.migration_agent.constants import (
-        SSE_HEARTBEAT_INTERVAL_SECONDS,
         SSE_MAX_EVENTS_PER_STREAM,
+        agent_runtime_settings,
     )
+
+    heartbeat_interval_seconds = agent_runtime_settings().sse_heartbeat_interval_seconds
 
     attach_actor_to_session(session, getattr(request.state, "platform_user", None))
     session_token = _session_token_from_request(request) or _session_accel_token(session_id)
@@ -173,7 +175,7 @@ async def session_message_stream(
                         yield f"data: {json.dumps(event, default=str)}\n\n"
                     # Heartbeat keepalive
                     now = asyncio.get_event_loop().time()
-                    if now - last_heartbeat >= SSE_HEARTBEAT_INTERVAL_SECONDS:
+                    if now - last_heartbeat >= heartbeat_interval_seconds:
                         yield f"data: {json.dumps({'kind': 'heartbeat', 'content': ''}, default=str)}\n\n"
                         last_heartbeat = now
         except Exception as exc:
