@@ -126,11 +126,37 @@ async def approve_session(
     if not req.approved:
         set_session_idle(session)
         session["approval"] = {"approved": False, "reason": req.reason}
+        session["live_approval_status"] = "denied"
+        # Close the matching platform approval row through the same deny path
+        # the internal deny-live route uses, not just the local session state:
+        # a denial that only sets local state leaves the platform row pending,
+        # so a separately-privileged approver could later approve that stale
+        # row and resume the session live despite this denial.
+        approval_id = session.get("live_approval_id")
+        if approval_id:
+            session_token = _session_token_from_request(request) or _session_accel_token(session_id)
+            # The platform decision contract requires a non-empty reason
+            # (`LiveApprovalDecisionRequest.reason`, min length one); the local
+            # approval request does not, so an unfilled local reason still
+            # closes the platform row with a stand-in reason rather than
+            # failing the whole denial.
+            platform_reason = req.reason or "Denied via agent session"
+            try:
+                await _accel_post(
+                    f"/v1/platform/approvals/{approval_id}/deny",
+                    {"reason": platform_reason},
+                    session_token=session_token,
+                )
+            except httpx.HTTPStatusError as exc:
+                raise HTTPException(
+                    status_code=exc.response.status_code,
+                    detail="platform_denial_failed",
+                ) from exc
         _audit.record(
             "session.approve.denied",
             profile_id=session["profile_id"],
             session_id=session_id,
-            metadata={"reason": req.reason, "outcome": "denied"},
+            metadata={"reason": req.reason, "outcome": "denied", "approval_id": approval_id},
         )
         return {"session_id": session_id, "status": session["status"]}
 
