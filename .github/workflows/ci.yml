@@ -24,6 +24,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -40,7 +41,7 @@ jobs:
       # narrower selector hid a whole package's worth of untested route code; the
       # combined figure measured 69.28 %, one point below the standalone `ado2gh`
       # figure it replaces, because the denominator grew by more than the numerator did.
-      - run: pytest --cov=ado2gh --cov=services --cov-fail-under=69
+      - run: pytest --cov=ado2gh --cov=services --cov-fail-under=69 --timeout=600 --timeout-method=thread
   ui-permissions:
     runs-on: ubuntu-latest
     steps:
