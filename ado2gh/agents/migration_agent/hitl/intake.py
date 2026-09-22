@@ -32,18 +32,31 @@ def clear_stale_plan_approval(
     session: dict[str, Any],
     *,
     plan: dict[str, Any] | None = None,
+    replaced_plan: bool = False,
 ) -> bool:
     """Drop an approval that was given for a different plan than the one now in play.
 
     Approval was a sticky boolean: once set, a replan — or a plan swapped in by a
     tool — inherited it and executed without ever being shown to the operator
-    (THR-09-002). A plan already handed to the executor keeps its approval, so an
-    in-flight or finished run is never retro-actively unapproved.
+    (THR-09-002). A plan already handed to the executor normally keeps its
+    approval, so an in-flight or finished run is never retro-actively unapproved.
+
+    ``replaced_plan`` is for the one path that is not that normal replan: a tool
+    that stores a brand-new plan outright, outside the planner-approval flow
+    that would otherwise have re-checked the approval already. That plan was
+    never shown to the operator, so whatever run was in flight belongs to a plan
+    that no longer exists (GAP-129) — the exemption for an in-flight run does not
+    apply, and the run flags are reset along with the approval so the swapped-in
+    plan starts unapproved instead of continuing to execute unattended.
 
     Args:
         session: Live agent session, updated in place.
         plan: The plan about to be acted on. Defaults to the session's own plan;
             pass the incoming plan when it has not been stored on the session yet.
+        replaced_plan: True when a tool just replaced the session's plan outright
+            (not the normal planner-approval flow). Skips the in-flight-run
+            exemption, and on a stale approval also resets
+            ``pev_execution_started``/``pev_execution_completed`` to False.
 
     Returns:
         True when a stale approval was cleared.
@@ -52,7 +65,9 @@ def clear_stale_plan_approval(
 
     if not session.get("plan_approved"):
         return False
-    if session.get("pev_execution_started") or session.get("pev_execution_completed"):
+    if not replaced_plan and (
+        session.get("pev_execution_started") or session.get("pev_execution_completed")
+    ):
         return False
     if plan is None:
         plan = session.get("migration_plan")
@@ -62,6 +77,9 @@ def clear_stale_plan_approval(
         return False
     session["plan_approved"] = False
     session.pop(PLAN_APPROVAL_KEY, None)
+    if replaced_plan:
+        session["pev_execution_started"] = False
+        session["pev_execution_completed"] = False
     return True
 
 

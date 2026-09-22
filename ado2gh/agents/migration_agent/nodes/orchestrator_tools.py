@@ -177,6 +177,15 @@ async def _execute_orchestrator_tools(
                         "content": f"Tool '{tool_name}' failed: {result.get('message', '')}",
                     }]
                 else:
+                    from ado2gh.agents.migration_agent.hitl.intake import clear_stale_plan_approval
+
+                    # This tool dispatches by name rather than through
+                    # wrap_tool_with_guardrail (see the comment above), so a plan
+                    # stored here never passes through the planner-approval flow's
+                    # own staleness re-check. Do it explicitly: the plan the
+                    # operator approved is not the plan now being stored, and any
+                    # run already in flight belongs to that old plan (GAP-129).
+                    clear_stale_plan_approval(session, plan=result, replaced_plan=True)
                     session["migration_plan"] = result
                     results.append({"tool": tool_name, "result": result})
                     state["messages"] = state.get("messages", []) + [{

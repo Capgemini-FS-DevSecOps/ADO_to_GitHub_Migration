@@ -15,14 +15,48 @@ def _blocker_text(work_item: dict[str, Any]) -> str:
 
 _FIELD_SEPARATOR = "\x1f"
 
+#: Length, in hex characters, of the configuration-file content fingerprint folded
+#: into the plan revision key. Short enough to stay cheap to carry around, long
+#: enough that two different configuration files colliding is not a practical
+#: concern.
+_CONFIG_FINGERPRINT_LENGTH = 16
+
+
+def _config_content_fingerprint(config_path: str) -> str:
+    """Short hash of the configuration file's contents, not just its name.
+
+    Execution reads organisation defaults and destinations from this file's
+    contents (GAP-130), so an edit to the file between approval and execution
+    must revoke the approval even though the file NAME did not change. Returns
+    the empty string when the path is blank, the file is missing, or it cannot
+    be read — this is an identity input, never something that raises.
+
+    Args:
+        config_path: Path to the migration configuration file.
+
+    Returns:
+        A short hex digest of the file's bytes, or ``""``.
+    """
+    if not config_path:
+        return ""
+    from pathlib import Path
+
+    try:
+        digest = hashlib.sha256(Path(config_path).read_bytes()).hexdigest()
+    except OSError:
+        return ""
+    return digest[:_CONFIG_FINGERPRINT_LENGTH]
+
 
 def plan_revision_key(plan: dict[str, Any] | None) -> str:
     """Identify one revision of a migration plan by the decisions it asks the operator to make.
 
     The digest covers every plan property a live write is authorised against —
     the plan id and revision counter, the execution mode, the config path the
-    executor resolves organisation defaults from, the enabled scope set, and
-    for every repository and work item every coordinate
+    executor resolves organisation defaults from plus a content fingerprint of
+    that file (GAP-130: an edit to the file between approval and execution
+    must revoke the approval even when its name did not change), the enabled
+    scope set, and for every repository and work item every coordinate
     :func:`resolve_repo_context <ado2gh.agents.migration_agent.nodes.executor.scope.resolve_repo_context>`
     reads to pick the source and destination of a live write — identifier,
     ADO project and repository name, target organisation, target repository,
@@ -55,6 +89,7 @@ def plan_revision_key(plan: dict[str, Any] | None) -> str:
         str(plan.get("revision", 0)),
         str(coerce_dry_run(plan.get("dry_run"), default=True)),
         config_path,
+        _config_content_fingerprint(config_path),
         _FIELD_SEPARATOR.join(plan_scopes),
     ]
 
