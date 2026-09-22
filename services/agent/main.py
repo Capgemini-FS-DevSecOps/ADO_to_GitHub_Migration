@@ -67,7 +67,7 @@ def _configure_agent_tracing() -> None:
 
 @app.on_event("startup")
 def _recover_sessions_on_restart() -> None:
-    """On startup, load persisted sessions and mark the active ones for resume (T061)."""
+    """On startup, load persisted sessions and mark the active ones for resume."""
     try:
         from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
         store = MigrationSessionStore()
@@ -113,7 +113,7 @@ async def agent_auth_middleware(
 ) -> Response:
     """Authenticate every /v1/ request before it reaches a route handler.
 
-    Health, metrics and LLM-status paths are exempt. Service-to-service calls
+    Health, metrics and language-model-status paths are exempt. Service-to-service calls
     under /v1/internal/ must carry the shared secret in the
     ``x-ado2gh-internal-token`` header; every other /v1/ path needs a valid
     operator session cookie. A request that fails either check gets a 401 and

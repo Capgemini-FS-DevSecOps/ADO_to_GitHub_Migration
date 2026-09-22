@@ -258,7 +258,7 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request) -> Pipeli
 
 @router.post("/v1/pipeline/runs/{run_id}/start", response_model=PipelineRunResponse)
 def start_existing_pipeline_run(run_id: str, request: Request) -> PipelineRunResponse:
-    """Start a pipeline run that was created but not started (e.g. awaiting approval).
+    """Start a pipeline run that was created but not started (for example awaiting approval).
 
     The route takes no request body. Whether a parked run may go live is decided
     entirely from server-side state, so there is nothing for a caller to send.

@@ -33,7 +33,7 @@ from ado2gh.state.factory import create_state_db
 
 
 def _build_ado_client(global_cfg: dict, ado_url: str | None = None, ado_pat: str | None = None) -> ADOClient:
-    """Build an ADO client, preferring an explicit token over env vars over config.
+    """Build an ADO client, preferring an explicit token over environment variables over configuration.
 
     The org URL and personal access token (PAT) are each resolved independently: the caller-supplied
     value wins, then the matching environment variable, then ``global_cfg``.
@@ -131,15 +131,15 @@ class Accelerator:
         self.db_path = db_path
 
     def discover(self, request: DiscoverRequest, ado_url: str | None = None, ado_pat: str | None = None) -> DiscoverResult:
-        """Scan the Azure DevOps organisation and write a discovered-repo config.
+        """Scan the Azure DevOps organisation and write a discovered-repository configuration.
 
         Args:
-            request: Carries the migration config to load and the directory the
+            request: Carries the migration configuration to load and the directory the
                 discovery output is written to.
             ado_url: Azure DevOps organisation URL. Falls back to ``ADO_ORG_URL``
-                and then to the config file when omitted.
+                and then to the configuration file when omitted.
             ado_pat: Azure DevOps credential. Falls back to the environment and then
-                to the config file when omitted.
+                to the configuration file when omitted.
 
         Returns:
             A ``DiscoverResult`` naming the directory that now holds the generated
@@ -156,7 +156,7 @@ class Accelerator:
         return DiscoverResult(output_dir=request.output_dir)
 
     def run_wave(self, request: RunWaveRequest, ado_url: str | None = None, ado_pat: str | None = None, gh_token: str | None = None) -> RunWaveResult:
-        """Execute one migration wave, or every wave in the config in order.
+        """Execute one migration wave, or every wave in the configuration in order.
 
         ``request.dry_run`` is converted to an ``ExecutionMode`` here: this is the
         boundary between the boolean external shape and the internal mode (CA-001).

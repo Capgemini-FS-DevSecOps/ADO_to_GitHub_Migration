@@ -21,7 +21,7 @@ def remote_workflow_files(
     repo: RepoConfig,
     branch: str,
 ) -> list[str]:
-    """List the workflow files already present on a branch of the target repo.
+    """List the workflow files already present on a branch of the target repository.
 
     Args:
         gh: GitHub client used to read the destination repository.
@@ -231,6 +231,6 @@ def push_workflows_for_repos(  # noqa: PLR0913
         if outcome.get("pushed"):
             pushed_repos += 1
         elif outcome.get("error"):
-            # GAP-016: never let a skipped repo look like a silent success.
+            # Report the skipped repository so it never looks like a silent success (GAP-016).
             console.print(f"[yellow]{outcome['repo']}: {outcome['error']}[/yellow]")
     return pushed_repos

@@ -7,7 +7,7 @@ from ado2gh.api.migration_work_plan import SCOPE_META
 
 
 def migrate_repo_detail(key: str, res: dict[str, Any]) -> dict[str, Any]:
-    """Normalize per-repo migration result for API/UI."""
+    """Normalize per-repository migration result for API/UI."""
     scopes = res.get("scopes") or {}
     scope_rows = []
     for scope, detail in scopes.items():
@@ -43,7 +43,7 @@ def _migrate_summary(
     scope_rows: list[dict[str, Any]],
     errors: list[str],
 ) -> str:
-    """Compose the one-line summary of a repo's migration result.
+    """Compose the one-line summary of a repository's migration result.
 
     Args:
         key: ``"<project>/<repo>"`` identifier for the repo.
@@ -74,7 +74,7 @@ def _migrate_summary(
 
 
 def validation_repo_detail(row: dict[str, Any]) -> dict[str, Any]:
-    """Normalise one repo's validation result for the API and the UI.
+    """Normalise one repository's validation result for the API and the UI.
 
     Args:
         row: Raw validation row for a single repo, holding its ADO and GitHub

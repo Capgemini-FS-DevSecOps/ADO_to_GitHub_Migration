@@ -24,7 +24,7 @@ router = APIRouter()
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
-    """Report agent health, accelerator reachability, and LLM readiness.
+    """Report agent health, accelerator reachability, and language model readiness.
 
     The route is authentication-exempt (``services/agent/main.py``
     ``_AGENT_AUTH_EXEMPT``), so it reports only booleans and fixed remediation
@@ -49,7 +49,7 @@ async def health() -> dict[str, Any]:
     profile = _profile()
 
     # Surface two more health signals: how many sessions are active, and whether the
-    # storage backend answered when asked (T078).
+    # storage backend answered when asked.
     active_session_count = 0
     storage_ok = True
     try:
@@ -130,7 +130,7 @@ async def metrics() -> PlainTextResponse:
     from services.agent.routes._helpers import _sessions
 
     collector = get_metrics_collector()
-    # FR-102: session gauges reflect current in-memory sessions
+    # Session gauges reflect current in-memory sessions (FR-102)
     statuses = [s.get("status", "idle") for s in _sessions.values()]
     active = ("planning", "executing", "validating", "thinking")
     collector.set_gauge("active_sessions", sum(1 for s in statuses if s in active))

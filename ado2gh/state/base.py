@@ -40,7 +40,7 @@ class StateDBBase(ABC):
     def _init_db(self) -> None:
         """Create the tables in ``SCHEMA`` and apply in-place column upgrades."""
 
-    # ── Repo-scope migrations ────────────────────────────────────────────────
+    # ── Repository-scope migrations ─────────────────────────────────────────
 
     @abstractmethod
     def upsert_migration(  # noqa: PLR0913  # row key plus outcome columns; no existing record model holds a scope outcome (exception-register.md)
@@ -379,7 +379,7 @@ class StateDBBase(ABC):
     def has_repo_in_progress(self, ado_project: str, ado_repo: str) -> bool:
         """Return whether any scope of a repository is currently ``in_progress``."""
 
-    # ── Platform users / auth ────────────────────────────────────────────────
+    # ── Platform users / authentication ─────────────────────────────────────
 
     @abstractmethod
     def count_platform_users(self) -> int:

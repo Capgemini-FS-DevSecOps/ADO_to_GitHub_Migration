@@ -1,4 +1,4 @@
-"""Shared httpx client factory for cloud LLM catalog and validation calls."""
+"""Shared httpx client factory for cloud language model catalog and validation calls."""
 from __future__ import annotations
 
 import ssl

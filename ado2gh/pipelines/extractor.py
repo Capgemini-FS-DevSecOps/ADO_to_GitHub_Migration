@@ -190,7 +190,7 @@ class PipelineMetadataExtractor:
             "with deployment jobs and required reviewers."
         )
 
-        # Source artifacts -> repo associations
+        # Source artifacts and their repository associations
         for artifact in rel_def.get("artifacts", []):
             if artifact.get("type") == "Build":
                 alias = artifact.get("alias", "")

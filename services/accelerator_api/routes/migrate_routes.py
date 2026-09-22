@@ -219,7 +219,7 @@ async def secret_provision(req: SecretProvisionRequest) -> dict[str, object]:
     """
     ado, gh, gh_org, profile = _get_clients()
 
-    # Validate GitHub repo exists
+    # Validate GitHub repository exists
     try:
         gh.get_repo(req.github_org, req.github_repo)
     except Exception as e:
@@ -553,7 +553,7 @@ async def artifacts_publish(req: ArtifactsPublishRequest) -> dict[str, object]:
             "message": f"Would publish feed '{req.feed_name}' ({pkg_type}) to GitHub Packages under {req.github_org}",
         }
 
-    # Live mode: GitHub Packages publishing requires local tooling (npm publish, nuget push, etc.)
+    # Live mode: GitHub Packages publishing requires local tooling (npm publish, nuget push, and so on)
     # The API endpoint records the intent and provides instructions.
     instructions = {
         "npm": f"npm publish --registry https://npm.pkg.github.com --scope @{req.github_org.lower()}",

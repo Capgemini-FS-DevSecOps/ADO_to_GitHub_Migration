@@ -87,7 +87,7 @@ def _apply_env(profile: LocalAgentProfile) -> LocalAgentProfile:
 
 
 def list_profile_ids(config_path: Optional[Path] = None) -> list[str]:
-    """List profile ids defined in config."""
+    """List profile ids defined in configuration."""
     path = config_path or _DEFAULT_CONFIG
     data = _load_yaml(path)
     profiles = data.get("profiles", {})

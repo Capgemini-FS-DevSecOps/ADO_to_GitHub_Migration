@@ -1,4 +1,4 @@
-"""LLM model connectivity validation with categorized failures."""
+"""Language model connectivity validation with categorized failures."""
 from __future__ import annotations
 
 import json

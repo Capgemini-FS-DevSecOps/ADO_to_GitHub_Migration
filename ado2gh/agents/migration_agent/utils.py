@@ -25,7 +25,7 @@ def coerce_dry_run(value: object, *, default: bool | None = None) -> bool | None
 
     ``bool()`` maps ``None`` to ``False`` and ``False`` means *live*, so coercing an
     absent or malformed flag reads a missing decision as a request to write to GitHub
-    (GAP-076, CA-001). Plan flags originate in LLM JSON, so anything other than
+    (GAP-076, CA-001). Plan flags originate in language model JSON, so anything other than
     ``True``/``False`` — ``None``, ``"false"``, ``0`` — is treated as unspecified and
     the caller's safe default applies instead.
 
@@ -126,7 +126,7 @@ def _stream_entry(
     kind: str,
     subagent: str | None = None,
 ) -> None:
-    """Emit an already-appended message entry over the live SSE stream.
+    """Emit an already-appended message entry over the live server-sent event stream (SSE).
 
     Takes the entry :func:`_append_event` returned rather than the raw values, so the
     masked content is what reaches the wire and never the raw arguments (CA-003).
@@ -164,7 +164,7 @@ def _append_and_stream(
     kind: str = "thinking",
     subagent: str | None = None,
 ) -> None:
-    """Append an event to the session and emit it for live SSE in one call.
+    """Append an event to the session and emit it for the live server-sent event stream (SSE) in one call.
 
     Call :func:`_append_event` followed by :func:`_stream_entry` directly when the
     event also carries ``meta``.
@@ -299,7 +299,7 @@ def _emit_tool_result(
         pass
 
 
-# ─── User message queuing during PEV execution ───
+# ─── User message queuing during plan-execute-validate loop (PEV) execution ───
 
 _CANCELLATION_PHRASES = frozenset({
     "cancel", "stop", "abort", "halt", "cancel migration", "stop migration",
@@ -315,7 +315,7 @@ def _is_cancellation_request(message: str) -> bool:
 
 
 def _queue_user_message(session: dict[str, Any], message: str) -> None:
-    """Queue a user message while PEV chain is running."""
+    """Queue a user message while the plan-execute-validate loop (PEV) chain is running."""
     session.setdefault("_message_queue", []).append({
         "message": message,
         "timestamp": _now(),
@@ -333,7 +333,7 @@ def _has_queued_messages(session: dict[str, Any]) -> bool:
 
 
 def _parse_llm_json(text: str) -> dict[str, Any]:
-    """Parse JSON from LLM output, tolerating markdown code fences and alternate formats.
+    """Parse JSON from language model output, tolerating markdown code fences and alternate formats.
 
     Args:
         text: Raw model output, which may wrap the JSON in a ```json fence or prose.
@@ -448,7 +448,7 @@ class IdeAuditBridge:
         must never break the operation it records, so a write failure is swallowed.
 
         Args:
-            action: The event type, e.g. ``session.confirm_live``.
+            action: The event type, for example ``session.confirm_live``.
             profile_id: Deployment profile the action ran under.
             repo: Repository the action touched, when it targets one.
             detail: Free-text description; masked before it is stored.

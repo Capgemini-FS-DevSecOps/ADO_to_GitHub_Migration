@@ -316,7 +316,7 @@ class GitScopeHandler:
         source: dict,
         ctx: ScopeContext,
     ) -> dict[str, Any] | None:
-        """Decide whether a pre-existing GitHub repo already holds this migration.
+        """Decide whether a pre-existing GitHub repository already holds this migration.
 
         Args:
             repo: Repository being migrated.

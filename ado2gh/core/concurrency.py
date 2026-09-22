@@ -1,4 +1,4 @@
-"""Global concurrency caps for git, repo, pipeline, and API rate limits."""
+"""Global concurrency caps for git, repository, pipeline, and API rate limits."""
 from __future__ import annotations
 
 import threading

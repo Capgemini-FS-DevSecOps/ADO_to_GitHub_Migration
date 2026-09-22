@@ -169,7 +169,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def _sync_platform_supplied_model() -> None:
-    """Reconcile the platform-managed LLM model record when the app starts."""
+    """Reconcile the platform-managed language model record when the app starts."""
     from ado2gh.api.llm.platform_managed_model import sync_on_startup
 
     sync_on_startup()
@@ -343,14 +343,14 @@ def discover(req: DiscoverRequest) -> DiscoverResponse:
 
 @app.post("/v1/plan", response_model=PlanResponse, deprecated=True, tags=["deprecated"])
 def plan(req: PlanRequest) -> PlanResponse:
-    """Preview the waves a migration config resolves to, without running them.
+    """Preview the waves a migration configuration resolves to, without running them.
 
     Deprecated: use ``POST /v1/migration/wave`` for wave creation and
     management. Nothing is migrated and no run is recorded; the state database
     is only opened so it exists for the later phases.
 
     Args:
-        req: Path to the migration config, the optional wave to narrow to, and
+        req: Path to the migration configuration, the optional wave to narrow to, and
             the state database path.
 
     Returns:
@@ -376,7 +376,7 @@ def plan(req: PlanRequest) -> PlanResponse:
 
 @app.post("/v1/migrate", response_model=list[RunWaveResponse])
 def migrate(req: RunWaveRequest, request: Request) -> list[RunWaveResponse]:
-    """Run one migration wave, or every wave in the config.
+    """Run one migration wave, or every wave in the configuration.
 
     The request passes three gates before any work starts. The active
     migration profile must be approved and runnable; a caller who needs

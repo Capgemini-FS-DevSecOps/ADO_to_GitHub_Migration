@@ -1,4 +1,4 @@
-"""Admin-managed LLM provider configurations (secrets stored locally, never returned)."""
+"""Admin-managed language model provider configurations (secrets stored locally, never returned)."""
 from __future__ import annotations
 
 import json
@@ -16,7 +16,7 @@ AMBIENT_LLM_PROVIDERS = ("bedrock", "foundry", "vertex")
 
 
 def _path() -> Path:
-    """Resolve the on-disk location of the LLM model configuration file.
+    """Resolve the on-disk location of the language model configuration file.
 
     Returns:
         Path: The ``llm_models.json`` path under the configured platform data
@@ -29,7 +29,7 @@ def _path() -> Path:
 
 @dataclass
 class LLMModelConfig:
-    """One admin-configured LLM model and its validation state.
+    """One admin-configured language model and its validation state.
 
     Holds the provider routing details, the operator-facing labels, the
     validation verdict that gates enabling the model, and the credential mode
@@ -183,7 +183,7 @@ def _assert_enable_gate(model: LLMModelConfig, data: dict[str, Any]) -> None:
 
 
 class LLMModelStore:
-    """JSON-backed store of admin-configured LLM models.
+    """JSON-backed store of admin-configured language models.
 
     Reads and writes the whole model list on every operation, so each call sees
     the current file contents. Stored credentials are kept in a separate section
@@ -426,7 +426,7 @@ class LLMModelStore:
                 model.validation_at = data.get("validation_at", now)
             if "capabilities" in data:
                 model.capabilities = data.get("capabilities") or None
-            # T028: Validate supports_tool_calling on registration
+            # Reject registration when the model does not support tool calling; the agent requires it.
             caps = model.capabilities or {}
             if caps.get("supports_tool_calling") is False:
                 raise ValueError(

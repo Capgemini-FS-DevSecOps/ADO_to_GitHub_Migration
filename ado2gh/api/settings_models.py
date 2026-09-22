@@ -64,7 +64,7 @@ class GitHubToken:
 
 @dataclass
 class MigrationProfile:
-    """One source ADO org → target GitHub org migration configuration."""
+    """One source ADO organisation → target GitHub organisation migration configuration."""
 
     id: str
     name: str

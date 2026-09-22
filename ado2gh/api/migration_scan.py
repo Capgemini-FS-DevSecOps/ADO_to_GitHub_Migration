@@ -1,4 +1,4 @@
-"""ADO org scan with risk scoring and phase recommendations for the migration UI."""
+"""ADO organisation scan with risk scoring and phase recommendations for the migration UI."""
 from __future__ import annotations
 
 import json
@@ -171,7 +171,7 @@ def build_inventory_gaps(project_details: list[dict[str, Any]]) -> list[dict[str
 
 
 class MigrationScanner:
-    """Scan ADO org repos, score risk, and bucket into migration phases."""
+    """Scan ADO organisation repositories, score risk, and bucket into migration phases."""
 
     def __init__(
         self,
@@ -179,7 +179,7 @@ class MigrationScanner:
         gh_org: str = "",
         phase_definitions: list[PhaseDefinition] | list[dict[str, Any]] | None = None,
     ) -> None:
-        """Bind a scanner to one ADO org and the phases its repos fall into.
+        """Bind a scanner to one ADO organisation and the phases its repositories fall into.
 
         Args:
             ado: Client used to enumerate projects, repos and pipelines.
@@ -198,7 +198,7 @@ class MigrationScanner:
         self.assigner = ConfigurableWaveAssigner(self.phase_defs)
 
     def scan(self, max_repos: int | None = None) -> dict[str, Any]:
-        """Walk every project in the org and risk-score its enabled repos.
+        """Walk every project in the organisation and risk-score its enabled repositories.
 
         A project whose repo listing fails is still reported: the failure is
         recorded on its ``project_details`` row rather than raised.

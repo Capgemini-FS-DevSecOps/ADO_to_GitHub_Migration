@@ -1,4 +1,4 @@
-"""Configurable migration phases for risk-based repo assignment."""
+"""Configurable migration phases for risk-based repository assignment."""
 from __future__ import annotations
 
 import re

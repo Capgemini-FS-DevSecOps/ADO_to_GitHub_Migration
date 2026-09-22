@@ -18,7 +18,7 @@ def resolve_gh_org(
     scan: dict[str, Any] | None = None,
     profile_id: str | None = None,
 ) -> str:
-    """Resolve GitHub target org: profile → migration.yaml → scan metadata."""
+    """Resolve GitHub target organisation: profile → migration.yaml → scan metadata."""
     if profile and (profile.gh_org or "").strip():
         return profile.gh_org.strip()
     if global_cfg is None and config_path:
@@ -44,7 +44,7 @@ def require_gh_org(
     scan: dict[str, Any] | None = None,
     profile_id: str | None = None,
 ) -> str:
-    """Resolve the GitHub target org, refusing to continue without one.
+    """Resolve the GitHub target organisation, refusing to continue without one.
 
     Args:
         profile: Profile whose configured GitHub organization wins if set.

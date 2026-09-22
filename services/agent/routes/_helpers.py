@@ -388,7 +388,7 @@ def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
             return None
         # Unlike a fresh session_id, this one may already have LangGraph
         # thread state from before the process restarted; clear it so the
-        # rehydrated session carries no PEV run state (matches this
+        # rehydrated session carries no plan-execute-validate loop (PEV) run state (matches this
         # function's "without cross-session state" contract).
         clear_langgraph_thread_sync(session_id)
         session = new_isolated_agent_session(
@@ -463,7 +463,7 @@ def _session_payload(session_id: str) -> dict[str, Any]:
     session = _sessions.get(session_id, {})
     # Only include message events in the chat log — thinking/status events are streamed live via a server-sent
     # event stream but should not appear as chat messages.
-    # PEV agents (planner/executor/validator) only emit thinking events.
+    # The plan-execute-validate loop (PEV) agents (planner/executor/validator) only emit thinking events.
     all_messages = session.get("messages", [])
     chat_messages = [m for m in all_messages if m.get("kind") == "message"]
     thinking_log = _thinking_log_for_current_turn(all_messages)
@@ -554,7 +554,7 @@ async def _build_migration_plan(
     discovery = session.get("discovery_snapshot") or {}
     repos_data = discovery.get("repos", []) if isinstance(discovery, dict) else []
 
-    # Filter to the requested repo if specified
+    # Filter to the requested repository if specified
     if repository_id:
         repos_data = [
             r for r in repos_data
@@ -565,7 +565,7 @@ async def _build_migration_plan(
                 or f"{r.get('project', '')}/{r.get('repo_name', '')}" == repository_id)
         ]
         if not repos_data:
-            # No matching repo in discovery — validate against ADO API
+            # No matching repository in discovery — validate against ADO API
             # Parse repository_id as "project/repo" or just "repo"
             if "/" in repository_id:
                 project, repo_name = repository_id.split("/", 1)
@@ -594,7 +594,7 @@ async def _build_migration_plan(
                             "message": f"Repository '{repository_id}' not found in Azure DevOps.",
                             "available_repos": [f"{r.get('project', '')}/{r.get('repo_name', r.get('name', ''))}" for r in discovery.get("repos", [])],
                         }
-                    # Repo exists in ADO, add to plan
+                    # Repository exists in ADO, add to plan
                     repos_data = [{"id": repository_id, "name": repository_id, "scopes": ["git", "pipelines"], "project": project}]
                 else:
                     return {

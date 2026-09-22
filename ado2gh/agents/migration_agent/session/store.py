@@ -43,7 +43,7 @@ _SESSION_PATCH_COLUMNS: dict[str, tuple[str, Callable[[Any], Any]]] = {
     "migration_plan": ("migration_plan_json", json.dumps),
     "iteration_count": ("iteration_count", int),
     "pev_retry_count": ("pev_retry_count", int),
-    "dry_run": ("dry_run", lambda value: 0 if value is False else 1),  # GAP-076: only explicit live
+    "dry_run": ("dry_run", lambda value: 0 if value is False else 1),  # only an explicit live setting counts as live (GAP-076)
 }
 
 
@@ -486,7 +486,7 @@ class MigrationSessionStore:
         return cid
 
     def get_cycle_summaries(self, session_id: str) -> list[dict[str, Any]]:
-        """Read a session's PEV cycle summaries.
+        """Read a session's plan-execute-validate loop (PEV) cycle summaries.
 
         Returns:
             One row per cycle, in cycle-number order.
@@ -555,7 +555,7 @@ class MigrationSessionStore:
         """
         return self._rows("SELECT * FROM rollback_records WHERE session_id=? AND rollback_status='eligible'", (session_id,))
 
-    # ── Repo locks ──────────────────────────────────────────────────────
+    # ── Repository locks ─────────────────────────────────────────────────
 
     def acquire_repo_lock(self, session_id: str, repository_id: str) -> bool:
         """Take the exclusive migration lock on a repository.
@@ -671,7 +671,7 @@ class MigrationSessionStore:
         """
         return self._rows("SELECT * FROM validation_results WHERE session_id=? ORDER BY created_at", (session_id,))
 
-    # ── Full session state persistence (T059-T060) ──────────────────────
+    # ── Full session state persistence ───────────────────────────────────
 
     def save_session_state(self, session_id: str, state: dict[str, Any]) -> None:
         """Persist full LangGraph agent state for resume.

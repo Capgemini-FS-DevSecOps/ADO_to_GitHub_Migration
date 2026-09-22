@@ -1,4 +1,4 @@
-"""Concurrent-run conflict detection — one live migration per repo, stale state recovery."""
+"""Concurrent-run conflict detection — one live migration per repository, stale state recovery."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -53,7 +53,7 @@ def get_repo_conflict_reason(repo_key: str, current_run_id: str | None = None) -
 
 
 def other_run_holds_repo(repo_key: str, current_run_id: str | None = None) -> bool:
-    """True when another run holds the repo *or* the check could not be completed.
+    """True when another run holds the repository *or* the check could not be completed.
 
     Args:
         repo_key: Repository as `project/repo`.
@@ -73,7 +73,7 @@ def clear_stale_in_progress_migrations(
     *,
     current_run_id: str | None = None,
 ) -> int:
-    """Mark orphaned in_progress rows failed when no other run owns the repo.
+    """Mark orphaned in_progress rows failed when no other run owns the repository.
 
     Args:
         db: State store holding the migration rows.

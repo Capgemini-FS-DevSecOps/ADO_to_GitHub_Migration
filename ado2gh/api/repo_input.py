@@ -1,4 +1,4 @@
-"""Resolve the repository list a run acts on, from an input file or the config waves.
+"""Resolve the repository list a run acts on, from an input file or the configuration waves.
 
 Lives in ``ado2gh/api/`` rather than ``ado2gh/cli/`` because the pipeline and
 validation steps need it as much as the CLI commands do, and the API layer must
@@ -13,14 +13,14 @@ from ado2gh.models import RepoConfig, WaveConfig
 def load_repos(
     input_path: str, global_cfg: dict, waves: list[WaveConfig] | None = None,
 ) -> list[RepoConfig]:
-    """Load repos from --input file, or fall back to waves in config.
+    """Load repositories from --input file, or fall back to waves in configuration.
 
     Args:
-        input_path: Path of the ``--input`` file naming the repos to act on. An
+        input_path: Path of the ``--input`` file naming the repositories to act on. An
             empty value means no file was given and the waves are used instead.
-        global_cfg: The ``global`` block of the migration config, which supplies
+        global_cfg: The ``global`` block of the migration configuration, which supplies
             the target GitHub organisation and the default scope list.
-        waves: The waves parsed from the config, used only when no input file
+        waves: The waves parsed from the configuration, used only when no input file
             was given.
 
     Returns:

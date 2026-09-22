@@ -162,7 +162,7 @@ def enrich_pipeline_readiness(
             )
 
         # Brute-force fallback: search YAML content for any project SC name
-        # that appears anywhere in the YAML (variables, parameters, comments, etc.)
+        # that appears anywhere in the YAML (variables, parameters, comments, and so on)
         if project_service_connections:
             existing_sc_names = {sc.get("name") for sc in (meta.service_connections or [])}
             for sc in project_service_connections:

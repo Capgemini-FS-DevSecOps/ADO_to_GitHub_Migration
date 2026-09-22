@@ -1,4 +1,4 @@
-"""Build descriptive per-repo migration work items (scopes, blockers, categories)."""
+"""Build descriptive per-repository migration work items (scopes, blockers, categories)."""
 from __future__ import annotations
 
 import re
@@ -156,7 +156,7 @@ def collect_secret_gap_fields(
 
 
 def _work_item_id(repo_key: str, scope: str) -> str:
-    """Build the stable work item id for one repo and scope.
+    """Build the stable work item id for one repository and scope.
 
     Args:
         repo_key: ``"<project>/<repo>"`` identifier for the repo.
@@ -175,7 +175,7 @@ def _pipeline_blockers_for_repo(
     project: str,
     repo_name: str,
 ) -> list[str]:
-    """Collect readiness blockers for every inventoried pipeline of one repo.
+    """Collect readiness blockers for every inventoried pipeline of one repository.
 
     Args:
         db: State store holding the pipeline inventory.
@@ -210,7 +210,7 @@ def _secrets_blockers(
     project: str,
     repo_name: str,
 ) -> list[str]:
-    """Describe the secret setup a repo needs before its pipelines can run.
+    """Describe the secret setup a repository needs before its pipelines can run.
 
     Args:
         db: State store holding the pipeline inventory.
@@ -286,7 +286,7 @@ def build_work_items_for_repos(
     db: StateStore | None = None,
     repo_pipeline_counts: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
-    """One work item per repo × scope with human labels and blocker hints."""
+    """One work item per repository × scope with human labels and blocker hints."""
     scopes_order = [s.value for s in MigrationScope]
     default_enabled = set(enabled_scopes or [MigrationScope.REPO.value])
     per_repo = enabled_scopes_per_repo or {}
@@ -359,7 +359,7 @@ def work_items_summary(work_items: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def aggregate_work_items_for_timeline(work_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse per-repo work items into scope-level rows with repo counts."""
+    """Collapse per-repository work items into scope-level rows with repository counts."""
     scopes_order = [s.value for s in MigrationScope]
     scope_rank = {scope: idx for idx, scope in enumerate(scopes_order)}
     groups: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -492,7 +492,7 @@ def filter_executable_work_items(
 def group_work_items_by_repo(
     work_items: list[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Group work items by repo id, preserving plan order."""
+    """Group work items by repository id, preserving plan order."""
     groups: dict[str, list[dict[str, Any]]] = {}
     for wi in work_items:
         if not isinstance(wi, dict):

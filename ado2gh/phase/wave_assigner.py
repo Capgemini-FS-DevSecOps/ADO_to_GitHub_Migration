@@ -40,8 +40,8 @@ class WaveAssigner:
         sorted_scores = sorted(scores, key=lambda s: s.total_score)
         result: dict[str, list[RiskScore]] = {p.value: [] for p in PHASE_ORDER}
         for score in sorted_scores:
-            # Preserve any per-repo override already set on the score
-            # (e.g. from the project/repo::gh_org/gh_repo input syntax).
+            # Preserve any per-repository override already set on the score
+            # (for example from the project/repo::gh_org/gh_repo input syntax).
             if not score.gh_org:
                 score.gh_org = gh_org
             if not score.gh_repo:

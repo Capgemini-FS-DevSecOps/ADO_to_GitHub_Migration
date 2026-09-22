@@ -141,7 +141,7 @@ def _accel(db_path: str = "migration_state.db") -> Accelerator:
 
 
 def _config_path() -> str:
-    """Resolve the migration config file the process should use.
+    """Resolve the migration configuration file the process should use.
 
     Returns:
         The path from ``ADO2GH_CONFIG``, or ``migration.yaml`` when it is unset.
@@ -368,7 +368,7 @@ def _maybe_audit_model_enabled(
     before_default: bool,
     model: LLMModelConfig,
 ) -> None:
-    """Write an audit record when a validated LLM model is turned on.
+    """Write an audit record when a validated language model is turned on.
 
     Only a model that has passed validation is auditable, and only a transition
     into enabled or agent-default is recorded — turning one off, or saving with

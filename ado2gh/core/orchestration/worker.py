@@ -20,7 +20,7 @@ log = logging.getLogger("ado2gh.worker")
 
 
 def _require_config_path(payload: dict) -> str:
-    """Read the migration config path a job needs, or refuse the job.
+    """Read the migration configuration path a job needs, or refuse the job.
 
     Args:
         payload: The job payload exactly as it was enqueued through

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 
 def _collect_repo_scope_rows(db: StateStore) -> dict[str, dict[str, Any]]:
-    """Reduce the migration table to the latest row per repo and scope.
+    """Reduce the migration table to the latest row per repository and scope.
 
     Args:
         db: State store to read the migration rows from.
@@ -50,7 +50,7 @@ def _collect_repo_scope_rows(db: StateStore) -> dict[str, dict[str, Any]]:
 
 
 def _rollup_repo_status(scopes: dict[str, dict]) -> str:
-    """Reduce a repo's per-scope statuses to one overall status.
+    """Reduce a repository's per-scope statuses to one overall status.
 
     Args:
         scopes: The ``scopes`` map from :func:`_collect_repo_scope_rows`.
@@ -80,7 +80,7 @@ def _rollup_repo_status(scopes: dict[str, dict]) -> str:
 
 
 def extract_outcomes_from_pipeline_runs(runs: list[Any]) -> list[dict[str, Any]]:
-    """Flatten pipeline runs into one row per repo touched by a migration step.
+    """Flatten pipeline runs into one row per repository touched by a migration step.
 
     Only the ``migrate_repos``, ``convert_pipelines`` and ``validate`` steps
     are considered; both the ``repo_details`` and the ``work_items`` shapes of

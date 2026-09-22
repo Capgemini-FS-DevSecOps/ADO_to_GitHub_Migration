@@ -1,4 +1,4 @@
-"""Runtime: turn execution, LLM bridge, and context window management."""
+"""Runtime: turn execution, language model bridge, and context window management."""
 from ado2gh.agents.migration_agent.runtime.context_window import build_context_with_cycle_summaries
 from ado2gh.agents.migration_agent.runtime.llm_bridge import (
     LLM_TIMEOUT_SECONDS,

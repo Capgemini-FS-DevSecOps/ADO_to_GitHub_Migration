@@ -1,4 +1,4 @@
-"""Pipeline readiness report — assess which pipelines can auto-convert vs need manual work."""
+"""Pipeline readiness report — assess which pipelines can auto-convert versus need manual work."""
 from __future__ import annotations
 
 import csv
@@ -71,7 +71,7 @@ class PipelineReadinessReport:
     For each pipeline, estimates:
     - Conversion difficulty (auto / assisted / manual)
     - Estimated effort in hours
-    - Blockers (unsupported tasks, self-hosted pools, etc.)
+    - Blockers (unsupported tasks, self-hosted pools, and so on)
     - Recommendations
     """
 

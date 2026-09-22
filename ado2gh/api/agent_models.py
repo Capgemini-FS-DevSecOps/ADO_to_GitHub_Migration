@@ -26,7 +26,7 @@ def _provider_label(provider: str) -> str:
 
 
 def list_agent_models() -> dict[str, Any]:
-    """List the LLM models the agent is currently allowed to use.
+    """List the language models the agent is currently allowed to use.
 
     A model is included only when it is enabled and its validation has passed.
     Models that draw on ambient cloud credentials are additionally suppressed

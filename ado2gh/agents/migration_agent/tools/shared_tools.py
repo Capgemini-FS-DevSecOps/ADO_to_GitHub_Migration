@@ -23,8 +23,8 @@ _MAX_ERROR_DETAIL_CHARS = 500
 # applied after masking so the cut can never split a secret shape in two.
 _MAX_AUDITED_ENDPOINT_CHARS = 200
 # redact_text catches named secret shapes; a URL can carry a credential in forms
-# it does not name — basic-auth userinfo, or an opaque `sig=`/`code=` query
-# value. Both are dropped wholesale from an error detail (THR-02-003).
+# it does not name — basic authentication userinfo, or an opaque `sig=`/`code=`
+# query value. Both are dropped wholesale from an error detail (THR-02-003).
 _URL_USERINFO_RE = re.compile(r"(?<=://)[^/\s@]+(?=@)")
 _URL_QUERY_RE = re.compile(r"(?<=\?)[^\s\"'<>]+")
 
@@ -86,7 +86,7 @@ def join_api_path(prefix: str, endpoint: str) -> str:
     reaches the accelerator byte for byte as it did before.
 
     Args:
-        prefix: The prefix the request must stay under, e.g. ``/v1/ado``.
+        prefix: The prefix the request must stay under, for example ``/v1/ado``.
         endpoint: The model-supplied endpoint, with or without a leading slash.
             Any query string is carried through untouched.
 
@@ -120,7 +120,7 @@ def tool_error(exc: Exception, **extra: object) -> dict[str, Any]:
 
     Args:
         exc: The caught exception.
-        **extra: Extra keys merged into the result, e.g. ``project``.
+        **extra: Extra keys merged into the result, for example ``project``.
 
     Returns:
         ``error`` (the exception class name) and ``detail`` (the message with

@@ -21,7 +21,7 @@ def new_isolated_agent_session(
 ) -> dict[str, Any]:
     """Build a fresh in-memory agent session with no migration context carried over.
 
-    The session starts with no model chosen and the LLM assumed available;
+    The session starts with no model chosen and the language model assumed available;
     callers that have resolved a model apply it with ``apply_model_selection``.
     The operator's display name is filled in by
     ``policies.attach_actor_to_session`` once the platform user is known.
@@ -78,7 +78,7 @@ def apply_model_selection(
     llm_degraded: bool = False,
     llm_unconfigured: bool = False,
 ) -> None:
-    """Record the resolved LLM model state on a session dict.
+    """Record the resolved language model state on a session dict.
 
     The three values are produced together by ``routes._helpers._resolve_model_id``.
     Setting them in one place is what keeps ``llm_available`` in step with
@@ -137,7 +137,7 @@ def clear_session_migration_state(
     *,
     current_run_id: str | None = None,
 ) -> int:
-    """Clear in-progress rows for repos tied to this session, enforcing the one-live-migration-per-repo rule (FR-036).
+    """Clear in-progress rows for repositories tied to this session, enforcing the one-live-migration-per-repository rule (FR-036).
 
     Returns:
         How many in-progress migration rows were cleared.
@@ -163,7 +163,7 @@ def clear_session_migration_state(
 
 
 def release_session_repo_locks(session_id: str) -> None:
-    """Release every repo lock this session holds, ignoring store failures."""
+    """Release every repository lock this session holds, ignoring store failures."""
     try:
         from ado2gh.agents.migration_agent.session.store import MigrationSessionStore
 
@@ -189,7 +189,7 @@ def persist_session_snapshot(session: dict[str, Any]) -> None:
             migration_plan=session.get("migration_plan"),
             iteration_count=int(session.get("iteration", 0) or 0),
             pev_retry_count=int(session.get("pev_retry_count", 0) or 0),
-            dry_run=session.get("dry_run") is not False,  # GAP-076: only explicit live is live
+            dry_run=session.get("dry_run") is not False,  # only an explicit live setting counts as live (GAP-076)
         )
     except Exception:
         pass
@@ -302,7 +302,7 @@ def clear_pipeline_run_migration_state(run: object) -> int:
 
     Returns:
         How many in-progress migration rows were cleared; zero when the run
-        carries no usable ``Project/Repo`` id.
+        carries no usable ``project/repository`` id.
     """
     from ado2gh.core.conflict_detection import clear_stale_in_progress_migrations
     from ado2gh.state.factory import create_state_db

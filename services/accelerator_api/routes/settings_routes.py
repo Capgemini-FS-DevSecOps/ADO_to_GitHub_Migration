@@ -1,4 +1,4 @@
-"""Settings, LLM, connectivity, and cloud credential route handlers.
+"""Settings, language model, connectivity, and cloud credential route handlers.
 
 Almost every endpoint here requires ``can_manage_models``; only the model
 listing is open to other roles. Secrets are one-way — an API key, proxy password
@@ -110,7 +110,7 @@ def put_connectivity(request: Request, body: dict) -> dict[str, object]:
 def test_connectivity_route(request: Request) -> dict[str, object]:
     """Check that the configured proxy and TLS settings can reach the internet.
 
-    Makes one outbound request through the same HTTP client the cloud LLM
+    Makes one outbound request through the same HTTP client the cloud language model
     providers use, so a failure here is the failure an operator would hit when
     saving a cloud model. Nothing is stored and no credential is sent.
 
@@ -145,7 +145,7 @@ def test_connectivity_route(request: Request) -> dict[str, object]:
 
 @router.get("/v1/settings/llm-models/providers")
 def list_llm_provider_types(request: Request) -> dict[str, object]:
-    """List the LLM provider types a model can be configured against.
+    """List the language model provider types a model can be configured against.
 
     Drives the provider picker in the console: each spec says what the provider
     is called, which fields it needs and how it authenticates.
@@ -296,7 +296,7 @@ def validate_llm_saved(model_id: str, request: Request) -> dict[str, object]:
 
 @router.get("/v1/settings/llm-models")
 def list_llm_models(request: Request) -> dict[str, object]:
-    """List the configured LLM models.
+    """List the configured language models.
 
     The only settings route open to non-administrators, because every caller
     needs to know which models the agent can be pointed at. What comes back
@@ -319,7 +319,7 @@ def list_llm_models(request: Request) -> dict[str, object]:
 
 @router.post("/v1/settings/llm-models")
 def create_llm_model(request: Request, body: dict) -> dict[str, object]:
-    """Save a new LLM model, or overwrite one when the body carries its id.
+    """Save a new language model, or overwrite one when the body carries its id.
 
     A model created already enabled, or already set as the agent default, is
     audited as enabled on top of the creation record, so the log shows when a
@@ -371,7 +371,7 @@ def create_llm_model(request: Request, body: dict) -> dict[str, object]:
 
 @router.put("/v1/settings/llm-models/{model_id}")
 def update_llm_model(model_id: str, request: Request, body: dict) -> dict[str, object]:
-    """Update a saved LLM model.
+    """Update a saved language model.
 
     The path identifier wins over any ``id`` in the body, so an update can never
     be redirected at a different model. Turning a validated model on, or making
@@ -416,7 +416,7 @@ def update_llm_model(model_id: str, request: Request, body: dict) -> dict[str, o
 
 @router.delete("/v1/settings/llm-models/{model_id}")
 def delete_llm_model(model_id: str, request: Request) -> dict[str, object]:
-    """Delete a saved LLM model and the credential stored with it.
+    """Delete a saved language model and the credential stored with it.
 
     Args:
         model_id: Identifier of the model to delete.
@@ -449,7 +449,7 @@ def delete_llm_model(model_id: str, request: Request) -> dict[str, object]:
 def list_cloud_credentials(request: Request) -> dict[str, object]:
     """List the cloud credential sources the host offers, and their approval state.
 
-    These are the ambient credentials a cloud LLM provider can run on — an
+    These are the ambient credentials a cloud language model provider can run on — an
     instance role, a workload identity, a CLI login — rather than keys the
     platform stores. Only their presence and shape is ever reported; no
     credential value is read, held or returned (CA-003).

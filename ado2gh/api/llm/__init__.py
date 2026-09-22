@@ -1,4 +1,4 @@
-"""LLM model catalog, provider registry, and platform-managed model integration.
+"""Language model catalog, provider registry, and platform-managed model integration.
 
 Consolidated from scattered modules in ado2gh/api/ per FR-027.
 """

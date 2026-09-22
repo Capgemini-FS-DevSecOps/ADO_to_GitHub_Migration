@@ -101,7 +101,7 @@ def require_manage_settings(request: Request) -> PlatformUser | None:
 
 
 def require_manage_models(request: Request) -> PlatformUser | None:
-    """Require the ``can_manage_models`` capability for an LLM-model change.
+    """Require the ``can_manage_models`` capability for a language-model change.
 
     Args:
         request: The incoming request.

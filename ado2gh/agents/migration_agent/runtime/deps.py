@@ -1,8 +1,8 @@
 """Per-invocation runtime dependencies (not checkpointed).
 
-LangGraph checkpointers require JSON/msgpack-serializable state. LLM clients and
-HTTP callables must live outside AgentState — injected via contextvars for each
-graph invoke (see LangGraph persistence docs / issue #2135).
+LangGraph checkpointers require JSON/msgpack-serializable state. Language model
+clients and HTTP callables must live outside AgentState — injected via contextvars
+for each graph invoke (see LangGraph persistence docs / issue #2135).
 """
 from __future__ import annotations
 
@@ -31,26 +31,26 @@ def set_runtime_deps(**deps: object) -> None:
 
 
 def clear_runtime_deps() -> None:
-    """Unbind the current invocation's deps, leaving the contextvar empty."""
+    """Unbind the current invocation's dependencies, leaving the contextvar empty."""
     _RUNTIME.set({})
 
 
 def get_runtime_deps() -> dict[str, Any]:
-    """Read the deps bound for the current invocation.
+    """Read the dependencies bound for the current invocation.
 
     Returns:
-        A copy of the bound deps mapping, empty when nothing is bound. Copying
-        keeps callers from mutating the value held by the contextvar.
+        A copy of the bound dependencies mapping, empty when nothing is bound.
+        Copying keeps callers from mutating the value held by the contextvar.
     """
     return dict(_RUNTIME.get({}))
 
 
 def merge_runtime_into_state(state: dict[str, Any]) -> dict[str, Any]:
-    """Overlay runtime deps onto state for node execution (graph path only).
+    """Overlay runtime dependencies onto state for node execution (graph path only).
 
     Returns:
         ``state`` itself when nothing is bound, otherwise a copy with every
-        non-None dep merged in under its ``_RUNTIME_KEYS`` name.
+        non-None dependency merged in under its ``_RUNTIME_KEYS`` name.
     """
     deps = get_runtime_deps()
     if not deps:
@@ -65,15 +65,15 @@ def merge_runtime_into_state(state: dict[str, Any]) -> dict[str, Any]:
 def strip_runtime_deps(update: object) -> object:
     """Drop runtime-only keys from a node's state update before it is checkpointed.
 
-    ``merge_runtime_into_state`` puts a live LLM client and raw callables into the
-    dict handed to each node, so a node that returns ``{**state, ...}`` would push
-    non-serializable objects into the checkpoint. Stripping here — the one place
-    every node's return value passes through — keeps that impossible regardless of
-    how any individual node builds its update.
+    ``merge_runtime_into_state`` puts a live language model client and raw
+    callables into the dict handed to each node, so a node that returns
+    ``{**state, ...}`` would push non-serializable objects into the checkpoint.
+    Stripping here — the one place every node's return value passes through —
+    keeps that impossible regardless of how any individual node builds its update.
 
     Returns:
         The update without any ``_RUNTIME_KEYS`` entry when it is a dict; any
-        other value (e.g. a LangGraph ``Command``) is passed through unchanged.
+        other value (for example, a LangGraph ``Command``) is passed through unchanged.
     """
     if not isinstance(update, dict):
         return update

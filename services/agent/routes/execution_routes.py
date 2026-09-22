@@ -278,7 +278,7 @@ def confirm_live_execution(session_id: str, request: Request) -> dict[str, Any]:
 async def update_execution_mode(
     session_id: str, req: ExecutionModeRequest, request: Request,
 ) -> dict[str, Any]:
-    """Set dry-run vs live on an agent session (admins/approvers use live without approval queue)."""
+    """Set dry-run versus live on an agent session (admins/approvers use live without approval queue)."""
     _require_operate(request)
     enforce_live_mode_request(request, ExecutionMode.from_dry_run(dry_run=req.dry_run))
     session = _get_accessible_session(session_id, request)
@@ -311,7 +311,7 @@ async def update_execution_mode(
 
 @router.post("/v1/sessions/{session_id}/cancel")
 async def cancel_session(session_id: str, request: Request) -> dict[str, Any]:
-    """Cancel session, linked pipeline run, repo locks, and stale migration state."""
+    """Cancel session, linked pipeline run, repository locks, and stale migration state."""
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
 

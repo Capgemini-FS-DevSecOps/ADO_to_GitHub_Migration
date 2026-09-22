@@ -59,7 +59,7 @@ async def create_session(req: SessionRequest, request: Request) -> dict[str, Any
     session_token = _session_token_from_request(request)
     await _assert_deployment_profile_active(req.profile_id)
     profile = _profile(req.profile_id)
-    # Only a real boolean in the request body decides dry-run vs live; an
+    # Only a real boolean in the request body decides dry-run versus live; an
     # omitted dry_run falls through to the profile default, which the old
     # `bool = True` field made unreachable (register item GAP-079).
     # `coerce_dry_run` is the shared strict reader: a preview run is the
@@ -285,7 +285,7 @@ def provision_session(
     _require_operate(request)
     session = _get_accessible_session(session_id, request)
     if req.tier == "write":
-        # `_require_approve_live` is inert while auth is off, so also insist on an
+        # `_require_approve_live` is inert while authentication is off, so also insist on an
         # identity: there is no one to attribute a write tier to without one.
         if not getattr(request.state, "platform_user", None):
             raise HTTPException(status_code=401, detail="Not authenticated")

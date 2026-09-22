@@ -1,6 +1,6 @@
-"""Bridge between existing LLM model configs and LangChain ChatModels.
+"""Bridge between existing language model configurations and LangChain chat models.
 
-Resolves model configs from the LLMModelStore and builds LangChain
+Resolves model configurations from the LLMModelStore and builds LangChain
 BaseChatModel instances for use in the LangGraph agent.
 """
 from __future__ import annotations
@@ -17,12 +17,12 @@ LLM_TIMEOUT_SECONDS = 60
 
 
 class ModelCapabilityError(Exception):
-    """Raised when a model lacks required capabilities (e.g. tool calling)."""
+    """Raised when a model lacks required capabilities (for example, tool calling)."""
 
 
 @dataclass
 class ModelCapabilities:
-    """Capabilities detected for a specific LLM model."""
+    """Capabilities detected for a specific language model."""
     supports_tool_calling: bool = True
     supports_streaming: bool = True
     supports_thinking: bool = False
@@ -48,7 +48,7 @@ _PROVIDER_CAPABILITY_DEFAULTS: dict[str, dict[str, Any]] = {
 
 
 def _detect_capabilities(cfg: LLMModelConfig) -> ModelCapabilities:
-    """Detect capabilities from model config, with provider-based defaults.
+    """Detect capabilities from model configuration, with provider-based defaults.
 
     Returns:
         The model's capabilities: explicit ``cfg.capabilities`` entries win, then
@@ -58,7 +58,7 @@ def _detect_capabilities(cfg: LLMModelConfig) -> ModelCapabilities:
     provider = getattr(cfg, "provider", "") or ""
     model_id = str(getattr(cfg, "id", None) or getattr(cfg, "model_id", None) or "")
     defaults = _PROVIDER_CAPABILITY_DEFAULTS.get(provider, {})
-    # Check if config has explicit capabilities
+    # Check if the configuration has explicit capabilities
     explicit = getattr(cfg, "capabilities", None)
     if explicit and isinstance(explicit, dict):
         caps = ModelCapabilities(
@@ -95,11 +95,11 @@ def _model_id_implies_thinking(model_id: str | None, provider: str) -> bool:
 
 
 def _get_model_config(model_id: str | None = None) -> LLMModelConfig | None:
-    """Resolve a model config from the store, falling back to the default.
+    """Resolve a model configuration from the store, falling back to the default.
 
     Returns:
-        The stored config for ``model_id``, else the store's default model, else
-        None when neither is configured.
+        The stored configuration for ``model_id``, else the store's default model,
+        else None when neither is configured.
     """
     from ado2gh.api.llm.llm_model_store import LLMModelStore
 
@@ -118,15 +118,16 @@ def build_langchain_chat_model(
     cfg: LLMModelConfig | None,
     capabilities: ModelCapabilities | None = None,
 ) -> BaseChatModel | None:
-    """Build a LangChain ChatModel from a stored model config.
+    """Build a LangChain ChatModel from a stored model configuration.
 
     Args:
-        cfg: Stored model config; a disabled or missing config yields None.
+        cfg: Stored model configuration; a disabled or missing configuration yields None.
         capabilities: Pre-detected capabilities; detected from ``cfg`` when omitted.
 
     Returns:
-        A configured LangChain chat model, or None when the config is disabled,
-        the provider is unsupported, or a required base URL / API key is absent.
+        A configured LangChain chat model, or None when the configuration is
+        disabled, the provider is unsupported, or a required base URL / API key
+        is absent.
     """
     if not cfg or not cfg.enabled:
         return None
@@ -230,7 +231,7 @@ def resolve_langchain_llm(
 
     capabilities = _detect_capabilities(cfg)
 
-    # T028: Reject models without tool calling
+    # Reject models that do not support tool calling; the agent requires it.
     if not capabilities.supports_tool_calling:
         raise ModelCapabilityError(
             f"Model '{cfg.model_id}' does not support tool calling, which is required for the migration agent."

@@ -95,7 +95,7 @@ class PipelinesScopeHandler:
     scope = MigrationScope.PIPELINES.value
 
     def __init__(self) -> None:
-        """Build the transformer and validator this handler reuses per repo."""
+        """Build the transformer and validator this handler reuses per repository."""
         self.transformer = PipelineTransformer()
         self.validator = WorkflowValidator()
 

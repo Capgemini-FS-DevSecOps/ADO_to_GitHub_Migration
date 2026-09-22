@@ -175,7 +175,7 @@ def get_orchestrator_tools(
             return {"error": str(e)}
 
     def invoke_planner(repository_id: str, *, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
-        """Invoke the Planner agent to load discovery data, validate the repo, and build a migration plan.
+        """Invoke the Planner agent to load discovery data, validate the repository, and build a migration plan.
 
         Call this AFTER you have collected repository_id and execution mode from the user.
         The Planner will:
@@ -194,9 +194,10 @@ def get_orchestrator_tools(
     def invoke_bulk_planner(repository_ids: list[str], *, dry_run: bool = True, phase: str | None = None) -> dict[str, Any]:
         """Invoke the Planner agent for bulk migration of multiple repositories.
 
-        Call this when the user wants to migrate multiple repos at once.
+        Call this when the user wants to migrate multiple repositories at once.
         Each repository_id should be in Project/RepoName format.
-        The Planner will build a migration plan with all repos queued for sequential PEV processing.
+        The Planner will build a migration plan with all repositories queued for
+        sequential plan-execute-validate loop (PEV) processing.
         """
         return {
             "status": "invoking_bulk_planner",

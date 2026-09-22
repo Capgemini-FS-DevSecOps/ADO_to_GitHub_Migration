@@ -64,7 +64,7 @@ def validate_github_token(token: str, gh_org: str = "") -> dict[str, Any]:
 
 
 def validate_ado_pat(ado_org_url: str, ado_pat: str) -> dict[str, Any]:
-    """Validate Azure DevOps org URL + PAT."""
+    """Validate Azure DevOps organisation URL + PAT."""
     if not ado_org_url:
         return {"valid": False, "message": "ADO org URL is required", "ado_projects": 0, "ado_repos": 0, "warnings": []}
     if not ado_pat or ado_pat.strip() == "***":

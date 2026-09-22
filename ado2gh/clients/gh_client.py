@@ -128,7 +128,7 @@ class GHClient:
         self._update_limits(r, token)
         return r
 
-    # ── Repo operations ─────────────────────────────────────────────────────
+    # ── Repository operations ───────────────────────────────────────────────
 
     def repo_exists(self, org: str, repo: str) -> bool:
         """Report whether the repository exists and is visible to the token.

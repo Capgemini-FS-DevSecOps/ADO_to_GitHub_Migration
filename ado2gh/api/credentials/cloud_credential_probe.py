@@ -1,4 +1,4 @@
-"""Live credential probes for cloud LLM providers (approve + validate paths)."""
+"""Live credential probes for cloud language model providers (approve + validate paths)."""
 from __future__ import annotations
 
 import os

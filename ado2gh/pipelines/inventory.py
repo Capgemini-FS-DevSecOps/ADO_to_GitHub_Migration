@@ -270,7 +270,7 @@ class PipelineInventoryBuilder:
 
         # The Pipelines API can return an empty `configuration` block even
         # for YAML-driven pipelines (observed on classic-style pipelines that
-        # reference an in-repo YAML file). Fall back to the Build Definitions
+        # reference an in-repository YAML file). Fall back to the Build Definitions
         # API's `process.type == 2` flag, which is the source of truth.
         build_def = self.ado.get_build_definition_full(project, pipe_id)
         process = build_def.get("process", {}) if build_def else {}
@@ -307,7 +307,7 @@ class PipelineInventoryBuilder:
             )
 
             # Fallback: if the configured YAML is empty or missing in the
-            # source repo, try to auto-pick the closest-named candidate so
+            # source repository, try to auto-pick the closest-named candidate so
             # the conversion still produces a usable workflow. Operators
             # always review the destination PR, and the migration_note below
             # makes the substitution explicit.

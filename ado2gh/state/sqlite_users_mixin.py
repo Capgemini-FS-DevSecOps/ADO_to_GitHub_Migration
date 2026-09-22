@@ -21,7 +21,7 @@ else:
 
 
 class PlatformUsersMixin(_SQLiteConnHost):
-    """Platform users, auth sessions and live execution approvals; expects ``self._conn()``."""
+    """Platform users, authentication sessions and live execution approvals; expects ``self._conn()``."""
 
     def count_platform_users(self) -> int:
         """Return the number of platform users."""

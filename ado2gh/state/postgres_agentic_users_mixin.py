@@ -26,7 +26,7 @@ else:
 
 
 class PostgresAgenticUsersMixin(_PostgresConnHost):
-    """Audit events, platform users, auth sessions and live execution approvals; expects ``self._conn()``."""
+    """Audit events, platform users, authentication sessions and live execution approvals; expects ``self._conn()``."""
 
     def insert_audit_event(
         self,

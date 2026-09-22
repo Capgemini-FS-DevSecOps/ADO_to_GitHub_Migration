@@ -113,7 +113,7 @@ def reset_session_for_new_migration(
     *,
     repository_id: str | None = None,
 ) -> None:
-    """Clear prior plan/PEV state when the operator starts a new migration."""
+    """Clear prior plan and plan-execute-validate loop (PEV) state when the operator starts a new migration."""
     from ado2gh.agents.migration_agent.utils import normalize_repo_key
 
     for key in (
@@ -157,7 +157,7 @@ def reset_session_for_new_migration(
 
 
 def reset_for_migration_request(session: dict[str, Any], repository_id: str) -> bool:
-    """Clear plan/PEV state and point the session at ``repository_id``.
+    """Clear plan and plan-execute-validate loop (PEV) state and point the session at ``repository_id``.
 
     Returns:
         True once the session has been reset, or False when ``repository_id``
@@ -173,11 +173,12 @@ def reset_for_migration_request(session: dict[str, Any], repository_id: str) -> 
 
 
 def maybe_reset_for_migration_request(session: dict[str, Any], repository_id: str) -> bool:
-    """Reset stale plan/PEV state only when this request supersedes the current one.
+    """Reset stale plan and plan-execute-validate loop (PEV) state only when this request supersedes the current one.
 
     Returns:
         True when the session was reset — the repository changed, a plan was
-        already built, or the last PEV run failed or exhausted its retries.
+        already built, or the last plan-execute-validate loop (PEV) run failed
+        or exhausted its retries.
         False when the request matches the session's existing state, or when
         ``repository_id`` is blank.
     """

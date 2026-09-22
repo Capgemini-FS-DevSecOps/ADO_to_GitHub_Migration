@@ -211,7 +211,7 @@ def register(cli: click.Group) -> None:
                   show_default="$ADO2GH_OUTPUT_DIR/validation_report.csv",
                   help="Path of the CSV validation report to write.")
     def validate(config: str, input_file: str | None, db: str, output: str) -> None:
-        """Post-migration validation: compare ADO source vs GitHub target."""
+        """Post-migration validation: compare ADO source versus GitHub target."""
         from ado2gh.core.config_loader import ConfigLoader
         from ado2gh.reporting.post_migration_validator import PostMigrationValidator
         from ado2gh.state.factory import create_state_db

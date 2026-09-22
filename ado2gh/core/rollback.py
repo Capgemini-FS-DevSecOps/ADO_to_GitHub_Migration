@@ -22,7 +22,7 @@ class RollbackHandler:
 
     Supports:
     - Full wave rollback (delete repos + reset all records)
-    - Scope-targeted rollback (e.g., only rollback branch_policies for a repo)
+    - Scope-targeted rollback (for example, only rollback branch_policies for a repository)
     """
 
     def __init__(self, gh: GHClient, db: StateDBBase, ado: ADOClient | None = None) -> None:
@@ -48,7 +48,7 @@ class RollbackHandler:
             mode: `ExecutionMode.DRY_RUN` (the default) logs what would happen
                 and touches nothing; `ExecutionMode.LIVE` performs the
                 rollback and must be asked for explicitly (CA-001).
-            scopes: If set, only rollback these scopes (e.g., ["branch_policies", "pipelines"]).
+            scopes: If set, only rollback these scopes (for example, ["branch_policies", "pipelines"]).
                     If None, rollback everything including repo deletion.
 
         Returns:
@@ -69,7 +69,7 @@ class RollbackHandler:
         if scopes:
             completed = [m for m in completed if m["scope"] in scopes]
 
-        # Group by repo
+        # Group by repository
         by_repo: dict[str, list[dict]] = {}
         for m in completed:
             key = f"{m['gh_org']}/{m['gh_repo']}"
@@ -149,7 +149,7 @@ class RollbackHandler:
 
     def _rollback_branch_protection(self, gh_org: str, gh_repo: str,
                                     mode: ExecutionMode) -> None:
-        """Remove branch protection rules from the GitHub repo.
+        """Remove branch protection rules from the GitHub repository.
 
         Args:
             gh_org: GitHub organisation holding the repository.

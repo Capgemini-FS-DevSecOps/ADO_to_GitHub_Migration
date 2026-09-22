@@ -1,4 +1,4 @@
-"""Preset and live LLM model catalog discovery."""
+"""Preset and live language model catalog discovery."""
 from __future__ import annotations
 
 import json

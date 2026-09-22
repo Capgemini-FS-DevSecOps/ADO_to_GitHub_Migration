@@ -505,7 +505,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
                            {})
 
     def _dep_note(self, run: PipelineRun, repos: "list[RepoConfig]") -> str:
-        """Summarise how many extra repos a single-repo run pulled in.
+        """Summarise how many extra repositories a single-repository run pulled in.
 
         Args:
             run: The run being reported on. Multi-repo runs produce no note,
@@ -788,7 +788,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
         cancel_event = PipelineRunStore.cancel_event(run.id)
         step_label = next((s.label for s in run.steps if s.id == step_id), step_id)
 
-        # For single-repo runs, create a minimal wave for dry-run validation
+        # For single-repository runs, create a minimal wave for dry-run validation
         if run.repository_id and run.dry_run:
             from ado2gh.models import RepoConfig, WaveConfig
             project, repo_name = run.repository_id.split("/", 1)
@@ -828,7 +828,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
 
         if wave and wave.repos:
                 if run.repository_id:
-                    # Read migration order from analyze_deps step result; default to the target repo alone
+                    # Read migration order from analyze_deps step result; default to the target repository alone
                     analyze_step = next((s for s in run.steps if s.id == "analyze_deps"), None)
                     migration_order = [run.repository_id]
                     if analyze_step and analyze_step.result:
@@ -862,10 +862,10 @@ class PipelineStepsMixin(_PipelineStepsHost):
 
                 if run.dry_run:
                     global_cfg, _ = ConfigLoader.load(adv.config_path)
-                    # Unconditional: the single-repo branch above builds a wave even
+                    # Unconditional: the single-repository branch above builds a wave even
                     # with no profile, so this is the one path that can reach the
                     # merge with none. Skipping it would run the connectivity probes
-                    # below against credential-less config and let the step report
+                    # below against credential-less configuration and let the step report
                     # COMPLETED on credentials nothing ever checked (CA-001), so
                     # _merge_profile_credentials raises on a missing profile and the
                     # runner turns that into a FAILED step.
@@ -1018,7 +1018,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
                 def on_repo_done(
                     key: str, res: dict[str, Any], _repo_cfg: "RepoConfig",
                 ) -> None:
-                    """Log a one-line summary as each repo finishes.
+                    """Log a one-line summary as each repository finishes.
 
                     Signature is fixed by ``BatchExecutor.execute_wave``, which
                     calls it positionally as ``Callable[[str, dict, RepoConfig],
@@ -1300,7 +1300,7 @@ class PipelineStepsMixin(_PipelineStepsHost):
 
 
 def _phase_config_exists(config_path: str) -> bool:
-    """Report whether a phase assignment file sits beside a migration config.
+    """Report whether a phase assignment file sits beside a migration configuration.
 
     The phase file is found by convention rather than configuration: it is the
     migration config path with ``.yaml`` replaced by ``_phase.yaml``.

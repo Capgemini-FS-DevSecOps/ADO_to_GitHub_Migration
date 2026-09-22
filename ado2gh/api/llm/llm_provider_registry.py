@@ -1,4 +1,4 @@
-"""Registry of supported LLM agent platforms (catalog, validation, runtime)."""
+"""Registry of supported language model agent platforms (catalog, validation, runtime)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -10,7 +10,7 @@ OPENROUTER_APP_TITLE = "ADO2GH Migration Agent"
 
 @dataclass(frozen=True)
 class LLMProviderSpec:
-    """Static description of one supported LLM provider.
+    """Static description of one supported language model provider.
 
     Carries everything the catalog, validation and runtime layers need to talk
     to a provider: its endpoints, how credentials are presented on the wire, and

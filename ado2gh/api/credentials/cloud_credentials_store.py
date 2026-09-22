@@ -1,4 +1,4 @@
-"""Admin-managed cloud LLM credential sources (presence, approval, no secrets persisted)."""
+"""Admin-managed cloud language model credential sources (presence, approval, no secrets persisted)."""
 from __future__ import annotations
 
 import json

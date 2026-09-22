@@ -95,7 +95,7 @@ class ADOCleanup:
                      disable_pipelines: bool,
                      add_redirect: bool,
                      archive_repo: bool) -> dict:
-        """Run the requested cleanup actions on one repo.
+        """Run the requested cleanup actions on one repository.
 
         Args:
             repo: Repo to clean up.
@@ -127,7 +127,7 @@ class ADOCleanup:
         return result
 
     def _disable_pipelines(self, repo: RepoConfig) -> dict:
-        """Disable all build pipelines associated with this repo.
+        """Disable all build pipelines associated with this repository.
 
         Args:
             repo: Repo whose ADO build pipelines are disabled.
@@ -140,7 +140,7 @@ class ADOCleanup:
         stats = {"disabled": 0, "failed": 0, "total": 0}
 
         pipelines = list(self.ado.list_all_pipelines(repo.ado_project))
-        # Filter to pipelines that belong to this repo
+        # Filter to pipelines that belong to this repository
         repo_pipelines = []
         for pipe in pipelines:
             try:
@@ -228,7 +228,7 @@ class ADOCleanup:
         return stats
 
     def _add_redirect_readme(self, repo: RepoConfig) -> dict:
-        """Push a MIGRATION_NOTICE.md to the ADO repo pointing to GitHub.
+        """Push a MIGRATION_NOTICE.md to the ADO repository pointing to GitHub.
 
         Args:
             repo: Repo the notice is pushed to, and whose GitHub target the
@@ -308,7 +308,7 @@ class ADOCleanup:
             return {"status": "error", "error": str(exc)}
 
     def _archive_repo(self, repo: RepoConfig) -> dict:
-        """Disable the ADO repo to prevent further pushes.
+        """Disable the ADO repository to prevent further pushes.
 
         Args:
             repo: Repo to archive on the ADO side.

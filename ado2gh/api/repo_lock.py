@@ -1,4 +1,4 @@
-"""Per-repo locking to prevent concurrent migration runs on the same repository.
+"""Per-repository locking to prevent concurrent migration runs on the same repository.
 
 The pipeline runner is single-process (threaded), so an in-memory, thread-safe
 lock table is sufficient. The interface is intentionally small so it can later be
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 
 class RepoLockedException(RuntimeError):
-    """Raised when a repo is already locked by a different run."""
+    """Raised when a repository is already locked by a different run."""
 
     def __init__(self, repo_id: str, holder_run_id: str) -> None:
         """Record which repository was contended and which run already holds it.
@@ -37,7 +37,7 @@ class RepoLock:
 
 
 class RepoLockManager:
-    """Thread-safe, process-local manager for per-repo migration locks."""
+    """Thread-safe, process-local manager for per-repository migration locks."""
 
     def __init__(self) -> None:
         """Create an empty lock table guarded by its own mutex."""

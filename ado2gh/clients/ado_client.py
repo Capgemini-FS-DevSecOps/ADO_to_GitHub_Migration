@@ -215,7 +215,7 @@ class ADOClient:
                 break
 
     def get_pipeline_definition(self, project: str, pipeline_id: int) -> dict:
-        """Fetch one pipeline's definition, including its YAML path or designer config.
+        """Fetch one pipeline's definition, including its YAML path or designer configuration.
 
         Args:
             project: Project name.

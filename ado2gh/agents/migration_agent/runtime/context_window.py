@@ -27,7 +27,7 @@ def build_context_with_cycle_summaries(
     *,
     keep_last_cycles: int = 2,
 ) -> list[BaseMessage]:
-    """Build context with PEV cycle summaries using LangChain trim_messages."""
+    """Build context with plan-execute-validate loop (PEV) cycle summaries using LangChain trim_messages."""
     if not cycle_summaries:
         return trim_messages(
             messages,

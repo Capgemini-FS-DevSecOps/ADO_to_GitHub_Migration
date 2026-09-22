@@ -87,7 +87,7 @@ def get_executor_tools(
         accel_request = _default_accel_request
 
     async def call_accelerator(method: str = "GET", endpoint: str = "", body: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Call any accelerator API endpoint. The LLM chooses the endpoint and body based on its knowledge of the accelerator API."""
+        """Call any accelerator API endpoint. The language model chooses the endpoint and body based on its knowledge of the accelerator API."""
         body = body or {}
         method_upper = method.upper()
         try:
@@ -177,7 +177,7 @@ def get_executor_tools(
     # Optional: generate_plan if build_plan is available
     if build_plan:
         async def generate_plan(phase: str | None = None, repository_id: str = "") -> dict[str, Any]:
-            """Generate a migration plan. If repository_id is given, builds a single-repo plan; otherwise phase-wide."""
+            """Generate a migration plan. If repository_id is given, builds a single-repository plan; otherwise phase-wide."""
             try:
                 session: dict[str, Any] = {}
                 if repository_id:

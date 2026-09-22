@@ -64,7 +64,7 @@ class CSVExporter:
 
         Args:
             db: StateDB instance to query.
-            output_path: Destination file path (e.g. ``failed_repos.txt``).
+            output_path: Destination file path (for example ``failed_repos.txt``).
             phase: Optional phase filter (matches against ``scope`` field).
 
         Returns:

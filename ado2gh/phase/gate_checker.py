@@ -120,7 +120,7 @@ class PhaseGateChecker:
         pipes_done = pr["done"] if pr else 0
         pipe_pct = pipes_done / total_pipes if total_pipes else 1.0
 
-        # gate_min_completed is configured against the phase cap (e.g. PILOT=95),
+        # gate_min_completed is configured against the phase cap (for example PILOT=95),
         # so cap the required count at the actual phase population — otherwise a
         # phase with fewer repos than the cap could never pass.
         min_required = min(cfg.gate_min_completed, total_repos)

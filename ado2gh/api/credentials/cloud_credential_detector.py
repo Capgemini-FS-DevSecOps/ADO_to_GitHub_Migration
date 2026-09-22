@@ -1,4 +1,4 @@
-"""Presence-only detection of ambient cloud LLM credentials (no live API calls)."""
+"""Presence-only detection of ambient cloud language model credentials (no live API calls)."""
 from __future__ import annotations
 
 import os

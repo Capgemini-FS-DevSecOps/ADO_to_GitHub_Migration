@@ -1,4 +1,4 @@
-"""LLM status and agent model catalogue routes."""
+"""Language model status and agent model catalogue routes."""
 from __future__ import annotations
 
 from typing import Any
@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.get("/v1/agent/models")
 def agent_models(_request: Request) -> dict[str, Any]:
-    """List the LLM models the agent can use, with the default one marked."""
+    """List the language models the agent can use, with the default one marked."""
     from ado2gh.api.agent_models import list_agent_models
 
     return list_agent_models()
@@ -22,7 +22,7 @@ def agent_models(_request: Request) -> dict[str, Any]:
 
 @router.get("/v1/llm/status")
 def llm_status() -> dict[str, Any]:
-    """Report whether an LLM is configured, which model is selected, and how degraded it is."""
+    """Report whether a language model is configured, which model is selected, and how degraded it is."""
     from ado2gh.api.llm.llm_model_store import LLMModelStore
 
     store = LLMModelStore()

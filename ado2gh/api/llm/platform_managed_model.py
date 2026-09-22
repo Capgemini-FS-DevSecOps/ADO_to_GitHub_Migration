@@ -1,4 +1,4 @@
-"""Sync deploy-time platform-supplied LLM model SKUs into the admin model store."""
+"""Sync deploy-time platform-supplied language model SKUs into the admin model store."""
 from __future__ import annotations
 
 import os
@@ -22,7 +22,7 @@ STABLE_MODEL_IDS = {
 
 @dataclass
 class PlatformSuppliedModelConfig:
-    """An LLM model the deployment supplies, rather than an operator.
+    """A language model the deployment supplies, rather than an operator.
 
     Describes a model wired up at deploy time against a managed cloud provider:
     which provider and model to call, where it lives, and which ambient

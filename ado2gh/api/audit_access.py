@@ -18,13 +18,13 @@ def can_view_all_audit_history(user: PlatformUser | None) -> bool:
         role. False for operators and for unauthenticated requests, which are
         scoped to their own events by ``resolve_audit_actor_filter``.
     """
-    # Scoped role-based access control (RBAC) exclusion, deliberate. With platform auth disabled there is no
+    # Scoped role-based access control (RBAC) exclusion, deliberate. With platform authentication disabled there is no
     # role to read, so single-operator local and lightweight deployments would
     # otherwise be scoped to an actor that does not exist and see an empty audit
     # history. This is not a missing authorization check: it follows the identity
     # gate convention documented in ado2gh/api/platform_rbac.py, and the routes
     # that call this are guarded by require_operate, which is permissive in
-    # exactly the same auth-disabled mode. Do not "harden" this to return False.
+    # exactly the same authentication-disabled mode. Do not "harden" this to return False.
     if not auth_enabled():
         return True
     if not user:

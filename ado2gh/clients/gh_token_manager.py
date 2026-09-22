@@ -1,4 +1,4 @@
-"""GitHub multi-token load balancer with rate-limit awareness and GitHub App auth."""
+"""GitHub multi-token load balancer with rate-limit awareness and GitHub App authentication."""
 from __future__ import annotations
 
 import json

@@ -23,7 +23,7 @@ def build_global_cfg(
     config_path: str | None = None,
     config_yaml: str | None = None,
 ) -> tuple[dict[str, Any], list[WaveConfig]]:
-    """Resolve migration settings from upload, on-disk config, or active profile."""
+    """Resolve migration settings from upload, on-disk configuration, or active profile."""
     if config_yaml:
         global_cfg, waves = ConfigLoader.load_yaml_text(config_yaml)
     else:
@@ -47,7 +47,7 @@ def _global_cfg_from_profile(
     profile: MigrationProfile,
     advanced: AdvancedSettings,
 ) -> dict[str, Any]:
-    """Derive a migration config from a profile when no migration.yaml exists.
+    """Derive a migration configuration from a profile when no migration.yaml exists.
 
     Args:
         profile: Active migration profile supplying the ADO org, its
@@ -78,7 +78,7 @@ def _merge_profile_credentials(
     profile: MigrationProfile | None,
     advanced: AdvancedSettings,
 ) -> dict[str, Any]:
-    """Overlay the active profile's credentials and defaults onto a migration config.
+    """Overlay the active profile's credentials and defaults onto a migration configuration.
 
     Args:
         global_cfg: Config as loaded from ``migration.yaml``; never mutated.

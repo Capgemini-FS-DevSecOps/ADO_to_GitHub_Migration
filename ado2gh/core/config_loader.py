@@ -1,7 +1,7 @@
-"""Configuration loader — settings YAML, text repo lists, and CSV repo lists.
+"""Configuration loader — settings YAML, text repository lists, and CSV repository lists.
 
-The config file (migration.yaml) contains ONLY connection settings and tuning.
-Repo lists come from separate input files (text or CSV).
+The configuration file (migration.yaml) contains ONLY connection settings and tuning.
+Repository lists come from separate input files (text or CSV).
 """
 from __future__ import annotations
 
@@ -15,18 +15,18 @@ from ado2gh.models import RepoConfig, WaveConfig
 
 
 class ConfigLoader:
-    """Load migration settings and repo lists from YAML, text, and CSV sources."""
+    """Load migration settings and repository lists from YAML, text, and CSV sources."""
 
     @staticmethod
     def load(path: str) -> tuple[dict, list[WaveConfig]]:
-        """Load a YAML config file.
+        """Load a YAML configuration file.
 
         Args:
             path: Path to the migration settings YAML file.
 
         Returns:
             A tuple of the global settings mapping and the parsed waves. The
-            wave list may be empty when the config only carries connection
+            wave list may be empty when the configuration only carries connection
             settings, which is the intended flow — repos come from input files,
             not from the config.
 
@@ -90,7 +90,7 @@ class ConfigLoader:
 
     @staticmethod
     def load_yaml_text(text: str, *, source_name: str = "upload") -> tuple[dict, list[WaveConfig]]:
-        """Parse YAML config text that was pasted or uploaded rather than read from disk.
+        """Parse YAML configuration text that was pasted or uploaded rather than read from disk.
 
         Args:
             text: The raw YAML document text.
@@ -141,12 +141,12 @@ class ConfigLoader:
         *,
         source_name: str = "upload",
     ) -> list[RepoConfig]:
-        """Parse repo list text (file upload or paste).
+        """Parse repository list text (file upload or paste).
 
         Args:
-            content: Raw text of the repo list, one entry per line.
+            content: Raw text of the repository list, one entry per line.
             gh_org: GitHub organisation used for lines that name no target.
-            scopes: Migration scopes applied to every repo. Defaults to
+            scopes: Migration scopes applied to every repository. Defaults to
                 ``["repo"]`` when omitted.
             source_name: Label for the source, used in log messages only.
 
@@ -169,7 +169,7 @@ class ConfigLoader:
         log.info("Loaded %d repo(s) from %s", len(repos), source_name)
         return repos
 
-    # ── CSV input (with per-repo scopes) ────────────────────────────────────
+    # ── CSV input (with per-repository scopes) ──────────────────────────────
 
     @staticmethod
     def load_csv_input(path: str, gh_org: str,
@@ -254,7 +254,7 @@ class ConfigLoader:
 
 
 def _parse_repos(repos_raw: list[dict], global_cfg: dict) -> list[RepoConfig]:
-    """Build repo configurations from the raw repo entries of one wave.
+    """Build repository configurations from the raw repository entries of one wave.
 
     Args:
         repos_raw: Raw repo mappings taken from a wave in the YAML config.
@@ -290,7 +290,7 @@ def _parse_repos(repos_raw: list[dict], global_cfg: dict) -> list[RepoConfig]:
 
 
 def _parse_text_line(line: str, default_gh_org: str, scopes: list[str]) -> RepoConfig:
-    """Parse one ``project/repo[::gh_org/gh_repo]`` line into a repo config.
+    """Parse one ``project/repo[::gh_org/gh_repo]`` line into a repository configuration.
 
     Args:
         line: A single stripped, non-comment line from a repo list file.

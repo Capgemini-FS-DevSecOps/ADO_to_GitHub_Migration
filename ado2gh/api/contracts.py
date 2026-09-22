@@ -23,7 +23,7 @@ class DiscoverResult(BaseModel):
 
 
 class RunWaveRequest(BaseModel):
-    """Migrate one wave, or every wave in the config; body of ``POST /v1/migrate``.
+    """Migrate one wave, or every wave in the configuration; body of ``POST /v1/migrate``.
 
     ``dry_run`` defaults to true, so a body that omits it only previews; a caller
     has to say ``dry_run: false`` to migrate for real and push into GitHub. A preview
@@ -148,7 +148,7 @@ class JobStatusResponse(BaseModel):
 
 
 class PlanRequest(BaseModel):
-    """Preview the waves a config would run without running them; body of the deprecated ``POST /v1/plan``."""
+    """Preview the waves a configuration would run without running them; body of the deprecated ``POST /v1/plan``."""
 
     config_path: str
     wave_id: Optional[int] = None
@@ -472,7 +472,7 @@ class ValidateAdoPatRequest(BaseModel):
 
 
 class ValidateAdoPatResponse(BaseModel):
-    """Report whether an ADO PAT can read the source org; ``ado_projects`` is the proof that it works."""
+    """Report whether an ADO PAT can read the source organisation; ``ado_projects`` is the proof that it works."""
 
     valid: bool
     message: str = ""

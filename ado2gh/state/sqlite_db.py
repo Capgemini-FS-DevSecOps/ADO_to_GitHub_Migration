@@ -263,7 +263,7 @@ class SQLiteStateDB(AgenticPlatformMixin, PlatformUsersMixin, ProfileScanMixin, 
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
-    # ── Repo-scope migrations ───────────────────────────────────────────────
+    # ── Repository-scope migrations ─────────────────────────────────────────
 
     def upsert_migration(  # noqa: PLR0913  # row key plus outcome columns; see exception-register.md
         self,

@@ -1,4 +1,4 @@
-"""Discovery scanner — enumerate ADO org and output structured CSV/JSON inventory.
+"""Discovery scanner — enumerate ADO organisation and output structured CSV/JSON inventory.
 
 The discovery output is designed for humans to review and select repos for migration.
 Users copy the repos they want into an input file (in/repos.txt or in/repos.csv).
@@ -182,7 +182,7 @@ class DiscoveryScanner:
         return stats
 
     def _write_repos_csv(self, repos: list[dict], path: Path) -> None:
-        """Write the discovered repos to CSV, sorted by project then repo name.
+        """Write the discovered repositories to CSV, sorted by project then repository name.
 
         Args:
             repos: Repo records collected during the scan.
@@ -215,10 +215,10 @@ class DiscoveryScanner:
                 writer.writerow({k: p.get(k, "") for k in writer.fieldnames})
 
     def _write_input_template(self, repos: list[dict], path: Path) -> None:
-        """Write a repos.txt template with all discovered repos commented out.
+        """Write a repos.txt template with all discovered repositories commented out.
 
         Args:
-            repos: Repo records collected during the scan. Disabled repos are
+            repos: Repository records collected during the scan. Disabled repositories are
                 marked so reviewers can spot them before uncommenting.
             path: Destination text file, overwritten if it already exists.
         """

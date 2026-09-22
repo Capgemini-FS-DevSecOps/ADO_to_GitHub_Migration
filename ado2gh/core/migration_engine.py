@@ -1,4 +1,4 @@
-"""Per-repo migration engine — thin scope dispatcher."""
+"""Per-repository migration engine — thin scope dispatcher."""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 class MigrationEngine:
-    """Orchestrates per-repo migration across all requested scopes."""
+    """Orchestrates per-repository migration across all requested scopes."""
 
     SCOPES = [s.value for s in MigrationScope]
 

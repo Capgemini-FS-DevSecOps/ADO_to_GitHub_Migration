@@ -42,7 +42,7 @@ class BatchExecutor:
     """
 
     def __init__(self, engine: MigrationEngine, db: StateDBBase, tracker: ProgressTracker) -> None:
-        """Bind the engine that migrates one repo, the state DB and the velocity tracker.
+        """Bind the engine that migrates one repository, the state database and the velocity tracker.
 
         Args:
             engine: Performs the per-repository migration (``migrate_repo``).
@@ -87,7 +87,7 @@ class BatchExecutor:
         waves: list[WaveConfig],
         mode: ExecutionMode = ExecutionMode.DRY_RUN,
     ) -> dict:
-        """Migrate every repo assigned to ``phase``, batch by batch, resuming from checkpoints.
+        """Migrate every repository assigned to ``phase``, batch by batch, resuming from checkpoints.
 
         Args:
             phase: The phase whose waves are executed.
