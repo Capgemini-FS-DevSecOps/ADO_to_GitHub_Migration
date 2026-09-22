@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the embed layout wrapper.
+ * This test provides render coverage for the embed layout wrapper (register id GAP-025).
  *
  * All of its work happens in an effect against `document`, so the property a server render
  * can pin — and the one that matters for the platform embed — is that it is transparent:

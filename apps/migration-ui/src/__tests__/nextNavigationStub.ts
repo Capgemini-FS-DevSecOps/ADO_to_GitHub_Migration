@@ -1,5 +1,5 @@
 /**
- * Stand-in for `next/navigation` used by the GAP-025 render tests.
+ * Stand-in for `next/navigation` used by the render-coverage tests (register id GAP-025).
  *
  * The navigation hooks throw outside a mounted Next.js router, so every test that renders
  * a client component using them declares

@@ -1,7 +1,7 @@
 import { ACCEL } from './api';
 import type { SSEEvent } from './types/agent';
 
-/** Base URL of the `services/agent` PEV API, from NEXT_PUBLIC_AGENT_URL or localhost:8090. */
+/** Base URL of the `services/agent` plan-execute-validate loop (PEV) API, from NEXT_PUBLIC_AGENT_URL or localhost:8090. */
 export const AGENT = process.env.NEXT_PUBLIC_AGENT_URL || 'http://localhost:8090';
 
 const creds: RequestInit = { credentials: 'include' };
@@ -250,7 +250,7 @@ export async function postAgentMessage(sessionId: string, message: string) {
   });
 }
 
-/** T067: Stream event type aligned with SSEEvent from types/agent.ts */
+/** Stream event type aligned with SSEEvent from types/agent.ts (task id T067) */
 export type StreamEvent = SSEEvent & {
   __done__?: boolean;
   reply?: string;
@@ -258,7 +258,7 @@ export type StreamEvent = SSEEvent & {
 };
 
 /**
- * Send a chat message over SSE (POST /v1/sessions/{id}/message-stream), invoking the
+ * Send a chat message over a server-sent event stream (SSE) (POST /v1/sessions/{id}/message-stream), invoking the
  * callback for each event except heartbeats, then return the final session state.
  */
 export async function streamAgentMessage(
@@ -301,7 +301,7 @@ export async function streamAgentMessage(
       if (line.startsWith('data: ')) {
         try {
           const evt = JSON.parse(line.slice(6)) as StreamEvent;
-          // T067: Skip heartbeat events — they're just keepalive
+          // Skip heartbeat events — they're just keepalive (task id T067)
           if (evt.kind === 'heartbeat') continue;
           onEvent(evt);
         } catch {
@@ -339,7 +339,7 @@ export async function approveAgentSession(
   });
 }
 
-/** Submit a pending HITL form (POST /v1/sessions/{id}/form-submit) and return the session. */
+/** Submit a pending human-in-the-loop operator prompt form (POST /v1/sessions/{id}/form-submit) and return the session. */
 export async function submitAgentForm(sessionId: string, values: Record<string, unknown>) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/form-submit`, {
     method: 'POST',
@@ -349,7 +349,7 @@ export async function submitAgentForm(sessionId: string, values: Record<string, 
 }
 
 /**
- * Submit a pending HITL form over SSE (POST /v1/sessions/{id}/form-submit-stream),
+ * Submit a pending human-in-the-loop operator prompt form over a server-sent event stream (SSE) (POST /v1/sessions/{id}/form-submit-stream),
  * invoking the callback for each event except heartbeats, then return the final session.
  */
 export async function streamAgentFormSubmit(
@@ -411,12 +411,12 @@ export async function streamAgentFormSubmit(
   throw new Error('Failed to fetch final session state');
 }
 
-/** Dismiss the pending HITL form (POST /v1/sessions/{id}/form-cancel) without answering it. */
+/** Dismiss the pending human-in-the-loop operator prompt form (POST /v1/sessions/{id}/form-cancel) without answering it. */
 export async function cancelAgentForm(sessionId: string) {
   return agentApi<AgentSession>(`/v1/sessions/${sessionId}/form-cancel`, { method: 'POST' });
 }
 
-/** T072: Cancel session with optional rollback (FR-082, FR-083) */
+/** Cancel session with optional rollback (task id T072; FR-082, FR-083) */
 export async function cancelAgentSession(sessionId: string, action: 'stop' | 'rollback' = 'stop') {
   return agentApi<{ status: string; rollback: string; message: string; session_id: string }>(
     `/v1/sessions/${sessionId}/cancel`,

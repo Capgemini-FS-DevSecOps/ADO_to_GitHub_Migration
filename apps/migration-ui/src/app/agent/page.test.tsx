@@ -1,5 +1,5 @@
 /**
- * GAP-025: the legacy /agent route must keep redirecting to the agent chat under settings.
+ * The legacy /agent route must keep redirecting to the agent chat under settings (register id GAP-025).
  * Bookmarks and the docs both point at the old path.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';

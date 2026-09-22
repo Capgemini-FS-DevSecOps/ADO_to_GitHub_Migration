@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the run pipeline bar.
+ * This test provides render coverage for the run pipeline bar (register id GAP-025).
  *
  * The full and compact bars are two exports over one private `PipelineBar`, so the only
  * thing distinguishing them is what the compact variant drops — the labels row and the

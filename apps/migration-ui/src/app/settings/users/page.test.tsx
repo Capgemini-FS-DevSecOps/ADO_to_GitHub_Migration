@@ -1,6 +1,6 @@
 /**
- * GAP-025: platform user management creates accounts and resets passwords, so it is
- * admin-only. A render with no session must show the denial and no user list or password
+ * Platform user management creates accounts and resets passwords, so it is
+ * admin-only (register id GAP-025). A render with no session must show the denial and no user list or password
  * field.
  */
 import { describe, it, expect } from 'vitest';

@@ -1,6 +1,6 @@
 /**
- * Pure helpers behind AgentChat — SSE thinking-stream reduction, optimistic message
- * dedup, and HITL form defaults/summaries. Kept out of the component so they can be
+ * Pure helpers behind AgentChat — server-sent event stream (SSE) thinking-stream reduction, optimistic message
+ * dedup, and human-in-the-loop operator prompt (HITL) form defaults/summaries. Kept out of the component so they can be
  * tested without a DOM.
  */
 import { normalizeUserMessageKey } from './agentSessions';
@@ -28,10 +28,10 @@ const SETTLED_STATUSES = ['completed', 'failed', 'cancelled', 'idle'];
 const FALSY_WIRE_VALUES = ['false', '0', 'no', 'off', ''];
 
 /**
- * Coerce a HITL form value to a boolean, reading both booleans and the strings
+ * Coerce a human-in-the-loop operator prompt (HITL) form value to a boolean, reading both booleans and the strings
  * older agent payloads sent.
  *
- * Since GAP-024 the agent service sends a real JSON boolean for boolean fields. This
+ * The agent service now sends a real JSON boolean for boolean fields (register id GAP-024). This
  * stays as defence in depth: a stringified `False` reads as truthy to `Boolean()`, so
  * every boolean form field goes through here and a recommendation to *not* do
  * something can never read as a yes.
@@ -51,7 +51,7 @@ export function sessionIsBusy(s: AgentSession | null | undefined): boolean {
 
 /**
  * Report whether the stop control should be offered: true while the agent is streaming,
- * polling or otherwise busy, and false whenever a HITL form is waiting on the operator.
+ * polling or otherwise busy, and false whenever a human-in-the-loop operator prompt form (HITL) is waiting for a reply.
  */
 export function isAgentInterruptible(
   session: AgentSession | null,
@@ -87,7 +87,7 @@ export function thinkingEventsFromSession(s: AgentSession): StreamEvent[] {
   }));
 }
 
-/** Append a live SSE thinking event, collapsing a repeat of the previous one. */
+/** Append a live server-sent event stream (SSE) thinking event, collapsing a repeat of the previous one. */
 export function appendThinkingEvent(prev: StreamEvent[], evt: StreamEvent): StreamEvent[] {
   const last = prev[prev.length - 1];
   if (
@@ -127,7 +127,7 @@ export function pendingOptimisticUserMessages(
 }
 
 /**
- * Render submitted HITL form values as the one-line chat bubble shown after submission.
+ * Render submitted human-in-the-loop operator prompt (HITL) form values as the one-line chat bubble shown after submission.
  * Plan-review forms get a confirmation or change-request sentence; other forms list their
  * set fields, with `dry_run` normalised to a boolean and unset or false fields dropped.
  */
@@ -196,20 +196,20 @@ export function formOptionLabel(opt: string | AgentFormFieldOption): string {
 }
 
 /**
- * Pick the initial value for a HITL form field, preferring the agent's recommended value,
+ * Pick the initial value for a human-in-the-loop operator prompt (HITL) form field, preferring the agent's recommended value,
  * then the recommended or first select option, and otherwise an empty or unchecked value.
  *
- * Checkboxes default to unchecked, `confirm_execute` included: CA-001 makes dry run the
+ * Checkboxes default to unchecked, `confirm_execute` included: a preview run (dry-run) is the
  * default, so starting a migration is something the operator ticks, never something a
- * pre-ticked box does for them.
+ * pre-ticked box does for them (safeguard CA-001).
  */
 export function fieldInitialValue(field: AgentFormField): unknown {
   if (field.recommended_value !== undefined && field.recommended_value !== null && field.recommended_value !== '') {
     if (field.type === 'checkbox') {
       return parseBooleanValue(field.recommended_value);
     }
-    // A boolean field rendered as a select (dry_run) carries a real boolean since
-    // GAP-024; its option values are strings, so match them.
+    // A boolean field rendered as a select (dry_run) carries a real boolean
+    // (register id GAP-024); its option values are strings, so match them.
     return typeof field.recommended_value === 'boolean'
       ? String(field.recommended_value)
       : field.recommended_value;
@@ -230,7 +230,7 @@ export function fieldInitialValue(field: AgentFormField): unknown {
 }
 
 /**
- * Build the starting values for a HITL form's fields.
+ * Build the starting values for a human-in-the-loop operator prompt (HITL) form's fields.
  *
  * When the session needs platform approval before it may run live, `confirm_execute` is
  * forced off rather than only disabled: a disabled box still submits whatever value it
@@ -253,9 +253,9 @@ export function initialFormValues(
 /**
  * Whether a live-execution approval or denial may be submitted.
  *
- * CA-002: approving a live run is a one-way escalation, so it takes a second, deliberate
+ * Approving a live run is a one-way escalation, so it takes a second, deliberate
  * click and a written reason that lands in the audit record — never a bare click with an
- * empty justification.
+ * empty justification (safeguard CA-002).
  */
 export function liveDecisionReady(reason: string): boolean {
   return reason.trim().length > 0;

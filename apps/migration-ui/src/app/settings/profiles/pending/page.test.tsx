@@ -1,6 +1,6 @@
 /**
- * GAP-025: the pending-approval queue must not render an approval verdict before the queue
- * has loaded.
+ * The pending-approval queue must not render an approval verdict before the queue
+ * has loaded (register id GAP-025).
  */
 import { describe, it, expect } from 'vitest';
 

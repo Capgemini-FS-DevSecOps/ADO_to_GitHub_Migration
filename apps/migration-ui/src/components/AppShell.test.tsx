@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the console frame.
+ * This test provides render coverage for the console frame (register id GAP-025).
  *
  * Two behaviours live here and both are path-driven: login and onboarding render bare (no
  * header, no navigation, and critically no session gate to redirect them into a loop),

@@ -88,7 +88,7 @@ function resetThinkingForSession(
   localStorage.removeItem(thinkingCacheKey(profileId, sessionId, accountKey));
 }
 
-/** Apply a live SSE event to the per-session snapshot (messages, form, thinking). */
+/** Apply a live server-sent event stream (SSE) event to the per-session snapshot (messages, form, thinking). */
 function applyStreamEventToSnapshot(
   sessionId: string,
   evt: StreamEvent,
@@ -471,7 +471,7 @@ function AgentFormPanel({
   );
 }
 
-/** Full agent chat console with session sidebar, streamed thinking, HITL forms, and composer. */
+/** Full agent chat console with session sidebar, streamed thinking, human-in-the-loop operator prompt (HITL) forms, and composer. */
 export function AgentChat() {
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
   const { data: session } = useQuery({ queryKey: ['session'], queryFn: fetchSession });
@@ -510,7 +510,7 @@ export function AgentChat() {
   const [archivedThinking, setArchivedThinking] = useState<Record<number, StreamEvent[]>>({});
   const [streaming, setStreaming] = useState(false);
   const [thinkingComplete, setThinkingComplete] = useState(false);
-  /** Armed live-execution decision — CA-002 keeps approve/deny off a single click. */
+  /** Armed live-execution decision — keeps approve/deny off a single click (safeguard CA-002). */
   const [liveDecision, setLiveDecision] = useState<'approve' | 'deny' | null>(null);
   const [liveReason, setLiveReason] = useState('');
   const listRef = useRef<HTMLDivElement>(null);

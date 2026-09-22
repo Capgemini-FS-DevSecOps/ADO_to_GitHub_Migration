@@ -1,5 +1,5 @@
 /**
- * GAP-025: the discovery tab is the entry point for a scan. With no active profile it must
+ * The discovery tab is the entry point for a scan (register id GAP-025). With no active profile it must
  * say so and point at profile setup rather than offering a scan that cannot run.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';

@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the brand mark.
+ * This test provides render coverage for the brand mark (register id GAP-025).
  *
  * Sizing is passed through to the SVG rather than set in CSS, so a regression here changes
  * every header and the login card at once.

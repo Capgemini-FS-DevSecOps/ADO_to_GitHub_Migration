@@ -21,8 +21,8 @@ describe('llmSettings helpers', () => {
 });
 
 /**
- * GAP-061: a blank password box used to send the `***` keep-mask unconditionally, so a
- * stored proxy password could never be removed from the console. The console has no DOM
+ * A blank password box used to send the `***` keep-mask unconditionally, so a
+ * stored proxy password could never be removed from the console (register id GAP-061). The console has no DOM
  * test environment (see `__tests__/renderMarkup`), so the clear control is pinned at the
  * two points a click passes through: the value it builds, and the body it puts.
  */

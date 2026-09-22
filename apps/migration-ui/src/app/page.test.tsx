@@ -1,5 +1,5 @@
 /**
- * GAP-025: the console home renders its loading state until the dashboard data arrives.
+ * The console home renders its loading state until the dashboard data arrives (register id GAP-025).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

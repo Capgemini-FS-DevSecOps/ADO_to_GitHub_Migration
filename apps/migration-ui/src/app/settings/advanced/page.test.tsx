@@ -1,5 +1,5 @@
 /**
- * GAP-025: advanced settings render a spinner until the accelerator settings arrive, and
+ * Advanced settings render a spinner until the accelerator settings arrive (register id GAP-025), and
  * nothing at all if the response carries no `advanced` block — so a backend that drops the
  * block leaves a blank page rather than a half-populated form of stale defaults.
  */

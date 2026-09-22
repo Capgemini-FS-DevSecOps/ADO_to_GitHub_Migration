@@ -1,5 +1,7 @@
 /**
- * GAP-025: the live-execution approval queue is the console's half of CA-001.
+ * The live-execution approval queue is the console's half of the safeguard that keeps a
+ * preview run (dry-run) as the default and requires an explicit opt-in for a real (live)
+ * run (safeguard CA-001; register id GAP-025).
  *
  * Its first duty is to show nothing to anyone without `can_approve_live_execution` — no
  * queue, no approve/deny controls — which is exactly the state a render with no session

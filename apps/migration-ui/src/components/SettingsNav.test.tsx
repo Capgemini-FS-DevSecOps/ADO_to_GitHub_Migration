@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the settings tabs.
+ * This test provides render coverage for the settings tabs (register id GAP-025).
  *
  * Which tab reads as active is computed from the path with a prefix rule, so a nested
  * profile route has to keep "Migration Profiles" lit rather than lighting nothing.

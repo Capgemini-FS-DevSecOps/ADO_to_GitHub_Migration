@@ -1,5 +1,5 @@
 /**
- * GAP-025: the legacy /discovery route must keep redirecting to the discovery settings tab.
+ * The legacy /discovery route must keep redirecting to the discovery settings tab (register id GAP-025).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

@@ -1,5 +1,5 @@
 /**
- * GAP-025: first-run onboarding mounts the profile wizard in onboarding mode. This is the
+ * First-run onboarding mounts the profile wizard in onboarding mode (register id GAP-025). This is the
  * only route an admin can reach before any profile exists, so it must explain itself and
  * render the wizard's first step.
  */

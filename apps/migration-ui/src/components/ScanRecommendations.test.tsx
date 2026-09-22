@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the phase recommendations panel.
+ * This test provides render coverage for the phase recommendations panel (register id GAP-025).
  *
  * This is where an operator reads which repositories a scan wants in which phase, so the
  * ordering (by `order`, not by object key), the per-phase counts, and the truncation of

@@ -1,5 +1,5 @@
 /**
- * GAP-025: the agent route is a thin frame around `AgentChat`; its job is to mount the chat
+ * The agent route is a thin frame around `AgentChat` (register id GAP-025); its job is to mount the chat
  * full-page. Chat behaviour itself is covered by `src/components/AgentChat.test.tsx`.
  */
 import { describe, it, expect } from 'vitest';

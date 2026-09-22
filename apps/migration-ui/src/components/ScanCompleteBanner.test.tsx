@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the scan-complete banner.
+ * This test provides render coverage for the scan-complete banner (register id GAP-025).
  *
  * It is the console's only live-region announcement, so the `role="status"` and the
  * labelled dismiss control are the behaviour, not decoration.

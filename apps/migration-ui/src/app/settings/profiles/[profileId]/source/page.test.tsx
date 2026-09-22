@@ -1,5 +1,5 @@
 /**
- * GAP-025: the source-connection page edits an ADO PAT. It must render the spinner — not an
+ * The source-connection page edits an Azure DevOps personal access token (register id GAP-025). It must render the spinner — not an
  * empty form bound to no profile — until the profile has loaded, or a save would post
  * blank credentials over a live connection.
  */

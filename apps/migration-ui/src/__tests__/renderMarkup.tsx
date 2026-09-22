@@ -1,8 +1,9 @@
 /**
- * Server-render helpers for the component and page tests added under GAP-025.
+ * Server-render helpers for the component and page tests added under the render-coverage
+ * ratchet (register id GAP-025).
  *
  * The console has no DOM test environment installed — no `jsdom`/`happy-dom`, no
- * `@testing-library/*` — and FR-008/SC-003 forbid adding one, so these tests render with
+ * `@testing-library/*` — and project requirements FR-008 and SC-003 forbid adding one, so these tests render with
  * `react-dom/server`, which is already a runtime dependency, and assert on the markup a
  * user would see. Effects and event handlers do not run under `renderToStaticMarkup`, so
  * what these tests pin is *first paint*: safety defaults, permission and loading gates,

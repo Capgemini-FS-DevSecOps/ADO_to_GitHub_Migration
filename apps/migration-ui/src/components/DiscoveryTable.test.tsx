@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the discovered-repository table.
+ * This test provides render coverage for the discovered-repository table (register id GAP-025).
  *
  * Paging is client-side and silent: past 25 rows the table shows a slice, and nothing in
  * the markup tells the operator so except the pager. A regression there hides repositories

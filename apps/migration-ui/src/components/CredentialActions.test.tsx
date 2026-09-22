@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the credential action controls.
+ * This test provides render coverage for the credential action controls (register id GAP-025).
  *
  * These sit on every token and cloud-credential form. The disabled-while-validating state
  * is the only thing stopping an operator firing a second validation call over the first,

@@ -146,8 +146,8 @@ describe('HITL form defaults', () => {
   });
 
   it('reads the JSON booleans the agent service now sends for recommended_value', () => {
-    // GAP-024: a boolean recommendation stays a boolean end to end, so "do not start
-    // the migration" can no longer pre-tick "start migration immediately".
+    // A boolean recommendation stays a boolean end to end, so "do not start
+    // the migration" can no longer pre-tick "start migration immediately" (register id GAP-024).
     expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: false }))).toBe(false);
     expect(fieldInitialValue(field({ name: 'confirm_execute', type: 'checkbox', recommended_value: true }))).toBe(true);
   });

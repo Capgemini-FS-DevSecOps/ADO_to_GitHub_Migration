@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the primary tab bar.
+ * This test provides render coverage for the primary tab bar (register id GAP-025).
  *
  * The Settings tab is active for anything under `/settings` *except* the three routes that
  * have tabs of their own — a four-clause condition with no test behind it, where getting it

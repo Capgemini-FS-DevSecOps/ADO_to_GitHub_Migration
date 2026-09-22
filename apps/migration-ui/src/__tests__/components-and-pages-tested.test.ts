@@ -1,9 +1,11 @@
 /**
- * GAP-025 (GAP-UI-03) ratchet: every console component and page keeps a sibling test.
+ * Every console component and page keeps a sibling test — the render-coverage ratchet
+ * (register ids GAP-025, GAP-UI-03).
  *
  * The gap was that all 45 files under `src/components/*.tsx` and `src/app/**\/page.tsx`
- * had zero direct coverage — the untested surface GAP-024 (GAP-UI-02) had been hiding in.
- * T082 added one `*.test.tsx` next to each, so the guard carries **no allowlist**: a new
+ * had zero direct coverage — the untested surface that had been hiding in
+ * (register ids GAP-024, GAP-UI-02).
+ * A dedicated test-coverage task added one `*.test.tsx` next to each (task id T082), so the guard carries **no allowlist**: a new
  * component or page without a test fails here, which is the only thing stopping the count
  * drifting back up.
  *
@@ -23,7 +25,7 @@ import fs from 'node:fs';
 
 import { walkExports } from '../../../../specs/013-clean-code-arch-remediation/scripts/function_inventory_ts.mjs';
 
-/** Posix-ish paths of the component and page files GAP-025 covers, from the walker's rows. */
+/** Posix-ish paths of the component and page files the render-coverage ratchet covers (register id GAP-025), from the walker's rows. */
 function componentAndPageFiles(): string[] {
   const rows = walkExports('src') as { path: string }[];
   const paths = rows.map((row) => row.path.split('\\').join('/'));

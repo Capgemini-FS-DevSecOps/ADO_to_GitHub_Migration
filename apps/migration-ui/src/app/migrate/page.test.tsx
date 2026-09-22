@@ -1,5 +1,5 @@
 /**
- * GAP-025: the legacy /migrate route must keep redirecting to the migration settings page,
+ * The legacy /migrate route must keep redirecting to the migration settings page (register id GAP-025),
  * which is where the live-run controls and the gate-override justification field live.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';

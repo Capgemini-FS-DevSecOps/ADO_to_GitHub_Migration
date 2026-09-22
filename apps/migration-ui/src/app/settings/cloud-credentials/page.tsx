@@ -51,7 +51,7 @@ function SourceCard({
   const [project, setProject] = useState(source.project ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Armed decision — CA-002 keeps approve, reject and revoke off a single click. */
+  /** Armed decision — keeps approve, reject and revoke off a single click (safeguard CA-002). */
   const [decision, setDecision] = useState<'approve' | 'reject' | 'revoke' | null>(null);
   const [reason, setReason] = useState('');
 

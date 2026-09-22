@@ -130,8 +130,8 @@ describe('walkExports', () => {
   });
 });
 
-// T073 (research R4): the zero-`missing_docstring` state the cleanup reached is enforced
-// here, not just measured in inventory.json. `walkExports` reads `src` relative to the
+// The zero-`missing_docstring` state the cleanup reached is enforced
+// here, not just measured in inventory.json (task id T073, research R4). `walkExports` reads `src` relative to the
 // cwd, which `vitest run` sets to `apps/migration-ui` (package.json `test` script); a
 // wrong cwd makes the walk throw ENOENT rather than pass on an empty set.
 describe('every export in the console is documented', () => {

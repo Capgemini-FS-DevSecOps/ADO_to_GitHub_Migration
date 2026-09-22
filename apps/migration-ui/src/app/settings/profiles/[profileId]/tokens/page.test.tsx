@@ -1,5 +1,5 @@
 /**
- * GAP-025: the token list shows a profile's GitHub PATs by name and validation state. Until
+ * The token list shows a profile's GitHub personal access tokens (PATs) by name and validation state (register id GAP-025). Until
  * the profile loads it must render the spinner and no token rows.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';

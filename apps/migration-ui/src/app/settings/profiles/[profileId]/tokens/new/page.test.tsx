@@ -1,5 +1,6 @@
 /**
- * GAP-025: the add-token form takes a GitHub PAT. The token input must be masked (CA-003),
+ * The add-token form takes a GitHub personal access token (PAT) (register id GAP-025). The token input must be masked
+ * so the secret value is never shown on screen (safeguard CA-003),
  * and the form must render against the profile named in the route rather than a blank one.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';

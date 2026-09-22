@@ -1,5 +1,5 @@
 /**
- * GAP-025: the profile list is the console's landing page. Until settings load it shows the
+ * The profile list is the console's landing page (register id GAP-025). Until settings load it shows the
  * spinner and no profile rows — in particular no "create profile" action, which is gated on
  * a permission that is only known once the session resolves.
  */

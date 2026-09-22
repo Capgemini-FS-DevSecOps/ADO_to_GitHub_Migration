@@ -1,5 +1,5 @@
 /**
- * GAP-012 (GAP-UI-01): LLM provider API key is transmitted in a URL query string.
+ * The LLM provider API key is transmitted in a URL query string (register ids GAP-012, GAP-UI-01).
  *
  * Browser-side half of the gap. `fetchCatalog` (src/lib/llmSettings.ts:102-106)
  * builds a `URLSearchParams`, calls `query.set('api_key', params.apiKey)`, and

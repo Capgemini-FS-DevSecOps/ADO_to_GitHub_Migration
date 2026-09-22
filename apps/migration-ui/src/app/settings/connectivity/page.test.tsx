@@ -1,6 +1,6 @@
 /**
- * GAP-025: connectivity settings carry the proxy password and the CA bundle, so they sit
- * behind the same model-management permission as the LLM pages.
+ * Connectivity settings carry the proxy password and the CA bundle, so they sit
+ * behind the same model-management permission as the LLM pages (register id GAP-025).
  */
 import { describe, it, expect } from 'vitest';
 

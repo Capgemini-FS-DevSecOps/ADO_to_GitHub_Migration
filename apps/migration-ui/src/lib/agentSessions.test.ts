@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { clearAgentStorage, mergeSessionLists, truncateTitle } from './agentSessions';
 
 /**
- * Minimal in-memory `localStorage`: the suite runs on node with no DOM environment and
- * FR-008 forbids adding one, so the few storage helpers are exercised against a stub that
+ * Minimal in-memory `localStorage`: the suite runs on node with no DOM environment, and
+ * a project requirement forbids adding one (FR-008), so the few storage helpers are exercised against a stub that
  * implements only what they call.
  */
 function stubLocalStorage(seed: Record<string, string>) {

@@ -1,6 +1,6 @@
 /**
- * GAP-025: the login route wraps the client form in a Suspense boundary because the form
- * reads search params. The fallback has to be a boot placeholder, never a blank screen.
+ * The login route wraps the client form in a Suspense boundary because the form
+ * reads search params (register id GAP-025). The fallback has to be a boot placeholder, never a blank screen.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

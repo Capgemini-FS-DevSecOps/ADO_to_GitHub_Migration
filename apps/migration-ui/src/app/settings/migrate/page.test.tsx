@@ -1,5 +1,5 @@
 /**
- * GAP-025: first paint of the migration page, which is where a live run is started.
+ * First paint of the migration page, which is where a live run is started (register id GAP-025).
  *
  * Two safety properties live in this render. Dry run is the default (CA-001) — the operator
  * has to opt into a live run, not out of one. And the gate-override justification field only
@@ -37,8 +37,8 @@ describe('/settings/migrate', () => {
   });
 
   it('shows the plain start button, not a live confirmation, on first paint', () => {
-    // CA-002: the live confirm step is armed by a first click, so it must never be the
-    // control a freshly loaded page offers. Arming it needs a DOM; the decision itself is
+    // The live confirm step is armed by a first click, so it must never be the
+    // control a freshly loaded page offers (safeguard CA-002). Arming it needs a DOM; the decision itself is
     // covered by `liveStartNeedsConfirm` in src/lib/pipelineRunStatus.test.ts.
     const text = textOf(renderMarkup(<MigratePage />));
 

@@ -1,8 +1,8 @@
 /**
- * GAP-025: render coverage for the profile wizard.
+ * This test provides render coverage for the profile wizard (register id GAP-025).
  *
- * This is the one form in the console where an operator types both an ADO PAT and a GitHub
- * PAT. Both must be `type="password"` so the credential is never echoed on screen
+ * This is the one form in the console where an operator types both an Azure DevOps personal
+ * access token (PAT) and a GitHub personal access token. Both must be `type="password"` so the credential is never echoed on screen
  * (Principle V, CA-003), and the wizard must open on its first step with the title matching
  * the mode it was mounted in.
  */

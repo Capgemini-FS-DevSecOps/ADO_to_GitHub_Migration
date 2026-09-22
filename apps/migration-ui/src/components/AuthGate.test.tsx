@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the session gate.
+ * This test provides render coverage for the session gate (register id GAP-025).
  *
  * The gate's whole job is that nothing behind it renders until a session has been checked.
  * A server render is exactly the pre-check state (no effects have run), so this pins the

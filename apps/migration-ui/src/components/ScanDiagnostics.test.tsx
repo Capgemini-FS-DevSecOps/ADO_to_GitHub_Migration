@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for scan diagnostics.
+ * This test provides render coverage for scan diagnostics (register id GAP-025).
  *
  * "Scanned N projects, found 0 repos" is the shape of a silently-failed discovery run, and
  * this component is the only place the operator is told about it — both through the

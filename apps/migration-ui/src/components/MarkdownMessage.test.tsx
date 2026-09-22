@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for agent message markdown.
+ * This test provides render coverage for agent message markdown (register id GAP-025).
  *
  * Agent output is model-generated text rendered into the operator's console. The property
  * that matters is that it is rendered as markdown and *not* as HTML: raw tags in a model

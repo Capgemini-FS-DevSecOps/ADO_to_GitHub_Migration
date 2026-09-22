@@ -1,5 +1,5 @@
 /**
- * GAP-025: the legacy /dashboard route must keep redirecting to the console home.
+ * The legacy /dashboard route must keep redirecting to the console home (register id GAP-025).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

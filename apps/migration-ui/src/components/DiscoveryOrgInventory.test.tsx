@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the org-wide ADO inventory panel.
+ * This test provides render coverage for the org-wide ADO inventory panel (register id GAP-025).
  *
  * "Pipelines indexed" is read from three different server fields in priority order — the
  * kind of fallback chain that silently reports 0 when one of them is renamed.

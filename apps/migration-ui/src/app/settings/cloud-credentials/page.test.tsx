@@ -1,5 +1,5 @@
 /**
- * GAP-025: cloud credentials are the most sensitive page in the console — it lists detected
+ * Cloud credentials are the most sensitive page in the console (register id GAP-025) — it lists detected
  * provider credentials. Without model-management permission it must render the denial and
  * nothing else.
  */
@@ -21,8 +21,8 @@ describe('/settings/cloud-credentials', () => {
   });
 
   it('offers no armed credential decision on first paint', () => {
-    // CA-002: approve, reject and revoke each take a second click, so no "Confirm …"
-    // control can exist before one is armed. The per-action rule (only reject records a
+    // Approve, reject and revoke each take a second click, so no "Confirm …"
+    // control can exist before one is armed (safeguard CA-002). The per-action rule (only reject records a
     // reason server-side) is covered by `credentialDecisionReady`.
     const text = textOf(renderMarkup(<CloudCredentialsPage />));
 

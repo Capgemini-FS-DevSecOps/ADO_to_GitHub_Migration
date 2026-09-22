@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for per-repo run results.
+ * This test provides render coverage for per-repo run results (register id GAP-025).
  *
  * The panel hides itself entirely unless a step carries repo detail, which is why an empty
  * "Repo results" card never appears mid-run — and why a regression in that guard would show

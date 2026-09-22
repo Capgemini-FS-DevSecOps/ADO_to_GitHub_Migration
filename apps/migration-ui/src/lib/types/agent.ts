@@ -1,7 +1,7 @@
 /** Agent message types for the streamlined migration agent interface (feature 008).
 
 Defines message types for migration progress displayed as conversational
-agent messages rather than pipeline/PEV status indicators.
+agent messages rather than pipeline or plan-execute-validate loop (PEV) status indicators.
 */
 
 export type AgentMessageType =
@@ -50,7 +50,7 @@ export interface AgentMessage {
   };
 }
 
-/** T066: Model capabilities metadata from LLM bridge */
+/** Model capabilities metadata from LLM bridge (task id T066) */
 export interface ModelCapabilities {
   supports_tool_calling: boolean;
   supports_streaming: boolean;
@@ -58,7 +58,7 @@ export interface ModelCapabilities {
   max_context_tokens: number;
 }
 
-/** T066: SSE event kinds from LangGraph streaming */
+/** Server-sent event stream (SSE) event kinds from LangGraph streaming (task id T066) */
 export type SSEEventKind =
   | 'token'
   | 'thinking'
@@ -73,7 +73,7 @@ export type SSEEventKind =
   | 'done'
   | '__done__';
 
-/** T066: SSE event structure from agent streaming endpoint */
+/** Server-sent event stream (SSE) event structure from agent streaming endpoint (task id T066) */
 export interface SSEEvent {
   kind: SSEEventKind;
   content: string;
@@ -96,7 +96,7 @@ export interface SSEEvent {
   pending_form?: unknown;
 }
 
-/** T071: Session state machine states (FR-066) */
+/** Session state machine states (task id T071; FR-066) */
 export type SessionState =
   | 'idle'
   | 'thinking'
@@ -112,13 +112,13 @@ export interface AgentSession {
   id: string;
   messages: AgentMessage[];
   status: SessionState;
-  /** T071: PEV cycle iteration counters */
+  /** Plan-execute-validate loop (PEV) cycle iteration counters (task id T071) */
   iteration_count?: number;
   pev_retry_count?: number;
-  /** T071: Current PEV cycle number */
+  /** Current plan-execute-validate loop (PEV) cycle number (task id T071) */
   cycle_number?: number;
-  /** T071: Dry-run flag */
+  /** Dry-run flag (task id T071) */
   dry_run?: boolean;
-  /** T066: Model capabilities for current session */
+  /** Model capabilities for current session (task id T066) */
   model_capabilities?: ModelCapabilities;
 }

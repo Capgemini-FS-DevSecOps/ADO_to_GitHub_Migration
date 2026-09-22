@@ -1,7 +1,7 @@
 /**
- * GAP-025: a profile's index route must land on that profile's source page, carrying the
+ * A profile's index route must land on that profile's source page, carrying the
  * profile id through — a redirect built from route params, so a wrong template string sends
- * the operator to another profile's connection settings.
+ * the operator to another profile's connection settings (register id GAP-025).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

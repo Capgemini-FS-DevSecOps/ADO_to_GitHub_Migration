@@ -1,7 +1,7 @@
 /**
- * GAP-025: the token edit page must render the spinner rather than an empty edit form while
- * the profile loads — a blank form submitted against a real token id would overwrite a
- * working PAT.
+ * The token edit page must render the spinner rather than an empty edit form while
+ * the profile loads (register id GAP-025) — a blank form submitted against a real token id would overwrite a
+ * working personal access token (PAT).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

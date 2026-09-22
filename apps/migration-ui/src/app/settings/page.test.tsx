@@ -1,5 +1,5 @@
 /**
- * GAP-025: the settings index must land on the profiles page — no profile, no console.
+ * The settings index must land on the profiles page — no profile, no console (register id GAP-025).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

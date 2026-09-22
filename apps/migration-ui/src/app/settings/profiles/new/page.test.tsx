@@ -1,7 +1,7 @@
 /**
- * GAP-025: the new-profile page picks the wizard mode from the caller's role, so it must
+ * The new-profile page picks the wizard mode from the caller's role, so it must
  * not render the wizard — and its credential inputs — before the session and onboarding
- * status are known.
+ * status are known (register id GAP-025).
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 

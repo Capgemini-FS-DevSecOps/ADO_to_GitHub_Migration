@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the agent chat surface.
+ * This test provides render coverage for the agent chat surface (register id GAP-025).
  *
  * `AgentChat` is the console's largest component and carries the live-execution approval
  * controls (CA-001). What a server render can pin is first paint with no session loaded:
@@ -9,8 +9,8 @@
  * service through an effect, so they stay out of reach until a DOM test environment is
  * approved (see the note in `@/__tests__/renderMarkup`).
  *
- * The GAP-024 form-field defect (`recommended_value` now carries a real JSON boolean, with
- * the string parse kept as defence in depth) is covered on the browser
+ * The form-field defect where `recommended_value` now carries a real JSON boolean, with
+ * the string parse kept as defence in depth (register id GAP-024), is covered on the browser
  * side by `src/lib/agentChat.test.ts` — `parseBooleanValue`, `fieldInitialValue` and
  * `initialFormValues`, which this component's private `AgentFormPanel` calls. The panel
  * itself is not exported and only renders once a session has a `pending_form`, so it is not
@@ -50,8 +50,8 @@ describe('AgentChat', () => {
   });
 
   it('never offers an armed live decision, and needs a reason to submit one', () => {
-    // CA-002: "Approve live run" arms a confirm step rather than approving, so the
-    // committing control cannot be on screen before the operator asks for it.
+    // "Approve live run" arms a confirm step rather than approving, so the
+    // committing control cannot be on screen before the operator asks for it (safeguard CA-002).
     const text = textOf(renderMarkup(<AgentChat />));
 
     expect(text).not.toContain('Confirm approve');

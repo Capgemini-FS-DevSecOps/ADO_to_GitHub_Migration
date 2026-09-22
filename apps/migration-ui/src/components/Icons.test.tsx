@@ -1,5 +1,5 @@
 /**
- * GAP-025: render coverage for the icon set.
+ * This test provides render coverage for the icon set (register id GAP-025).
  *
  * Every icon takes the same three props and the navigation tints them by active state, so
  * the contract worth pinning is that each export renders an SVG that honours `size` and

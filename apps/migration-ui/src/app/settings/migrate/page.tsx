@@ -48,7 +48,7 @@ function MigrationView() {
   // Justification recorded when a live run forces past a blocking phase gate
   const [overrideReason, setOverrideReason] = useState('');
 
-  // CA-002: a live run is armed by a first click and only launched by a second
+  // A live run is armed by a first click and only launched by a second (safeguard CA-002)
   const [confirmLive, setConfirmLive] = useState(false);
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });

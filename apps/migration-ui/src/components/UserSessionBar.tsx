@@ -39,7 +39,7 @@ export function UserSessionBar() {
 
   const handleLogout = async () => {
     await logout();
-    // CA-003: cached transcripts and thinking events must not survive for the next operator.
+    // Cached transcripts and thinking events must not survive for the next operator (safeguard CA-003).
     clearAgentStorage();
     window.location.href = '/login';
   };
