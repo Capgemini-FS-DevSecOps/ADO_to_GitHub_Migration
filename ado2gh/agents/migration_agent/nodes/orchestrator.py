@@ -282,7 +282,9 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
             from ado2gh.agents.migration_agent.hitl.intake import build_repo_error_form
 
-            form = sanitize_form(build_repo_error_form(desc, {"repo_suggestions": suggestions}))
+            form = sanitize_form(
+                build_repo_error_form(desc, {"repo_suggestions": suggestions}), session,
+            )
             # Finalize immediately — wait for user to provide a new repository name
             # No reply — the form is the user-facing output, error is already a thinking event
             return {
@@ -384,7 +386,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
                             "required": True,
                         },
                     ],
-                })
+                }, session)
             session["status"] = SessionState.IDLE.value
             _append_event(session, role="system", content="Migration cancelled by operator. Select rollback option.", kind=AgentEventKind.MESSAGE.value)
             return {"should_return": True, "reply": "Migration cancelled. Please choose an action below.", "pending_form": form}

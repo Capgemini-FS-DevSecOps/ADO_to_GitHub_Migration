@@ -394,7 +394,7 @@ async def _execute_orchestrator_tools(
         elif tool_name == "request_user_input":
             from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
             # Apply guardrails to the language-model-generated form (truncation, field limits)
-            form_args = sanitize_form(dict(args))
+            form_args = sanitize_form(dict(args), session)
             pending_form = form_args
             results.append({"tool": tool_name, "result": {"form": form_args}})
         else:
