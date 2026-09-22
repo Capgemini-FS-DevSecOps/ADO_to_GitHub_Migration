@@ -141,7 +141,21 @@ async def _get_checkpointer() -> BaseCheckpointSaver | None:
 
         db_path = os.environ.get("ADO2GH_SQLITE_PATH", "data/agent_checkpoints.db")
         os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
-        conn = await aiosqlite.connect(db_path)
+        # aiosqlite's worker thread is non-daemon by default; a connection that
+        # gets abandoned (cross-loop reopen, an orphaned cleanup task whose loop
+        # tears down first) would otherwise block interpreter/loop shutdown
+        # forever if its queued SQLite call never returns. Daemonizing it means
+        # a stuck thread can never hold up shutdown, only leak (best we can do
+        # without a public daemon option on aiosqlite.connect). aiosqlite.connect()
+        # returns the Connection synchronously without starting its thread — the
+        # thread only starts once the Connection itself is awaited — so the flag
+        # must be set here, before that await, or it raises "cannot set daemon
+        # status of active thread".
+        conn = aiosqlite.connect(db_path)
+        worker_thread = getattr(conn, "_thread", None)
+        if worker_thread is not None:
+            worker_thread.daemon = True
+        conn = await conn
         _CHECKPOINTER = AsyncSqliteSaver(conn)
         if hasattr(_CHECKPOINTER, "setup"):
             await _CHECKPOINTER.setup()
@@ -459,6 +473,24 @@ async def clear_langgraph_thread(session_id: str) -> None:
         pass
 
 
+async def _clear_langgraph_thread_bounded(session_id: str) -> None:
+    """Run ``clear_langgraph_thread`` with a hard cap so a detached task
+    can never outlive the loop it was scheduled on.
+
+    ``clear_langgraph_thread_sync``'s fire-and-forget branch schedules this
+    on whatever loop happens to be running. A request-scoped loop (a bare
+    ``TestClient(app).post()`` opens and tears down a fresh one per call, per
+    Starlette's ``_portal_factory``) can close before this task finishes,
+    leaving it waiting forever on a checkpointer connection whose non-daemon
+    aiosqlite worker thread never calls back — which wedges that loop's
+    shutdown. Bounding the wait lets the task self-terminate either way.
+    """
+    try:
+        await asyncio.wait_for(clear_langgraph_thread(session_id), timeout=5)
+    except Exception:
+        logger.debug("bounded checkpoint clear did not finish", exc_info=True)
+
+
 def clear_langgraph_thread_sync(session_id: str) -> None:
     """Best-effort ``clear_langgraph_thread`` for sync call sites.
 
@@ -470,4 +502,4 @@ def clear_langgraph_thread_sync(session_id: str) -> None:
     except RuntimeError:
         asyncio.run(clear_langgraph_thread(session_id))
     else:
-        loop.create_task(clear_langgraph_thread(session_id))
+        loop.create_task(_clear_langgraph_thread_bounded(session_id))

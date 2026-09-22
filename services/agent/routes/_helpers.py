@@ -376,6 +376,7 @@ def _get_accessible_session(
 def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
     """Load a persisted HTTP session into memory without cross-session state."""
     try:
+        from ado2gh.agents.migration_agent.graph import clear_langgraph_thread_sync
         from ado2gh.agents.migration_agent.session.lifecycle import (
             apply_model_selection,
             new_isolated_agent_session,
@@ -385,6 +386,11 @@ def _try_hydrate_session(session_id: str) -> dict[str, Any] | None:
         record = MigrationSessionStore().get_session(session_id)
         if not record:
             return None
+        # Unlike a fresh session_id, this one may already have LangGraph
+        # thread state from before the process restarted; clear it so the
+        # rehydrated session carries no PEV run state (matches this
+        # function's "without cross-session state" contract).
+        clear_langgraph_thread_sync(session_id)
         session = new_isolated_agent_session(
             session_id,
             profile_id=str(record.get("profile_id") or "lightweight"),

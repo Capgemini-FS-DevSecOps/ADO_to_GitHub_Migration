@@ -26,13 +26,22 @@ def new_isolated_agent_session(
     The operator's display name is filled in by
     ``policies.attach_actor_to_session`` once the platform user is known.
 
+    This does not touch LangGraph checkpoint state: every ``session_id`` this
+    builds a dict for is either a fresh ``uuid4`` (new session — no prior
+    thread can exist to clear) or one a caller is about to rehydrate, in
+    which case that caller clears the thread itself. Clearing here used to
+    run unconditionally on every call, which fired a fire-and-forget
+    LangGraph checkpointer open on whatever event loop happened to be
+    running — safe on a long-lived server loop, but capable of wedging a
+    short-lived one (a bare ``TestClient(app).post()`` opens and tears down
+    its own loop per call) if that loop closed before the detached task
+    finished. See ``_try_hydrate_session`` for the one call site that still
+    needs the clear.
+
     Returns:
         The session dict the agent routes, graph nodes and store all read and
         mutate.
     """
-    from ado2gh.agents.migration_agent.graph import clear_langgraph_thread_sync
-
-    clear_langgraph_thread_sync(session_id)
     return {
         "session_id": session_id,
         "profile_id": profile_id,
