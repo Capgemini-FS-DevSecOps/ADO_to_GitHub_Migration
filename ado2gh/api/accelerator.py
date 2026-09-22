@@ -31,6 +31,11 @@ from ado2gh.phase.gate_checker import PhaseGateChecker
 from ado2gh.phase.progress_tracker import ProgressTracker
 from ado2gh.state.factory import create_state_db
 
+# How many numbered environment-variable slots are probed for a rotating,
+# multi-token credential (ADO_PAT_1.._N, GH_TOKEN_1.._N). Only the count of
+# slots checked is named here — the variable names themselves stay fixed.
+MAX_TOKEN_ENV_SLOTS = 20
+
 
 def _build_ado_client(global_cfg: dict, ado_url: str | None = None, ado_pat: str | None = None) -> ADOClient:
     """Build an ADO client, preferring an explicit token over environment variables over configuration.
@@ -61,7 +66,7 @@ def _build_ado_client(global_cfg: dict, ado_url: str | None = None, ado_pat: str
     """
     ado_url = ado_url or os.environ.get("ADO_ORG_URL") or global_cfg.get("ado_org_url", "")
     ado_pat = ado_pat or os.environ.get("ADO_PAT") or global_cfg.get("ado_pat", "")
-    ado_vars = [f"ADO_PAT_{i}" for i in range(1, 20) if os.environ.get(f"ADO_PAT_{i}")]
+    ado_vars = [f"ADO_PAT_{i}" for i in range(1, MAX_TOKEN_ENV_SLOTS) if os.environ.get(f"ADO_PAT_{i}")]
     if not ado_url:
         raise ConfigurationError("ADO_ORG_URL required")
     if ado_vars:
@@ -100,7 +105,7 @@ def _build_gh_client(global_cfg: dict, gh_token: str | None = None) -> GHClient:
             no single token, so there is nothing to authenticate with.
     """
     token_config = global_cfg.get("gh_token_config", "")
-    gh_token_vars = [f"GH_TOKEN_{i}" for i in range(1, 20) if os.environ.get(f"GH_TOKEN_{i}")]
+    gh_token_vars = [f"GH_TOKEN_{i}" for i in range(1, MAX_TOKEN_ENV_SLOTS) if os.environ.get(f"GH_TOKEN_{i}")]
     if token_config and Path(token_config).exists():
         tm = TokenManager.from_json_config(token_config)
     elif gh_token_vars:

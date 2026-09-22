@@ -15,27 +15,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ado2gh.api.pipeline_models import PIPELINE_STEP_DEFINITIONS, StepStatus
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ado2gh.api.pipeline_runner import PipelineRun
 
 # Step statuses that satisfy a prerequisite (the step finished acceptably).
-# StepStatus is a ``str`` Enum, so equality against these literals holds for
-# both enum members and plain strings.
-SATISFIED_STATUSES: tuple[str, ...] = ("completed", "warn", "skipped")
+# StepStatus is a ``str`` Enum, so equality against these members holds for
+# both enum members and the plain strings some callers still store.
+SATISFIED_STATUSES: tuple[StepStatus, ...] = (
+    StepStatus.COMPLETED, StepStatus.WARN, StepStatus.SKIPPED,
+)
 
 # Maps each step ID to the list of step IDs that must finish before it runs.
+# Derived from PIPELINE_STEP_DEFINITIONS (pipeline_models.py) rather than
+# hand-listed, so a step's prerequisites are declared once and stay in sync
+# with the accelerator step list.
 STEP_PREREQUISITES: dict[str, list[str]] = {
-    "connect": [],
-    "discover": ["connect"],
-    "inventory": ["connect"],
-    "readiness": ["inventory"],
-    "assign": ["discover"],
-    "analyze_deps": ["inventory"],
-    "migrate_repos": ["analyze_deps"],
-    "convert_pipelines": ["analyze_deps"],
-    "convert_metadata": ["migrate_repos"],
-    "migrate": ["analyze_deps"],
-    "validate": ["migrate_repos", "convert_pipelines"],
+    d.id: list(d.prerequisites) for d in PIPELINE_STEP_DEFINITIONS
 }
 
 

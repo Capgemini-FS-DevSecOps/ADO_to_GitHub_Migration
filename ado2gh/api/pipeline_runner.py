@@ -20,6 +20,7 @@ from ado2gh.api.pipeline_models import (
     AGENT_MIGRATION_PIPELINE_STEPS,
     MIGRATE_UI_PIPELINE_STEPS,
     PipelineRun,
+    PipelineRunStatus,
     PipelineStep,
     StepStatus,
     enrich_pipeline_run_dict,
@@ -36,6 +37,7 @@ __all__ = [
     "AGENT_MIGRATION_PIPELINE_STEPS",
     "MIGRATE_UI_PIPELINE_STEPS",
     "PipelineRun",
+    "PipelineRunStatus",
     "PipelineRunStore",
     "PipelineRunner",
     "PipelineStep",
@@ -116,7 +118,7 @@ class PipelineRunner(PipelineStepsMixin):
         for step in run.steps:
             if step.status in (StepStatus.PENDING, StepStatus.RUNNING):
                 self._set_step(run, step.id, StepStatus.SKIPPED, "Cancelled by user")
-        run.status = "cancelled"
+        run.status = PipelineRunStatus.CANCELLED
         self._log(run, "Run cancelled by user")
 
     def _log(self, run: PipelineRun, msg: str) -> None:
@@ -144,7 +146,7 @@ class PipelineRunner(PipelineStepsMixin):
         run = PipelineRunStore.get(run_id)
         if not run:
             return
-        run.status = "running"
+        run.status = PipelineRunStatus.RUNNING
         self.settings.apply_to_process_env()
 
         targets = step_ids or [s.id for s in run.steps]
@@ -179,7 +181,7 @@ class PipelineRunner(PipelineStepsMixin):
                 if not ok:
                     block_msg = self._prereq_checker.failure_message(missing, step.label)
                     self._set_step(run, step_id, StepStatus.FAILED, block_msg)
-                    run.status = "failed"
+                    run.status = PipelineRunStatus.FAILED
                     run.error = block_msg
                     self._log(run, f"BLOCKED {step.label}: {block_msg}")
                     return
@@ -189,32 +191,37 @@ class PipelineRunner(PipelineStepsMixin):
                     handlers[step_id](run)
                 except Exception as exc:
                     self._set_step(run, step_id, StepStatus.FAILED, str(exc))
-                    run.status = "failed"
+                    run.status = PipelineRunStatus.FAILED
                     run.error = str(exc)
                     self._log(run, f"FAILED {step.label}: {exc}")
                     return
                 step = next(s for s in run.steps if s.id == step_id)
                 if step.status == StepStatus.FAILED:
-                    run.status = "failed"
+                    run.status = PipelineRunStatus.FAILED
                     return
                 if self._cancelled(run.id):
                     self._stop_remaining_steps(run)
                     return
-            if run.status != "cancelled":
+            if run.status != PipelineRunStatus.CANCELLED:
                 if run.dry_run:
-                    run.status = "dry_run_complete"
+                    run.status = PipelineRunStatus.DRY_RUN_COMPLETE
                     self._log(run, "Dry-run pipeline finished (no migrations recorded)")
                 else:
-                    run.status = "completed"
+                    run.status = PipelineRunStatus.COMPLETED
                     self._log(run, "Pipeline completed successfully")
         except Exception as exc:
-            run.status = "failed"
+            run.status = PipelineRunStatus.FAILED
             run.error = str(exc)
             self._log(run, f"ERROR: {exc}\n{traceback.format_exc()}")
         finally:
             REPO_LOCK_MANAGER.release_all(run.id)
             PipelineRunStore.clear_cancel(run.id)
-            if run.status in ("cancelled", "failed", "completed", "dry_run_complete"):
+            if run.status in (
+                PipelineRunStatus.CANCELLED,
+                PipelineRunStatus.FAILED,
+                PipelineRunStatus.COMPLETED,
+                PipelineRunStatus.DRY_RUN_COMPLETE,
+            ):
                 try:
                     from ado2gh.agents.migration_agent.session.lifecycle import (
                         clear_pipeline_run_migration_state,

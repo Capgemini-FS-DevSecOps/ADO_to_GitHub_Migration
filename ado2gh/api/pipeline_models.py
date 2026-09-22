@@ -24,29 +24,103 @@ class StepStatus(str, Enum):
     SKIPPED = "skipped"
 
 
+class PipelineRunStatus(str, Enum):
+    """Lifecycle status of an entire pipeline run.
+
+    A ``str`` enum for the same reason as :class:`StepStatus`: members compare
+    equal to the plain strings already persisted in the run registry and
+    returned by the API, so no conversion is needed at either boundary.
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+    COMPLETED = "completed"
+    DRY_RUN_COMPLETE = "dry_run_complete"
+    AWAITING_APPROVAL = "awaiting_approval"
+
+
+@dataclass(frozen=True)
+class PipelineStepDefinition:
+    """One full-pipeline step's identity, console copy, and prerequisite step ids.
+
+    The single place a step of the deep accelerator pipeline is described: its
+    id, the label and description shown on the accelerator step list, and the
+    other step ids that must finish first. ``ACCELERATOR_PIPELINE_STEPS`` below
+    and ``STEP_PREREQUISITES`` (in ``step_prerequisites.py``) are both derived
+    from :data:`PIPELINE_STEP_DEFINITIONS`, so adding, renaming or reordering a
+    step in this pipeline is one edit instead of two.
+    """
+
+    id: str
+    label: str
+    description: str
+    prerequisites: tuple[str, ...] = ()
+
+
+PIPELINE_STEP_DEFINITIONS: tuple[PipelineStepDefinition, ...] = (
+    PipelineStepDefinition(
+        id="connect", label="Connect & validate credentials",
+        description="Verify ADO PAT, GitHub token, and org access",
+    ),
+    PipelineStepDefinition(
+        id="discover", label="Discover repositories",
+        description="Scan ADO projects and repos; sync profile discovery",
+        prerequisites=("connect",),
+    ),
+    PipelineStepDefinition(
+        id="inventory", label="Inventory ADO pipelines",
+        description="Deep-scan YAML, classic, and release pipeline definitions into StateDB",
+        prerequisites=("connect",),
+    ),
+    PipelineStepDefinition(
+        id="readiness", label="Assess conversion readiness",
+        description="Classify auto/assisted/manual; flag blockers (Key Vault, self-hosted agents, secrets)",
+        prerequisites=("inventory",),
+    ),
+    PipelineStepDefinition(
+        id="assign", label="Assign migration phases",
+        description="Risk-score repos and assign to poc/pilot/wave phases",
+        prerequisites=("discover",),
+    ),
+    PipelineStepDefinition(
+        id="analyze_deps", label="Analyze dependencies",
+        description="Consolidated dependency analysis: service connections, variable groups, repo-to-repo, environments, self-hosted agents, and task inputs. Reports warnings as a paginated bulleted list (merged former Map Secrets step)",
+        prerequisites=("inventory",),
+    ),
+    PipelineStepDefinition(
+        id="migrate_repos", label="Migrate repository contents",
+        description="Feasibility analysis (size, LFS, branches, tags) then git mirror, GEI transfer, or manual. Continue-on-error for batches; per-repo lock",
+        prerequisites=("analyze_deps",),
+    ),
+    PipelineStepDefinition(
+        id="convert_pipelines", label="Convert pipelines → GitHub Actions",
+        description="Transform ADO YAML, validate via actionlint or YAML fallback, auto-commit workflows in live mode with versioned conflict handling",
+        prerequisites=("analyze_deps",),
+    ),
+    PipelineStepDefinition(
+        id="convert_metadata", label="Convert branch policies & wiki",
+        description="Branch protection rules, wiki pages, and work items → GitHub",
+        prerequisites=("migrate_repos",),
+    ),
+    PipelineStepDefinition(
+        id="migrate", label="Run all scoped migrations",
+        description="Execute every enabled scope for repos in the selected phase",
+        prerequisites=("analyze_deps",),
+    ),
+    PipelineStepDefinition(
+        id="validate", label="Validate migrated repos",
+        description="Commit SHA / branch parity AND committed workflow integrity verification",
+        prerequisites=("migrate_repos", "convert_pipelines"),
+    ),
+)
+
+# Derived from PIPELINE_STEP_DEFINITIONS rather than hand-listed, so a step
+# added there automatically appears here in the same order.
 ACCELERATOR_PIPELINE_STEPS: list[dict[str, str]] = [
-    {"id": "connect", "label": "Connect & validate credentials",
-     "description": "Verify ADO PAT, GitHub token, and org access"},
-    {"id": "discover", "label": "Discover repositories",
-     "description": "Scan ADO projects and repos; sync profile discovery"},
-    {"id": "inventory", "label": "Inventory ADO pipelines",
-     "description": "Deep-scan YAML, classic, and release pipeline definitions into StateDB"},
-    {"id": "readiness", "label": "Assess conversion readiness",
-     "description": "Classify auto/assisted/manual; flag blockers (Key Vault, self-hosted agents, secrets)"},
-    {"id": "assign", "label": "Assign migration phases",
-     "description": "Risk-score repos and assign to poc/pilot/wave phases"},
-    {"id": "analyze_deps", "label": "Analyze dependencies",
-     "description": "Consolidated dependency analysis: service connections, variable groups, repo-to-repo, environments, self-hosted agents, and task inputs. Reports warnings as a paginated bulleted list (merged former Map Secrets step)"},
-    {"id": "migrate_repos", "label": "Migrate repository contents",
-     "description": "Feasibility analysis (size, LFS, branches, tags) then git mirror, GEI transfer, or manual. Continue-on-error for batches; per-repo lock"},
-    {"id": "convert_pipelines", "label": "Convert pipelines → GitHub Actions",
-     "description": "Transform ADO YAML, validate via actionlint or YAML fallback, auto-commit workflows in live mode with versioned conflict handling"},
-    {"id": "convert_metadata", "label": "Convert branch policies & wiki",
-     "description": "Branch protection rules, wiki pages, and work items → GitHub"},
-    {"id": "migrate", "label": "Run all scoped migrations",
-     "description": "Execute every enabled scope for repos in the selected phase"},
-    {"id": "validate", "label": "Validate migrated repos",
-     "description": "Commit SHA / branch parity AND committed workflow integrity verification"},
+    {"id": d.id, "label": d.label, "description": d.description}
+    for d in PIPELINE_STEP_DEFINITIONS
 ]
 
 MIGRATE_UI_PIPELINE_STEPS: list[dict[str, str]] = [
@@ -122,7 +196,7 @@ class PipelineRun:
 
     id: str
     name: str
-    status: str = "pending"
+    status: PipelineRunStatus = PipelineRunStatus.PENDING
     dry_run: bool = True
     phase: str = ""
     wave_id: Optional[int] = None
@@ -259,7 +333,7 @@ def enrich_pipeline_run_dict(
     if not status:
         if run_dict.get("dry_run"):
             status = "not_required"
-        elif run_dict.get("status") == "awaiting_approval":
+        elif run_dict.get("status") == PipelineRunStatus.AWAITING_APPROVAL:
             status = "pending"
         else:
             status = "auto_approved"
