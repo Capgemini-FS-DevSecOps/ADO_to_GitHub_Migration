@@ -127,6 +127,73 @@ _READ_OPERATIONS = frozenset({
 })
 
 
+_GITHUB_REPO_ENDPOINT_SEGMENT = "repos"
+"""The path segment that introduces a repository-scoped GitHub endpoint.
+
+A GitHub write is repository-scoped when its endpoint contains this segment
+followed by an owner and a repository name, for example ``repos/{owner}/{repo}``
+or ``repos/{owner}/{repo}/issues``. A leading slash and any prefix ahead of the
+segment (such as a proxy path like ``/v1/proxy/github/``) are both tolerated —
+the extractor reads the first ``repos/{owner}/{repo}`` triple it finds and
+ignores everything else in the path.
+"""
+
+_GITHUB_REPO_ENDPOINT_SHAPE = f"{_GITHUB_REPO_ENDPOINT_SEGMENT}/{{owner}}/{{repo}}"
+"""Human-readable form of the accepted endpoint shape, used in refusal reasons."""
+
+
+def _extract_github_repo_endpoint_target(endpoint: str) -> tuple[str, str] | None:
+    """Read the repository owner and name a GitHub API endpoint path writes to.
+
+    Args:
+        endpoint: The raw ``endpoint`` argument passed to the ``github_api`` tool.
+
+    Returns:
+        The ``(owner, repo)`` pair, or ``None`` when the path carries no
+        ``repos/{owner}/{repo}`` triple — an org-level or other non-repository
+        endpoint is not repository-scoped and has nothing to compare to the plan.
+    """
+    segments = [segment for segment in str(endpoint or "").split("/") if segment]
+    for index, segment in enumerate(segments):
+        if segment == _GITHUB_REPO_ENDPOINT_SEGMENT and index + 2 < len(segments):
+            owner, repo = segments[index + 1], segments[index + 2]
+            if owner and repo:
+                return owner, repo
+    return None
+
+
+def _approved_plan_repo_entry(
+    migration_plan: dict[str, Any] | None,
+    target_resource: str,
+) -> dict[str, Any] | None:
+    """Find the plan repo entry that a write's approved ``target_resource`` names.
+
+    Matches the same way :func:`plan_scope` does — by ``id`` first, then
+    ``name`` — so this reads the identical entry the plan-authorization check
+    already treats as the one the operator approved for this write.
+
+    Args:
+        migration_plan: The plan to search, or ``None`` when there is none yet.
+        target_resource: The ``target_resource``/``repository_id`` the call named.
+
+    Returns:
+        The matching repo entry, or ``None`` when there is no plan, no match, or
+        the target is blank.
+    """
+    if not isinstance(migration_plan, dict) or not target_resource:
+        return None
+    repos = migration_plan.get("repos")
+    if not isinstance(repos, list):
+        return None
+    for entry in repos:
+        if not isinstance(entry, dict):
+            continue
+        ident = entry.get("id") or entry.get("name") or ""
+        if isinstance(ident, str) and ident.strip() == target_resource:
+            return entry
+    return None
+
+
 def plan_scope(migration_plan: dict[str, Any] | None) -> set[str] | None:
     """Read the set of repository ids an approved plan authorises writes for.
 
@@ -186,10 +253,13 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
 
     The checks are, in order: read-only operations always pass; accelerator and GitHub
     ``GET`` calls pass as reads; accelerator and GitHub *writes* are blocked while the
-    session is in dry-run (CA-001); a GitHub ``DELETE`` needs operator confirmation;
-    remaining write operations need an approved plan whose repo list contains the
-    target resource; and the deletion operations need confirmation (CA-002). A tool
-    in none of the three classification sets is blocked, not allowed.
+    session is in dry-run (CA-001); a GitHub ``DELETE`` needs operator confirmation; a
+    remaining GitHub write must target a repository-shaped endpoint whose owner and
+    repository match the GitHub coordinates recorded on the approved plan entry for
+    the call's repository, when the plan records any (GAP-128); remaining write
+    operations need an approved plan whose repo list contains the target resource; and
+    the deletion operations need confirmation (CA-002). A tool in none of the three
+    classification sets is blocked, not allowed.
 
     ``operation_type`` is derived from ``tool_name`` and never from the arguments, so a
     tool call cannot name itself read-only to skip the write checks.
@@ -219,6 +289,9 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
         or arguments.get("repository_id")
         or ""
     )
+    # Only a repository-scoped GitHub write ever overrides this; every other
+    # path records target_resource unchanged (GAP-128).
+    audit_target_resource: str | None = None
 
     # Read-only operations always pass
     if tool_name in _READ_OPERATIONS or operation_type in _READ_OPERATIONS:
@@ -293,6 +366,62 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
             )
         operation_type = "github_api_write"
 
+        # The plan-authorization check below only confirms that the approved
+        # repository_id/target_resource argument is in scope. It never looks at
+        # the endpoint the request actually reaches, so an approved repository
+        # could be paired with an endpoint naming a different one (GAP-128).
+        # Pin the write to a repository path first, then to the GitHub
+        # coordinates the plan recorded for the approved entry.
+        endpoint = str(arguments.get("endpoint") or "")
+        endpoint_target = _extract_github_repo_endpoint_target(endpoint)
+        if endpoint_target is None:
+            return GuardrailDecision(
+                action=GuardrailAction.BLOCK,
+                agent_role=agent_role,
+                tool_name=tool_name,
+                operation_type=operation_type,
+                target_resource=str(target_resource),
+                reason=(
+                    "GitHub writes must target a repository path of the form "
+                    f"{_GITHUB_REPO_ENDPOINT_SHAPE}"
+                ),
+            )
+        endpoint_owner, endpoint_repo = endpoint_target
+        audit_target_resource = f"{endpoint_owner}/{endpoint_repo}"
+
+        plan_entry = _approved_plan_repo_entry(migration_plan, str(target_resource))
+        if plan_entry is not None:
+            approved_owner = str(
+                plan_entry.get("gh_org") or plan_entry.get("github_org") or "",
+            ).strip()
+            approved_repo = str(
+                plan_entry.get("gh_repo")
+                or plan_entry.get("github_repo")
+                or plan_entry.get("name")
+                or "",
+            ).strip()
+            if (
+                approved_owner
+                and approved_repo
+                and (
+                    approved_owner.lower() != endpoint_owner.lower()
+                    or approved_repo.lower() != endpoint_repo.lower()
+                )
+            ):
+                return GuardrailDecision(
+                    action=GuardrailAction.BLOCK,
+                    agent_role=agent_role,
+                    tool_name=tool_name,
+                    operation_type=operation_type,
+                    target_resource=audit_target_resource,
+                    reason=(
+                        f"Endpoint targets '{endpoint_owner}/{endpoint_repo}', but "
+                        f"the approved plan authorizes writes to "
+                        f"'{approved_owner}/{approved_repo}'"
+                    ),
+                    plan_reference=str(migration_plan.get("plan_id", "")) if migration_plan else None,
+                )
+
     # Write operations require plan authorization
     if operation_type in _WRITE_OPERATIONS or tool_name in _WRITE_OPERATIONS:
         if not migration_plan:
@@ -354,7 +483,7 @@ def evaluate_guardrail(  # noqa: PLR0913 - exception-register.md: authorization 
             agent_role=agent_role,
             tool_name=tool_name,
             operation_type=operation_type,
-            target_resource=str(target_resource),
+            target_resource=audit_target_resource or str(target_resource),
             reason="Plan authorized and resource validated",
             plan_reference=str(migration_plan.get("plan_id", "")),
         )

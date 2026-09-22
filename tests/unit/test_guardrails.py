@@ -286,7 +286,7 @@ def test_write_allowed_for_a_repo_the_plan_names():
     """Regression guard: the well-formed path still authorises its own repos."""
     decision = evaluate_guardrail(
         "executor", "github_api",
-        {"method": "POST", "repository_id": "Proj/A"},
+        {"method": "POST", "endpoint": "repos/proj/a", "repository_id": "Proj/A"},
         migration_plan={"plan_id": "p1", "repos": [{"id": "Proj/A"}]},
         plan_approved=True, session=_LIVE_SESSION,
     )
@@ -353,7 +353,9 @@ async def test_wrap_tool_blocks_write_when_session_getter_returns_none():
     wrapped = wrap_tool_with_guardrail(
         github_api, agent_role="executor", session_getter=lambda: None,
     )
-    result = await wrapped(_tool_name="github_api", method="POST", repository_id="Proj/A")
+    result = await wrapped(
+        _tool_name="github_api", method="POST", endpoint="repos/proj/a", repository_id="Proj/A",
+    )
     assert result["error"] == "guardrail_blocked"
 
 
@@ -370,14 +372,14 @@ def test_plan_approval_cannot_be_set_through_an_alias():
     with pytest.raises(TypeError):
         evaluate_guardrail(
             "executor", "github_api",
-            {"method": "POST", "repository_id": "Proj/A"},
+            {"method": "POST", "endpoint": "repos/proj/a", "repository_id": "Proj/A"},
             approved_plan=plan,
             session=_LIVE_SESSION,
         )
 
     decision = evaluate_guardrail(
         "executor", "github_api",
-        {"method": "POST", "repository_id": "Proj/A"},
+        {"method": "POST", "endpoint": "repos/proj/a", "repository_id": "Proj/A"},
         migration_plan=plan, session=_LIVE_SESSION,
     )
     assert decision.blocked
@@ -460,7 +462,9 @@ async def test_wrapped_tool_rejects_an_approval_made_for_an_older_plan_revision(
     wrapped = wrap_tool_with_guardrail(
         github_api, agent_role="executor", session_getter=lambda: session,
     )
-    result = await wrapped(_tool_name="github_api", method="POST", repository_id="Proj/A")
+    result = await wrapped(
+        _tool_name="github_api", method="POST", endpoint="repos/proj/a", repository_id="Proj/A",
+    )
 
     assert result["error"] == "guardrail_blocked"
     assert "approved" in result["message"].lower()
@@ -479,7 +483,9 @@ async def test_wrapped_tool_still_honours_an_approval_of_the_current_revision():
     wrapped = wrap_tool_with_guardrail(
         github_api, agent_role="executor", session_getter=lambda: session,
     )
-    result = await wrapped(_tool_name="github_api", method="POST", repository_id="Proj/A")
+    result = await wrapped(
+        _tool_name="github_api", method="POST", endpoint="repos/proj/a", repository_id="Proj/A",
+    )
 
     assert result["status"] == "written"
     assert session["plan_approved"] is True
