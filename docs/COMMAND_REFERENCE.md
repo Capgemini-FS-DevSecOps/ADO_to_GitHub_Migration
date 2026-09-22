@@ -451,19 +451,19 @@ ado2gh pipelines retry-failed -c migration_phase.yaml -w 1 --dry-run
 
 ```bash
 # Push the generated workflows and open a PR per repo
-ado2gh push-workflows -c migration_phase.yaml
+ado2gh push-workflows -c migration_phase.yaml --live
 
 # Push from a custom workflows directory onto a named branch
-ado2gh push-workflows -c migration_phase.yaml -d output/workflows --branch ado2gh/migrated-workflows
+ado2gh push-workflows -c migration_phase.yaml -d output/workflows --branch ado2gh/migrated-workflows --live
 
 # Target a base branch other than the repo default
-ado2gh push-workflows -c migration_phase.yaml --base develop
+ado2gh push-workflows -c migration_phase.yaml --base develop --live
 
-# Dry run
-ado2gh push-workflows -c migration_phase.yaml --dry-run
+# Dry run (the default; omit --live to preview only)
+ado2gh push-workflows -c migration_phase.yaml
 ```
 
-**Options:** `-c/--config` (required), `-i/--input`, `-d/--workflows-dir` (default `$ADO2GH_OUTPUT_DIR/workflows`), `--branch` (default `ado2gh/migrated-workflows`), `--base` (default: the repo's default branch), `--dry-run`
+**Options:** `-c/--config` (required), `-i/--input`, `-d/--workflows-dir` (default `$ADO2GH_OUTPUT_DIR/workflows`), `--branch` (default `ado2gh/migrated-workflows`), `--base` (default: the repo's default branch), `--dry-run/--live` (default `--dry-run`; pass `--live` to actually push and open the pull request)
 
 **What it does:** Commits locally generated workflow YAML to a branch on each GitHub target repo and opens a pull request for it.
 
