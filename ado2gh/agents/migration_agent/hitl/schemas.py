@@ -23,6 +23,27 @@ class IntakePhase(str, Enum):
     CANCELLATION = "cancellation"
 
 
+class MigrationFailureCode(str, Enum):
+    """Failure ``error_code`` values that mean the one-live-migration-per-repository guard (FR-036) tripped."""
+
+    MIGRATION_IN_PROGRESS = "migration_in_progress"
+    FR036 = "fr036"
+    ACTIVE_LIVE_MIGRATION = "active_live_migration"
+
+
+#: Longest an identifier slug built from free text (a repo name, a summary) may be.
+OPERATOR_IDENTIFIER_MAX_CHARS = 48
+
+#: Longest the hex digest used in a blocker-derived request id may be.
+OPERATOR_DIGEST_MAX_CHARS = 10
+
+#: Most blockers listed in an operator-input request's description text.
+OPERATOR_BLOCKER_SUMMARY_MAX_ITEMS = 6
+
+#: Most blockers or failures kept in an operator-input request's context payload.
+OPERATOR_CONTEXT_MAX_ITEMS = 8
+
+
 FieldType = Literal["text", "textarea", "select", "checkbox"]
 
 

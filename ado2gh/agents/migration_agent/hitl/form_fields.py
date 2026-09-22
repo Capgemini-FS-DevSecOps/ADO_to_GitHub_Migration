@@ -18,7 +18,23 @@ if TYPE_CHECKING:
 #: box is a place to say something extra rather than a question (THR-09-003).
 OPTIONAL_BY_DEFAULT_FIELD_TYPES = frozenset({"checkbox", "textarea"})
 
-MAX_RECOMMENDED_VALUE_LEN = 120
+#: Longest a form field's ``name`` may be once sanitized for the console.
+FORM_FIELD_NAME_MAX_CHARS = 40
+
+#: Longest a form option's ``value`` or ``label`` may be once sanitized.
+FORM_OPTION_MAX_CHARS = 60
+
+#: Longest a field or option ``description`` may be once sanitized.
+FORM_DESCRIPTION_MAX_CHARS = 200
+
+#: Longest a field ``placeholder`` may be once sanitized.
+FORM_PLACEHOLDER_MAX_CHARS = 120
+
+#: Longest a recommended value shown to the operator as a suggestion may be.
+FORM_SUGGESTION_MAX_CHARS = 120
+
+#: Longest a form's ``form_id`` may be once sanitized.
+FORM_ID_MAX_CHARS = 60
 
 
 def default_required_for_type(field_type: object) -> bool:
@@ -46,7 +62,7 @@ def normalize_recommended_value(value: object) -> str | bool | None:
     if value is None:
         return None
     text = str(value).strip()
-    return text[:MAX_RECOMMENDED_VALUE_LEN] if text else None
+    return text[:FORM_SUGGESTION_MAX_CHARS] if text else None
 
 
 class FormFieldOption(BaseModel):
@@ -64,12 +80,12 @@ class FormFieldOption(BaseModel):
             A dict with ``value`` and ``label`` always present, plus
             ``description`` and ``recommended`` only when they carry content.
         """
-        value = str(self.value or "").strip()[:60]
-        label = str(self.label or value).strip()[:60]
+        value = str(self.value or "").strip()[:FORM_OPTION_MAX_CHARS]
+        label = str(self.label or value).strip()[:FORM_OPTION_MAX_CHARS]
         out: dict[str, Any] = {"value": value, "label": label}
         desc = str(self.description or "").strip()
         if desc:
-            out["description"] = desc[:200]
+            out["description"] = desc[:FORM_DESCRIPTION_MAX_CHARS]
         if self.recommended:
             out["recommended"] = True
         return out
@@ -90,14 +106,14 @@ def normalize_form_option(opt: object) -> dict[str, Any]:
         except Exception:
             value = str(opt.get("value") or opt.get("label") or "").strip()
             label = str(opt.get("label") or value).strip()
-            out: dict[str, Any] = {"value": value[:60], "label": label[:60]}
+            out: dict[str, Any] = {"value": value[:FORM_OPTION_MAX_CHARS], "label": label[:FORM_OPTION_MAX_CHARS]}
             if opt.get("description"):
-                out["description"] = str(opt["description"])[:200]
+                out["description"] = str(opt["description"])[:FORM_DESCRIPTION_MAX_CHARS]
             if opt.get("recommended"):
                 out["recommended"] = True
             return out
     text = str(opt).strip()
-    return {"value": text[:60], "label": text[:60]}
+    return {"value": text[:FORM_OPTION_MAX_CHARS], "label": text[:FORM_OPTION_MAX_CHARS]}
 
 
 def field_dict_from_spec(
@@ -115,7 +131,7 @@ def field_dict_from_spec(
     field_type = getattr(spec, "field_type", None) or "text"
     explicit_required = "required" in getattr(spec, "model_fields_set", ())
     field: dict[str, Any] = {
-        "name": name[:40],
+        "name": name[:FORM_FIELD_NAME_MAX_CHARS],
         "label": str(getattr(spec, "label", name) or name)[:60],
         "type": field_type,
         "required": (
@@ -126,7 +142,7 @@ def field_dict_from_spec(
     }
     desc = str(getattr(spec, "description", "") or "").strip()
     if desc:
-        field["description"] = desc[:200]
+        field["description"] = desc[:FORM_DESCRIPTION_MAX_CHARS]
 
     hints = ((planner_context or {}).get("field_recommendations") or {}).get(name) or {}
     if not isinstance(hints, dict):
@@ -134,7 +150,7 @@ def field_dict_from_spec(
 
     placeholder = hints.get("placeholder") or getattr(spec, "placeholder", None)
     if placeholder:
-        field["placeholder"] = str(placeholder)[:120]
+        field["placeholder"] = str(placeholder)[:FORM_PLACEHOLDER_MAX_CHARS]
 
     recommended_value = hints.get("recommended_value")
     if recommended_value is None:

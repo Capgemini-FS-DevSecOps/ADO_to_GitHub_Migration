@@ -6,10 +6,35 @@ accumulating list fields (operator.add) and add_messages for message history.
 from __future__ import annotations
 
 import operator
+from enum import Enum
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
+
+
+class AgentEventKind(str, Enum):
+    """Kind of streamed event a graph node writes for the console to render."""
+
+    MESSAGE = "message"
+    THINKING = "thinking"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+
+
+class AgentRole(str, Enum):
+    """Which graph node produced or should receive a streamed event or message."""
+
+    ORCHESTRATOR = "orchestrator"
+    PLANNER = "planner"
+    EXECUTOR = "executor"
+    VALIDATOR = "validator"
+
+
+class AgentMessageType(str, Enum):
+    """Kind of structured message passed between graph nodes."""
+
+    VALIDATION_RESULT = "validation_result"
 
 
 class AgentState(TypedDict, total=False):

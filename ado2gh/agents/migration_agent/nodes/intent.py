@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from ado2gh.agents.migration_agent.constants import NO_LLM_CONFIGURED_MESSAGE
+from ado2gh.agents.migration_agent.hitl.schemas import OperatorIntent
 from ado2gh.agents.migration_agent.nodes._common import _transition_session
 from ado2gh.agents.migration_agent.policies import is_out_of_scope_message, scope_refusal_reply
 from ado2gh.agents.migration_agent.session.state import SessionState
@@ -34,7 +35,7 @@ def _build_classification_prompt(user_message: str, session: dict[str, Any]) -> 
         "user_message": user_message,
         "has_discovery": has_discovery,
         "has_plan": has_plan,
-        "session_status": session.get("status", "idle"),
+        "session_status": session.get("status", SessionState.IDLE.value),
     })
 
 
@@ -159,17 +160,17 @@ async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
     llm_unconfigured = state.get("llm_unconfigured", False)
 
     if not user_message:
-        return {"intent": "general_chat", "should_return": True}
+        return {"intent": OperatorIntent.GENERAL_CHAT.value, "should_return": True}
 
     if is_out_of_scope_message(user_message):
         reply = scope_refusal_reply(user_message)
         publish_orchestrator_chat(session, reply)
-        return {"intent": "general_chat", "reply": reply, "should_return": True}
+        return {"intent": OperatorIntent.GENERAL_CHAT.value, "reply": reply, "should_return": True}
 
     if llm_unconfigured or not llm:
         reply = NO_LLM_CONFIGURED_MESSAGE
         publish_orchestrator_chat(session, reply)
-        return {"intent": "general_chat", "reply": reply, "should_return": True}
+        return {"intent": OperatorIntent.GENERAL_CHAT.value, "reply": reply, "should_return": True}
 
     from ado2gh.agents.migration_agent.hitl.intake_llm import analyze_operator_message
 
@@ -184,7 +185,7 @@ async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
             "as Project/RepoName."
         )
         publish_orchestrator_chat(session, reply)
-        return {"intent": "general_chat", "reply": reply, "should_return": True}
+        return {"intent": OperatorIntent.GENERAL_CHAT.value, "reply": reply, "should_return": True}
 
     if analysis.reasoning:
         _append_and_stream(
@@ -197,7 +198,7 @@ async def _classify_user_intent(state: dict[str, Any]) -> dict[str, Any]:
 
     if analysis.is_cancellation:
         _append_event(session, role="system", content="Migration cancellation requested.", kind="message")
-        return {"intent": "general_chat", "reply": "Migration cancellation requested.", "should_return": True}
+        return {"intent": OperatorIntent.GENERAL_CHAT.value, "reply": "Migration cancellation requested.", "should_return": True}
 
     intent = analysis.intent.value
     _append_event(

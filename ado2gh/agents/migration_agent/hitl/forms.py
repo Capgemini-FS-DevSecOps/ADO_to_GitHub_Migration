@@ -9,6 +9,9 @@ from __future__ import annotations
 from typing import Any
 
 from ado2gh.agents.migration_agent.hitl.form_fields import (
+    FORM_DESCRIPTION_MAX_CHARS,
+    FORM_ID_MAX_CHARS,
+    FORM_PLACEHOLDER_MAX_CHARS,
     default_required_for_type,
     normalize_form_option,
     normalize_recommended_value,
@@ -24,7 +27,7 @@ MAX_OPTIONS = 10
 
 def sanitize_form(form: dict[str, Any]) -> dict[str, Any]:
     """Enforce guardrails on a dynamically-constructed form."""
-    form_id = str(form.get("form_id", "custom"))[:60]
+    form_id = str(form.get("form_id", "custom"))[:FORM_ID_MAX_CHARS]
     title = str(form.get("title", "Input required"))[:MAX_TITLE_LEN]
     description = str(form.get("description", ""))[:MAX_DESCRIPTION_LEN]
 
@@ -48,7 +51,7 @@ def sanitize_form(form: dict[str, Any]) -> dict[str, Any]:
         for key in ("description", "placeholder"):
             val = f.get(key)
             if val is not None and str(val).strip():
-                limit = 200 if key == "description" else 120
+                limit = FORM_DESCRIPTION_MAX_CHARS if key == "description" else FORM_PLACEHOLDER_MAX_CHARS
                 field[key] = str(val).strip()[:limit]
         recommendation = normalize_recommended_value(f.get("recommended_value"))
         if recommendation is not None:

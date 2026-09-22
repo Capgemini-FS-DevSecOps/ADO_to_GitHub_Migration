@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from ado2gh.agents.migration_agent.constants import NO_LLM_CONFIGURED_MESSAGE
+from ado2gh.agents.migration_agent.constants import CONTEXT_TOKEN_BUDGET, NO_LLM_CONFIGURED_MESSAGE
+from ado2gh.agents.migration_agent.graph.state import AgentEventKind, AgentRole
 from ado2gh.agents.migration_agent.nodes._common import (
     _is_pev_max_retries_exhausted,
     _is_start_execution_message,
@@ -98,9 +99,10 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
 
     # Plan-execute-validate loop (PEV) completion callback — must run before start_execution re-trigger check
     validation_result = state.get("validation_result") or {}
-    if validation_result.get("passed") and session.get("status") in (
-        "planning", "executing", "validating", "thinking",
-    ):
+    active_statuses = (
+        SessionState.PLANNING.value, SessionState.EXECUTING.value, SessionState.VALIDATING.value,
+    )
+    if validation_result.get("passed") and session.get("status") in (*active_statuses, SessionState.THINKING.value):
         executor_result = state.get("executor_result") or {}
         plan = migration_plan or {}
         if isinstance(plan, str):
@@ -129,7 +131,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             session,
             role="system",
             content="Orchestrator: migration complete — summary sent to operator.",
-            subagent="orchestrator",
+            subagent=AgentRole.ORCHESTRATOR.value,
         )
         return {"should_return": True, "reply": reply, "start_execution": False, "chat_published": True}
 
@@ -267,8 +269,8 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
                 session,
                 role="system",
                 content=planner_thought,
-                kind="thinking",
-                subagent="planner",
+                kind=AgentEventKind.THINKING.value,
+                subagent=AgentRole.PLANNER.value,
             )
 
             # Build form with suggestions in the description
@@ -337,7 +339,7 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
             return {"should_return": True, "reply": "Form submitted."}
 
     # Queue message if PEV is active
-    if session.get("status") in ("planning", "executing", "validating"):
+    if session.get("status") in active_statuses:
         if _is_cancellation_request(user_message):
             from ado2gh.agents.migration_agent.hitl.form_fields import build_field_recommendations
             from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
@@ -382,8 +384,8 @@ async def _orchestrator_node_impl(state: dict[str, Any]) -> dict[str, Any]:
                         },
                     ],
                 })
-            session["status"] = "idle"
-            _append_event(session, role="system", content="Migration cancelled by operator. Select rollback option.", kind="message")
+            session["status"] = SessionState.IDLE.value
+            _append_event(session, role="system", content="Migration cancelled by operator. Select rollback option.", kind=AgentEventKind.MESSAGE.value)
             return {"should_return": True, "reply": "Migration cancelled. Please choose an action below.", "pending_form": form}
         _queue_user_message(session, user_message)
         return {"should_return": True, "reply": "Message queued — I'll process it after the current migration step completes."}
@@ -446,7 +448,7 @@ async def _handle_general_chat(
     # Apply context window trimming
     existing_messages = state.get("messages", [])
     cycle_summaries = state.get("cycle_summaries", [])
-    max_budget = state.get("max_token_budget", 32000)
+    max_budget = state.get("max_token_budget", CONTEXT_TOKEN_BUDGET)
 
     # Build new messages with system prompt and user message
     new_messages = build_orchestrator_messages(session, user_message)
@@ -457,19 +459,19 @@ async def _handle_general_chat(
         all_messages, cycle_summaries, max_budget
     )
 
-    response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent="orchestrator", capabilities=state.get("capabilities"))
+    response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent=AgentRole.ORCHESTRATOR.value, capabilities=state.get("capabilities"))
     parsed = _parse_llm_json(response_text)
     thinking = parsed.get("thinking")
     if thinking:
         recent = session.get("messages", [])[-3:]
         already = any(
-            m.get("kind") == "thinking"
+            m.get("kind") == AgentEventKind.THINKING.value
             and m.get("content") == thinking
-            and m.get("subagent") == "orchestrator"
+            and m.get("subagent") == AgentRole.ORCHESTRATOR.value
             for m in recent
         )
         if not already:
-            _append_event(session, role="system", content=thinking, kind="thinking", subagent="orchestrator")
+            _append_event(session, role="system", content=thinking, kind=AgentEventKind.THINKING.value, subagent=AgentRole.ORCHESTRATOR.value)
             from langgraph.config import get_stream_writer
 
             w = get_stream_writer()
@@ -479,7 +481,7 @@ async def _handle_general_chat(
             if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
                 # _append_event, so the server-sent event (SSE) frame must match (CA-003, FR-025).
-                w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
+                w({"kind": AgentEventKind.THINKING.value, "content": mask_secrets(thinking), "subagent": AgentRole.ORCHESTRATOR.value})
 
     tool_calls = parsed.get("tool_calls", [])
     if tool_calls:
@@ -536,7 +538,7 @@ async def _handle_migration_info(
         # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
-        max_budget = state.get("max_token_budget", 32000)
+        max_budget = state.get("max_token_budget", CONTEXT_TOKEN_BUDGET)
 
         new_messages = build_orchestrator_messages(
             session, f"{user_message}\n\nContext: {info_text}",
@@ -547,11 +549,11 @@ async def _handle_migration_info(
             all_messages, cycle_summaries, max_budget
         )
 
-        response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent="orchestrator", capabilities=state.get("capabilities"))
+        response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent=AgentRole.ORCHESTRATOR.value, capabilities=state.get("capabilities"))
         parsed = _parse_llm_json(response_text)
         thinking = parsed.get("thinking")
         if thinking:
-            _append_event(session, role="system", content=thinking, kind="thinking", subagent="orchestrator")
+            _append_event(session, role="system", content=thinking, kind=AgentEventKind.THINKING.value, subagent=AgentRole.ORCHESTRATOR.value)
             from langgraph.config import get_stream_writer
 
             w = get_stream_writer()
@@ -561,7 +563,7 @@ async def _handle_migration_info(
             if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
                 # _append_event, so the server-sent event (SSE) frame must match (CA-003, FR-025).
-                w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
+                w({"kind": AgentEventKind.THINKING.value, "content": mask_secrets(thinking), "subagent": AgentRole.ORCHESTRATOR.value})
         reply = _safe_reply(parsed, response_text)
     else:
         reply = info_text or "No migration data available."
@@ -676,7 +678,7 @@ async def _handle_migration_action(
         # Apply context window trimming
         existing_messages = state.get("messages", [])
         cycle_summaries = state.get("cycle_summaries", [])
-        max_budget = state.get("max_token_budget", 32000)
+        max_budget = state.get("max_token_budget", CONTEXT_TOKEN_BUDGET)
 
         new_messages = build_orchestrator_messages(session, user_message)
 
@@ -685,7 +687,7 @@ async def _handle_migration_action(
             all_messages, cycle_summaries, max_budget
         )
 
-        response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent="orchestrator", capabilities=state.get("capabilities"))
+        response_text = await _stream_llm_response(llm, trimmed_messages, state, subagent=AgentRole.ORCHESTRATOR.value, capabilities=state.get("capabilities"))
         parsed = _parse_llm_json(response_text)
 
         # Check for tool calls in the language model's response
@@ -706,7 +708,7 @@ async def _handle_migration_action(
             if w:  # type: ignore[truthy-function]
                 # Mask before broadcast: the message-list copy is masked by
                 # _append_event, so the server-sent event (SSE) frame must match (CA-003, FR-025).
-                w({"kind": "thinking", "content": mask_secrets(thinking), "subagent": "orchestrator"})
+                w({"kind": AgentEventKind.THINKING.value, "content": mask_secrets(thinking), "subagent": AgentRole.ORCHESTRATOR.value})
 
         if tool_calls:
             reply = parsed.get("reply")
@@ -757,7 +759,7 @@ async def _handle_migration_action(
             actual_dry_run = session.get("dry_run", True)
             mode = "dry-run" if actual_dry_run else "live"
             synth_reply = f"Proceeding to build the migration plan for {len(repo_ids)} repo(s) in {mode} mode."
-            _append_and_stream(session, role="system", content=synth_reply, subagent="orchestrator")
+            _append_and_stream(session, role="system", content=synth_reply, subagent=AgentRole.ORCHESTRATOR.value)
             return {
                 "tool_calls": [{
                     "name": "invoke_bulk_planner",
@@ -784,7 +786,7 @@ async def _handle_migration_action(
         session,
         role="assistant",
         content="I'll help you with that migration. Let me collect the required information.",
-        kind="message",
+        kind=AgentEventKind.MESSAGE.value,
     )
     return {"should_return": True, "reply": "Migration action received. Configure an LLM model for full agent capabilities."}
 

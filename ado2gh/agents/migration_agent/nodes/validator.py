@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ado2gh.agents.migration_agent.constants import MAX_PEV_RETRIES
+from ado2gh.agents.migration_agent.constants import MAX_ITERATIONS, MAX_PEV_RETRIES
+from ado2gh.agents.migration_agent.graph.state import AgentMessageType, AgentRole
+from ado2gh.agents.migration_agent.hitl.schemas import MigrationFailureCode
 from ado2gh.agents.migration_agent.nodes._common import (
     _transition_session,
 )
@@ -148,7 +150,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
                 from ado2gh.agents.migration_agent.hitl.operator_input import is_fr036_failure
 
                 if is_fr036_failure(failure_entry):
-                    failure_entry["error_code"] = "migration_in_progress"
+                    failure_entry["error_code"] = MigrationFailureCode.MIGRATION_IN_PROGRESS.value
                     failure_entry["operator_input_required"] = True
                 all_failures.append(failure_entry)
 
@@ -204,10 +206,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
             "operator_input_required": f.get("operator_input_required"),
         }
         if is_fr036_failure(failure_entry):
-            failure_entry["error_code"] = "migration_in_progress"
-            failure_entry["operator_input_required"] = True
-        if is_fr036_failure(failure_entry):
-            failure_entry["error_code"] = "migration_in_progress"
+            failure_entry["error_code"] = MigrationFailureCode.MIGRATION_IN_PROGRESS.value
             failure_entry["operator_input_required"] = True
         all_failures.append(failure_entry)
 
@@ -484,7 +483,7 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
         next_action = "complete"
     elif pev_retry_count >= MAX_PEV_RETRIES:
         next_action = "fail_max_retries"
-    elif iteration >= state.get("max_iterations", 20):
+    elif iteration >= state.get("max_iterations", MAX_ITERATIONS):
         next_action = "fail_max_iterations"
     else:
         next_action = "retry_planner"
@@ -500,9 +499,9 @@ async def validator_node(state: dict[str, Any]) -> dict[str, Any]:
 
     # Create the inter-agent message from the validator
     inter_agent_msg = _make_inter_agent_message(
-        from_role="validator",
-        to_role="planner",
-        message_type="validation_result",
+        from_role=AgentRole.VALIDATOR.value,
+        to_role=AgentRole.PLANNER.value,
+        message_type=AgentMessageType.VALIDATION_RESULT.value,
         payload={
             "passed": passed,
             "failures": all_failures[:5],

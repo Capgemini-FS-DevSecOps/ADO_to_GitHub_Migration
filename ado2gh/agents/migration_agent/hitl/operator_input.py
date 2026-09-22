@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import http
 import re
 from typing import Any, cast
 
@@ -12,7 +13,12 @@ from ado2gh.agents.migration_agent.hitl.blockers import (
 )
 from ado2gh.agents.migration_agent.hitl.forms import sanitize_form
 from ado2gh.agents.migration_agent.hitl.schemas import (
+    OPERATOR_BLOCKER_SUMMARY_MAX_ITEMS,
+    OPERATOR_CONTEXT_MAX_ITEMS,
+    OPERATOR_DIGEST_MAX_CHARS,
+    OPERATOR_IDENTIFIER_MAX_CHARS,
     IntakeFieldSpec,
+    MigrationFailureCode,
     OperatorInputFieldSpec,
     OperatorInputRequest,
 )
@@ -20,7 +26,7 @@ from ado2gh.models import MigrationScope
 
 
 def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")[:48]
+    return re.sub(r"[^a-z0-9]+", "_", (text or "").lower()).strip("_")[:OPERATOR_IDENTIFIER_MAX_CHARS]
 
 
 def request_id_for_blockers(blockers: list[dict[str, Any]]) -> str:
@@ -31,7 +37,7 @@ def request_id_for_blockers(blockers: list[dict[str, Any]]) -> str:
         keys, so the same blockers always produce the same request id.
     """
     keys = sorted(str(b.get("key", "")) for b in blockers)
-    digest = hashlib.sha256("|".join(keys).encode()).hexdigest()[:10]
+    digest = hashlib.sha256("|".join(keys).encode()).hexdigest()[:OPERATOR_DIGEST_MAX_CHARS]
     return f"blockers_{digest}"
 
 
@@ -126,13 +132,13 @@ def operator_input_from_blockers(
         ),
         blocker_keys=keys,
         fields=fields,
-        context={"blockers": blockers[:8], "repo": repo},
+        context={"blockers": blockers[:OPERATOR_CONTEXT_MAX_ITEMS], "repo": repo},
     )
 
 
 def _github_not_found_error(text: str) -> bool:
     lower = (text or "").lower()
-    return "404" in lower or "not found" in lower
+    return str(int(http.HTTPStatus.NOT_FOUND)) in lower or "not found" in lower
 
 
 def parse_github_target_probe(
@@ -313,7 +319,9 @@ def operator_input_from_probe_failures(
     primary = blockers[0] if blockers else {}
     repo = primary.get("repo") or session.get("plan_repository_id") or "the selected repository"
     keys = [str(b.get("key")) for b in blockers if b.get("key")]
-    details = "\n".join(f"- **{b.get('repo', repo)}**: {b.get('blocker', '')}" for b in blockers[:6])
+    details = "\n".join(
+        f"- **{b.get('repo', repo)}**: {b.get('blocker', '')}" for b in blockers[:OPERATOR_BLOCKER_SUMMARY_MAX_ITEMS]
+    )
 
     from ado2gh.agents.migration_agent.hitl.form_fields import (
         resolution_options_for_probe_failures,
@@ -363,7 +371,7 @@ def operator_input_from_probe_failures(
                 required=False,
             ),
         ],
-        context={"blockers": blockers[:8], "repo": repo, "probe_failures": True},
+        context={"blockers": blockers[:OPERATOR_CONTEXT_MAX_ITEMS], "repo": repo, "probe_failures": True},
     )
 
 
@@ -424,7 +432,11 @@ def is_fr036_failure(failure: object) -> bool:
     """
     if isinstance(failure, dict):
         code = str(failure.get("error_code", "")).lower()
-        if code in ("migration_in_progress", "fr036", "active_live_migration"):
+        if code in (
+            MigrationFailureCode.MIGRATION_IN_PROGRESS.value,
+            MigrationFailureCode.FR036.value,
+            MigrationFailureCode.ACTIVE_LIVE_MIGRATION.value,
+        ):
             return True
         text = " ".join(
             str(failure.get(key, ""))
@@ -614,7 +626,7 @@ def operator_input_from_validator_failures(
                 required=False,
             ),
         ],
-        context={"failures": operator_failures[:8]},
+        context={"failures": operator_failures[:OPERATOR_CONTEXT_MAX_ITEMS]},
     )
 
 

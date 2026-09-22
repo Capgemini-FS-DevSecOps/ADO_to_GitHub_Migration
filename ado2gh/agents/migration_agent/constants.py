@@ -15,6 +15,9 @@ VALIDATOR_MAX_TOOL_ROUNDS = 12
 VALIDATOR_MIN_TOOL_CALLS_PIPELINES = 4
 SSE_HEARTBEAT_INTERVAL_SECONDS = 15
 
+#: Token budget the orchestrator trims accumulated conversation history to before calling the language model.
+CONTEXT_TOKEN_BUDGET = 32000
+
 # ─── Agent-service HTTP boundary limits ───────────────────────────────
 # Every value below bounds something a client controls: how much text one
 # request may carry, how long a server-sent event stream (SSE) may run, and how much session
