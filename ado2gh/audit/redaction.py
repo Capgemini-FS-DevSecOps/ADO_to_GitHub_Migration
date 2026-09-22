@@ -53,9 +53,12 @@ _SECRET_KEY_VALUE_RE = re.compile(
     # (`(?:\\.|[^"\\])*` rather than plain `[^"]*`): otherwise a value such as
     # `password="abc\"def"`, which escapes the quote it opened with rather
     # than closing early, stops the match at that escaped quote and leaves
-    # `def` unmasked in the output.
-    r'(?:"(?P<dqval>(?:\\.|[^"\\])*)"?'
-    r"|'(?P<sqval>(?:\\.|[^'\\])*)'?"
+    # `def` unmasked in the output. A trailing `\\?` closes each branch: a
+    # value that ends on a lone backslash has no following character for
+    # `\\.` to pair with, so without this the group stops one character
+    # early and that final backslash reaches the output unmasked.
+    r'(?:"(?P<dqval>(?:\\.|[^"\\])*\\?)"?'
+    r"|'(?P<sqval>(?:\\.|[^'\\])*\\?)'?"
     rf"|(?P<value>[^{_SECRET_VALUE_DELIMITERS}]*))",
     re.IGNORECASE,
 )
