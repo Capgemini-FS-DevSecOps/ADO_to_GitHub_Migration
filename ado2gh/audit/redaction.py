@@ -10,6 +10,7 @@ is recognised everywhere.
 from __future__ import annotations
 
 import re
+from typing import Final
 
 _MASK = "***"
 _MAX_DEPTH = 20
@@ -25,10 +26,32 @@ _SECRET_VALUE_RE = re.compile(
     # bare Azure DevOps PAT: 52 opaque alphanumerics, no prefix at all
     r"|(?P<opaque>(?<![A-Za-z0-9])[A-Za-z0-9]{52}(?![A-Za-z0-9]))"
     # "token": "…" inside an already-serialised JSON blob
-    r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"[^"]*"'
-    # key=value / key: value in free text (absorbed from the agent's mask_secrets)
-    r"|(?P<kv>(?:password|passwd|secret|token|api[_-]?key|apikey|pat)\s*[=:]\s*)"
-    r"[A-Za-z0-9_\-./+=]{8,}",
+    r'|(?P<jsonkv>"(?:token|password|secret|pat|api[_-]?key)"\s*:\s*)"[^"]*"',
+    re.IGNORECASE,
+)
+
+# key=value / key: value in free text (absorbed from the agent's mask_secrets).
+# A second pass, run after `_SECRET_VALUE_RE`: the whole value is masked
+# regardless of its length or character set (GAP-109), so it cannot share one
+# alternation with shapes that keep a triage prefix. The key names are the
+# same literal list the single-pass regex used before this split — only the
+# value side changed — so a non-secret word such as "failed" in "failed:
+# password=..." never opens a match that would swallow the real secret after it.
+_SECRET_KEY_VALUE_KEYS: Final[str] = r"password|passwd|secret|token|api[_-]?key|apikey|pat"
+"""Key names whose entire assigned value `redact_text` masks."""
+
+_SECRET_VALUE_DELIMITERS: Final[str] = r"\s,;)}\]>"
+"""Characters that end an unquoted value after one of `_SECRET_KEY_VALUE_KEYS`."""
+
+_SECRET_KEY_VALUE_RE = re.compile(
+    rf"(?P<key>{_SECRET_KEY_VALUE_KEYS})(?P<sep>\s*[=:]\s*)"
+    # Two separate quote branches, not one class excluding both quote
+    # characters: a value quoted in one style can legitimately contain the
+    # other (`password="abc's"`), and a shared `[^"\']` class stops at that
+    # embedded character, leaving the remainder of the secret unmasked.
+    r'(?:"(?P<dqval>[^"]*)"?'
+    r"|'(?P<sqval>[^']*)'?"
+    rf"|(?P<value>[^{_SECRET_VALUE_DELIMITERS}]*))",
     re.IGNORECASE,
 )
 
@@ -47,11 +70,35 @@ def _mask_match(m: "re.Match[str]") -> str:
     name = m.lastgroup
     if name == "jsonkv":
         return f'{m.group("jsonkv")}"{_MASK}"'
-    if name == "kv":
-        return m.group("kv") + _MASK
     if name == "bearer":
         return f'{m.group(0).split(None, 1)[0]} {_MASK}'
     return m.group(0)[:4] + _MASK  # pfx / opaque: keep a 4-char prefix for triage
+
+
+def _mask_key_value_match(m: "re.Match[str]") -> str:
+    """Replacement for one `_SECRET_KEY_VALUE_RE` hit.
+
+    Masks the whole value that follows a secret-looking key, whatever its
+    length or character set, and keeps a matching quote around the mask when
+    the value was quoted (GAP-109).
+
+    Args:
+        m: The regex match, carrying the key, separator, and either a quoted
+            or unquoted value group.
+
+    Returns:
+        The key and separator unchanged, followed by the mask — wrapped in the
+        same quote character the value was wrapped in, when there was one.
+    """
+    prefix = f'{m.group("key")}{m.group("sep")}'
+    if m.group("dqval") is not None:
+        quote = '"'
+    elif m.group("sqval") is not None:
+        quote = "'"
+    else:
+        return prefix + _MASK
+    closing_quote = quote if m.group(0).endswith(quote) else ""
+    return f"{prefix}{quote}{_MASK}{closing_quote}"
 
 
 def _is_secret_key(key: object) -> bool:
@@ -82,7 +129,8 @@ def redact_text(text: str) -> str:
     """
     if len(text) < 5:  # nothing we match is shorter
         return text
-    return _SECRET_VALUE_RE.sub(_mask_match, text)
+    masked = _SECRET_VALUE_RE.sub(_mask_match, text)
+    return _SECRET_KEY_VALUE_RE.sub(_mask_key_value_match, masked)
 
 
 def redact_payload(payload: object, _depth: int = 0) -> object:

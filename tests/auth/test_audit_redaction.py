@@ -80,6 +80,19 @@ def test_redact_auth_event_payload():
         ("api_key: abcdefgh", f"api_key: {MASK}"),
         ("apikey=abcdefghij", f"apikey={MASK}"),
         ("PAT = abcdefghij", f"PAT = {MASK}"),
+        # kv, short values — the whole value is masked, not just what an
+        # eight-character-minimum quantifier would have covered (GAP-109).
+        ('token="ab"', f'token="{MASK}"'),
+        ("token='ab'", f"token='{MASK}'"),
+        ("secret=ab", f"secret={MASK}"),
+        # kv, punctuation-terminated — the delimiter after the value is kept.
+        ("secret=abc123,", f"secret={MASK},"),
+        ("(password=abc123)", f"(password={MASK})"),
+        # kv, quoted values containing the other quote character — the whole
+        # value inside the matching quotes is masked, not just the prefix up
+        # to the embedded character (Terra review finding, this batch).
+        ('password="abc\'s secret"', f'password="{MASK}"'),
+        ("token='it has \"quotes\" inside'", f"token='{MASK}'"),
     ],
 )
 def test_each_secret_shape_masks_to_exactly_this_value(raw, expected):
@@ -95,9 +108,6 @@ def test_each_secret_shape_masks_to_exactly_this_value(raw, expected):
         # …and the lookaround stops it firing inside a longer alphanumeric run.
         "x" + "a" * 52,
         "a" * 52 + "x",
-        # kv needs at least 8 characters of value.
-        "token=short",
-        "password=1234567",
         # a non-secret key name with a value is left alone.
         "branch=feature/migrate-payments",
         "commit=abcdef1234567890",
@@ -107,12 +117,6 @@ def test_each_secret_shape_masks_to_exactly_this_value(raw, expected):
 )
 def test_a_value_outside_every_shape_is_returned_unchanged(raw):
     assert redact_text(raw) == raw, "redaction fired on a value that is not a secret"
-
-
-def test_the_kv_boundary_is_exactly_eight_characters():
-    """One character either side of the ``{8,}`` quantifier, in one test."""
-    assert redact_text("password=1234567") == "password=1234567"
-    assert redact_text("password=12345678") == f"password={MASK}"
 
 
 def test_the_opaque_boundary_is_exactly_fifty_two_characters():
