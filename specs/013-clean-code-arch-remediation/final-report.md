@@ -112,13 +112,35 @@ Modified: `ado2gh/audit/redaction.py`, `services/agent/routes/execution_routes.p
   (before/after probes, worktree revert proofs) and the existing test suite,
   which is a real but narrower form of verification than a second reviewer's
   read.
-- **CI on the new push.** Commits `a23f216`, `eaed276`, `4dc1c21` (plus the
-  earlier `0f22911` mypy fix) were pushed to `feature/ado-agentic-ai`. A new
-  CI run was triggered (run id `35702328507`, head `4dc1c21`); `lint` and
-  `ui-permissions` completed successfully, `test` was still in progress at
-  the time this report was written. The operator should confirm the `test`
-  job's final conclusion before merging — see the run at
-  `https://github.com/Capgemini-FS-DevSecOps/ADO_to_GitHub_Migration/actions/runs/35702328507`.
+- **CI is hung, not merely slow — needs operator attention.** Commits
+  `a23f216`, `eaed276`, `4dc1c21` (plus the earlier `0f22911` mypy fix) were
+  pushed to `feature/ado-agentic-ai`; a new run was triggered (run id
+  `35702328507`, head `4dc1c21`). `lint` and `ui-permissions` completed
+  successfully in under a minute each, but the `pytest --cov=ado2gh
+  --cov=services --cov-fail-under=69` step started at `07:59:19Z` and was
+  still `in_progress` at `11:10Z` — nearly 3 hours, against the documented
+  baseline of ~100s for the full suite. This is not isolated to this run:
+  every CI run on this branch since the PR-creation commit (`a18be4d`,
+  predating this addendum's three fixes) shows the same pattern — `lint` and
+  `ui-permissions` complete quickly, `test` never finishes. Checked
+  githubstatus.com history for a same-day Actions incident and found none, so
+  this reads as a real hang in the run, not a platform outage. It matches
+  this project's own documented flake in the Testing section of
+  `CLAUDE.md`: a leaked non-daemon aiosqlite checkpointer thread can hang
+  pytest after the last test completes, diagnosable with `py-spy dump`, with
+  `data/agent_checkpoints.db-wal` appearing mid-run as the tell for a test
+  reaching the real checkpoint database instead of its per-test temp file.
+  Locally-run subsets (this addendum's targeted tests, the related
+  `tests/core`/`tests/agent`/`tests/auth`/`tests/pipeline` surface) completed
+  normally in seconds, so the trigger is specific to a full-suite run with
+  coverage instrumentation on the GitHub-hosted runner, not something this
+  addendum's three commits introduce on their own — the identical hang
+  predates them. Recommend the operator cancel the stuck runs and re-run, and
+  if it recurs, follow the `py-spy dump` playbook `CLAUDE.md` already
+  documents for this exact symptom before merging. Runs to review:
+  `https://github.com/Capgemini-FS-DevSecOps/ADO_to_GitHub_Migration/actions/runs/35702328507`
+  and, since it is the earliest run showing the same hang,
+  `https://github.com/Capgemini-FS-DevSecOps/ADO_to_GitHub_Migration/actions/runs/35699227689`.
 - The dirty working tree at session start (`.gitignore`, `.specify/**`,
   `AGENTS.md`, `CLAUDE.md`, and a handful of untracked files such as
   `coverage-run-phase4.txt`, `guard-tests-phase4.txt`) was left untouched —
