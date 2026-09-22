@@ -10,13 +10,14 @@ Re-exports all public names for backward compatibility (FR-013).
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, get_type_hints
 
 from ado2gh.api.phase_definitions import (
     PhaseDefinition,
@@ -42,6 +43,44 @@ __all__ = [
     "SettingsStore",
     "UISettings",
 ]
+
+
+def _rehydrate_nested_dataclasses(cls: type, merged: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild any field of ``cls`` typed as a dataclass that arrived as a plain dict.
+
+    Loading merges the saved JSON over ``asdict(cls())`` and constructs ``cls``
+    from the result. ``asdict`` recurses into nested dataclasses too, so a
+    field like ``AdvancedSettings.concurrency`` or ``.agent_runtime`` comes
+    back flattened to a plain dict, not the dataclass instance the field is
+    declared as. Passing that dict straight to ``cls(**merged)`` leaves the
+    field holding a dict instead of the expected dataclass.
+
+    Args:
+        cls: The dataclass about to be constructed, e.g. ``AdvancedSettings``.
+        merged: Field values already merged over the defaults, keyed by field
+            name.
+
+    Returns:
+        dict[str, Any]: A copy of ``merged`` with every dataclass-typed field
+        rebuilt into an instance of its declared type. A missing key inside
+        the nested dict takes that dataclass's own default; a key it does not
+        declare is dropped instead of raising. A field whose value is not a
+        dict (already the right instance, or something else) is left alone.
+
+    """
+    result = dict(merged)
+    hints = get_type_hints(cls)
+    for f in dataclasses.fields(cls):
+        field_type = hints.get(f.name, f.type)
+        if not dataclasses.is_dataclass(field_type):
+            continue
+        value = result.get(f.name)
+        if not isinstance(value, dict):
+            continue
+        defaults = asdict(field_type())
+        known = {k: v for k, v in value.items() if k in defaults}
+        result[f.name] = field_type(**{**defaults, **known})
+    return result
 
 
 class SettingsStore(ProfileMixin, ScanMixin):
@@ -202,10 +241,13 @@ class SettingsStore(ProfileMixin, ScanMixin):
             ))
 
         adv = data.get("advanced", {})
+        merged_adv = _rehydrate_nested_dataclasses(
+            AdvancedSettings, {**asdict(AdvancedSettings()), **adv},
+        )
         settings = UISettings(
             active_profile_id=data.get("active_profile_id"),
             migration_profiles=profiles,
-            advanced=AdvancedSettings(**{**asdict(AdvancedSettings()), **adv}),
+            advanced=AdvancedSettings(**merged_adv),
             operator_resolutions=data.get("operator_resolutions", {}) or {},
         )
         self._normalize_defaults(settings)
@@ -260,10 +302,13 @@ class SettingsStore(ProfileMixin, ScanMixin):
                     break
 
         adv = data.get("advanced", {})
+        merged_adv = _rehydrate_nested_dataclasses(
+            AdvancedSettings, {**asdict(AdvancedSettings()), **adv},
+        )
         return UISettings(
             active_profile_id=data.get("active_profile_id"),
             migration_profiles=profiles,
-            advanced=AdvancedSettings(**{**asdict(AdvancedSettings()), **adv}),
+            advanced=AdvancedSettings(**merged_adv),
         )
 
     def save(self, settings: UISettings) -> None:

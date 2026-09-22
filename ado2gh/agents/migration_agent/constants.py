@@ -76,14 +76,14 @@ def agent_runtime_settings() -> "AgentRuntimeSettings":
         raw = SettingsStore().load().advanced.agent_runtime
         if isinstance(raw, AgentRuntimeSettings):
             return raw
-        # A settings file loaded from disk carries every ``AdvancedSettings``
-        # nested field (this one included) as a plain dict, not the
-        # dataclass instance the field is typed as — ``SettingsStore`` merges
-        # the raw JSON over ``asdict(AdvancedSettings())`` and constructs
-        # ``AdvancedSettings`` from that merged dict, which never re-hydrates
-        # nested dataclasses. Rebuild it here the same way ``SettingsStore``
-        # merges everything else: defaults first, saved keys on top, so a
-        # settings file saved before a new field existed still loads.
+        # ``SettingsStore.load()`` now rehydrates every dataclass-typed field
+        # of ``AdvancedSettings`` (this one included) back into its declared
+        # type, so ``raw`` should already be an ``AgentRuntimeSettings``
+        # instance in the branch above. This dict branch is a fallback for a
+        # settings file saved by an older build before that rehydration
+        # existed, or loaded through some other path that skips it — rebuild
+        # it the same way the store does: defaults first, saved keys on top,
+        # so a settings file saved before this field existed still loads.
         if isinstance(raw, dict):
             return AgentRuntimeSettings(**{**asdict(AgentRuntimeSettings()), **raw})
         return AgentRuntimeSettings()
