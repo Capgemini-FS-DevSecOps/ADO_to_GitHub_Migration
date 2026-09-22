@@ -317,10 +317,21 @@ def test_a_read_is_not_audited(proxy, clients):
     assert not audit.called
 
 
-def test_a_refused_write_is_never_forwarded_and_never_audited(proxy, clients):
+def test_a_refused_write_is_never_forwarded_and_only_the_refusal_is_audited(proxy, clients):
+    """A refused write is never recorded as if it had happened.
+
+    The refusal itself is still audited (every refusal is audited, by
+    design), but no call may carry the forwarded-write event name — only the
+    live-execution-approval-refused event name.
+    """
+    from ado2gh.api.platform_rbac import LIVE_APPROVAL_REFUSAL_EVENT
+
     proxy.login(PlatformRole.OPERATOR)
     with patch("ado2gh.api.profile_governance.write_profile_audit") as audit:
         resp = proxy.delete("/v1/github/repos/fake-gh-org/payments")
     assert resp.status_code in (401, 403)
     assert not clients.gh._delete.called
-    assert not audit.called, "a refused write was recorded as if it had happened"
+    assert audit.called, "a refused write left no audit record of the refusal"
+    for call in audit.call_args_list:
+        assert call.args[0] == LIVE_APPROVAL_REFUSAL_EVENT
+        assert call.args[0] != "accelerator.github_proxy.write"
