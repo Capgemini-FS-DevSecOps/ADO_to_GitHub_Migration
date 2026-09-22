@@ -1,13 +1,14 @@
 """Unit tests for ModelCapabilities — capability detection, validation, budget."""
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ado2gh.agents.migration_agent.runtime.llm_bridge import (
     ModelCapabilities,
     ModelCapabilityError,
     _detect_capabilities,
-    _PROVIDER_CAPABILITY_DEFAULTS,
 )
+from ado2gh.api.llm.llm_provider_registry import PROVIDER_SPECS
 
 
 def test_capabilities_dataclass_fields():
@@ -29,9 +30,13 @@ def test_capabilities_max_token_budget_default():
 
 
 def test_provider_defaults_include_all_providers():
-    expected = {"openai", "openai_compatible", "github_copilot", "github_models",
+    """Capability defaults now live on the registered LLMProviderSpec, not a
+    parallel map in the bridge; every canonical provider id must carry one."""
+    expected = {"openai", "github_copilot",
                 "openrouter", "anthropic", "stub", "offline"}
-    assert expected.issubset(set(_PROVIDER_CAPABILITY_DEFAULTS.keys()))
+    assert expected.issubset(set(PROVIDER_SPECS.keys()))
+    for provider_id in expected:
+        assert PROVIDER_SPECS[provider_id].capabilities
 
 
 def test_provider_defaults_anthropic_has_thinking():

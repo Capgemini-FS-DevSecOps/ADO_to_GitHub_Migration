@@ -1,6 +1,7 @@
 """Preset and live language model catalog discovery."""
 from __future__ import annotations
 
+import dataclasses
 import json
 import threading
 from pathlib import Path
@@ -13,12 +14,26 @@ from ado2gh.api.llm.http_llm import (
     build_cloud_llm_http_client,
     build_local_llm_http_client,
 )
-from ado2gh.api.llm.llm_provider_registry import get_provider_spec
+from ado2gh.api.llm.llm_provider_registry import PROVIDER_SPECS, get_provider_spec
 from ado2gh.api.local_hosts import ollama_discovery_hint, resolve_local_service_url
 
 _PRESETS_PATH = Path(__file__).resolve().parent / "data" / "llm_presets.json"
 _catalog_lock = threading.Lock()
 _catalog_inflight: dict[str, tuple[threading.Event, dict[str, Any] | None]] = {}
+
+CACHE_KEY_CREDENTIAL_PREFIX_LENGTH = 8
+"""Number of leading characters of a credential folded into the catalog cache
+key, so two operators with different credentials never share a cached
+catalog while the full secret still never enters the key."""
+
+ANTHROPIC_CATALOG_PAGE_SIZE = 1000
+"""Number of models requested per page when paginating the Anthropic models
+catalog endpoint."""
+
+CATALOG_SINGLE_FLIGHT_WAIT_SLACK_SECONDS = 5
+"""Extra seconds a caller waits beyond the request timeout for an in-flight
+catalog lookup made by another caller, so a response that lands right at the
+timeout still reaches the waiting caller instead of forcing a duplicate call."""
 
 
 def _load_presets() -> dict[str, list[dict[str, Any]]]:
@@ -65,16 +80,18 @@ def _catalog_key(provider: str, api_key: str, base_url: str) -> str:
         str: An opaque key that is equal for two lookups exactly when they would
         produce the same catalog.
     """
-    return f"{provider}|{api_key[:8] if api_key else ''}|{base_url}"
+    prefix = api_key[:CACHE_KEY_CREDENTIAL_PREFIX_LENGTH] if api_key else ""
+    return f"{provider}|{prefix}|{base_url}"
 
 
 def _fetch_anthropic_live(api_key: str) -> list[dict[str, Any]]:
+    catalog_path = get_provider_spec("anthropic").catalog_path
     entries: list[dict[str, Any]] = []
-    params: dict[str, Any] | None = {"limit": 1000}
+    params: dict[str, Any] | None = {"limit": ANTHROPIC_CATALOG_PAGE_SIZE}
     with build_cloud_llm_http_client() as client:
         while params is not None:
             response = client.get(
-                "https://api.anthropic.com/v1/models",
+                catalog_path,
                 params=params,
                 headers={
                     "x-api-key": api_key,
@@ -101,14 +118,14 @@ def _fetch_anthropic_live(api_key: str) -> list[dict[str, Any]]:
             last_id = data.get("last_id")
             if not last_id:
                 break
-            params = {"limit": 1000, "after_id": last_id}
+            params = {"limit": ANTHROPIC_CATALOG_PAGE_SIZE, "after_id": last_id}
     return entries
 
 
 def _fetch_openai_live(api_key: str) -> list[dict[str, Any]]:
     with build_cloud_llm_http_client() as client:
         response = client.get(
-            "https://api.openai.com/v1/models",
+            get_provider_spec("openai").catalog_path,
             headers={"Authorization": f"Bearer {api_key}"},
         )
         response.raise_for_status()
@@ -317,8 +334,88 @@ def _ollama_catalog(base_url: str, api_key: str = "") -> dict[str, Any]:
         return _ollama_error_payload(base_url, resolved)
 
 
+def _openai_catalog(provider: str, api_key: str, base_url: str) -> dict[str, Any]:
+    """Catalog strategy for OpenAI: live models, falling back to bundled presets.
+
+    Unlike the other live providers, OpenAI serves its (stale) presets even
+    without an API key, instead of an empty live list; preserved as-is here.
+    """
+    del base_url
+    if api_key:
+        try:
+            entries = _fetch_openai_live(api_key)
+            if entries:
+                return {"entries": entries, "source": "live", "stale": False}
+        except Exception:
+            pass
+    return {
+        "entries": _preset_entries(provider),
+        "source": "preset",
+        "stale": True,
+    }
+
+
+def _anthropic_catalog(provider: str, api_key: str, base_url: str) -> dict[str, Any]:
+    """Catalog strategy for Anthropic: live models, falling back to bundled presets."""
+    del base_url
+    return _live_with_preset_fallback(provider, api_key=api_key, fetcher=_fetch_anthropic_live)
+
+
+def _github_copilot_catalog(provider: str, api_key: str, base_url: str) -> dict[str, Any]:
+    """Catalog strategy for GitHub Copilot / Models: live, falling back to presets."""
+    del base_url
+    return _live_with_preset_fallback(provider, api_key=api_key, fetcher=_fetch_github_models_live)
+
+
+def _openrouter_catalog(provider: str, api_key: str, base_url: str) -> dict[str, Any]:
+    """Catalog strategy for OpenRouter: live models, falling back to bundled presets."""
+    del base_url
+    return _live_with_preset_fallback(provider, api_key=api_key, fetcher=_fetch_openrouter_live)
+
+
+def _preset_only_catalog(provider: str, api_key: str, base_url: str) -> dict[str, Any]:
+    """Catalog strategy for providers with no queryable catalog: bundled presets only."""
+    del api_key, base_url
+    return {
+        "entries": _preset_entries(provider),
+        "source": "preset",
+        "stale": False,
+    }
+
+
+def _ollama_dispatch_catalog(provider: str, api_key: str, base_url: str) -> dict[str, Any]:
+    """Catalog strategy for self-hosted Ollama: live models from the configured runtime."""
+    del provider
+    if not base_url:
+        raise ValueError("base_url required for ollama provider")
+    return _ollama_catalog(base_url, api_key)
+
+
+_CATALOG_FETCHERS: dict[str, Callable[[str, str, str], dict[str, Any]]] = {
+    "openai": _openai_catalog,
+    "anthropic": _anthropic_catalog,
+    "github_copilot": _github_copilot_catalog,
+    "openrouter": _openrouter_catalog,
+    "azure_openai": _preset_only_catalog,
+    "google_gemini": _preset_only_catalog,
+    "ollama": _ollama_dispatch_catalog,
+}
+"""Catalog strategy per provider, wired onto each ``LLMProviderSpec`` below.
+
+This is the single place a new provider's catalog behaviour is registered:
+adding a provider means adding one entry here (and, if it needs its own
+strategy, one small adapter function above), never a new branch in
+``_catalog_result``.
+"""
+
+for _provider_id, _fetcher in _CATALOG_FETCHERS.items():
+    _spec = get_provider_spec(_provider_id)
+    if _spec is not None:
+        PROVIDER_SPECS[_provider_id] = dataclasses.replace(_spec, catalog_fetcher=_fetcher)
+
+
 def _catalog_result(provider: str, *, api_key: str = "", base_url: str = "") -> dict[str, Any]:
-    """Produce the catalog for one provider using that provider's own strategy.
+    """Produce the catalog for one provider using that provider's registered strategy.
 
     Args:
         provider: Provider identifier to list models for.
@@ -335,42 +432,10 @@ def _catalog_result(provider: str, *, api_key: str = "", base_url: str = "") -> 
         ValueError: If a self-hosted provider was requested without a base URL,
             or the provider has no catalog strategy at all.
     """
-    if provider == "anthropic":
-        return _live_with_preset_fallback(
-            provider, api_key=api_key, fetcher=_fetch_anthropic_live,
-        )
-    if provider == "openai":
-        if api_key:
-            try:
-                entries = _fetch_openai_live(api_key)
-                if entries:
-                    return {"entries": entries, "source": "live", "stale": False}
-            except Exception:
-                pass
-        return {
-            "entries": _preset_entries("openai"),
-            "source": "preset",
-            "stale": True,
-        }
-    if provider == "github_copilot":
-        return _live_with_preset_fallback(
-            provider, api_key=api_key, fetcher=_fetch_github_models_live,
-        )
-    if provider == "openrouter":
-        return _live_with_preset_fallback(
-            provider, api_key=api_key, fetcher=_fetch_openrouter_live,
-        )
-    if provider in ("azure_openai", "google_gemini"):
-        return {
-            "entries": _preset_entries(provider),
-            "source": "preset",
-            "stale": False,
-        }
-    if provider == "ollama":
-        if not base_url:
-            raise ValueError("base_url required for ollama provider")
-        return _ollama_catalog(base_url, api_key)
-    raise ValueError(f"Unsupported catalog provider: {provider}")
+    spec = get_provider_spec(provider)
+    if spec is None or spec.catalog_fetcher is None:
+        raise ValueError(f"Unsupported catalog provider: {provider}")
+    return spec.catalog_fetcher(provider, api_key, base_url)
 
 
 def list_catalog(
@@ -391,7 +456,7 @@ def list_catalog(
             waiting = False
 
     if waiting:
-        event.wait(timeout=DEFAULT_TIMEOUT + 5)
+        event.wait(timeout=DEFAULT_TIMEOUT + CATALOG_SINGLE_FLIGHT_WAIT_SLACK_SECONDS)
         with _catalog_lock:
             slot = _catalog_inflight.get(key)
             if slot and slot[1] is not None:

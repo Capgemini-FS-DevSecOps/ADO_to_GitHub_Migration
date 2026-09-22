@@ -1,11 +1,26 @@
 """Registry of supported language model agent platforms (catalog, validation, runtime)."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 GITHUB_API_VERSION = "2022-11-28"
 OPENROUTER_APP_TITLE = "ADO2GH Migration Agent"
+
+DEFAULT_MODEL_CAPABILITIES: dict[str, Any] = {
+    "supports_tool_calling": True,
+    "supports_streaming": True,
+    "supports_thinking": False,
+    "max_context_tokens": 128_000,
+}
+"""Capability values a provider gets when its spec sets none explicitly.
+
+Matches the dataclass defaults on ``ModelCapabilities`` in
+``ado2gh/agents/migration_agent/runtime/llm_bridge.py``, so a provider with no
+``capabilities`` entry here behaves exactly as before this registry field
+existed.
+"""
 
 
 @dataclass(frozen=True)
@@ -31,6 +46,15 @@ class LLMProviderSpec:
     extra_headers: dict[str, str] = field(default_factory=dict)
     completions_path: str = "/chat/completions"
     azure_api_version: str = "2024-06-01"
+    capabilities: dict[str, Any] | None = None
+    """Model capability defaults for this provider (tool calling, streaming,
+    thinking, max context tokens). None means the caller should fall back to
+    ``DEFAULT_MODEL_CAPABILITIES``."""
+    catalog_fetcher: Callable[[str, str, str], dict[str, Any]] | None = None
+    """Callable that lists this provider's models: ``(provider_id, api_key,
+    base_url) -> catalog payload``. Left unset here and wired onto the spec by
+    ``model_catalog.py`` at import time, because the fetchers need HTTP helpers
+    this registry module deliberately does not depend on."""
 
     def to_public(self) -> dict[str, Any]:
         """Render the provider as the shape the settings UI consumes.
@@ -78,6 +102,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         default_base_url="https://api.openai.com/v1",
         catalog_path="https://api.openai.com/v1/models",
         preset_key="openai",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "anthropic": LLMProviderSpec(
         id="anthropic",
@@ -87,6 +112,12 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         default_base_url="https://api.anthropic.com",
         catalog_path="https://api.anthropic.com/v1/models",
         preset_key="anthropic",
+        capabilities={
+            "supports_tool_calling": True,
+            "supports_streaming": True,
+            "supports_thinking": True,
+            "max_context_tokens": 200_000,
+        },
     ),
     "github_copilot": LLMProviderSpec(
         id="github_copilot",
@@ -100,6 +131,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": GITHUB_API_VERSION,
         },
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "openrouter": LLMProviderSpec(
         id="openrouter",
@@ -109,6 +141,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         default_base_url="https://openrouter.ai/api/v1",
         catalog_path="https://openrouter.ai/api/v1/models",
         preset_key="openrouter",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "azure_openai": LLMProviderSpec(
         id="azure_openai",
@@ -119,6 +152,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         auth_style="azure-api-key",
         preset_key="azure_openai",
         completions_path="/deployments/{model_id}/chat/completions",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "google_gemini": LLMProviderSpec(
         id="google_gemini",
@@ -128,16 +162,24 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         default_base_url="https://generativelanguage.googleapis.com/v1beta",
         preset_key="google_gemini",
         auth_style="query-key",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "ollama": LLMProviderSpec(
         id="ollama",
         label="Ollama",
         kind="ollama",
         description="Self-hosted Ollama or compatible runtime",
+        default_base_url="http://localhost:11434",
         requires_api_key=False,
         requires_base_url=True,
         for_cloud=False,
         preset_key="ollama",
+        capabilities={
+            "supports_tool_calling": True,
+            "supports_streaming": True,
+            "supports_thinking": False,
+            "max_context_tokens": 32_768,
+        },
     ),
     "stub": LLMProviderSpec(
         id="stub",
@@ -147,6 +189,12 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         requires_api_key=False,
         for_cloud=False,
         preset_key="stub",
+        capabilities={
+            "supports_tool_calling": True,
+            "supports_streaming": False,
+            "supports_thinking": False,
+            "max_context_tokens": 4_096,
+        },
     ),
     "offline": LLMProviderSpec(
         id="offline",
@@ -156,6 +204,12 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         requires_api_key=False,
         for_cloud=False,
         preset_key="stub",
+        capabilities={
+            "supports_tool_calling": True,
+            "supports_streaming": False,
+            "supports_thinking": False,
+            "max_context_tokens": 4_096,
+        },
     ),
     "bedrock": LLMProviderSpec(
         id="bedrock",
@@ -164,6 +218,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         description="Platform-supplied Bedrock via ambient credentials",
         requires_api_key=False,
         preset_key="bedrock",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "foundry": LLMProviderSpec(
         id="foundry",
@@ -173,6 +228,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         requires_api_key=False,
         requires_base_url=True,
         preset_key="foundry",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
     "vertex": LLMProviderSpec(
         id="vertex",
@@ -181,6 +237,7 @@ PROVIDER_SPECS: dict[str, LLMProviderSpec] = {
         description="Platform-supplied Vertex via ambient credentials",
         requires_api_key=False,
         preset_key="vertex",
+        capabilities=DEFAULT_MODEL_CAPABILITIES,
     ),
 }
 

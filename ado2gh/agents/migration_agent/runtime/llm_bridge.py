@@ -34,17 +34,23 @@ class ModelCapabilities:
         return int(self.max_context_tokens * 0.8)
 
 
-_PROVIDER_CAPABILITY_DEFAULTS: dict[str, dict[str, Any]] = {
-    "openai": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": False, "max_context_tokens": 128_000},
-    "openai_compatible": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": False, "max_context_tokens": 128_000},
-    "github_copilot": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": False, "max_context_tokens": 128_000},
-    "github_models": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": False, "max_context_tokens": 128_000},
-    "openrouter": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": False, "max_context_tokens": 128_000},
-    "anthropic": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": True, "max_context_tokens": 200_000},
-    "ollama": {"supports_tool_calling": True, "supports_streaming": True, "supports_thinking": False, "max_context_tokens": 32_768},
-    "stub": {"supports_tool_calling": True, "supports_streaming": False, "supports_thinking": False, "max_context_tokens": 4_096},
-    "offline": {"supports_tool_calling": True, "supports_streaming": False, "supports_thinking": False, "max_context_tokens": 4_096},
-}
+def _provider_capability_defaults(provider: str) -> dict[str, Any]:
+    """Look up the registered capability defaults for a provider.
+
+    Returns:
+        The provider's ``capabilities`` from its ``LLMProviderSpec``, or the
+        shared ``DEFAULT_MODEL_CAPABILITIES`` when the provider is unregistered
+        or its spec sets no capabilities of its own.
+    """
+    from ado2gh.api.llm.llm_provider_registry import (
+        DEFAULT_MODEL_CAPABILITIES,
+        get_provider_spec,
+    )
+
+    spec = get_provider_spec(provider)
+    if spec and spec.capabilities:
+        return spec.capabilities
+    return DEFAULT_MODEL_CAPABILITIES
 
 
 def _detect_capabilities(cfg: LLMModelConfig) -> ModelCapabilities:
@@ -52,12 +58,13 @@ def _detect_capabilities(cfg: LLMModelConfig) -> ModelCapabilities:
 
     Returns:
         The model's capabilities: explicit ``cfg.capabilities`` entries win, then
-        the provider defaults, then the dataclass defaults. ``supports_thinking``
-        is forced on for model ids that imply a reasoning model.
+        the provider's registered defaults, then the dataclass defaults.
+        ``supports_thinking`` is forced on for model ids that imply a reasoning
+        model.
     """
     provider = getattr(cfg, "provider", "") or ""
     model_id = str(getattr(cfg, "id", None) or getattr(cfg, "model_id", None) or "")
-    defaults = _PROVIDER_CAPABILITY_DEFAULTS.get(provider, {})
+    defaults = _provider_capability_defaults(provider)
     # Check if the configuration has explicit capabilities
     explicit = getattr(cfg, "capabilities", None)
     if explicit and isinstance(explicit, dict):
@@ -150,8 +157,6 @@ def build_langchain_chat_model(
 
         spec = get_provider_spec(provider)
         base_url = cfg.base_url or (spec.default_base_url if spec else None)
-        if not base_url and provider == "openai":
-            base_url = "https://api.openai.com/v1"
         if not base_url:
             return None
         if not cfg.api_key:
@@ -195,9 +200,11 @@ def build_langchain_chat_model(
     if provider == "ollama":
         from langchain_openai import ChatOpenAI
 
+        from ado2gh.api.llm.llm_provider_registry import get_provider_spec
         from ado2gh.api.local_hosts import resolve_local_service_url
 
-        base_url = cfg.base_url or "http://localhost:11434"
+        spec = get_provider_spec(provider)
+        base_url = cfg.base_url or (spec.default_base_url if spec else "")
         resolved = resolve_local_service_url(base_url)
         ollama_base_url = f"{resolved}/v1"
         # Same dict[str, Any] shape as the first kwargs above; see the

@@ -1,6 +1,8 @@
 """GitHub REST API client with multi-token support."""
 from __future__ import annotations
 
+import http
+from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -9,6 +11,35 @@ import requests
 from ado2gh.clients.gh_token_manager import TokenManager
 from ado2gh.http_utils import get_thread_session
 from ado2gh.models import RepoConfig
+
+GITHUB_ISSUE_TITLE_MAX_CHARS = 255
+"""Longest issue title GitHub's REST API accepts; longer titles are truncated."""
+
+GITHUB_ISSUE_BODY_MAX_CHARS = 65535
+"""Longest issue body GitHub's REST API accepts; longer bodies are truncated."""
+
+
+@dataclass(frozen=True)
+class GitHubClientSettings:
+    """Wire-level defaults shared by every caller of the GitHub REST API.
+
+    One instance (``DEFAULT_GITHUB_CLIENT_SETTINGS``) is the single source for
+    these values; ``GHClient`` and the standalone credential-validation calls
+    in ``ado2gh/api/credentials/credential_validation.py`` both read it instead
+    of repeating the literals.
+    """
+
+    base_url: str = "https://api.github.com"
+    """REST API base URL; overridden for GitHub Enterprise Server."""
+    accept_header: str = "application/vnd.github+json"
+    """Value of the ``Accept`` header GitHub's REST API expects."""
+    api_version_header: str = "2022-11-28"
+    """Value of the ``X-GitHub-Api-Version`` header."""
+    request_timeout_seconds: int = 30
+    """Per-request timeout, in seconds, for calls to the GitHub REST API."""
+
+
+DEFAULT_GITHUB_CLIENT_SETTINGS = GitHubClientSettings()
 
 
 class GHClient:
@@ -21,7 +52,7 @@ class GHClient:
     """
 
     def __init__(self, token_manager: TokenManager,
-                 base_url: str = "https://api.github.com") -> None:
+                 base_url: str = DEFAULT_GITHUB_CLIENT_SETTINGS.base_url) -> None:
         """Create a client.
 
         Args:
@@ -37,14 +68,14 @@ class GHClient:
         sess = get_thread_session()
         if "Accept" not in sess.headers:
             sess.headers.update({
-                "Accept":               "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
+                "Accept":               DEFAULT_GITHUB_CLIENT_SETTINGS.accept_header,
+                "X-GitHub-Api-Version": DEFAULT_GITHUB_CLIENT_SETTINGS.api_version_header,
             })
         return sess
 
     @classmethod
     def from_single_token(cls, token: str,
-                           base_url: str = "https://api.github.com") -> "GHClient":
+                           base_url: str = DEFAULT_GITHUB_CLIENT_SETTINGS.base_url) -> "GHClient":
         """Create a client around a single token.
 
         Args:
@@ -80,7 +111,7 @@ class GHClient:
         token = self._tm.get_token()
         r = self._session.get(
             f"{self.BASE}{path}", params=params,
-            headers={"Authorization": f"Bearer {token}"}, timeout=30,
+            headers={"Authorization": f"Bearer {token}"}, timeout=DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds,
         )
         self._update_limits(r, token)
         r.raise_for_status()
@@ -91,7 +122,7 @@ class GHClient:
         token = self._tm.get_token()
         r = self._session.post(
             f"{self.BASE}{path}", json=body,
-            headers={"Authorization": f"Bearer {token}"}, timeout=30,
+            headers={"Authorization": f"Bearer {token}"}, timeout=DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds,
         )
         self._update_limits(r, token)
         r.raise_for_status()
@@ -102,7 +133,7 @@ class GHClient:
         token = self._tm.get_token()
         r = self._session.patch(
             f"{self.BASE}{path}", json=body,
-            headers={"Authorization": f"Bearer {token}"}, timeout=30,
+            headers={"Authorization": f"Bearer {token}"}, timeout=DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds,
         )
         self._update_limits(r, token)
         r.raise_for_status()
@@ -113,7 +144,7 @@ class GHClient:
         token = self._tm.get_token()
         r = self._session.put(
             f"{self.BASE}{path}", json=body,
-            headers={"Authorization": f"Bearer {token}"}, timeout=30,
+            headers={"Authorization": f"Bearer {token}"}, timeout=DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds,
         )
         self._update_limits(r, token)
         return r
@@ -123,7 +154,7 @@ class GHClient:
         token = self._tm.get_token()
         r = self._session.delete(
             f"{self.BASE}{path}",
-            headers={"Authorization": f"Bearer {token}"}, timeout=30,
+            headers={"Authorization": f"Bearer {token}"}, timeout=DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds,
         )
         self._update_limits(r, token)
         return r
@@ -147,7 +178,7 @@ class GHClient:
             self._get(f"/repos/{org}/{repo}")
             return True
         except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code == 404:
+            if e.response is not None and e.response.status_code == http.HTTPStatus.NOT_FOUND:
                 return False
             raise
 
@@ -239,7 +270,9 @@ class GHClient:
             requests.HTTPError: On a non-2xx response.
         """
         return self._post(f"/repos/{org}/{repo}/issues", {
-            "title": title[:255], "body": body[:65535], "labels": labels or [],
+            "title": title[:GITHUB_ISSUE_TITLE_MAX_CHARS],
+            "body": body[:GITHUB_ISSUE_BODY_MAX_CHARS],
+            "labels": labels or [],
         })
 
     def create_label(self, org: str, repo: str, name: str,

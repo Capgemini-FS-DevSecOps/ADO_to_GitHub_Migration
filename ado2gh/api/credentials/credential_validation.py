@@ -5,6 +5,8 @@ from typing import Any
 
 import requests
 
+from ado2gh.clients.gh_client import DEFAULT_GITHUB_CLIENT_SETTINGS
+
 RECOMMENDED_GH_SCOPES = {"repo", "read:org", "admin:org"}
 
 
@@ -15,11 +17,14 @@ def validate_github_token(token: str, gh_org: str = "") -> dict[str, Any]:
 
     headers = {
         "Authorization": f"Bearer {token.strip()}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
+        "Accept": DEFAULT_GITHUB_CLIENT_SETTINGS.accept_header,
+        "X-GitHub-Api-Version": DEFAULT_GITHUB_CLIENT_SETTINGS.api_version_header,
     }
+    timeout = DEFAULT_GITHUB_CLIENT_SETTINGS.request_timeout_seconds
     try:
-        rate_r = requests.get("https://api.github.com/rate_limit", headers=headers, timeout=15)
+        rate_r = requests.get(
+            f"{DEFAULT_GITHUB_CLIENT_SETTINGS.base_url}/rate_limit", headers=headers, timeout=timeout,
+        )
         if not rate_r.ok:
             return {
                 "valid": False,
@@ -34,7 +39,9 @@ def validate_github_token(token: str, gh_org: str = "") -> dict[str, Any]:
         remaining = int(core.get("remaining", 0))
         reset_at = int(core.get("reset", 0))
 
-        user_r = requests.get("https://api.github.com/user", headers=headers, timeout=15)
+        user_r = requests.get(
+            f"{DEFAULT_GITHUB_CLIENT_SETTINGS.base_url}/user", headers=headers, timeout=timeout,
+        )
         login = user_r.json().get("login", "") if user_r.ok else ""
 
         warnings: list[str] = []
@@ -44,7 +51,10 @@ def validate_github_token(token: str, gh_org: str = "") -> dict[str, Any]:
 
         org_accessible = None
         if gh_org:
-            org_r = requests.get(f"https://api.github.com/orgs/{gh_org}", headers=headers, timeout=15)
+            org_r = requests.get(
+                f"{DEFAULT_GITHUB_CLIENT_SETTINGS.base_url}/orgs/{gh_org}",
+                headers=headers, timeout=timeout,
+            )
             org_accessible = org_r.ok
             if not org_r.ok:
                 warnings.append(f"Cannot access organization '{gh_org}' with this token")
