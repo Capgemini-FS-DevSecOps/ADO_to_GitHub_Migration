@@ -199,3 +199,110 @@ async def test_execute_secrets_uses_operator_mappings():
     )
     assert result["status"] == "success"
     assert calls[0] == "/v1/migrate/service-connection"
+
+
+@pytest.mark.asyncio
+async def test_execute_live_write_allowed_for_plan_scoped_repo():
+    """A live write for a repo inside the approved plan reaches the accelerator."""
+    calls: list[str] = []
+
+    async def mock_post(path, body, session_token=None):
+        calls.append(path)
+        return {"status": "success"}
+
+    result = await execute_migration_scope(
+        "repo",
+        {"repo": "Proj/RepoA", "gh_target": "org/RepoA"},
+        {"plan_id": "p1", "repos": [{"id": "Proj/RepoA"}]},
+        accel_post=mock_post,
+        session_token=None,
+        mode=ExecutionMode.LIVE,
+        session={"plan_approved": True},
+    )
+    assert result["status"] == "success"
+    assert calls == ["/v1/migrate/git-mirror"]
+
+
+@pytest.mark.asyncio
+async def test_execute_live_write_blocked_for_out_of_plan_repo(monkeypatch):
+    """A live write for a repo outside the approved plan is refused and audited."""
+    audit_calls: list[dict] = []
+    monkeypatch.setattr(
+        "ado2gh.agents.migration_agent.utils.IdeAuditBridge.record",
+        lambda self, action, **kwargs: audit_calls.append({"action": action, **kwargs}),
+    )
+    calls: list[str] = []
+
+    async def mock_post(path, body, session_token=None):
+        calls.append(path)
+        return {"status": "success"}
+
+    result = await execute_migration_scope(
+        "repo",
+        {"repo": "Proj/RepoA", "gh_target": "org/RepoA"},
+        {"plan_id": "p1", "repos": [{"id": "Proj/Other"}]},
+        accel_post=mock_post,
+        session_token=None,
+        mode=ExecutionMode.LIVE,
+        session={"plan_approved": True},
+    )
+    assert result["status"] == "failed"
+    assert result["error_code"] == "guardrail_blocked"
+    assert calls == []
+    assert audit_calls and audit_calls[0]["action"] == "agent.executor.guardrail_blocked"
+
+
+@pytest.mark.asyncio
+async def test_execute_live_write_blocked_without_plan_approval(monkeypatch):
+    """A live write for a session without an approved plan is refused and audited."""
+    audit_calls: list[dict] = []
+    monkeypatch.setattr(
+        "ado2gh.agents.migration_agent.utils.IdeAuditBridge.record",
+        lambda self, action, **kwargs: audit_calls.append({"action": action, **kwargs}),
+    )
+    calls: list[str] = []
+
+    async def mock_post(path, body, session_token=None):
+        calls.append(path)
+        return {"status": "success"}
+
+    result = await execute_migration_scope(
+        "repo",
+        {"repo": "Proj/RepoA", "gh_target": "org/RepoA"},
+        {"plan_id": "p1", "repos": [{"id": "Proj/RepoA"}]},
+        accel_post=mock_post,
+        session_token=None,
+        mode=ExecutionMode.LIVE,
+        session={"plan_approved": False},
+    )
+    assert result["status"] == "failed"
+    assert result["error_code"] == "guardrail_blocked"
+    assert calls == []
+    assert audit_calls
+
+
+@pytest.mark.asyncio
+async def test_execute_dry_run_write_is_never_guardrail_gated():
+    """A dry-run write reaches the accelerator even for an out-of-plan repo.
+
+    The deterministic path posts to the accelerator during dry-run so the
+    operator can preview a migration; only a live write can mutate state, so
+    only a live write is subject to the guardrail added for F1.
+    """
+    calls: list[str] = []
+
+    async def mock_post(path, body, session_token=None):
+        calls.append(path)
+        return {"status": "dry_run"}
+
+    result = await execute_migration_scope(
+        "repo",
+        {"repo": "Proj/RepoA", "gh_target": "org/RepoA"},
+        {"plan_id": "p1", "repos": [{"id": "Proj/Other"}]},
+        accel_post=mock_post,
+        session_token=None,
+        mode=ExecutionMode.DRY_RUN,
+        session={"plan_approved": False},
+    )
+    assert result["status"] == "dry_run"
+    assert calls == ["/v1/migrate/git-mirror"]

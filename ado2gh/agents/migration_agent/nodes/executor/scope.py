@@ -555,6 +555,67 @@ async def _execute_secrets_scope(
     }
 
 
+def _refuse_unauthorized_live_write(
+    scope: str,
+    ctx: dict[str, str],
+    plan: dict[str, Any],
+    session: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Block a live accelerator write the guardrail does not authorize (CA-001).
+
+    The deterministic executor calls the accelerator directly, bypassing the
+    LangChain tool wrapper that evaluates guardrails for the model-driven path
+    (`tools/executor_tools.py`). This function is the single dispatch seam every
+    scope write passes through before reaching the accelerator, so evaluating
+    the guardrail once here closes that gap for every scope, including the two
+    accelerator writes nested inside `_execute_secrets_scope`. Dry-run calls
+    are accelerator-side previews and are never gated here — only a live write
+    can mutate Azure DevOps or GitHub state.
+
+    Args:
+        scope: The migration scope about to write, for example ``repo`` or ``secrets``.
+        ctx: The resolved repository context from :func:`resolve_repo_context`.
+        plan: The plan the work item belongs to.
+        session: The live agent session; supplies plan approval state.
+
+    Returns:
+        A ``status: failed`` result carrying the guardrail decision when the
+        write is refused, or ``None`` when the write may proceed.
+    """
+    from ado2gh.agents.migration_agent.constants import DETERMINISTIC_SCOPE_WRITE_TOOL
+    from ado2gh.agents.migration_agent.guardrails import evaluate_guardrail
+    from ado2gh.agents.migration_agent.utils import IdeAuditBridge
+
+    decision = evaluate_guardrail(
+        agent_role="executor",
+        tool_name=DETERMINISTIC_SCOPE_WRITE_TOOL,
+        arguments={"target_resource": ctx.get("repo_id", "")},
+        migration_plan=plan,
+        plan_approved=bool((session or {}).get("plan_approved", False)),
+        session=session,
+    )
+    if not decision.blocked:
+        return None
+
+    try:
+        IdeAuditBridge().record(
+            "agent.executor.guardrail_blocked",
+            repo=ctx.get("repo_id", ""),
+            detail=decision.reason,
+            session_id=str((session or {}).get("session_id", "")),
+            metadata={"scope": scope, "plan_reference": decision.plan_reference or ""},
+        )
+    except Exception:  # noqa: S110 - auditing must never block the refusal it records
+        pass
+
+    return {
+        "status": "failed",
+        "error": decision.reason,
+        "error_code": "guardrail_blocked",
+        "guardrail_decision": decision.to_dict(),
+    }
+
+
 async def execute_migration_scope(  # noqa: PLR0913 - exception-register.md: no existing model groups these
     scope: str,
     work_item: dict[str, Any],
@@ -607,6 +668,11 @@ async def execute_migration_scope(  # noqa: PLR0913 - exception-register.md: no 
                 "Use project/repo_name from discovery or reload discovery in Settings."
             ),
         }
+
+    if mode is ExecutionMode.LIVE:
+        refusal = _refuse_unauthorized_live_write(scope, ctx, plan, session)
+        if refusal is not None:
+            return refusal
 
     try:
         if normalized == "repo":

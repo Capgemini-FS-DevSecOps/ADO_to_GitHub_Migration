@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, cast
 
-from ado2gh.agents.migration_agent.constants import DEFAULT_HTTP_METHOD
+from ado2gh.agents.migration_agent.constants import (
+    DEFAULT_HTTP_METHOD,
+    DETERMINISTIC_SCOPE_WRITE_TOOL,
+)
 from ado2gh.agents.migration_agent.utils import coerce_dry_run
 
 
@@ -92,7 +95,10 @@ class GuardrailDecision:
 
 # Operations that require explicit plan authorization
 _WRITE_OPERATIONS = frozenset({
-    "call_accelerator", "workflow_create", "github_api",
+    "call_accelerator",
+    "workflow_create",
+    "github_api",
+    DETERMINISTIC_SCOPE_WRITE_TOOL,
 })
 
 # Operations that require deletion confirmation

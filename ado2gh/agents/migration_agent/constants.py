@@ -32,3 +32,12 @@ HEALTH_GRAPH_COMPILE_TIMEOUT_SECONDS = 5.0
 # omitted method is judged as the read those tools actually perform rather
 # than as a write (GAP-086, THR-06-007).
 DEFAULT_HTTP_METHOD = "GET"
+
+# Guardrail tool identity for the deterministic executor's own accelerator
+# writes (`nodes/executor/scope.py::execute_migration_scope`), evaluated only
+# for a live (non-dry-run) write. Kept distinct from `call_accelerator` so the
+# guardrail's model-tool dry-run short-circuit does not apply here: the
+# deterministic path legitimately posts to the accelerator during dry-run
+# because the accelerator itself previews safely, whereas the model-tool
+# path must never post at all during dry-run.
+DETERMINISTIC_SCOPE_WRITE_TOOL = "executor_scope_write"
