@@ -10,7 +10,11 @@ from ado2gh.api.accelerator import Accelerator
 from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
 from ado2gh.api.credentials.credential_validation import validate_ado_pat as _validate_ado_pat
 from ado2gh.api.credentials.credential_validation import validate_github_token as _validate_github_token
-from ado2gh.api.live_approval_store import LiveApprovalStore, migrate_scope_id
+from ado2gh.api.live_approval_store import (
+    PIPELINE_RUN_CONTEXT_RUN_ID,
+    LiveApprovalStore,
+    migrate_scope_id,
+)
 from ado2gh.api.migration_scan import (
     load_scan_results as _load_scan_results,
 )
@@ -334,24 +338,27 @@ def _execute_approved_migrate(ctx: dict) -> None:
     _accel(req.db_path).run_wave(req)
 
 
-def _execute_approved_pipeline(ctx: dict) -> None:
+def _execute_approved_pipeline(context: dict) -> None:
     """Start the pipeline run an approver has just released.
 
     Registered with ``LiveApprovalStore`` so that approving a ``pipeline_run``
     starts the parked run without the caller posting again. Does nothing when
     the approval carries no run id.
 
+    ``LiveApprovalStore`` has already derived this run id from the approved
+    context and matched it against the approved scope (GAP-108), so no step
+    selection is read here — the run already carries the steps it was created
+    with.
+
     Args:
-        ctx: The approval's stored context, holding ``run_id`` and the ``steps``
-            the run should execute.
+        context: The approval's verified context, holding only ``run_id``.
     """
-    run_id = ctx.get("run_id")
-    steps = ctx.get("steps")
+    run_id = context.get(PIPELINE_RUN_CONTEXT_RUN_ID)
     if run_id:
         run = PipelineRunStore.get(run_id)
         if run:
             run.status = "pending"
-        _runner.start_async(run_id, steps)
+        _runner.start_async(run_id)
 
 
 def _maybe_audit_model_enabled(

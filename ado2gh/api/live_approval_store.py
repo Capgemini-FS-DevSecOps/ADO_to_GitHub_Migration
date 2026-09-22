@@ -10,31 +10,46 @@ from typing import Any, Callable
 
 import httpx
 from fastapi import HTTPException
-from pydantic import ValidationError
 
-from ado2gh.api.contracts import LiveApprovalCreateRequest, RunWaveRequest
+from ado2gh.api.contracts import LiveApprovalCreateRequest
+from ado2gh.api.live_approval_scopes import (
+    AGENT_SESSION_SCOPE_TYPE,
+    PIPELINE_RUN_CONTEXT_RUN_ID,
+    PIPELINE_RUN_SCOPE_TYPE,
+    ScopeType,
+    _assert_migrate_context_matches,
+    _assert_pipeline_context_matches,
+    _migrate_job_params,
+    _pipeline_run_params,
+    migrate_scope_id,
+    pipeline_run_scope_id,
+)
 from ado2gh.api.profile_governance import write_profile_audit
 from ado2gh.audit import redact_payload
 from ado2gh.auth.models import PlatformUser
 from ado2gh.state.factory import create_state_db
 
+# Re-exported so ``from ado2gh.api.live_approval_store import ...`` keeps working
+# for every existing caller after the scope-derivation and context-validation
+# helpers moved to live_approval_scopes.py to bring this module back under the
+# project's file-size cap (docs/STRUCTURAL_CHANGELOG.md).
+__all__ = [
+    "AGENT_SESSION_SCOPE_TYPE",
+    "PIPELINE_RUN_CONTEXT_RUN_ID",
+    "PIPELINE_RUN_SCOPE_TYPE",
+    "LiveApprovalStore",
+    "migrate_scope_id",
+    "pipeline_run_scope_id",
+    "register_migrate_executor",
+    "register_pipeline_executor",
+]
+
 logger = logging.getLogger(__name__)
 
-ScopeType = str
 ExecuteCallback = Callable[[dict], Any]
 
 _migrate_executor: ExecuteCallback | None = None
 _pipeline_executor: ExecuteCallback | None = None
-
-# The only context keys an approved ``migrate_job`` may carry into the run-wave
-# request. An allowlist, not a filter: the approver sees a scope id and nothing
-# else, so anything the scope does not encode must not reach the executor
-# (GAP-071, CA-002). ``dry_run`` is absent deliberately — it is set from the
-# scope at execution, because a queued migrate job is live by definition.
-# ``db_path`` is kept because it names the state database the run records itself
-# in, which every caller of the unguarded ``POST /v1/plan`` already chooses; it
-# selects no migration target and so grants nothing the scope withholds.
-_MIGRATE_CONTEXT_KEYS = ("config_path", "wave_id", "db_path")
 
 
 def _internal_headers() -> dict[str, str]:
@@ -130,78 +145,6 @@ def _redacted_context(context: dict | None) -> dict:
     return masked if isinstance(masked, dict) else {}
 
 
-def _migrate_job_params(context: dict) -> dict | None:
-    """Canonicalise a ``migrate_job`` context into the run-wave it would execute.
-
-    Validation happens here rather than at the executor so that the scope derived
-    from a context and the request built from it are the same reading of the same
-    values. Deriving from the raw dict instead let the two disagree: ``" 1"``,
-    ``"01"``, ``1.0`` and ``True`` all render distinct scope ids and all arrive at
-    the executor as wave ``1`` (GAP-071).
-
-    Args:
-        context: The approval's executor context, as the client supplied it.
-
-    Returns:
-        The parameters this context executes — ``config_path``, ``wave_id``,
-        ``db_path`` and a ``dry_run`` forced live, because a queued migrate job is
-        live by definition and never takes that flag from the client. ``None``
-        when the context names a ``/v1/migrate/*`` feature route, which executes
-        nothing here, or is not a run-wave request at all; ``None`` runs nothing,
-        so an unreadable context fails closed.
-    """
-    if context.get("route"):
-        return None
-    try:
-        req = RunWaveRequest(
-            **{k: context[k] for k in _MIGRATE_CONTEXT_KEYS if k in context},
-            dry_run=False,
-        )
-    except ValidationError:
-        return None
-    return req.model_dump(include={*_MIGRATE_CONTEXT_KEYS, "dry_run"})
-
-
-def _assert_migrate_context_matches(
-    request: LiveApprovalCreateRequest, context: dict,
-) -> None:
-    """Refuse a ``migrate_job`` whose context names work its scope id does not.
-
-    The approver is shown a scope id and never the context, so the two have to be
-    the same statement about the same work.
-
-    Args:
-        request: The approval being opened.
-        context: The context as it will be stored — redacted already, so the
-            check runs on the bytes the executor will later read back rather than
-            on a copy that masking may still change (GAP-073).
-
-    Raises:
-        HTTPException: 422 when the context re-derives to a different scope than
-            the one the approver will be shown, or asks for a dry run — a queued
-            approval exists to release a live run, so ``dry_run`` true is a
-            request that contradicts itself.
-    """
-    if request.scope_type != "migrate_job":
-        return
-    params = _migrate_job_params(context)
-    if params is None:
-        return
-    derived = migrate_scope_id(
-        request.profile_id, params["wave_id"], params["config_path"],
-    )
-    if derived == request.scope_id and not context.get("dry_run"):
-        return
-    raise HTTPException(
-        status_code=422,
-        detail={
-            "code": "scope_context_mismatch",
-            "scope_id": request.scope_id,
-            "derived_scope_id": derived,
-        },
-    )
-
-
 class LiveApprovalStore:
     """Queue of live-execution approvals shared by the agent, migrate and pipeline routes."""
 
@@ -244,12 +187,14 @@ class LiveApprovalStore:
             ``pending`` status and request timestamp.
 
         Raises:
-            HTTPException: 422 when a ``migrate_job`` context names work its scope
-                id does not — the approver only ever sees the scope, so the two
-                must say the same thing (GAP-071, CA-002).
+            HTTPException: 422 when a ``migrate_job`` or ``pipeline_run``
+                context names work its scope id does not — the approver only
+                ever sees the scope, so the two must say the same thing
+                (GAP-071, GAP-108, CA-002).
         """
         context = _redacted_context(request.context)
         _assert_migrate_context_matches(request, context)
+        _assert_pipeline_context_matches(request, context)
         existing = self.db.find_pending_live_execution_approval(
             request.scope_type, request.scope_id,
         )
@@ -543,7 +488,7 @@ class LiveApprovalStore:
             approval_id, "denied", approver, reason, now,
         )
         assert updated is not None
-        if updated["scope_type"] == "agent_session":
+        if updated["scope_type"] == AGENT_SESSION_SCOPE_TYPE:
             self._notify_agent(updated, "deny-live", {"reason": reason})
         elif updated["scope_type"] == "pipeline_run":
             self._stamp_pipeline_approval(updated, "denied", approver)
@@ -569,7 +514,7 @@ class LiveApprovalStore:
                 migrate job or pipeline run is passed to its registered executor.
         """
         scope_type = row["scope_type"]
-        if scope_type == "agent_session":
+        if scope_type == AGENT_SESSION_SCOPE_TYPE:
             self._notify_agent(row, "resume-live")
         elif scope_type == "migrate_job":
             self._execute_migrate(row)
@@ -641,15 +586,42 @@ class LiveApprovalStore:
         _migrate_executor(params)
 
     def _execute_pipeline(self, row: dict) -> None:
-        """Run an approved pipeline run, if a pipeline executor was registered.
+        """Run an approved pipeline run only when its context matches its scope.
+
+        Mirrors ``_execute_migrate``: the persisted context is re-derived
+        before execution rather than trusted, so a row written before the
+        creation-time check existed, or by any future producer, still cannot
+        start a pipeline run different from the one the approver decided on
+        (GAP-108, CA-002). Only the allowlisted run id reaches the executor —
+        the run already knows which steps to execute, so nothing from the
+        client-supplied context is forwarded. A mismatch is recorded as
+        ``platform.live_execution.scope_mismatch``, the same event
+        ``_execute_migrate`` and ``is_approved_for`` write (CA-004).
 
         Args:
             row: The approved approval row carrying the pipeline-run context.
         """
-        if not _pipeline_executor:
+        params = _pipeline_run_params(self._context(row))
+        if not _pipeline_executor or params is None:
             return
-        ctx = self._context(row)
-        _pipeline_executor(ctx)
+        derived = pipeline_run_scope_id(params[PIPELINE_RUN_CONTEXT_RUN_ID])
+        if derived != row["scope_id"]:
+            write_profile_audit(
+                "platform.live_execution.scope_mismatch",
+                profile_id=row.get("profile_id") or "_platform",
+                actor=row.get("approver_username") or "_system",
+                payload={
+                    "approval_id": row["id"],
+                    "requested_scope_type": row["scope_type"],
+                    "requested_scope_id": derived,
+                    "approval_scope_type": row["scope_type"],
+                    "approval_scope_id": row["scope_id"],
+                    "approval_status": row.get("status"),
+                },
+                db_path=self.db_path,
+            )
+            return
+        _pipeline_executor(params)
 
     def _notify_agent(
         self, row: dict, route: str, payload: dict | None = None,
@@ -744,27 +716,3 @@ class LiveApprovalStore:
         run.approved_by_username = approver.username
         run.approved_by_display_name = approver.display_name or approver.username
         run.updated_at = datetime.now(timezone.utc).isoformat()
-
-
-def migrate_scope_id(profile_id: str | None, wave_id: int | None, config_path: str) -> str:
-    """Build the approval scope id for a dashboard migrate run.
-
-    Args:
-        profile_id: Active migration profile, or ``None`` for the default profile.
-        wave_id: Wave being migrated, or ``None`` when every wave is.
-        config_path: Migration config the run was started from.
-
-    Returns:
-        A stable ``migrate:<profile>:<wave>:<config>`` identifier, so repeated
-        requests for the same profile, wave and config resolve to one approval row
-        instead of queueing duplicates.
-
-        Absence is tested, not falsiness. ``wave_id or 'all'`` made wave ``0`` — a
-        wave a config may legitimately declare — indistinguishable from "every
-        wave", so an approval for the narrowest live migration released the widest
-        one; ``profile_id or 'default'`` did the same to a profile named ``""``
-        (GAP-072, CA-002).
-    """
-    wave = "all" if wave_id is None else wave_id
-    profile = "default" if profile_id is None else profile_id
-    return f"migrate:{profile}:{wave}:{config_path}"

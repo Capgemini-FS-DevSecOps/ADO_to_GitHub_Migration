@@ -17,6 +17,11 @@ from ado2gh.api.contracts import (
     PipelineRunStartRequest,
     PipelineStepDefinition,
 )
+from ado2gh.api.live_approval_store import (
+    PIPELINE_RUN_CONTEXT_RUN_ID,
+    PIPELINE_RUN_SCOPE_TYPE,
+    pipeline_run_scope_id,
+)
 from ado2gh.api.pipeline_runner import (
     ACCELERATOR_PIPELINE_STEPS,
     MIGRATE_UI_PIPELINE_STEPS,
@@ -51,7 +56,7 @@ router = APIRouter()
 
 
 def _park_for_approval(
-    run: PipelineRun, user: PlatformUser | None, step_ids: list[str],
+    run: PipelineRun, user: PlatformUser | None,
 ) -> None:
     """Queue a live run for an approver's decision and park it until one arrives.
 
@@ -60,23 +65,26 @@ def _park_for_approval(
     entry is itself the record that a live run was asked for (CA-004), and the
     parked status is one no runner picks up.
 
+    The context carries only the run id, built through ``pipeline_run_scope_id``
+    so the scope shown to the approver and the context checked against it are
+    the same statement (GAP-108). Step selection is not part of the context —
+    the run already persists which steps it executes.
+
     Args:
         run: The live run to park. Mutated in place — the registry hands out the
             live object, so the caller's copy is the parked one.
         user: The signed-in caller asking to execute live, read from the session
             rather than from the request body.
-        step_ids: Steps the run executes once released; stored on the approval so
-            the registered executor can start it without the caller posting again.
     """
     active = _settings.get_active_profile()
     _live_store().create_or_get_pending(
         user,
         LiveApprovalCreateRequest(
-            scope_type="pipeline_run",
-            scope_id=run.id,
+            scope_type=PIPELINE_RUN_SCOPE_TYPE,
+            scope_id=pipeline_run_scope_id(run.id),
             profile_id=active.id if active else None,
             reason_request=f"Pipeline live run: {run.name}",
-            context={"run_id": run.id, "steps": step_ids},
+            context={PIPELINE_RUN_CONTEXT_RUN_ID: run.id},
         ),
     )
     run.live_approval_status = "pending"
@@ -239,7 +247,7 @@ def start_pipeline_run(req: PipelineRunStartRequest, request: Request) -> Pipeli
         override_reason=req.override_reason,
     )
     if needs_approval:
-        _park_for_approval(run, user, step_ids)
+        _park_for_approval(run, user)
         db = create_state_db(adv.db_path)
         return PipelineRunResponse(run=enrich_pipeline_run_dict(run.to_dict(), db=db))
     run.live_approval_status = "auto_approved" if not dry else "not_required"
@@ -291,12 +299,12 @@ def start_existing_pipeline_run(run_id: str, request: Request) -> PipelineRunRes
     # way as `awaiting_approval`: a live run that was never parked has not been
     # approved either, whoever created it (GAP-066).
     step_ids = [s.id for s in run.steps]
-    approved = _live_store().has_approved("pipeline_run", run_id)
+    approved = _live_store().has_approved(PIPELINE_RUN_SCOPE_TYPE, run_id)
     if not approved:
         if operator_requires_live_approval(
             user, ExecutionMode.from_dry_run(dry_run=run.dry_run),
         ):
-            _park_for_approval(run, user, step_ids)
+            _park_for_approval(run, user)
             raise HTTPException(status_code=409, detail="awaiting_approval")
         run.live_approval_status = "auto_approved" if not run.dry_run else "not_required"
 
