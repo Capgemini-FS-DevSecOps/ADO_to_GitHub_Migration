@@ -86,28 +86,34 @@ reader can judge how much weight to put on it.
 
 ## Running a scan
 
-Nothing in the command line or the web console starts a scan today. A caller
-builds one directly, in-process:
+Two things fill the knowledge base today, and neither makes a call of its own
+to Azure DevOps or GitHub — both read rows that `ado2gh pipelines inventory`
+already collected.
 
-```python
-from ado2gh.knowledge.builder import build_knowledge_base
-from ado2gh.knowledge.store import KnowledgeStore
-from ado2gh.state.factory import create_state_db
+A real pipeline inventory run builds it as the last step of that run, for
+whichever migration profile is active when the run finishes
+(`ado2gh/pipelines/inventory.py`, `PipelineInventoryBuilder._record_knowledge`).
+A preview run builds nothing, because a preview changes nothing else this
+platform keeps either. The organisation a thing is recorded under is read the
+same way here as it is by the on-request rebuild described below — the active
+profile's Azure DevOps organisation address — so the same pipeline is never
+recorded twice under two identifiers depending on which of the two ways built
+it.
 
-db = create_state_db()
-scan = build_knowledge_base(
-    KnowledgeStore(db),
-    db,
-    profile_id="the-active-profile-id",
-    source_scope="the-ado-organisation-name",
-)
-```
+Filling the knowledge base can never cost the inventory run the rows it just
+collected: no active migration profile, a state store that cannot be read, or
+a derivation that raised are all caught and reported in plain words on the
+inventory run's own summary, under a key named `_knowledge` — a name that
+starts with an underscore so it is never mistaken for an Azure DevOps project,
+and the organisation-wide pipeline totals skip it for the same reason. A
+failed or skipped build is reported; it never fails the inventory run itself.
 
-As of this writing the only caller is `tests/unit/test_knowledge_builder.py`
-— there is no `ado2gh` command and no accelerator route that triggers a scan.
-Wiring one up is one of the follow-ups below.
+An operator who wants the knowledge base rebuilt without re-reading Azure
+DevOps can ask for it directly: **`POST /v1/knowledge/scan`**, described
+below, reads the same stored inventory rows on request.
 
-A scan reads every `pipeline_inventory` row for the profile, derives what it
+A scan — however it was started — reads every `pipeline_inventory` row for
+the profile, derives what it
 can from each, and finishes by marking any dependency an earlier scan
 recorded but this one did not see again as `disappeared` rather than
 deleting it. What happened is written to a `knowledge_scans` row, including a
@@ -139,17 +145,19 @@ form this platform does not read."
 
 ## Reading it — service routes
 
-`services/accelerator_api/routes/knowledge_routes.py` exposes four read-only
-routes under `/v1/knowledge`. All four require the `can_operate` capability
-(the same one guarding the rest of the inventory reads) and answer only from
-the caller's active migration profile — with no active profile they respond
-`400 No active migration profile`. An identifier the knowledge base has never
-seen is not an error: the dependency, consumer and impact routes answer with
-empty lists (the impact route with a null subject), on the reasoning that not
-knowing about a thing is an ordinary state for a knowledge base built from
-partial scans. Asking for a kind that does not exist, on either the node or
-the dependency vocabulary, is the one case that does fail, with
-`400 Unknown NodeKind value: <name>` or the equivalent for `EdgeKind`.
+`services/accelerator_api/routes/knowledge_routes.py` exposes five routes
+under `/v1/knowledge`: four read-only ones, plus one that rebuilds the
+knowledge base on request. All five require the `can_operate` capability (the
+same one guarding the rest of the inventory reads) and answer only from the
+caller's active migration profile — with no active profile they respond
+`400 No active migration profile`. On the four read routes, an identifier the
+knowledge base has never seen is not an error: the dependency, consumer and
+impact routes answer with empty lists (the impact route with a null subject),
+on the reasoning that not knowing about a thing is an ordinary state for a
+knowledge base built from partial scans. Asking for a kind that does not
+exist, on either the node or the dependency vocabulary, is the one case that
+does fail, with `400 Unknown NodeKind value: <name>` or the equivalent for
+`EdgeKind`.
 
 **`GET /v1/knowledge/search`** — find things by name.
 
@@ -249,6 +257,42 @@ GET /v1/knowledge/nodes/node-a1b2c3/impact?max_depth=2
 }
 ```
 
+**`POST /v1/knowledge/scan`** — rebuild the knowledge base for the active
+profile from the pipeline inventory already collected. This is the same build
+a real pipeline inventory run performs on its own; this route lets an operator
+ask for it directly, without waiting for another inventory run. Running it
+twice over unchanged rows writes the same rows under the same identifiers, so
+an operator unsure whether it ran may simply run it again.
+
+```
+POST /v1/knowledge/scan
+```
+
+```json
+{
+  "scan_id": "scan-9f8e7d",
+  "status": "completed",
+  "source_scope": "https://dev.azure.com/contoso",
+  "coverage": {
+    "source": "pipeline_inventory",
+    "rows_read": 40,
+    "rows_unreadable": 0,
+    "pipelines_with_unreadable_text": 0,
+    "pipelines_without_stored_text": 0,
+    "nodes_recorded": 12,
+    "edges_recorded": 18,
+    "edges_by_kind": { "builds": 6, "needs_credential": 4, "...": "..." },
+    "edges_marked_disappeared": 0,
+    "edge_kinds_not_attempted": ["checks_out", "triggered_by", "needs_secure_file", "uses_container"]
+  },
+  "caveats": ["..."],
+  "error_summary": ""
+}
+```
+
+`error_summary` is empty on success and holds a plain-words description of
+what went wrong when `status` comes back `failed`.
+
 ## Reading it — agent tools
 
 `ado2gh/agents/migration_agent/tools/knowledge_tools.py` gives the planner two
@@ -318,10 +362,12 @@ not attempt, not guessed at:
   inlined into it. A pipeline inventoried before this feature existed has no
   template reference stored yet; re-running `pipelines inventory` fills it
   in, and only then can the knowledge base see it.
-- **Nothing starts a scan by itself.** `build_knowledge_base` has to be
-  called directly, as shown above; there is no command and no route for it
-  yet, so the knowledge base is only ever as fresh as whoever last ran that
-  call.
+- **The knowledge base is only ever as fresh as the last inventory run or the
+  last on-request rebuild, whichever happened more recently.** A pipeline
+  inventory run fills it automatically, but only when the run is real, not a
+  preview, and `POST /v1/knowledge/scan` fills it on request. Neither path is
+  wired to a command-line command yet, and a profile that has never had either
+  one run against it has an empty knowledge base.
 - **It only ever reads the pipeline inventory.** Nothing under
   `ado2gh/knowledge/` makes a call of its own to Azure DevOps or GitHub — a
   fact this platform has not inventoried is a fact the knowledge base cannot
@@ -336,8 +382,8 @@ Named directly from the limits above, not from any separate plan:
 - Producing `release_pipeline`, `secure_file`, `container_image`, `wiki`,
   `work_item_project` and `test_plan` nodes from whatever inventory would
   need to exist first.
-- Wiring `build_knowledge_base` into a command or a route, so a scan can be
-  started without writing code.
+- Wiring `build_knowledge_base` into a command-line command, so a scan can be
+  started without an inventory run and without calling the route directly.
 - Resolving dependencies that are today only expressed through variables, at
   least where the variable's value is itself known and literal elsewhere in
   the same pipeline.

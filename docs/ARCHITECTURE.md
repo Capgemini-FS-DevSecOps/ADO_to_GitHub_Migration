@@ -363,18 +363,21 @@ it, so an empty result reads as "nothing recorded within this coverage"
 rather than "nothing depends on this."
 
 **Reaching it.** `services/accelerator_api/routes/knowledge_routes.py` exposes
-four read-only routes under `/v1/knowledge` — `search`, one-hop
-`nodes/{id}/dependencies` and `nodes/{id}/consumers`, and `nodes/{id}/impact`
-— gated by the same `can_operate` capability as the rest of the inventory
-reads, and scoped to the caller's active migration profile. The planner's
-`knowledge_search` and `knowledge_impact` tools
+five routes under `/v1/knowledge` — four read-only ones, `search`, one-hop
+`nodes/{id}/dependencies` and `nodes/{id}/consumers`, and `nodes/{id}/impact`,
+plus `scan`, which rebuilds the base on request — gated by the same
+`can_operate` capability as the rest of the inventory reads, and scoped to the
+caller's active migration profile. The planner's `knowledge_search` and
+`knowledge_impact` tools
 (`ado2gh/agents/migration_agent/tools/knowledge_tools.py`) are the agent's
 only path to this data: they call those routes rather than opening a
 database themselves, and mask secret shapes in the response before capping
-its size, in that order, so a cap can never cut a masked value in half. As of
-this writing nothing yet starts a scan from a command or a route —
-`build_knowledge_base` is exercised only by
-`tests/unit/test_knowledge_builder.py`.
+its size, in that order, so a cap can never cut a masked value in half. A
+real `ado2gh pipelines inventory` run fills the knowledge base for the active
+profile automatically once the run finishes; a preview run leaves it
+untouched. An operator can also rebuild it directly with
+`POST /v1/knowledge/scan`, without waiting for another inventory run. Neither
+path is wired to a command-line command yet.
 
 Full reference, including every node and dependency kind and the current
 limits: [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md).
@@ -432,6 +435,25 @@ Everything that can carry a secret routes through that one function:
   SSE stream, the chat transcript and the persisted session rows all show the masked form.
 - Subprocess output capture in `ado2gh/core/scopes/git_scope.py` delegates to the same
   function rather than keeping its own pattern list.
+- `AuditWriter.write()` in `ado2gh/audit/writer.py` masks the payload, the actor and the
+  profile id before an event is handed to wherever it is being written, so every audit
+  destination — the configured state database, a DynamoDB table, a SQLite file or a
+  PostgreSQL database of its own — receives masked values only.
+
+**Where audit events go.** `ADO2GH_AUDIT_DESTINATION` (`ado2gh/audit/destinations.py`) names
+the destination, chosen separately from where migration state lives. Leaving it unset, or
+setting it to `state`, keeps events in the configured state database — today's behaviour.
+`dynamodb://<table-name>` writes one item per event to a DynamoDB table of its own;
+`sqlite://<file-path>` and a `postgres://` or `postgresql://` connection string write to a
+SQLite file or a PostgreSQL database of its own. Any other value is refused at start-up with
+the accepted forms named, and so is `sqlite://:memory:`, which would lose every event the
+moment the process exits. The setting is read on its own, so choosing it never validates the
+unrelated state backend, and no new region, credential or endpoint variable was needed: the
+DynamoDB destination reads the region the way the storage settings already read it and
+honours the endpoint override the job store already honours. A deployment that selects the
+DynamoDB job store (`ADO2GH_STORAGE_BACKEND=dynamodb`) without setting
+`ADO2GH_AUDIT_DESTINATION` fails at start-up instead of starting and logging a claim conflict
+it can never durably audit.
 
 LLM provider keys are sent in request bodies, never in a URL query string.
 
