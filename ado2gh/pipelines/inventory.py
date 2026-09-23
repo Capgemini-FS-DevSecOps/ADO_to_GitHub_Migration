@@ -27,6 +27,33 @@ from ado2gh.pipelines.resolve.template_resolver import (
 from ado2gh.pipelines.task_scanner import enrich_pipeline_readiness
 from ado2gh.state.base import StateDBBase
 
+TEMPLATE_REPOSITORY_SEPARATOR = "@"
+"""What separates a template path from the repository alias it lives in.
+
+An Azure DevOps template reference reads ``path/to/file.yml@alias``; without
+the separator the template lives in the pipeline's own repository.
+"""
+
+
+def _template_ref_records(refs: list[str]) -> list[dict]:
+    """Turn raw template references into the records kept on the metadata.
+
+    Args:
+        refs: Template references exactly as the pipeline YAML wrote them.
+
+    Returns:
+        One record per reference holding ``ref`` and, where the reference
+        names another repository, the ``repository`` alias it named.
+    """
+    records: list[dict] = []
+    for ref in refs:
+        text = str(ref)
+        alias = ""
+        if TEMPLATE_REPOSITORY_SEPARATOR in text:
+            alias = text.rsplit(TEMPLATE_REPOSITORY_SEPARATOR, 1)[1].strip()
+        records.append({"ref": text, "repository": alias})
+    return records
+
 
 def summarize_project_inventory(summary: dict[str, dict]) -> dict[str, int]:
     """Aggregate per-project inventory counts into organisation-level totals.
@@ -334,7 +361,11 @@ class PipelineInventoryBuilder:
                             cfg = definition.setdefault("configuration", {})
                             cfg["path"] = picked
 
-            if (yaml_content or "").strip() and extract_template_refs(yaml_content):
+            template_refs = (
+                extract_template_refs(yaml_content)
+                if (yaml_content or "").strip() else []
+            )
+            if template_refs:
                 fetcher = make_ado_git_fetcher(
                     self.ado,
                     project,
@@ -351,6 +382,9 @@ class PipelineInventoryBuilder:
                 project, stub, definition, build_def, yaml_content, runs, var_groups
             )
             if meta:
+                # The YAML stored on the record is template-inlined, so the
+                # references are unrecoverable afterwards. Keep them here.
+                meta.template_refs = _template_ref_records(template_refs)
                 enrich_pipeline_readiness(meta, project_scs or [], build_def=build_def)
                 meta.complexity = self.extractor._score_complexity(meta)
 

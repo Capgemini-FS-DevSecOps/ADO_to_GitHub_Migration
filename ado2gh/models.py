@@ -269,6 +269,11 @@ class PipelineMetadata:
     complexity:          PipelineComplexity = PipelineComplexity.SIMPLE
     migration_notes:     list[str]        = field(default_factory=list)
     unsupported_tasks:   list[str]        = field(default_factory=list)
+    # Each template reference dict: {ref, repository}. `ref` is the reference
+    # exactly as the pipeline wrote it; `repository` is the alias after the
+    # "@" when the reference names another repository, otherwise empty. Kept
+    # because the stored YAML is template-inlined and loses the references.
+    template_refs:       list[dict]       = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Serialise to the JSON-safe dict stored in the pipeline inventory.
@@ -319,6 +324,7 @@ class PipelineMetadata:
             "complexity":         self.complexity.value,
             "migration_notes":    self.migration_notes,
             "unsupported_tasks":  self.unsupported_tasks,
+            "template_refs":      self.template_refs,
         }
 
     @classmethod
@@ -363,6 +369,7 @@ class PipelineMetadata:
             complexity           = PipelineComplexity(d.get("complexity", "simple")),
             migration_notes      = d.get("migration_notes", []),
             unsupported_tasks    = d.get("unsupported_tasks", []),
+            template_refs        = d.get("template_refs", []),
         )
         m.variables = [PipelineVariable(**v) for v in d.get("variables", [])]
         m.stages = [
