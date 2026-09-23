@@ -1,0 +1,149 @@
+1. ado2gh/agents/migration_agent/constants.py:8 | rule 2 | Runtime limits and timeouts at lines 8 through 27 are fixed module values with no override. | Add AgentRuntimeSettings under AdvancedSettings in ado2gh/api/settings_models.py and load those fields into the agent runtime.
+
+2. ado2gh/agents/migration_agent/constants.py:18 | rule 3 | The comment uses acronyms and task identifiers. | Rewrite it as a durable plain-language description; no new setting is needed.
+
+3. ado2gh/agents/migration_agent/graph/builder.py:73 | rule 1 | Checkpointer close and cleanup timeouts are raw values at lines 73 and 489. | Add checkpointer_close_timeout_seconds and checkpointer_cleanup_timeout_seconds to AgentRuntimeSettings in ado2gh/api/settings_models.py.
+
+4. ado2gh/agents/migration_agent/graph/builder.py:120 | rule 1 | Database host, port, names, and checkpoint path are embedded in the connection setup. | Add CheckpointStorageSettings to ado2gh/state/storage_config.py.
+
+5. ado2gh/agents/migration_agent/graph/builder.py:182 | rule 1 | Retry count, interval, and backoff values are inline. | Add llm_retry_max_attempts, llm_retry_initial_interval_seconds, and llm_retry_backoff_factor to AgentRuntimeSettings in ado2gh/api/settings_models.py.
+
+6. ado2gh/agents/migration_agent/graph/builder.py:111 | rule 2 | The builder independently parses storage environment values instead of using the storage configuration path. | Route checkpoint configuration through CheckpointStorageSettings in ado2gh/state/storage_config.py.
+
+7. ado2gh/agents/migration_agent/graph/builder.py:368 | rule 3 | The comment depends on a task identifier instead of explaining the invariant. | Rewrite it as a stable approval-revision rule; no new setting is needed.
+
+8. ado2gh/agents/migration_agent/guardrails.py:26 | rule 3 | The comment uses a ticket-style identifier as justification. | Replace it with the guardrail behavior it protects; no new setting is needed.
+
+9. ado2gh/agents/migration_agent/hitl/form_fields.py:67 | rule 1 | Field, option, description, and suggestion limits are repeated inline through line 318. | Add FormFieldLimits constants in ado2gh/agents/migration_agent/hitl/form_fields.py.
+
+10. ado2gh/agents/migration_agent/hitl/form_fields.py:18 | rule 3 | The comment contains a task identifier and abbreviations. | Rewrite it as a plain statement of the optional-field rule; no new setting is needed.
+
+11. ado2gh/agents/migration_agent/hitl/forms.py:27 | rule 1 | Form identifier, field-name, description, and placeholder limits are inline, including line 51. | Reuse FormFieldLimits from ado2gh/agents/migration_agent/hitl/form_fields.py.
+
+12. ado2gh/agents/migration_agent/hitl/forms.py:102 | rule 3 | The docstring explains behavior through a task identifier. | State the server-side required-field behavior directly; no new setting is needed.
+
+13. ado2gh/agents/migration_agent/hitl/intake.py:161 | rule 1 | Repository matching thresholds are unexplained inline values. | Add repository_match_full_name_cutoff and repository_match_basename_cutoff constants in ado2gh/agents/migration_agent/hitl/intake.py.
+
+14. ado2gh/agents/migration_agent/hitl/intake.py:18 | rule 3 | The comment relies on a task identifier. | Replace it with the approval-revision invariant; no new setting is needed.
+
+15. ado2gh/agents/migration_agent/hitl/operator_input.py:23 | rule 1 | Identifier, digest, blocker, and context length limits are embedded inline. | Add OperatorInputLimits constants in ado2gh/agents/migration_agent/hitl/operator_input.py.
+
+16. ado2gh/agents/migration_agent/hitl/operator_input.py:135 | rule 1 | The not-found status is checked as the raw string 404. | Use HTTPStatus.NOT_FOUND from the standard library.
+
+17. ado2gh/agents/migration_agent/hitl/operator_input.py:427 | rule 1 | Failure-code protocol values are written directly in the dispatch logic. | Add MigrationFailureCode in ado2gh/api/errors.py.
+
+18. ado2gh/agents/migration_agent/hitl/operator_input.py:419 | rule 3 | The docstring is centered on the FR-036 ticket label. | Describe the active-migration conflict without ticket identifiers; no new setting is needed.
+
+19. ado2gh/agents/migration_agent/runtime/llm_bridge.py:16 | rule 2 | A second LLM timeout constant duplicates the agent runtime setting and has no override. | Remove it and use AgentRuntimeSettings.llm_timeout_seconds from ado2gh/api/settings_models.py.
+
+20. ado2gh/agents/migration_agent/runtime/llm_bridge.py:37 | rule 2 | Provider capability defaults are a second provider registry beside LLMProviderSpec. | Add a capabilities field to LLMProviderSpec in ado2gh/api/llm/llm_provider_registry.py and remove the parallel map.
+
+21. ado2gh/agents/migration_agent/runtime/llm_bridge.py:154 | rule 1 | OpenAI and local runtime URLs are literal fallbacks outside the provider registry. | Add default_base_url entries to LLMProviderSpec in ado2gh/api/llm/llm_provider_registry.py.
+
+22. ado2gh/agents/migration_agent/nodes/intent.py:37 | rule 1 | Session and intent protocol values are raw strings. | Use SessionState from ado2gh/agents/migration_agent/session/state.py and OperatorIntent from hitl/schemas.py.
+
+23. ado2gh/agents/migration_agent/nodes/intent.py:81 | rule 3 | The comment names a specific caller and a task identifier. | Describe the untrusted-input boundary without naming the current caller; no new setting is needed.
+
+24. ado2gh/agents/migration_agent/nodes/orchestrator.py:102 | rule 1 | Session statuses are typed as strings despite the existing SessionState enum. | Use SessionState values from ado2gh/agents/migration_agent/session/state.py.
+
+25. ado2gh/agents/migration_agent/nodes/orchestrator.py:448 | rule 1 | The context token budget is repeated as the raw value 32000. | Use AgentRuntimeSettings.context_token_budget from ado2gh/api/settings_models.py.
+
+26. ado2gh/agents/migration_agent/nodes/orchestrator.py:481 | rule 1 | Event kind and agent role protocol values are repeated as strings. | Add AgentEventKind and AgentRole string enums in ado2gh/agents/migration_agent/graph/state.py.
+
+27. ado2gh/agents/migration_agent/nodes/orchestrator.py:445 | rule 3 | The comment uses a task-style label and describes an implementation-specific dependency. | State the context-trimming rule without the identifier or dependency detail; no new setting is needed.
+
+28. ado2gh/agents/migration_agent/nodes/orchestrator_tools.py:101 | rule 3 | The comments use task identifiers and describe the current tool caller. | State the guardrail rule independently of the current dispatcher; no new setting is needed.
+
+29. ado2gh/agents/migration_agent/nodes/planner.py:533 | rule 1 | Prompt samples and serialized context are clipped with raw values. | Add planner_repository_sample_limit and planner_context_max_chars to AgentRuntimeSettings in ado2gh/api/settings_models.py.
+
+30. ado2gh/agents/migration_agent/nodes/validator.py:487 | rule 1 | The iteration ceiling is written as 20 despite the existing MAX_ITERATIONS constant. | Use MAX_ITERATIONS from ado2gh/agents/migration_agent/constants.py.
+
+31. ado2gh/agents/migration_agent/nodes/validator.py:503 | rule 1 | Sender, receiver, and message-type protocol values are raw strings. | Use AgentRole and AgentMessageType enums in ado2gh/agents/migration_agent/graph/state.py.
+
+32. ado2gh/agents/migration_agent/runtime/context_window.py:28 | rule 1 | Cycle retention and summary clipping limits are raw values. | Add context_cycle_retention_count, old_cycle_summary_max_chars, and recent_cycle_summary_max_chars to AgentRuntimeSettings in ado2gh/api/settings_models.py.
+
+33. ado2gh/agents/migration_agent/session/store.py:29 | rule 3 | The storage comment cites task identifiers rather than documenting the durable masking rule plainly. | Rewrite it as a durable masking requirement; no new setting is needed.
+
+34. ado2gh/agents/migration_agent/tools/orchestrator_tools.py:51 | rule 1 | GET is a raw default even though DEFAULT_HTTP_METHOD already exists. | Import DEFAULT_HTTP_METHOD from ado2gh/agents/migration_agent/constants.py.
+
+35. ado2gh/agents/migration_agent/tools/orchestrator_tools.py:208 | rule 2 | Tool names are registered here and dispatched separately in nodes/orchestrator_tools.py. | Add ORCHESTRATOR_TOOL_REGISTRY in ado2gh/agents/migration_agent/tools/orchestrator_tools.py and have both construction and dispatch use it.
+
+36. ado2gh/api/llm/model_catalog.py:68 | rule 1 | Cache-key length, provider page size, and wait slack are raw values. | Add CATALOG_API_KEY_PREFIX_CHARS, ANTHROPIC_CATALOG_PAGE_SIZE, and CATALOG_SINGLE_FLIGHT_SLACK_SECONDS in this module.
+
+37. ado2gh/api/llm/model_catalog.py:77 | rule 1 | Provider catalog URLs duplicate values already stored in LLMProviderSpec. | Use get_provider_spec(provider).catalog_path from ado2gh/api/llm/llm_provider_registry.py.
+
+38. ado2gh/api/llm/model_catalog.py:338 | rule 2 | Catalog dispatch is a second provider registry that must change for every provider addition. | Add a catalog_fetcher field to LLMProviderSpec in ado2gh/api/llm/llm_provider_registry.py.
+
+39. ado2gh/api/llm/http_llm.py:11 | rule 2 | The language-model request timeout is a module constant with no settings override. | Add request_timeout_seconds to ConnectivityProfile in ado2gh/api/connectivity_store.py.
+
+40. ado2gh/api/live_approval_store.py:614 | rule 1 | Live-execution audit event names are hand-written protocol strings. | Add AuditEventName in ado2gh/audit/writer.py and use its values.
+
+41. ado2gh/api/live_approval_store.py:647 | rule 1 | The agent URL and notification timeout are hardcoded deployment values. | Add ADO2GH_AGENT_NOTIFICATION_URL and ADO2GH_AGENT_NOTIFICATION_TIMEOUT_SECONDS settings in ado2gh/api/live_approval_store.py.
+
+42. ado2gh/api/live_approval_store.py:637 | rule 3 | The comment describes a specific internal route and uses task-style security labels. | Describe the notification failure behavior without route-specific history; no new setting is needed.
+
+43. ado2gh/api/credentials/credential_validation.py:22 | rule 1 | GitHub URLs, headers, API version, and timeouts are repeated outside the GitHub client. | Add GitHubClientSettings in ado2gh/clients/gh_client.py and reuse it here.
+
+44. services/agent/routes/_helpers.py:71 | rule 2 | ACCELERATOR_URL is parsed here as well as in the local profile loader, bypassing LocalAgentProfile. | Use the existing LocalAgentProfile.accelerator_url from services/agent/profiles.py.
+
+45. services/agent/routes/_helpers.py:254 | rule 1 | Accelerator request and health timeouts are raw values at lines 254 and 714. | Add accelerator_request_timeout_seconds and accelerator_health_timeout_seconds to LocalAgentProfile in services/agent/profiles.py.
+
+46. services/agent/routes/_helpers.py:679 | rule 1 | The approval route, manual status code, and audit event names are raw protocol values. | Add PLATFORM_APPROVALS_PATH in ado2gh/api/proxy_prefixes.py and use AuditEventName plus FastAPI status constants.
+
+47. services/agent/routes/_helpers.py:89 | rule 3 | The comment uses ticket identifiers instead of a durable error-redaction rule. | Rewrite it as a plain boundary rule; no new setting is needed.
+
+48. services/agent/profiles.py:53 | rule 1 | Default service URLs and database path are literal configuration values. | Add DEFAULT_ACCELERATOR_URL, DEFAULT_AGENT_URL, and DEFAULT_SQLITE_PATH in services/agent/profiles.py.
+
+49. services/agent/profiles.py:3 | rule 3 | The module comment names a numbered implementation task. | Describe the module purpose without the task reference; no new setting is needed.
+
+50. services/agent/main.py:77 | rule 1 | Session statuses and manual 401 responses are hardcoded. | Use SessionState and FastAPI HTTP_401_UNAUTHORIZED.
+
+51. services/agent/main.py:155 | rule 1 | The CORS environment variable and localhost origin are directly repeated configuration. | Add ServiceHttpSettings.cors_origins in ado2gh/api/service_settings.py and load CORS_ORIGINS once.
+
+52. services/agent/main.py:90 | rule 3 | The comment names current compose files and manifests and cites a task identifier. | Describe the authentication boundary without listing current deployment callers; no new setting is needed.
+
+53. services/accelerator_api/main.py:97 | rule 1 | The API version is hardcoded instead of using the package version. | Import __version__ from ado2gh.
+
+54. services/accelerator_api/main.py:153 | rule 1 | Manual 401 responses and CORS configuration are raw values. | Use FastAPI HTTP_401_UNAUTHORIZED and ServiceHttpSettings.cors_origins in ado2gh/api/service_settings.py.
+
+55. services/accelerator_api/main.py:11 | rule 3 | The comment lists callers that can change, including deployment and automation files. | Replace it with a stable module-entry-point statement; no new setting is needed.
+
+56. services/accelerator_api/routes/migrate_guard.py:69 | rule 1 | HTTP status codes are typed directly. | Use FastAPI HTTP_422_UNPROCESSABLE_ENTITY and HTTP_403_FORBIDDEN.
+
+57. services/accelerator_api/routes/migrate_guard.py:131 | rule 1 | The audit event and migrate_job scope type are raw protocol strings. | Add AuditEventName and MIGRATE_JOB_SCOPE_TYPE in ado2gh/api/live_approval_scopes.py.
+
+58. services/accelerator_api/routes/migrate_guard.py:1 | rule 3 | The module comment is organized around a task identifier. | Describe the shared live-execution guard without the identifier; no new setting is needed.
+
+59. services/accelerator_api/routes/_shared.py:130 | rule 1 | Default database and migration-config paths bypass the existing advanced settings. | Use AdvancedSettings.db_path and AdvancedSettings.config_path from ado2gh/api/settings_models.py.
+
+60. services/accelerator_api/routes/_shared.py:42 | rule 3 | The comment depends on a specific caller module and test-patching arrangement. | Describe the lazy indirection contract without naming the caller; no new setting is needed.
+
+61. ado2gh/api/pipeline_models.py:125 | rule 1 | Pipeline run status values are raw strings rather than typed protocol values. | Add PipelineRunStatus in ado2gh/api/pipeline_models.py.
+
+62. ado2gh/api/pipeline_models.py:27 | rule 2 | Pipeline metadata is split across accelerator, user-interface, runner, and prerequisite registries. | Add PipelineStepDefinition as the single registry in ado2gh/api/pipeline_models.py.
+
+63. ado2gh/api/pipeline_steps.py:55 | rule 3 | The comment uses the FR-011 ticket label to explain the handler contract. | State the stable handler contract without the identifier; no new setting is needed.
+
+64. ado2gh/api/pipeline_runner.py:147 | rule 1 | Pipeline run statuses are assigned as repeated string literals. | Use PipelineRunStatus from ado2gh/api/pipeline_models.py.
+
+65. ado2gh/api/pipeline_runner.py:9 | rule 3 | The comment relies on a task identifier. | Replace it with the reason for the re-export; no new setting is needed.
+
+66. ado2gh/api/step_prerequisites.py:24 | rule 1 | Satisfied step statuses are raw strings despite the existing StepStatus enum. | Use StepStatus values from ado2gh/api/pipeline_models.py.
+
+67. ado2gh/api/step_prerequisites.py:1 | rule 3 | The module comment includes the FR-009 task identifier and private implementation details. | Describe prerequisite behavior without task labels or private module references; no new setting is needed.
+
+68. ado2gh/core/concurrency.py:14 | rule 2 | Concurrency and rate limits are duplicated as dataclass defaults and fallback values instead of persisted settings. | Add ConcurrencySettings under AdvancedSettings in ado2gh/api/settings_models.py.
+
+69. ado2gh/core/redis_queue.py:14 | rule 1 | Queue name, Redis URL, and pop timeout are raw defaults. | Add RedisQueueSettings in ado2gh/state/storage_config.py.
+
+70. ado2gh/clients/gh_client.py:24 | rule 1 | GitHub base URL, headers, API version, request timeout, and not-found status are embedded in the client. | Use GitHubClientSettings in ado2gh/clients/gh_client.py and HTTPStatus.NOT_FOUND.
+
+71. ado2gh/clients/gh_client.py:242 | rule 1 | Issue title and body length limits are inline. | Add GITHUB_ISSUE_TITLE_MAX_CHARS and GITHUB_ISSUE_BODY_MAX_CHARS in ado2gh/clients/gh_client.py.
+
+72. ado2gh/api/accelerator.py:64 | rule 1 | The rotating-token environment slot limit is hardcoded as 20. | Add MAX_TOKEN_ENV_SLOTS in ado2gh/api/accelerator.py.
+
+73. ado2gh/api/accelerator.py:162 | rule 3 | The comment uses task identifiers as the explanation for a boundary conversion. | State the external-to-internal execution-mode rule directly; no new setting is needed.
+
+Rule 1: 41  
+Rule 2: 10  
+Rule 3: 22

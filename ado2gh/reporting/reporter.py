@@ -10,8 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ado2gh.logging_config import console, log
-from ado2gh.state.db import StateDB
-
+from ado2gh.state.base import StateDBBase
 
 _STATUS_COLOURS = {
     "completed":   "green",
@@ -30,6 +29,15 @@ _COMPLEXITY_COLOURS = {
 
 
 def _colour(status: str, palette: dict) -> str:
+    """Wrap a status in the Rich colour markup its palette assigns.
+
+    Args:
+        status: Status text, also used as the palette lookup key.
+        palette: Status-to-colour map; an unknown status falls back to white.
+
+    Returns:
+        The status text wrapped in Rich colour tags.
+    """
     colour = palette.get(status, "white")
     return f"[{colour}]{status}[/{colour}]"
 
@@ -37,7 +45,12 @@ def _colour(status: str, palette: dict) -> str:
 class Reporter:
     """Console and HTML reporting for the migration tool."""
 
-    def __init__(self, db: StateDB):
+    def __init__(self, db: StateDBBase) -> None:
+        """Store the state store every report reads from.
+
+        Args:
+            db: State store holding migrations, waves and pipeline rows.
+        """
         self.db = db
 
     # ── Console: repo migrations ─────────────────────────────────────────
@@ -274,6 +287,12 @@ class Reporter:
 
 
 def _fmt_ts(ts: Optional[str]) -> str:
+    """Format an ISO-8601 timestamp for a narrow report column.
+
+    Returns:
+        The timestamp as ``MM-DD HH:MM``, an empty string when none was given, or
+        its first 16 characters unchanged when it cannot be parsed.
+    """
     if not ts:
         return ""
     try:
@@ -284,6 +303,12 @@ def _fmt_ts(ts: Optional[str]) -> str:
 
 
 def _count_json_list(raw: Optional[str]) -> int:
+    """Count the items of a JSON list held in a text column.
+
+    Returns:
+        The number of items, or ``0`` when the text is empty, does not parse, or
+        does not hold a list.
+    """
     if not raw:
         return 0
     try:
@@ -295,6 +320,12 @@ def _count_json_list(raw: Optional[str]) -> int:
 
 
 def _html_status_badge(status: str) -> str:
+    """Render a migration status as a coloured HTML badge.
+
+    Returns:
+        A ``<span>`` carrying the status text on its status colour; an unknown
+        status is grey.
+    """
     colours = {
         "completed": "#22c55e", "in_progress": "#eab308",
         "pending": "#6b7280", "failed": "#ef4444",
@@ -306,6 +337,12 @@ def _html_status_badge(status: str) -> str:
 
 
 def _html_complexity_badge(complexity: str) -> str:
+    """Render a pipeline complexity as a coloured HTML badge.
+
+    Returns:
+        A ``<span>`` carrying the complexity text on its complexity colour; an
+        unknown value is grey.
+    """
     colours = {"simple": "#22c55e", "medium": "#eab308", "complex": "#ef4444"}
     bg = colours.get(complexity, "#6b7280")
     return (f'<span style="background:{bg};color:#fff;padding:2px 8px;'
@@ -313,6 +350,12 @@ def _html_complexity_badge(complexity: str) -> str:
 
 
 def _html_repo_rows(migrations: list[dict]) -> str:
+    """Render the repository rows of the HTML report table.
+
+    Returns:
+        One newline-joined ``<tr>`` per migration; error messages are truncated
+        to 60 characters.
+    """
     rows = []
     for m in migrations:
         error = (m.get("error_message") or "")[:60]
@@ -333,6 +376,12 @@ def _html_repo_rows(migrations: list[dict]) -> str:
 
 
 def _html_pipeline_rows(pipelines: list[dict]) -> str:
+    """Render the pipeline rows of the HTML report table.
+
+    Returns:
+        One newline-joined ``<tr>`` per pipeline migration; error messages are
+        truncated to 60 characters.
+    """
     rows = []
     for p in pipelines:
         error = (p.get("error_message") or "")[:60]

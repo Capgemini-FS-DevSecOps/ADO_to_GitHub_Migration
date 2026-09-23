@@ -1,6 +1,10 @@
-# Setup Guide — ADO2GH Migration Tool
+# Setup Guide — ADO2GitHub Migration Platform
 
-Complete setup instructions for running ADO-to-GitHub migrations at enterprise scale.
+> **Local dev (SQLite):** See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for Docker Compose, native stack, and CLI setup.
+>
+> **Architecture:** See [ARCHITECTURE.md](ARCHITECTURE.md) for services, state backends, and deployment modes.
+
+Technical setup for the CLI, Docker stack, and web console.
 
 ---
 
@@ -9,7 +13,7 @@ Complete setup instructions for running ADO-to-GitHub migrations at enterprise s
 ### Python
 
 ```bash
-# Requires Python 3.9+
+# Requires Python 3.11+
 python --version
 
 # Create virtual environment
@@ -38,7 +42,7 @@ git lfs install
 
 gh --version
 gh auth login
-gh extension install github/gh-gei
+gh extension install github/gh-ado2gh
 ```
 
 ---
@@ -78,7 +82,7 @@ export ADO_ORG_URL="https://dev.azure.com/YOUR_ORG"
 ### Single Token
 
 ```bash
-export GH_TOKEN="ghp_your_token_here"
+export GH_TOKEN="<your-github-token>"
 ```
 
 Required scopes: `repo`, `admin:org`, `workflow`, `delete_repo` (for rollback).
@@ -88,9 +92,9 @@ Required scopes: `repo`, `admin:org`, `workflow`, `delete_repo` (for rollback).
 GitHub's API rate limit is 5000 requests/hour per token. At scale, you'll exhaust this quickly.
 
 ```bash
-export GH_TOKEN_1="ghp_token_one"
-export GH_TOKEN_2="ghp_token_two"
-export GH_TOKEN_3="ghp_token_three"
+export GH_TOKEN_1="<github-token-1>"
+export GH_TOKEN_2="<github-token-2>"
+export GH_TOKEN_3="<github-token-3>"
 ```
 
 The tool auto-detects `GH_TOKEN_1` through `GH_TOKEN_19` and rotates with rate-limit awareness. Check status:
@@ -133,7 +137,7 @@ global:
   gh_org: "your-github-org"
   parallel: 4               # concurrent repos (keep 4-8 for network I/O)
   pipeline_parallel: 12     # pipeline transform threads (CPU-bound, 12-16 safe)
-  migration_strategy: mirror # "mirror" or "gei"
+  migration_strategy: gei   # "gei" (default) or "mirror"
   default_scopes:
     - repo
     - pipelines
@@ -170,12 +174,35 @@ ado2gh token-status --config migration.yaml
 # Test ADO connectivity
 ado2gh discover --config migration.yaml --output test_discovery.yaml
 
+# Run the test suite (needs the dev extra: pip install -e ".[api,agent,dev]")
+pytest
+
 # If discovery works, you're ready to start the migration workflow
 ```
 
+The suite is roughly 1,000 tests and takes about 100 seconds. On Windows, call it as `.\.venv\Scripts\python.exe -m pytest` when the virtual environment is not activated. CI gates the same suite with `ruff check ado2gh/ services/` and `pytest --cov=ado2gh --cov=services --cov-fail-under=69`; see [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for the full rule set and the structural guard tests.
+
 ---
 
-## 6. Directory Structure After Migration
+## 6. Docker & local stack
+
+| Goal | Command |
+|------|---------|
+| **Agent + accelerator only (SQLite)** | `docker compose up --build` |
+| **Full stack (+ redis, worker, UI)** | `docker compose --profile default up --build` |
+| **Production (PostgreSQL + auth)** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile default up --build` |
+| **Native agent-only stack** | `.\scripts\dev\run-local-agent.ps1` |
+
+The production stack turns authentication on, which makes `ADO2GH_INTERNAL_TOKEN`
+required: set it in `.env` to a random secret (`openssl rand -hex 32`) before the
+production command above. Compose refuses to start without it, and both the accelerator
+and the agent must see the same value or approved live migrations never resume.
+
+See [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) for ports, first-login steps, SQLite paths, and cleanup.
+
+---
+
+## 7. Directory Structure After Migration
 
 ```
 ADO2GH/

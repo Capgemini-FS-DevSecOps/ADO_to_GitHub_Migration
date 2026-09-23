@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, "feature/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Keep this version in sync with the ruff-pre-commit rev in .pre-commit-config.yaml.
+      - run: pip install -e ".[dev,api,agent]" "ruff==0.15.17" mypy
+      # Hard gate: syntax errors and undefined names must always be zero.
+      - name: Ruff syntax/undefined-name gate
+        run: ruff check ado2gh/ services/ --select E9,F821 --target-version py311
+      - run: ruff check ado2gh/ services/
+      - run: mypy ado2gh/ --ignore-missing-imports
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev,api,agent,postgres]"
+      # FR-027a coverage ratchet: this number is the honest whole-package figure
+      # measured on the green suite with no `omit` list (see specs/013-clean-code-arch-remediation/plan.md
+      # § Coverage measurement). Raise it after each increment, never lower it.
+      # The constitutional 85 % target stays outstanding as gap G-seed 4.
+      # Widened from `--cov=ado2gh` alone to also cover `services` (the FastAPI
+      # accelerator and agent routes) on 2026-09-22, per the finding in
+      # specs/013-clean-code-arch-remediation/test-coverage-drift-report.md that the
+      # narrower selector hid a whole package's worth of untested route code; the
+      # combined figure measured 69.28 %, one point below the standalone `ado2gh`
+      # figure it replaces, because the denominator grew by more than the numerator did.
+      - run: pytest --cov=ado2gh --cov=services --cov-fail-under=69 --timeout=600 --timeout-method=thread
+  ui-permissions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/migration-ui/package-lock.json
+      - run: npm ci
+        working-directory: apps/migration-ui
+      - run: npm test
+        working-directory: apps/migration-ui

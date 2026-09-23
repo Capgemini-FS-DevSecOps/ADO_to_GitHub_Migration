@@ -1,36 +1,117 @@
 """Sub-batch execution with SQLite checkpointing and resume."""
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 from rich.panel import Panel
 from rich.progress import (
-    BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TimeElapsedColumn,
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TimeElapsedColumn,
 )
 
 from ado2gh.logging_config import console, log
 from ado2gh.models import (
-    DEFAULT_PHASES, BatchCheckpoint, PhaseType, WaveConfig,
+    DEFAULT_PHASES,
+    BatchCheckpoint,
+    ExecutionMode,
+    PhaseType,
+    RepoConfig,
+    WaveConfig,
 )
 from ado2gh.phase.progress_tracker import ProgressTracker
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
+
+if TYPE_CHECKING:
+    from ado2gh.core.migration_engine import MigrationEngine
 
 
 class BatchExecutor:
-    def __init__(self, engine, db: StateDB, tracker: ProgressTracker):
+    """Run the repositories of a wave or phase through the migration engine in batches.
+
+    A phase is split into fixed-size batches; each batch is checkpointed in the
+    state DB so an interrupted run resumes after the last completed batch.
+    Nothing is checkpointed or recorded as a wave run in ``DRY_RUN`` mode, so a
+    dry run never makes a later live run skip work.
+    """
+
+    def __init__(self, engine: MigrationEngine, db: StateDBBase, tracker: ProgressTracker) -> None:
+        """Bind the engine that migrates one repository, the state database and the velocity tracker.
+
+        Args:
+            engine: Performs the per-repository migration (``migrate_repo``).
+            db: State store for wave runs and batch checkpoints.
+            tracker: Records completed repos for the velocity and ETA readout.
+        """
         self.engine = engine
         self.db = db
         self.tracker = tracker
 
-    def execute_phase(self, phase: PhaseType, waves: list[WaveConfig],
-                      dry_run: bool = False) -> dict:
+    def _require_matching_engine_mode(self, mode: ExecutionMode) -> None:
+        """Refuse to run when the executor and its engine disagree about live.
+
+        The executor's ``mode`` decides what is reported and checkpointed; the
+        engine's own ``mode`` decides what is actually migrated. They are set
+        independently, so a ``LIVE`` executor driving a ``DRY_RUN`` engine would
+        checkpoint and report a successful live run that migrated nothing, and
+        the inverse would push to GitHub while reporting a dry run. Both break
+        the rule that a preview run is the default and a real run needs an
+        explicit opt-in (register cross-reference: CA-001), and neither is
+        visible in the summary, so the mismatch is refused here rather than
+        discovered afterwards.
+
+        Args:
+            mode: Execution mode the caller asked this run to use.
+
+        Raises:
+            ValueError: The engine's mode is absent or differs from ``mode``.
+        """
+        engine_mode = getattr(self.engine, "mode", None)
+        if engine_mode is mode:
+            return
+        raise ValueError(
+            f"execution mode mismatch: the batch executor was asked for "
+            f"{mode.value!r} but its MigrationEngine is {getattr(engine_mode, 'value', engine_mode)!r}. "
+            f"Build the engine and run it with the same ExecutionMode."
+        )
+
+    def execute_phase(
+        self,
+        phase: PhaseType,
+        waves: list[WaveConfig],
+        mode: ExecutionMode = ExecutionMode.DRY_RUN,
+    ) -> dict:
+        """Migrate every repository assigned to ``phase``, batch by batch, resuming from checkpoints.
+
+        Args:
+            phase: The phase whose waves are executed.
+            waves: All configured waves; only those whose ``phase`` matches are run.
+            mode: ``DRY_RUN`` (the default) previews without checkpointing; ``LIVE`` migrates
+                and checkpoints each batch.
+
+        Returns:
+            Summary with ``phase``, ``completed``, ``failed``, ``batches_run`` and
+            ``batches_skipped`` counts.
+
+        Raises:
+            ValueError: The engine's mode differs from ``mode``, which would let a
+                preview run migrate for real or a real run get reported as a
+                preview (register cross-reference: CA-001).
+        """
+        self._require_matching_engine_mode(mode)
         phase_waves = [w for w in waves if w.phase == phase.value]
         if not phase_waves:
             console.print(f"[yellow]No waves for phase {phase.value}[/yellow]")
             return {"phase": phase.value, "completed": 0, "failed": 0,
                     "batches_run": 0, "batches_skipped": 0}
 
+        dry_run = mode is ExecutionMode.DRY_RUN
         cfg = DEFAULT_PHASES[phase]
         all_repos = [r for w in phase_waves for r in w.repos]
         batches = [all_repos[i:i + cfg.batch_size]
@@ -49,7 +130,7 @@ class BatchExecutor:
             border_style="blue", title=f"Phase {phase.value.upper()}",
         ))
 
-        summary = {"phase": phase.value, "completed": 0, "failed": 0,
+        summary: dict[str, Any] = {"phase": phase.value, "completed": 0, "failed": 0,
                    "batches_run": 0, "batches_skipped": last_done + 1}
 
         for batch_num, batch_repos in enumerate(batches):
@@ -77,7 +158,7 @@ class BatchExecutor:
             console.print(
                 f"\n[cyan]Batch {batch_num + 1}/{total_b}[/cyan] "
                 f"({len(batch_repos)} repos)")
-            b = self._run_batch(wave_cfg, dry_run)
+            b = self._run_batch(wave_cfg, mode)
             summary["completed"] += b["completed"]
             summary["failed"] += b["failed"]
             summary["batches_run"] += 1
@@ -101,31 +182,134 @@ class BatchExecutor:
             )
         return summary
 
-    def _run_batch(self, wave: WaveConfig, dry_run: bool) -> dict:
-        self.db.mark_wave_run(wave.wave_id, "started", dry_run)
-        result = {"completed": 0, "failed": 0}
+    def execute_wave(
+        self,
+        wave: WaveConfig,
+        mode: ExecutionMode = ExecutionMode.DRY_RUN,
+        cancel_event: threading.Event | None = None,
+        on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
+    ) -> dict:
+        """Execute a single wave (used by ``ado2gh run``).
+
+        Args:
+            wave: The wave to run.
+            mode: ``DRY_RUN`` (the default) previews; ``LIVE`` migrates and records
+                the wave run.
+            cancel_event: When set, no further repos are submitted and pending
+                ones are cancelled.
+            on_repo_done: Called with ``"project/repo"``, the repo's result dict
+                and its ``RepoConfig`` as each repo finishes.
+
+        Returns:
+            Wave summary: ``wave_id``, ``name``, ``status`` (``completed``,
+            ``partial`` or ``failed``), ``dry_run``, per-repo ``repos`` results
+            and the ``completed`` / ``failed`` / ``partial`` / ``total`` counts.
+
+        Raises:
+            ValueError: The engine's mode differs from ``mode``, which would let a
+                preview run migrate for real or a real run get reported as a
+                preview (register cross-reference: CA-001).
+        """
+        self._require_matching_engine_mode(mode)
+        dry_run = mode is ExecutionMode.DRY_RUN
+        log.info(
+            "=== Starting wave %d: %s (%d repos)%s ===",
+            wave.wave_id, wave.name, len(wave.repos),
+            " [DRY RUN]" if dry_run else "",
+        )
+        batch = self._run_batch(
+            wave, mode, cancel_event=cancel_event, on_repo_done=on_repo_done,
+        )
+        statuses = batch.get("repo_statuses", {})
+        completed = batch["completed"]
+        failed = batch["failed"]
+        overall = (
+            "completed" if failed == 0 and completed == len(wave.repos)
+            else ("partial" if completed > 0 else "failed")
+        )
+        return {
+            "wave_id": wave.wave_id,
+            "name": wave.name,
+            "status": overall,
+            "dry_run": dry_run,
+            "repos": statuses,
+            "completed": completed,
+            "failed": failed,
+            "partial": len(wave.repos) - completed - failed,
+            "total": len(wave.repos),
+        }
+
+    def _run_batch(
+        self,
+        wave: WaveConfig,
+        mode: ExecutionMode,
+        scopes_filter: list[str] | None = None,
+        cancel_event: threading.Event | None = None,
+        on_repo_done: Callable[[str, dict, RepoConfig], None] | None = None,
+    ) -> dict:
+        """Migrate the repos of one wave in parallel and record the wave run.
+
+        Args:
+            wave: The wave whose repos are submitted to the engine.
+            mode: In ``LIVE`` mode the wave run is marked started and
+                completed/partial in the state DB; ``DRY_RUN`` records nothing.
+            scopes_filter: When given, every repo runs with exactly these scopes.
+            cancel_event: When set, stops submitting and cancels pending repos.
+            on_repo_done: Per-repo completion callback (see ``execute_wave``).
+
+        Returns:
+            ``completed`` and ``failed`` counts plus ``repo_statuses`` keyed by
+            ``"project/repo"``.
+        """
+        live = mode is ExecutionMode.LIVE
+        if live:
+            self.db.mark_wave_run(wave.wave_id, "started", mode)
+        result: dict[str, Any] = {"completed": 0, "failed": 0, "repo_statuses": {}}
         with Progress(SpinnerColumn(), "[progress.description]{task.description}",
                       BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
                       console=console, transient=True) as prog:
             task = prog.add_task(wave.name, total=len(wave.repos))
             with ThreadPoolExecutor(max_workers=wave.parallel) as pool:
-                futures = {
-                    pool.submit(self.engine.migrate_repo, wave.wave_id, repo,
-                                prog, task,
-                                pipeline_parallel=wave.pipeline_parallel): repo
-                    for repo in wave.repos
-                }
+                futures = {}
+                for repo in wave.repos:
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    repo_to_run = repo
+                    if scopes_filter:
+                        from dataclasses import replace
+                        repo_to_run = replace(repo, scopes=scopes_filter)
+                    futures[pool.submit(
+                        self.engine.migrate_repo, wave.wave_id, repo_to_run,
+                        prog, task, pipeline_parallel=wave.pipeline_parallel,
+                    )] = repo
                 for future in as_completed(futures):
+                    if cancel_event is not None and cancel_event.is_set():
+                        for pending in futures:
+                            pending.cancel()
+                        break
                     repo = futures[future]
+                    key = f"{repo.ado_project}/{repo.ado_repo}"
                     try:
                         res = future.result(timeout=1800)
-                        if res["errors"]:
+                        result["repo_statuses"][key] = res
+                        if res.get("errors"):
                             result["failed"] += 1
                         else:
                             result["completed"] += 1
+                        if on_repo_done:
+                            on_repo_done(key, res, repo)
                     except Exception as e:
                         log.error(f"Batch error [{repo.ado_repo}]: {e}")
                         result["failed"] += 1
-        self.db.mark_wave_run(wave.wave_id,
-                              "completed" if result["failed"] == 0 else "partial")
+                        result["repo_statuses"][key] = {
+                            "status": "failed", "error": str(e),
+                        }
+                        if on_repo_done:
+                            on_repo_done(key, result["repo_statuses"][key], repo)
+        if live:
+            self.db.mark_wave_run(
+                wave.wave_id,
+                "completed" if result["failed"] == 0 else "partial",
+                mode,
+            )
         return result

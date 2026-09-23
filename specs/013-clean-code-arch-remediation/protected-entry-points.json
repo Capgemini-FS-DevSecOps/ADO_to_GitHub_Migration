@@ -1,0 +1,1078 @@
+[
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.__init__",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.inc_counter",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.observe_histogram",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.record_guardrail_block",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.record_llm_call",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.record_pev_cycle",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.record_tool_call",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.set_gauge",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.set_session_status",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::MetricsCollector.to_prometheus_text",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/metrics.py::get_metrics_collector",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/graph/builder.py::_with_runtime_deps",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/hitl/interrupt_node.py::human_input_node",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/nodes/executor/node.py::executor_node",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/nodes/finalize.py::finalize_node",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/nodes/orchestrator.py::orchestrator_node",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/nodes/planner.py::planner_node",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/nodes/validator.py::validator_node",
+    "reason": "graph_node"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/tools/executor_tools.py::get_executor_tools",
+    "reason": "langchain_tool"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/tools/orchestrator_tools.py::get_orchestrator_tools",
+    "reason": "langchain_tool"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/tools/planner_tools.py::get_planner_tools",
+    "reason": "langchain_tool"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/tools/shared_tools.py::build_get_current_profile_tool",
+    "reason": "langchain_tool"
+  },
+  {
+    "id": "ado2gh/agents/migration_agent/tools/validator_tools.py::get_validator_tools",
+    "reason": "langchain_tool"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityProfile.custom_ca_configured",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityProfile.to_public",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.__init__",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.load",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.save",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::ConnectivityStore.update",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::_connectivity_sensitive_changed",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::_path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/connectivity_store.py::get_connectivity_profile",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialSource.to_public",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.__init__",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore._write_sources",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.apply_scan",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.approve",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.get_source",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.is_approved",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.list_sources",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.load",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.patch_provider",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.reject",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.revoke",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.save",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::CloudCredentialsStore.scan",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_invalidate_ambient_for_provider",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_merge_detection",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_now_iso",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_parse_source",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::_snapshot",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/credentials/cloud_credentials_store.py::get_ambient_credentials",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelConfig.to_public",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.__init__",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.apply_validation_result",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.delete",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.get",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.get_default_model",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.has_agent_ready_model",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.list_agent_ready_models",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.list_public",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.load",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.save",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::LLMModelStore.upsert",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_ambient_approved",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_assert_enable_gate",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_parse_model",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::_sensitive_fields_changed",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::invalidate_all_model_validations",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/api/llm/llm_model_store.py::invalidate_ambient_models",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/cli/discover.py::register",
+    "reason": "cli_command"
+  },
+  {
+    "id": "ado2gh/cli/main.py::cli",
+    "reason": "cli_command"
+  },
+  {
+    "id": "ado2gh/cli/main.py::cli",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/cli/migration.py::register",
+    "reason": "cli_command"
+  },
+  {
+    "id": "ado2gh/cli/misc.py::register",
+    "reason": "cli_command"
+  },
+  {
+    "id": "ado2gh/cli/phase.py::register",
+    "reason": "cli_command"
+  },
+  {
+    "id": "ado2gh/cli/pipelines.py::register",
+    "reason": "cli_command"
+  },
+  {
+    "id": "ado2gh/core/orchestration/worker.py::_require_config_path",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/core/orchestration/worker.py::execute_job",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "ado2gh/core/orchestration/worker.py::run_worker",
+    "reason": "main_guard"
+  },
+  {
+    "id": "ado2gh/core/orchestration/worker.py::run_worker",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "apps/migration-ui/src/app/agent/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/dashboard/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/discovery/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/layout.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/login/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/migrate/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/onboarding/profile/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/advanced/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/agent/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/approvals/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/cloud-credentials/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/connectivity/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/discovery/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/history/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/layout.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/migrate/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/models/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/[profileId]/layout.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/[profileId]/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/[profileId]/source/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/[profileId]/tokens/[tokenId]/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/[profileId]/tokens/new/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/[profileId]/tokens/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/new/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/profiles/pending/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "apps/migration-ui/src/app/settings/users/page.tsx::default",
+    "reason": "next_route_export"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::approve_user",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::bootstrap",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::bootstrap_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::create_user",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::current_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::disable_user",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::list_users",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::login",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::logout",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::register",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/auth_routes.py::update_user",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::_assess_pipeline_readiness",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::_onboarding_redirect",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::_sync_platform_supplied_model",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::dashboard",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::dashboard",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::discover",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::discover",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::enqueue_job",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::enqueue_job",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::freshness",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::freshness",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::health",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::health",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::job_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::job_status",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::migrate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::migrate",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::migration_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::migration_status",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::onboarding_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::onboarding_status",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::pipeline_readiness",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::pipeline_readiness",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::pipeline_readiness_post",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::pipeline_readiness_post",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::plan",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::plan",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::platform_auth_middleware",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::ready",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::ready",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/main.py::validate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/main.py::validate",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::approve_live_execution",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::create_live_approval",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::deny_live_execution",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::get_live_approval",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/approval_routes.py::list_live_approvals",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::export_history_sessions",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::history_event_types",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/history_routes.py::history_sessions",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::artifacts_publish",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::boards_migrate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::branch_policies_migrate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::git_mirror",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::pipeline_convert",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::secret_provision",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::service_connection_migrate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::test_plans_migrate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/migrate_routes.py::wiki_migrate",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::cancel_pipeline_run",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::get_pipeline_run",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::list_pipeline_runs",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::pipeline_steps",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::start_existing_pipeline_run",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/pipeline_routes.py::start_pipeline_run",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::create_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::delete_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::list_github_tokens",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::update_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_ado_for_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_ado_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_connection",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_github_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_github_token_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_migration_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_profile_source",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_credential_routes.py::validate_saved_github_token",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::activate_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::appeal_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::approve_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::create_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::deactivate_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::delete_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::deny_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::get_migration_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::get_profile_discovery",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::get_profile_scan",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::list_my_pending_profiles",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::list_pending_profiles",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::migration_scan_inline",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::migration_scan_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::profile_scan_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::set_profile_default",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::setup_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::update_phase_assignments",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/profile_routes.py::update_profile",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/proxy_routes.py::proxy_ado_get",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/proxy_routes.py::proxy_github_delete",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/proxy_routes.py::proxy_github_get",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/proxy_routes.py::proxy_github_patch",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/proxy_routes.py::proxy_github_post",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/proxy_routes.py::proxy_github_put",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::approve_cloud_credentials",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::create_llm_model",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::delete_llm_model",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::get_connectivity",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::get_llm_catalog",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::get_phases",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::get_platform_model_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::get_settings",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::list_cloud_credentials",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::list_llm_models",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::list_llm_provider_types",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::patch_cloud_credentials",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::put_connectivity",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::reject_cloud_credentials",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::revoke_cloud_credentials",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::scan_cloud_credentials",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::test_connectivity_route",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::update_advanced",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::update_llm_model",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::update_phases",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::validate_llm_draft",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/accelerator_api/routes/settings_routes.py::validate_llm_saved",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/main.py::_configure_agent_tracing",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/agent/main.py::_recover_sessions_on_restart",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/agent/main.py::_sync_platform_supplied_model",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/agent/main.py::agent_auth_middleware",
+    "reason": "orphan_allowlist"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::approve_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::cancel_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::confirm_live_execution",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::deny_live_internal",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::request_live",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::resume_live_internal",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::run_pev",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/execution_routes.py::update_execution_mode",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::cancel_session_form",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::submit_session_form",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/form_routes.py::submit_session_form_stream",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py::session_message",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/message_routes.py::session_message_stream",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py::agent_models",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/model_routes.py::llm_status",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/plan_routes.py::create_migration_plan",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/plan_routes.py::get_plan_summary",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/run_routes.py::health",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/run_routes.py::metrics",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py::create_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py::delete_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py::get_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py::list_sessions",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py::provision_session",
+    "reason": "http_route"
+  },
+  {
+    "id": "services/agent/routes/session_routes.py::remediate_session",
+    "reason": "http_route"
+  }
+]

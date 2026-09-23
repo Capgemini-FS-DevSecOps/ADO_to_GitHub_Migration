@@ -6,7 +6,6 @@ from datetime import datetime
 
 import yaml
 
-from ado2gh.logging_config import log
 from ado2gh.models import (
     PipelineComplexity,
     PipelineEnvironment,
@@ -17,10 +16,39 @@ from ado2gh.models import (
 )
 
 
-class PipelineMetadataExtractor:
+def _variable_group_record(vg: dict, vg_id: int, name: str) -> dict:
+    """Summarise one referenced variable group by name.
+
+    Args:
+        vg: Raw variable-group record from the ADO API, or ``{}`` when the
+            reference could not be resolved against the project's groups.
+        vg_id: Identifier of the referenced group.
+        name: Display name of the referenced group.
+
+    Returns:
+        The group's id, name, type, its variable names and the subset of those
+        names Azure DevOps flags as secret. No variable value is ever copied,
+        so nothing downstream can print one (CA-003).
     """
-    Extracts complete normalized PipelineMetadata from raw ADO API responses.
-    Handles YAML pipelines, classic build pipelines, and classic release pipelines.
+    variables = vg.get("variables") or {}
+    specs = variables.items() if isinstance(variables, dict) else ()
+    return {
+        "id":        vg_id,
+        "name":      name,
+        "type":      vg.get("type", "Vsts"),
+        "variables": [str(n) for n in variables],
+        "secret_variables": [
+            str(n) for n, spec in specs
+            if isinstance(spec, dict) and spec.get("isSecret")
+        ],
+    }
+
+
+class PipelineMetadataExtractor:
+    """Build normalised pipeline metadata from raw Azure DevOps responses.
+
+    Handles YAML pipelines, classic build pipelines and classic release
+    pipelines, so the rest of the migration works against one shape.
     """
 
     POOL_MAP = {
@@ -34,11 +62,25 @@ class PipelineMetadataExtractor:
         "macos-13":       "macos-13",
     }
 
-    def extract_yaml_pipeline(self, project: str, pipe: dict,
+    def extract_yaml_pipeline(self, project: str, pipe: dict,  # noqa: PLR0913
                                definition: dict, build_def: dict,
                                yaml_content: str, runs: list[dict],
                                var_groups: list[dict]) -> PipelineMetadata:
-        """Extract metadata from a YAML build pipeline."""
+        """Extract metadata from a YAML build pipeline.
+
+        Args:
+            project: Azure DevOps project name.
+            pipe: Pipeline summary from the list endpoint.
+            definition: Pipeline definition from the Pipelines API.
+            build_def: Definition from the Build Definitions API, which carries
+                the triggers, variables and retention rules.
+            yaml_content: Pipeline YAML read from the source repository.
+            runs: Recent runs, newest first, used for the history statistics.
+            var_groups: Variable groups defined in the project.
+
+        Returns:
+            The metadata for this pipeline, complexity included.
+        """
         config = definition.get("configuration", {})
         repo   = config.get("repository", {})
 
@@ -76,7 +118,18 @@ class PipelineMetadataExtractor:
     def extract_classic_build_pipeline(self, project: str, pipe: dict,
                                        build_def: dict, runs: list[dict],
                                        var_groups: list[dict]) -> PipelineMetadata:
-        """Extract metadata from a classic (non-YAML) build pipeline."""
+        """Extract metadata from a classic (non-YAML) build pipeline.
+
+        Args:
+            project: Azure DevOps project name.
+            pipe: Pipeline summary from the list endpoint.
+            build_def: Definition from the Build Definitions API.
+            runs: Recent runs, newest first, used for the history statistics.
+            var_groups: Variable groups defined in the project.
+
+        Returns:
+            The metadata for this pipeline, complexity included.
+        """
         repo = build_def.get("repository", {})
 
         meta = PipelineMetadata(
@@ -116,7 +169,15 @@ class PipelineMetadataExtractor:
         return meta
 
     def extract_release_pipeline(self, project: str, rel_def: dict) -> PipelineMetadata:
-        """Extract metadata from a classic release pipeline."""
+        """Extract metadata from a classic release pipeline.
+
+        Args:
+            project: Azure DevOps project name.
+            rel_def: Release definition from the Release Management API.
+
+        Returns:
+            The metadata for this pipeline, with one stage per environment.
+        """
         meta = PipelineMetadata(
             pipeline_id   = rel_def.get("id", 0),
             pipeline_name = rel_def.get("name", ""),
@@ -129,7 +190,7 @@ class PipelineMetadataExtractor:
             "with deployment jobs and required reviewers."
         )
 
-        # Source artifacts -> repo associations
+        # Source artifacts and their repository associations
         for artifact in rel_def.get("artifacts", []):
             if artifact.get("type") == "Build":
                 alias = artifact.get("alias", "")
@@ -185,8 +246,13 @@ class PipelineMetadataExtractor:
 
     # -- Helpers ----------------------------------------------------------------
 
-    def _extract_build_triggers(self, meta: PipelineMetadata, build_def: dict):
-        """Extract CI, PR, and schedule triggers from a build definition."""
+    def _extract_build_triggers(self, meta: PipelineMetadata, build_def: dict) -> None:
+        """Record the CI, pull request and schedule triggers on the metadata.
+
+        Args:
+            meta: Metadata updated in place.
+            build_def: Definition from the Build Definitions API.
+        """
         # CI triggers
         for trigger in build_def.get("triggers", []):
             t_type = trigger.get("triggerType", 0)
@@ -209,8 +275,16 @@ class PipelineMetadataExtractor:
             })
 
     def _extract_build_variables(self, meta: PipelineMetadata,
-                                 build_def: dict, var_groups: list[dict]):
-        """Extract inline variables and variable group references."""
+                                 build_def: dict,
+                                 var_groups: list[dict]) -> None:
+        """Record the inline variables and variable group references.
+
+        Args:
+            meta: Metadata updated in place.
+            build_def: Definition from the Build Definitions API.
+            var_groups: Variable groups defined in the project, used to name
+                the groups the pipeline references by id.
+        """
         vg_map = {vg["id"]: vg for vg in var_groups}
         for name, val in build_def.get("variables", {}).items():
             meta.variables.append(PipelineVariable(
@@ -221,22 +295,33 @@ class PipelineMetadataExtractor:
         for vg_ref in build_def.get("variableGroups", []):
             vg_id = vg_ref if isinstance(vg_ref, int) else vg_ref.get("id", 0)
             vg    = vg_map.get(vg_id, {})
-            meta.variable_groups.append({
-                "id":        vg_id,
-                "name":      vg.get("name", f"group-{vg_id}"),
-                "type":      vg.get("type", "Vsts"),
-                "variables": list(vg.get("variables", {}).keys()),
-            })
+            meta.variable_groups.append(_variable_group_record(
+                vg, vg_id, vg.get("name", f"group-{vg_id}"),
+            ))
 
-    def _extract_retention(self, meta: PipelineMetadata, build_def: dict):
-        """Extract retention rules from a build definition."""
+    def _extract_retention(self, meta: PipelineMetadata, build_def: dict) -> None:
+        """Record the build retention period on the metadata.
+
+        Args:
+            meta: Metadata updated in place.
+            build_def: Definition from the Build Definitions API.
+        """
         rules = build_def.get("retentionRules", [{}])
         if rules:
             meta.retention_days = rules[0].get("daysToKeep", 30)
 
     def _extract_yaml_structure(self, meta: PipelineMetadata,
-                                yaml_content: str, var_groups: list[dict]):
-        """Parse YAML content for stages, variables, pool overrides."""
+                                yaml_content: str,
+                                var_groups: list[dict]) -> None:
+        """Record the stages, variables and pool overrides found in the YAML.
+
+        Args:
+            meta: Metadata updated in place. A pipeline whose YAML cannot be
+                parsed gets a migration note instead of stages.
+            yaml_content: Pipeline YAML read from the source repository.
+            var_groups: Variable groups defined in the project, used to name
+                the groups the YAML references.
+        """
         try:
             doc = yaml.safe_load(yaml_content) or {}
         except Exception:
@@ -260,12 +345,9 @@ class PipelineMetadataExtractor:
                     vg_name = var["group"]
                     vg = next((v for v in var_groups
                                if v.get("name") == vg_name), {})
-                    meta.variable_groups.append({
-                        "id":        vg.get("id", 0),
-                        "name":      vg_name,
-                        "type":      vg.get("type", "Vsts"),
-                        "variables": list(vg.get("variables", {}).keys()),
-                    })
+                    meta.variable_groups.append(
+                        _variable_group_record(vg, vg.get("id", 0), vg_name)
+                    )
                 else:
                     meta.variables.append(PipelineVariable(
                         name  = var.get("name", ""),
@@ -313,12 +395,12 @@ class PipelineMetadataExtractor:
 
                 stage = PipelineStage(
                     name         = re.sub(r"[^a-zA-Z0-9_]", "_",
-                                          s.get("stage", s.get("name", "stage"))),
-                    display_name = s.get("displayName", ""),
+                                          str(s.get("stage") or s.get("name") or "stage")),
+                    display_name = str(s.get("displayName") or ""),
                     depends_on   = (s.get("dependsOn", [])
                                     if isinstance(s.get("dependsOn"), list)
                                     else ([s["dependsOn"]] if s.get("dependsOn") else [])),
-                    condition    = s.get("condition", ""),
+                    condition    = str(s.get("condition") or ""),
                     environment  = gh_env,
                     is_deployment = is_deploy,
                     agent_pool   = runner,
@@ -349,8 +431,14 @@ class PipelineMetadataExtractor:
                 self._map_pool(pool.get("vmImage", "ubuntu-latest"))
             )
 
-    def _extract_run_stats(self, meta: PipelineMetadata, runs: list[dict]):
-        """Compute run history statistics from recent pipeline runs."""
+    def _extract_run_stats(self, meta: PipelineMetadata, runs: list[dict]) -> None:
+        """Record the run history statistics on the metadata.
+
+        Args:
+            meta: Metadata updated in place.
+            runs: Recent runs, newest first. An empty list leaves the metadata
+                untouched.
+        """
         if not runs:
             return
         last = runs[0]
@@ -373,11 +461,27 @@ class PipelineMetadataExtractor:
         meta.total_runs_30d   = len(runs)
 
     def _map_pool(self, pool_name: str) -> str:
-        """Map an ADO agent pool name to a GitHub Actions runner label."""
+        """Map an Azure DevOps agent pool name to a GitHub Actions runner.
+
+        Args:
+            pool_name: Pool or VM image name from the pipeline definition.
+
+        Returns:
+            The matching runner label, or ``ubuntu-latest`` when the pool is
+            not one this migration knows.
+        """
         return self.POOL_MAP.get(pool_name, "ubuntu-latest")
 
     def _score_complexity(self, meta: PipelineMetadata) -> PipelineComplexity:
-        """Score pipeline complexity based on structural signals."""
+        """Grade how hard a pipeline will be to convert.
+
+        Args:
+            meta: Metadata whose stages, environments, variable groups, type
+                and service connections carry the signals.
+
+        Returns:
+            The complexity band the accumulated score falls in.
+        """
         score = 0
         score += len(meta.stages) * 2
         score += len(meta.environments) * 3

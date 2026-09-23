@@ -4,30 +4,47 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 
 class ProgressTracker:
-    def __init__(self, total_repos: int, total_pipelines: int):
+    """Track completed repos over a five-minute window to report velocity and ETA."""
+
+    def __init__(self, total_repos: int, total_pipelines: int) -> None:
+        """Set the totals the percentage and remaining figures are measured against.
+
+        Args:
+            total_repos: Number of repos expected in this run.
+            total_pipelines: Number of pipelines expected in this run.
+        """
         self.total_repos = total_repos
         self.total_pipelines = total_pipelines
-        self._events: list = []
+        self._events: list[tuple[float, str]] = []
         self._start = time.time()
 
-    def record_repo(self):
+    def record_repo(self) -> None:
+        """Note that one repo finished now."""
         self._events.append((time.time(), "repo"))
 
-    def record_pipeline(self):
-        self._events.append((time.time(), "pipeline"))
+    def snapshot(self, db: StateDBBase) -> dict:
+        """Compute the current progress figures from the window and the state DB.
 
-    def snapshot(self, db: StateDB) -> dict:
+        Args:
+            db: State store whose migration status counts give the done/failed totals.
+
+        Returns:
+            Counts (``total_repos``, ``done_repos``, ``failed_repos``,
+            ``remaining_repos``), ``pct_complete``, ``repo_velocity`` and
+            ``pipe_velocity`` in items per minute, ``elapsed_min``, and the ETA
+            as ``eta_str`` (empty when velocity is too low) and ``eta_min``.
+        """
         now = time.time()
         since = now - 300
         repo_vel = sum(1 for t, k in self._events if t >= since and k == "repo") / 5.0
         pipe_vel = sum(1 for t, k in self._events if t >= since and k == "pipeline") / 5.0
-        all_mig = db.get_all_migrations()
-        done_r = len({r["ado_repo"] for r in all_mig if r["status"] == "completed"})
-        fail_r = len({r["ado_repo"] for r in all_mig if r["status"] == "failed"})
+        counts = db.migration_status_counts()
+        done_r = counts.get("completed", 0)
+        fail_r = counts.get("failed", 0)
         remaining = max(0, self.total_repos - done_r - fail_r)
         eta_min = (remaining / repo_vel) if repo_vel > 0.01 else None
         eta_str = ((datetime.now() + timedelta(minutes=eta_min)).strftime("%Y-%m-%d %H:%M")

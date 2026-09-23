@@ -1,244 +1,530 @@
-# Architecture — ADO2GH Migration Tool
+# Architecture — ADO2GitHub Migration Platform
 
-Technical architecture and design decisions for the ado2gh migration accelerator.
+Technical architecture for the **ado2gh** migration accelerator: CLI, REST API, web console, and PEV agent.
 
----
-
-## System Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                          CLI Layer (cli.py)                         │
-│  Click commands, argument parsing, client initialization           │
-└──────────────┬──────────────────────────────┬──────────────────────┘
-               │                              │
-  ┌────────────▼────────────┐    ┌────────────▼────────────┐
-  │   Phase Orchestration   │    │    Core Migration       │
-  │                         │    │                         │
-  │  RiskScorer             │    │  MigrationEngine        │
-  │  WaveAssigner           │    │  ├── _migrate_git       │
-  │  PhaseGateChecker       │    │  │   ├── mirror clone   │
-  │  BatchExecutor          │    │  │   └── GEI (alt)      │
-  │  ProgressTracker        │    │  ├── _migrate_pipelines │
-  │                         │    │  ├── _migrate_work_items│
-  │  Controls:              │    │  ├── _migrate_wiki      │
-  │  - Which repos when     │    │  ├── _migrate_secrets   │
-  │  - Gate enforcement     │    │  └── _migrate_policies  │
-  │  - Batch checkpointing  │    │                         │
-  └─────────────────────────┘    │  WaveRunner             │
-                                 │  ADOCleanup             │
-                                 │  RollbackHandler        │
-                                 └────────────┬────────────┘
-                                              │
-        ┌─────────────────────────────────────┼───────────────────┐
-        │                                     │                   │
-  ┌─────▼─────┐  ┌──────────────┐  ┌─────────▼─────────┐  ┌─────▼─────┐
-  │ ADOClient │  │   GHClient   │  │  Pipeline System  │  │ Reporting │
-  │           │  │              │  │                   │  │           │
-  │ REST 7.1  │  │ Multi-token  │  │ Extractor         │  │ Reporter  │
-  │ Projects  │  │ TokenManager │  │ Transformer       │  │ CSV       │
-  │ Repos     │  │ ├─ PAT pool  │  │ InventoryBuilder  │  │ Validator │
-  │ Pipelines │  │ ├─ Rate limts│  │                   │  │ Readiness │
-  │ Work Items│  │ └─ App auth  │  │ 200+ task maps    │  │ SvcConn   │
-  │ Wiki      │  │              │  │ Condition mapping  │  │ Manifest  │
-  │ Policies  │  │ Rate-aware   │  │ Pool mapping      │  │           │
-  └─────┬─────┘  │ rotation     │  └───────────────────┘  └───────────┘
-        │        └──────┬───────┘
-        │               │
-  ┌─────▼───────────────▼─────┐
-  │        StateDB            │
-  │    SQLite (WAL mode)      │
-  │                           │
-  │  migrations               │  Per-repo scope tracking
-  │  wave_runs                │  Wave execution history
-  │  pipeline_inventory       │  Full pipeline metadata
-  │  pipeline_migrations      │  Per-pipeline transform status
-  │  repo_risk_scores         │  9-signal risk scores
-  │  phase_gates              │  Gate pass/fail/override
-  │  batch_checkpoints        │  Resume points for interruption
-  └───────────────────────────┘
-```
+**Version:** 5.3 · **Last updated:** 2026-09
 
 ---
 
-## Design Principles
+## System overview
 
-### 1. ADO-Specific, Not Generic
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Migration UI (Next.js 14)                               │
+│  Dashboard · Discovery · Migrate · Monitor · Agent · Settings               │
+│  OrchestrateAI-themed console · profile-scoped state · RBAC                 │
+└───────────────────────────────┬─────────────────────────────┬───────────────┘
+                                │ REST (cookie session)      │
+              ┌─────────────────▼──────────────┐   ┌─────────▼──────────────┐
+              │  Accelerator API (:8080)      │   │  Agent service (:8090)  │
+              │  services/accelerator_api       │   │  services/agent         │
+              │  FastAPI · auth · profiles     │   │  PEV sessions ·         │
+              │  pipeline runs · settings     │   │  LangGraph orchestrator │
+              └─────────────────┬──────────────┘   └─────────┬──────────────┘
+                                │                            │
+                                └────────────┬───────────────┘
+                                             ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ado2gh Python package                               │
+│  CLI (ado2gh/cli/) · core migration · phases · pipelines · reporting        │
+│  api/ (accelerator SDK, pipeline runner, settings, LLM, live approvals)     │
+│  agents/ (LangGraph migration agent: graph, nodes, guardrails, HITL)        │
+│  audit/ (redaction choke point + audit writer) · auth/ (users, RBAC)        │
+│  state/ (SQLite · PostgreSQL via factory; DynamoDB job store)               │
+└───────────────────────────────┬─────────────────────────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        ▼                       ▼                       ▼
+  Azure DevOps REST       GitHub REST / git        State store
+  (projects, pipelines,   (mirror / GEI,          (migrations, risk scores,
+   work items, wiki)        Actions workflows)      pipeline inventory, gates)
+```
 
-Every feature addresses an ADO-to-GitHub challenge:
-- Pipeline transformation handles ADO-specific concepts (classic builds, release pipelines, variable groups)
-- Risk scoring signals are ADO metrics (pipeline count, classic ratio, service connections)
-- Post-migration cleanup targets ADO (disable pipelines, archive repos)
+### Deployment modes
 
-### 2. Actually Migrate, Don't Just Plan
+| Mode | Compose file | State backend | Typical use |
+|------|--------------|---------------|-------------|
+| Local dev | `docker-compose.yml` | SQLite (`data/`) | Laptop, IDE agent |
+| Production | `docker-compose.prod.yml` | PostgreSQL | Team console |
 
-Previous versions recorded metadata but didn't execute the git migration. v5 runs real `git clone --mirror && git push --mirror` via subprocess, including LFS object transfer.
+Environment: `ADO2GH_STORAGE_BACKEND=sqlite|postgres|dynamodb` (DynamoDB for serverless deploys; no dedicated compose file)
 
-### 3. Validate Content, Not Counts
-
-Post-migration validation compares HEAD commit SHAs between ADO and GitHub — proving code actually transferred. Branch counts are supplementary, not primary.
-
-### 4. Idempotent & Resumable
-
-Every operation is safe to re-run:
-- Completed repos are skipped
-- Batch checkpoints in SQLite allow mid-run recovery
-- Pipeline transforms skip already-completed entries
-
-### 5. Scope-Targeted Operations
-
-Operations can target specific migration scopes:
-- Migrate only `repo` + `pipelines` (skip work_items, wiki, etc.)
-- Rollback only `branch_policies` without deleting the repo
-- Validate specific scopes
+The production compose file ships no default credentials. `POSTGRES_PASSWORD` and
+`ADO2GH_INTERNAL_TOKEN` are the required interpolations — the stack refuses to start without
+them rather than falling back to a shared value — and the database port is not published to
+the host. No session secret is read: nothing under `ado2gh/` or `services/` consumes one.
+The scheduled migration workflow (`.github/workflows/migrate-repo.yml`) runs its transfer
+job in a GitHub environment, so a reviewer approves before anything non-dry-run executes.
 
 ---
 
-## Data Flow
+## Layer responsibilities
 
-```
-migration.yaml                     ADO REST API
-     │                                  │
-     ▼                                  ▼
- ConfigLoader ──────────────────► ADOClient
-     │                              │
-     ▼                              ▼
- phase assign ─── RiskScorer ──► StateDB (repo_risk_scores)
-     │                              │
-     ▼                              ▼
-migration_phase.yaml          pipeline_inventory
-     │                              │
-     ▼                              ▼
- phase run ───► BatchExecutor ──► MigrationEngine
-                    │                  │
-                    │          ┌───────┼───────┐
-                    │          ▼       ▼       ▼
-                    │     git mirror  transform  issues
-                    │          │       │       │
-                    │          ▼       ▼       ▼
-                    │     GitHub    output/   GitHub
-                    │      repo    workflows  Issues
-                    │
-                    ▼
-              batch_checkpoints
-                    │
-                    ▼
-              gate-check ──► phase_gates
-                    │
-                    ▼
-              validate ──► SHA comparison ──► validation_report.csv
-                    │
-                    ▼
-              ado-cleanup ──► Disable pipelines, push notice, archive
-```
+### CLI (`ado2gh/cli/`)
+
+Click entry point (`ado2gh/cli/main.py`). Commands mirror operational workflows:
+
+- **Discovery & planning:** `discover`, `plan`, `phase assign`, `phase plan` — `ado2gh/cli/discover.py`, `ado2gh/cli/phase.py`
+- **Execution:** `run`, `phase run`, `pipelines inventory` — `ado2gh/cli/migration.py`, `ado2gh/cli/pipelines.py`
+- **Validation & ops:** `validate`, `report`, `rollback`, `ado-cleanup`, `token-status` — `ado2gh/cli/misc.py`
+
+Lazy imports inside command handlers keep startup fast. Repo-list arguments are parsed by
+`ado2gh/api/repo_input.py`, shared with the API so a file of repo names means the same
+thing on both paths.
+
+**Package layering.** The `ado2gh` package is layered — `models`/`http_utils` at the bottom,
+then `clients`/`state`, then `core`/`phase`/`pipelines`, then `api`, then `cli` — and three
+upward edges are asserted by `tests/unit/test_gap_021_layering.py:32-36`: `state → api`,
+`clients → core` and `api → cli`. The check walks the whole AST, so a function-local import
+counts the same as a module-level one; hiding an upward import inside a function body is what
+masked these edges in the first place. Two upward edges are knowingly **not** asserted:
+`core → api` (`ado2gh/core/orchestration/worker.py` imports the Accelerator SDK at module
+level because driving it is the job; `ado2gh/core/conflict_detection.py` reaches
+`api.repo_lock` and `api.pipeline_store` inside two functions) and `auth → api`
+(`ado2gh/auth/service.py:149,255` import `api.profile_governance` to write audit rows).
+Closing them means relocating the worker out of `ado2gh/core/`; both stay recorded as
+residual carve-outs under GAP-021.
+
+### Accelerator API (`ado2gh/api/` + `services/accelerator_api/`)
+
+HTTP façade used by the web UI and agent service. The `ado2gh/api/` package holds the logic;
+`services/accelerator_api/` holds the HTTP routes. Route modules never live inside the
+`ado2gh` package.
+
+| Area | Logic (`ado2gh/api/`) | Routes (`services/accelerator_api/`) |
+|------|-----------------------|--------------------------------------|
+| Migration runs | `ado2gh/api/pipeline_runner.py`, `ado2gh/api/accelerator.py`, `ado2gh/api/migration_work_plan.py` | `services/accelerator_api/main.py` (`POST /v1/migrate`, the run-wave route carrying `require_migrate_live_approval`); `services/accelerator_api/routes/migrate_routes.py` (the nine `/v1/migrate/*` feature routes) with `services/accelerator_api/routes/migrate_guard.py`, `services/accelerator_api/routes/migrate_scope.py`, `services/accelerator_api/routes/migrate_routes_models.py` |
+| Profiles & discovery | `ado2gh/api/settings_store.py`, `ado2gh/api/profile_discovery.py`, `ado2gh/api/migration_scan.py` | `services/accelerator_api/routes/profile_routes.py`, `services/accelerator_api/routes/profile_credential_routes.py` |
+| Auth & RBAC | `ado2gh/auth/`, `ado2gh/api/platform_rbac.py` | `services/accelerator_api/auth_routes.py` |
+| Live approvals | `ado2gh/api/live_approval_store.py` | `services/accelerator_api/routes/approval_routes.py` |
+| Audit history | `ado2gh/audit/writer.py` | `services/accelerator_api/routes/history_routes.py` (`/v1/history/*` search, event types, CSV export) |
+| LLM settings | `ado2gh/api/llm/llm_model_store.py`, `ado2gh/api/llm/model_catalog.py`, `ado2gh/api/llm/model_validation.py`, `ado2gh/api/connectivity_store.py` | `services/accelerator_api/routes/settings_routes.py` |
+| Validation | `ado2gh/api/validation_run.py` (profile-first, upload-based) | `services/accelerator_api/main.py` (`POST /v1/validate`, `POST /v1/validate/freshness`) |
+
+**Pipeline steps (UI migrate flow, `MIGRATE_UI_PIPELINE_STEPS`):** connect → analyze_deps → migrate_repos → convert_pipelines → validate
+
+**Pipeline steps (full accelerator flow, `ACCELERATOR_PIPELINE_STEPS`, 11 steps):** connect → discover → inventory → readiness → assign → analyze_deps → migrate_repos → convert_pipelines → convert_metadata → migrate → validate
+
+Both lists live in `ado2gh/api/pipeline_models.py`; `AGENT_MIGRATION_PIPELINE_STEPS` is the UI list.
+
+Each scoped migration step (`migrate_repos`, `convert_pipelines`, `convert_metadata`) runs only its scope handlers; secret mapping is part of `analyze_deps` (spec 009). `ado2gh/api/migration_work_plan.py` builds per-repo work items with categories (`migrate_repo`, `convert_metadata`, `manual_setup`) and blocker hints (missing inventory, service connections, variable groups). Work items and blockers use one canonical wire shape — `scope` and `blocker` keys — normalised by `sync_work_item_wire_keys` so the API, the agent and the console read the same field names.
+
+Dry-run pipelines finish as `dry_run_complete` and do not write migration completion records.
+
+**Live execution gate.** Every route on the migrate router depends on
+`guard_live_migration` in `services/accelerator_api/routes/migrate_guard.py` — one choke
+point for the whole router rather than a check per handler. Dry runs pass straight through,
+so local development stays permissive for everything reversible. A live request is decided
+by `operator_requires_live_approval` in `ado2gh/api/platform_rbac.py`: it proceeds only when
+the caller holds the `can_approve_live_execution` capability, any other operator is parked
+in the approval queue, and a live request carrying no identity is refused with 401. Turning
+authentication off does not lift the gate.
+
+The guard reads `dry_run` from the raw body with `TypeAdapter(bool)` — the same parse the
+route's model applies — and answers 422 rather than guessing when the value is unparsable,
+so `"false"` can no longer be a dry run to the guard and a live run to the handler
+(`migrate_guard.py:34, 65-70`, GAP-065). The approval scope id is built from the
+`_SCOPE_FIELDS` allowlist of identity fields (`migrate_guard.py:25-28, 73-84`), an allowlist
+rather than a blocklist so a secret-bearing field such as `secret_value` can never reach a
+scope id or an audit payload (GAP-067).
+
+The pipeline-run routes decide authority in a fixed order.
+`operator_requires_live_approval` is asked **before** `PipelineRunStore.create` persists the
+run, so a refusal leaves nothing behind for `/start` to pick up
+(`services/accelerator_api/routes/pipeline_routes.py:222-242`). `/start` re-derives the decision from server state —
+it reads no body — and gates `pending` exactly like `awaiting_approval`, because a live run
+that was never parked has not been approved either, whoever created it
+(`:283-299`). `_park_for_approval` (`:53-86`) is the single path into the approval queue, so
+the create route and the start route cannot drift apart (GAP-066).
+
+`ado2gh/api/live_approval_store.py` is the only source of live authority for a pipeline run.
+A client cannot certify itself: `PipelineRunStartRequest` sets `extra="forbid"`
+(`ado2gh/api/contracts.py:554`), so a body that tries to assert its own approval is a 422.
+The nine feature-route models in `services/accelerator_api/routes/migrate_routes_models.py` do not forbid extras —
+their protection is the `_SCOPE_FIELDS` allowlist the guard reads, not field rejection.
+
+When a caller *quotes* an approval instead, the id is verified against the scope it is being
+spent on: `LiveApprovalStore.is_approved_for(approval_id, *, scope_type, scope_id, actor)`
+(`ado2gh/api/live_approval_store.py:223`) checks the approval the other way round from
+`has_approved`, so a wave-1 approval cannot release wave 2 and a `pipeline_run` approval
+cannot release a migrate job. It is enforced at `services/accelerator_api/routes/_shared.py:214-244`
+(`require_migrate_live_approval`) and at `ado2gh/api/accelerator.py:193-202`, and a refusal
+is recorded as `platform.live_execution.scope_mismatch` in the store itself rather than at
+each call site (GAP-063).
+
+### Agent service (`services/agent/`)
+
+Separate FastAPI process hosting the LangGraph PEV agent (spec 012):
+
+- **Graph** (`ado2gh/agents/migration_agent/graph/`) — four-agent LangGraph (Orchestrator → Planner → Executor → Validator) with conditional-edge PEV loop; max 3 retries per cycle
+- **Runtime** (`ado2gh/agents/migration_agent/runtime/`) — provider-agnostic LangChain LLM bridge, SSE streaming of agent thinking, context window management
+- **Routes** (`services/agent/routes/`) — one module per concern (session, message, form, plan, execution, model, run) over shared helpers in `services/agent/routes/_helpers.py`
+- **Scope guardrails** (`ado2gh/agents/migration_agent/policies.py`) — migration-only replies; refuses off-topic and prohibited requests
+- **Tool guardrails** (`ado2gh/agents/migration_agent/guardrails.py`) — plan authorization, deletion confirmation, ADO read-only enforcement
+- **Live mode** — `enforce_live_mode_request` in `ado2gh/agents/migration_agent/policies.py` is the single identity-and-capability check behind every route that flips a session to live; `resolve_execution_dry_run` is the single place session-level and plan-level modes are reconciled, and the safest of the two wins, so a plan cannot quietly widen a session that was created as a dry run
+- **Tools** (`ado2gh/agents/migration_agent/tools/`) — registered LangChain tools, per role: `call_accelerator`, `github_api`, `ado_api_query`, `generate_plan` (executor); `ado_api_query`, `github_api_query`, `invoke_planner`, `invoke_bulk_planner` (orchestrator); `ado_api_query`, `github_api_query`, `call_accelerator` (planner); `ado_api_query`, `github_api_query`, `list_ado_pipelines`, `list_github_workflows`, `fetch_github_workflow`, `validate_workflow_conversion`, `validate_workflow_syntax` (validator); `get_current_profile` (shared, appended to every role)
+- **HITL** (`ado2gh/agents/migration_agent/hitl/`) — intake, dynamic forms, blockers, operator input via graph interrupts
+- **Sessions** (`ado2gh/agents/migration_agent/session/`) — lifecycle, state machine, persistent store with checkpoint resume
+- **Prompts** (`ado2gh/agents/migration_agent/prompts/*.md`) — orchestrator, planner, executor, validator system prompts
+
+### Migration UI (`apps/migration-ui/`)
+
+Next.js App Router console:
+
+- Profile-scoped discovery, phase configuration, migrate/monitor/validation
+- **Agent tab** — chat-driven PEV with task timeline (per-repo work items + blockers), thinking blocks, forms for missing info
+- **Settings** — profiles, LLM models (catalog + validate-before-enable), connectivity, users
+- Responsive layout + iframe embed mode (`apps/migration-ui/src/components/EmbedLayout.tsx`)
 
 ---
 
-## Token Management
+## Core migration engine
 
-```
-                    ┌──────────────────────┐
-                    │    TokenManager      │
-                    │                      │
-                    │  tokens: [           │
-                    │    PAT_1 (rem: 4200) │ ◄── round-robin selection
-                    │    PAT_2 (rem: 3800) │     per API call
-                    │    PAT_3 (rem: 1200) │
-                    │    APP_TOKEN (exp: T) │ ◄── auto-refreshed JWT
-                    │  ]                   │
-                    │                      │
-                    │  get_token() ─────────┼──► selects highest-remaining
-                    │  update_rate_limit() ─┼──► from response headers
-                    │  _get_app_token() ────┼──► JWT + installation token
-                    └──────────────────────┘
-```
+`ado2gh/core/migration_engine.py` executes per-repo scopes:
 
-Token selection:
-1. Round-robin through available tokens
-2. Skip tokens with `remaining < 50`
-3. If all tokens exhausted, wait for the soonest reset
-4. App tokens auto-refresh 60s before expiry
+| Scope | Handler | Notes |
+|-------|---------|-------|
+| `repo` | `git_scope` | `git clone --mirror` + `git push --mirror` (or GEI) |
+| `pipelines` | `pipelines_scope` | ADO definition → GHA YAML |
+| `work_items` | `work_items_scope` | Issues export |
+| `wiki` | `wiki_scope` | Wiki content |
+| `branch_policies` | `branch_policies_scope` | Policy metadata |
+| `secrets` | `secrets_scope` | Names only; manifest for ops |
+
+**Strategies:** `gei` (default, `gh ado2gh migrate-repo`) or `mirror` (`git clone --mirror` + `git push --mirror`).
+
+**Execution mode.** Internal signatures take `ExecutionMode` (`DRY_RUN` or `LIVE`) from
+`ado2gh/models.py` rather than a `dry_run` boolean, so a call site says which mode it runs
+in instead of leaving a bare `True` to be read at the wrong end. The external shapes are
+unchanged and boolean — the `--dry-run` CLI flag, the `dry_run` field in HTTP bodies, the
+YAML config key and the `dry_run` database column — and convert once at the boundary with
+`ExecutionMode.from_dry_run(dry_run=...)`. `DRY_RUN` remains the default everywhere a
+default existed, so an omitted argument never runs live.
+
+**Concurrency guard.** `ado2gh/core/conflict_detection.py` answers "is another run already
+holding this repo?" and fails closed. `get_repo_conflict_reason` returns a reason string
+when a check cannot complete — a transient error in the repo lock manager or the pipeline
+run store counts as a conflict rather than as "no conflict, proceed" — and
+`clear_stale_in_progress_migrations` refuses to clear an in-progress row on an inconclusive
+check. The reason is carried through to the operator, so a held migration says why it was
+held.
+
+**Workflow push readiness.** A live push of generated workflows
+(`ado2gh/pipelines/push_workflows.py`) is graded by `workflow_push_readiness` in
+`ado2gh/reporting/pipeline_readiness.py`, using the same
+auto/assisted/manual classification the `pipeline-readiness` command reports. A pipeline
+graded `manual` blocks the push and the reason is returned to the caller; one graded
+`assisted` is pushed with its caveats appended to the pull request body, so the reviewer
+sees that it needs manual attention. `--dry-run` remains the ungated preview path.
+
+Post-migration validation compares **HEAD commit SHA** between ADO and GitHub (`ado2gh/reporting/post_migration_validator.py`).
 
 ---
 
-## Pipeline Transformation Pipeline
+## Phase orchestration
 
 ```
-ADO Pipeline Definition
-     │
-     ▼
-PipelineMetadataExtractor
-  ├── extract_yaml_pipeline()      ── parse YAML structure, triggers, vars
-  ├── extract_classic_build()      ── map phases, build tasks
-  └── extract_release_pipeline()   ── map environments, approvals
+migration.yaml  →  phase assign  →  migration_phase.yaml
+                         │
+                         ▼
+              repo_risk_scores (StateDB)
+                         │
+                         ▼
+              phase run (BatchExecutor)
+                         │
+         ┌───────────────┼───────────────┐
+         ▼               ▼               ▼
+   MigrationEngine   checkpoints    gate-check
+                         │
+                         ▼
+              phase_gates (pass / fail / override)
+```
+
+- **RiskScorer** (`ado2gh/phase/risk_scorer.py`) — 9-signal score (0–100)
+- **WaveAssigner** (`ado2gh/phase/wave_assigner.py`) — poc → pilot → wave1–3
+- **PhaseGateChecker** (`ado2gh/phase/gate_checker.py`) — success thresholds; `--override --reason` for escalation
+- **BatchExecutor** (`ado2gh/phase/batch_executor.py`) — sub-batches with SQLite/Postgres checkpoints
+
+Scoring itself lives in `ado2gh/phase/repo_scoring.py` and is shared: the `phase assign`
+command and the API's profile scan run the same code, so a repo gets the same score
+whichever path reached it. `phase assign` persists the scores and writes
+`migration_phase.yaml` with credentials stripped.
+
+Gates cannot be walked past silently. A run that would skip a blocking gate has to escalate
+through `PhaseGateChecker.override`, which requires a reason and records it; the gate is
+always evaluated first, so the audit trail shows both the failure and the decision to
+proceed.
+
+Profile discovery syncs scan results into `repo_risk_scores` via
+`ado2gh/api/profile_discovery.py`.
+
+---
+
+## Pipeline transformation
+
+```
+ADO pipeline definition
+        │
+        ▼
+PipelineMetadataExtractor  (YAML / classic / release)
      │
      ▼
 PipelineMetadata (normalized)
-  ├── stages, environments, variables
-  ├── service_connections, agent_pools
-  ├── trigger_branches, schedules
-  └── complexity score (simple/medium/complex)
-     │
-     ▼
-PipelineTransformer
-  ├── _build_yaml_workflow()       ── direct YAML→GHA mapping
-  ├── _build_classic_workflow()    ── best-effort phase→job mapping
-  ├── _build_release_workflow()    ── stages→deployment jobs
-  ├── _map_step()                  ── ADO task → GHA action (200+ mappings)
-  ├── _map_condition()             ── ADO conditions → GHA if expressions
-  └── _build_triggers()            ── push/PR/schedule/workflow_dispatch
-     │
-     ▼
-GitHub Actions YAML + migration notes markdown
+        │
+        ▼
+PipelineTransformer  (200+ task mappings → GHA YAML)
+        │
+        ▼
+.github/workflows/*.yml + migration notes
 ```
+
+See [PIPELINE_TRANSFORMATION_GUIDE.md](PIPELINE_TRANSFORMATION_GUIDE.md).
 
 ---
 
-## State Database Schema
+## State persistence
 
-```sql
--- Per-repo migration tracking
-migrations (wave_id, ado_project, ado_repo, gh_org, gh_repo, scope, status, ...)
--- UNIQUE(wave_id, ado_project, ado_repo, scope)
+Factory: `ado2gh/state/factory.py` → `create_state_db(db_path, *, backend=None)`
 
--- Wave execution log
-wave_runs (wave_id, started_at, completed_at, status, dry_run)
+| Backend | Module | When |
+|---------|--------|------|
+| SQLite | `ado2gh/state/sqlite_db.py` | Local / lightweight |
+| PostgreSQL | `ado2gh/state/postgres_db.py` | Production compose |
 
--- Full pipeline metadata cache
-pipeline_inventory (project, pipeline_id, pipeline_name, pipeline_type,
-                    repo_name, complexity, metadata_json, scanned_at)
--- UNIQUE(project, pipeline_id)
+Backend selection is explicit and ordered: a `backend` argument passed by the caller wins,
+otherwise `ADO2GH_STORAGE_BACKEND` decides. An unrecognised backend name is an error that
+names the variable that set it, rather than a silent fall back to SQLite.
 
--- Per-pipeline migration status
-pipeline_migrations (wave_id, project, pipeline_id, status, workflow_file,
-                     warnings, unsupported_tasks, complexity, ...)
--- UNIQUE(wave_id, project, pipeline_id)
+The SQLite path goes the **other** way: `ADO2GH_SQLITE_PATH` outranks the caller's
+`db_path`, which is passed as `StorageConfig.from_env(sqlite_default=db_path)` and therefore
+only supplies the default when the variable is unset (`ado2gh/state/storage_config.py:51`,
+`ado2gh/state/factory.py:28-30, 44`). That precedence is deliberate — a deployment points
+every command at one mounted volume, and `tests/conftest.py` relies on it for per-test
+database isolation — and the CLI says so: `--db` is documented as "Overridden by
+`ADO2GH_SQLITE_PATH`; ignored when `ADO2GH_STORAGE_BACKEND` selects postgres". A non-default
+`db_path` that the selected backend cannot honour is logged as a warning naming
+`ADO2GH_STORAGE_BACKEND`, not dropped in silence (GAP-029).
 
--- Risk scores per repo
-repo_risk_scores (project, repo_name, total_score, assigned_phase,
-                  gh_org, gh_repo, score_json, scored_at)
--- UNIQUE(project, repo_name)
+`create_state_db` supports SQLite and PostgreSQL only. DynamoDB exists for the
+**job store** (`DynamoDBJobStore` in `ado2gh/state/job_store.py`, selected by
+`ADO2GH_STORAGE_BACKEND=dynamodb`), not for the migration state DB. Job claims there are
+conditional writes, so two workers cannot claim the same job, and a losing claim is audited.
 
--- Phase gate results
-phase_gates (phase, status, repo_success_pct, pipeline_success_pct,
-             failures_json, override_reason, checked_at)
--- UNIQUE(phase)
+Scan payloads are packed and unpacked by `ado2gh/state/scan_payload.py`, next to the store
+that persists them rather than in the API layer that happens to call it.
 
--- Batch execution checkpoints
-batch_checkpoints (phase, batch_num, total_batches, repos_done,
-                   repos_total, status, started_at, completed_at)
--- UNIQUE(phase, batch_num)
-```
+**Core tables:** `migrations`, `wave_runs`, `pipeline_inventory`, `pipeline_migrations`, `repo_risk_scores`, `phase_gates`, `batch_checkpoints`
 
-All tables use `ON CONFLICT ... DO UPDATE` for idempotent upserts. Database uses WAL mode for concurrent read/write access during parallel execution.
+**Platform tables:** `profile_scans`, `profile_scan_repos`, `audit_events`, `platform_users`, `auth_sessions`, `live_execution_approvals`
+
+**Knowledge base tables:** `knowledge_nodes`, `knowledge_edges`, `knowledge_scans` — see [Migration knowledge base](#migration-knowledge-base) below.
+
+All sixteen tables above are created by both backends, not Postgres only (`ado2gh/state/sqlite_db.py`, `ado2gh/state/postgres_db.py`).
+
+Phase lookups accept `PhaseType` enum **or** plain string phase ids (e.g. `"poc"`).
 
 ---
 
-## Error Handling Strategy
+## Migration knowledge base
 
-1. **Per-scope isolation**: A failure in `work_items` doesn't block `pipelines` for the same repo
-2. **Per-repo isolation**: A failure in one repo doesn't block other repos in the batch
-3. **Automatic retry**: Re-running a phase skips completed repos/scopes
-4. **Failed repo tracking**: `failed_repos_{phase}.txt` generated after every phase run
-5. **Gate enforcement**: Phase can't advance until success thresholds met (or override)
-6. **Rollback granularity**: Can undo specific scopes without destroying the repo
+```
+knowledge_nodes · knowledge_edges · knowledge_scans     (StateDB)
+```
+
+`ado2gh/knowledge/builder.py` records what a migration touches and how those
+things depend on one another, reading nothing but the `pipeline_inventory`
+rows the platform already collected — no additional call to Azure DevOps. For
+every stored pipeline it records the repository it builds, the service
+connections and variable groups it references, the environments it deploys
+to, the agent pools it runs on, and, from the pipeline text already stored on
+the row, the artifact feeds and other pipelines it consumes. A dependency
+written through a runtime or compile-time variable expression is skipped
+rather than guessed, and a template's own repository is only known once
+`pipelines inventory` has been re-run, because the field that carries it is
+filled in while that command extracts the pipeline's YAML.
+
+Everything is stored across three tables, all created by both the SQLite and
+PostgreSQL backends: `knowledge_nodes` (one row per repository, pipeline,
+service connection, or other thing a migration touches), `knowledge_edges`
+(one row per dependency, always pointing from the consumer to what it needs),
+and `knowledge_scans` (one row per pass over the inventory, holding what it
+covered and what it could not attempt). `ado2gh/knowledge/store.py` derives
+each row's identifier from what makes the thing or the dependency itself, so
+re-running a scan refreshes the same rows instead of duplicating them, and it
+marks a dependency the latest scan did not see again as disappeared rather
+than deleting it.
+
+Every dependency carries a confidence: `declared` when the source named it
+outright, `resolved` when a name matched something this same scan read, and
+`inferred` when only a heuristic matched a name in free text. An answer never
+presents an inferred dependency as though it were declared, and every answer
+— for an operator or for the agent — repeats the coverage of the scan behind
+it, so an empty result reads as "nothing recorded within this coverage"
+rather than "nothing depends on this."
+
+**Reaching it.** `services/accelerator_api/routes/knowledge_routes.py` exposes
+five routes under `/v1/knowledge` — four read-only ones, `search`, one-hop
+`nodes/{id}/dependencies` and `nodes/{id}/consumers`, and `nodes/{id}/impact`,
+plus `scan`, which rebuilds the base on request — gated by the same
+`can_operate` capability as the rest of the inventory reads, and scoped to the
+caller's active migration profile. The planner's `knowledge_search` and
+`knowledge_impact` tools
+(`ado2gh/agents/migration_agent/tools/knowledge_tools.py`) are the agent's
+only path to this data: they call those routes rather than opening a
+database themselves, and mask secret shapes in the response before capping
+its size, in that order, so a cap can never cut a masked value in half. A
+real `ado2gh pipelines inventory` run fills the knowledge base for the active
+profile automatically once the run finishes; a preview run leaves it
+untouched. An operator can also rebuild it directly with
+`POST /v1/knowledge/scan`, without waiting for another inventory run. Neither
+path is wired to a command-line command yet.
+
+Full reference, including every node and dependency kind and the current
+limits: [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md).
+
+---
+
+## Authentication & RBAC
+
+- Cookie sessions via `ado2gh/auth/service.py`. The session cookie is `HttpOnly` and
+  `SameSite=Lax`, gains `Secure` when the request arrives over HTTPS, and its `Max-Age`
+  matches the server-side session lifetime instead of outliving it.
+- **Bootstrap** on first boot — admin account creation (`/login?bootstrap=1`)
+- **Platform roles:** admin, approver, operator, coordinator
+- **Capabilities:** `can_operate`, `can_manage_models`, `can_approve_live_execution`
+- **Live execution** — platform approval queue before non-dry-run agent/pipeline runs
+
+Authorisation decisions are **capability-derived, never role-name-derived**: a new role that
+can operate but not approve is gated by the existing checks without any of them being
+edited. `ADO2GH_AUTH_ENABLED=false` keeps local development permissive for dry runs and
+audit reads, but it does not lift the live-execution checks — those require an identity and
+the `can_approve_live_execution` capability in every configuration.
+
+The GitHub proxy (`services/accelerator_api/routes/proxy_routes.py`) is not read-only:
+`POST`, `PATCH`, `PUT` and `DELETE` through it require the approve-live capability and are
+written to the audit log with the actor, method and endpoint. `GET` is not unauthenticated —
+it still requires `can_operate` via `require_operate` (`proxy_routes.py:199`), as does the
+ADO read proxy (`:81`); only the approve-live gate and the audit write are skipped for reads.
+
+The agent's `/v1/internal/*` routes are for service-to-service calls and fail closed. They
+require `ADO2GH_INTERNAL_TOKEN`, compared in constant time; if the variable is unset the
+whole range answers 401 rather than running unauthenticated.
+
+---
+
+## Secret handling
+
+One masking choke point: `redact_payload` in `ado2gh/audit/redaction.py`. It matches secret
+**key names** (case- and affix-insensitive, so `ado_pat`, `GH_TOKEN`, `clientSecret` and
+`apiKey` all hit) and secret **value shapes** (GitHub token prefixes, `Bearer <token>`, a
+bare ADO PAT, `key=value` pairs), because key names alone cannot reach a secret that arrives
+inside free text.
+
+Everything that can carry a secret routes through that one function:
+
+- `SecretRedactingFilter` in `ado2gh/logging_config.py` is attached to the root log handler,
+  so records propagated from any module's logger are masked. Structured `record.args`, the
+  rendered message **and the traceback** all go through it: `_redact_traceback`
+  (`logging_config.py:38-58`, called at `:92`) pre-formats the exception, redacts the text
+  and hands it over as `exc_text` with `exc_info` cleared, because
+  `RichHandler(rich_tracebacks=True)` would otherwise rebuild the traceback from the live
+  exception objects and print a token carried in a `requests` URL (GAP-064). It never raises:
+  if redaction fails, the record content is dropped — `msg`, `args`, `exc_info` and
+  `exc_text` all cleared (`:93-97`) — and logging stays alive.
+- Agent messages are masked where they are constructed, not at the audit boundary, so the
+  SSE stream, the chat transcript and the persisted session rows all show the masked form.
+- Subprocess output capture in `ado2gh/core/scopes/git_scope.py` delegates to the same
+  function rather than keeping its own pattern list.
+- `AuditWriter.write()` in `ado2gh/audit/writer.py` masks the payload, the actor and the
+  profile id before an event is handed to wherever it is being written, so every audit
+  destination — the configured state database, a DynamoDB table, a SQLite file or a
+  PostgreSQL database of its own — receives masked values only.
+
+**Where audit events go.** `ADO2GH_AUDIT_DESTINATION` (`ado2gh/audit/destinations.py`) names
+the destination, chosen separately from where migration state lives. Leaving it unset, or
+setting it to `state`, keeps events in the configured state database — today's behaviour.
+`dynamodb://<table-name>` writes one item per event to a DynamoDB table of its own;
+`sqlite://<file-path>` and a `postgres://` or `postgresql://` connection string write to a
+SQLite file or a PostgreSQL database of its own. Any other value is refused at start-up with
+the accepted forms named, and so is `sqlite://:memory:`, which would lose every event the
+moment the process exits. The setting is read on its own, so choosing it never validates the
+unrelated state backend, and no new region, credential or endpoint variable was needed: the
+DynamoDB destination reads the region the way the storage settings already read it and
+honours the endpoint override the job store already honours. A deployment that selects the
+DynamoDB job store (`ADO2GH_STORAGE_BACKEND=dynamodb`) without setting
+`ADO2GH_AUDIT_DESTINATION` fails at start-up instead of starting and logging a claim conflict
+it can never durably audit.
+
+LLM provider keys are sent in request bodies, never in a URL query string.
+
+Service connection secrets are never migrated — only their names are readable from ADO. The
+`service-connections` command emits a manifest of GitHub secret names and OIDC setup steps
+for the operations team to fill in.
+
+**Future (not in v1):** Enterprise SSO via OIDC (`ADO2GH_SSO_ISSUER`, `ADO2GH_SSO_AUDIENCE`, `ADO2GH_SSO_JWKS_URL`) — JWT middleware on accelerator, SSO login in UI, actor from JWT claims in audit.
+
+---
+
+## Token management
+
+`ado2gh/clients/gh_token_manager.py` — round-robin PAT pool, rate-limit tracking from response headers, optional GitHub App JWT.
+
+Multi-token env: `GH_TOKEN_1`, `GH_TOKEN_2`, …
+
+---
+
+## Design principles
+
+1. **ADO-specific** — pipeline transformation, risk signals, and cleanup target ADO concepts.
+2. **Execute, don't just plan** — real git mirror/GEI migrations, not metadata-only runs.
+3. **Content-level validation** — commit SHA proof, not branch counts alone.
+4. **Idempotent & resumable** — checkpoints, skip completed scopes, WAL SQLite.
+5. **Guarded agent automation** — PEV tools require profile discovery data; no NL-only repo invention.
+6. **One choke point per cross-cutting concern** — masking, the live-execution gate, backend
+   selection and repo scoring each have a single implementation that every caller routes
+   through. A guard added to a router covers the routes added to it later; a guard copied
+   into nine handlers does not.
+7. **Fail closed** — when a safety check cannot complete, the answer is "unsafe". An
+   inconclusive conflict check blocks the migration, a missing internal token rejects the
+   request, and an unrecognised backend name is an error rather than a fallback.
+
+---
+
+## Related documentation
+
+| Document | Purpose |
+|----------|---------|
+| [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md) | **SQLite local dev** — Docker, native, CLI |
+| [SETUP_GUIDE.md](SETUP_GUIDE.md) | Install, tokens, connectivity |
+| [EXECUTION_MANUAL.md](EXECUTION_MANUAL.md) | End-to-end operational guide |
+| [MIGRATION_RUNBOOK.md](MIGRATION_RUNBOOK.md) | Phased rollout runbook |
+| [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) | CLI reference |
+| [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md) | Migration knowledge base — node and dependency kinds, confidence, agent tools |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common failures |
+| [../specs/](../specs/) | Feature specs (001–013) |
+| [STRUCTURAL_CHANGELOG.md](STRUCTURAL_CHANGELOG.md) | Append-only ledger of file moves and deletions |
+| [../CLAUDE.md](../CLAUDE.md) | AI assistant quick reference |
+
+---
+
+## Local development
+
+**Default local stack uses SQLite** — no Postgres required.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Native (Windows): `.\scripts\dev\run-local-agent.ps1` + `.\scripts\dev\run-ui.ps1` · CLI: `pip install -e ".[api,agent,dev]"`
+
+Full guide: [LOCAL_DEVELOPMENT.md](LOCAL_DEVELOPMENT.md)
+
+Production (Postgres + auth):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+pytest tests/
+```
+
+Ports: UI **3000**, Accelerator **8080**, Agent **8090**.

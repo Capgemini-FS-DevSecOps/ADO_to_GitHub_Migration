@@ -1,0 +1,586 @@
+"""ADO organisation scan with risk scoring and phase recommendations for the migration UI."""
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from ado2gh.api.phase_definitions import (
+    ConfigurableWaveAssigner,
+    PhaseDefinition,
+    parse_phase_definitions,
+)
+from ado2gh.api.scan_diagnostics import build_empty_scan_warnings
+from ado2gh.clients.ado_client import ADOClient
+from ado2gh.clients.ado_token_manager import ADOTokenManager
+from ado2gh.models import PipelineComplexity, PipelineMetadata, PipelineType, RiskScore
+from ado2gh.phase.repo_scoring import score_repo
+from ado2gh.phase.risk_scorer import RiskScorer
+from ado2gh.state.scan_payload import DISCOVERY_DETAIL_FIELDS
+
+if TYPE_CHECKING:
+    from ado2gh.state.factory import StateStore
+
+
+def _scan_results_path(profile_id: str | None = None) -> Path:
+    base = Path(os.environ.get("ADO2GH_DATA_DIR", "."))
+    if profile_id:
+        return base / f"scan_{profile_id}.json"
+    return base / "scan_preview.json"
+
+
+def merge_scan_payload(
+    base: dict[str, Any] | None,
+    extra: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Fill the discovery fields missing from one scan payload using another.
+
+    Args:
+        base: The primary payload, typically the state-DB copy. ``None`` when
+            the database holds no scan for the profile yet.
+        extra: The fallback payload, typically the on-disk JSON backup. Only
+            its discovery fields are consulted.
+
+    Returns:
+        ``base`` enriched with every discovery field it was missing, or
+        whichever payload was supplied when the other is empty, or ``None``
+        when neither holds anything.
+    """
+    if not base:
+        return extra
+    if not extra:
+        return base
+    merged = dict(base)
+    for key in DISCOVERY_DETAIL_FIELDS:
+        if not merged.get(key) and extra.get(key) is not None:
+            merged[key] = extra[key]
+    return merged
+
+
+def _build_ado_client(ado_org_url: str, ado_pat: str) -> ADOClient:
+    return ADOClient(ado_org_url.rstrip("/"), token_manager=ADOTokenManager.from_single(ado_pat))
+
+
+def _stub_pipeline(defn: dict, project: str) -> PipelineMetadata:
+    process_type = defn.get("process", {}).get("type", 1)
+    ptype = PipelineType.YAML if process_type == 2 else PipelineType.CLASSIC
+    repo = defn.get("repository", {})
+    return PipelineMetadata(
+        pipeline_id=defn.get("id", 0),
+        pipeline_name=defn.get("name", ""),
+        pipeline_type=ptype,
+        project=project,
+        repo_id=repo.get("id", ""),
+        repo_name=repo.get("name", ""),
+        complexity=PipelineComplexity.SIMPLE,
+    )
+
+
+def _summarize_service_connections(svc_conns: list[dict]) -> list[dict[str, Any]]:
+    """Reduce raw ADO service connections to the fields the scan summary needs.
+
+    Args:
+        svc_conns: Service connection dicts as returned by the ADO API.
+
+    Returns:
+        One entry per named connection, each with ``name``, ``type``, ``id``
+        and ``is_ready`` (from ADO's ``isReady``, default ``True``). Entries
+        with no name are dropped.
+    """
+    return [
+        {
+            "name": sc.get("name", ""),
+            "type": sc.get("type", ""),
+            "id": sc.get("id", ""),
+            "is_ready": sc.get("isReady", True),
+        }
+        for sc in svc_conns
+        if sc.get("name")
+    ]
+
+
+def _summarize_variable_groups(var_groups: list[dict]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": vg.get("name", ""),
+            "id": vg.get("id", ""),
+            "variable_count": len(vg.get("variables") or {}),
+            "is_shared": bool(vg.get("isShared")),
+        }
+        for vg in var_groups
+        if vg.get("name")
+    ]
+
+
+def run_pipeline_inventory_scan(
+    ado_org_url: str,
+    ado_pat: str,
+    db_path: str,
+    *,
+    projects: list[str] | None = None,
+    parallel: int = 12,
+) -> dict[str, Any]:
+    """Deep pipeline inventory stored in StateDB for conversion and secrets mapping."""
+    from ado2gh.api.state_db import create_state_db
+    from ado2gh.models import ExecutionMode
+    from ado2gh.pipelines.inventory import PipelineInventoryBuilder
+
+    ado = _build_ado_client(ado_org_url, ado_pat)
+    db = create_state_db(db_path)
+    if not projects:
+        projects = [p["name"] for p in ado.list_projects() if p.get("name")]
+    # The scan's whole product is the persisted inventory this function counts
+    # below, so it asks for LIVE rather than inheriting the dry-run default (GAP-078).
+    summary = PipelineInventoryBuilder(
+        ado, db, parallel=parallel, mode=ExecutionMode.LIVE,
+    ).build_for_projects(
+        projects,
+    )
+    return {
+        "projects": summary,
+        "total_pipelines": sum(int(s.get("total", 0)) for s in summary.values()),
+        "inventory_count": db.inventory_count(),
+    }
+
+
+def build_inventory_gaps(project_details: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Surface ADO assets that need operator input before secrets/pipeline conversion."""
+    gaps: list[dict[str, Any]] = []
+    for project in project_details:
+        proj_name = project.get("project", "")
+        for sc in project.get("service_connections") or []:
+            gaps.append({
+                "type": "service_connection",
+                "project": proj_name,
+                "name": sc.get("name", ""),
+                "connection_type": sc.get("type", ""),
+                "field": f"secret_mapping__{proj_name}__{sc.get('name', '')}",
+                "hint": "GitHub secret name or OIDC federated credential to use",
+            })
+        for vg in project.get("variable_groups") or []:
+            gaps.append({
+                "type": "variable_group",
+                "project": proj_name,
+                "name": vg.get("name", ""),
+                "field": f"variable_group__{proj_name}__{vg.get('name', '')}",
+                "hint": "Confirm variable group secrets were created in GitHub (values are not readable from ADO)",
+            })
+    return gaps
+
+
+class MigrationScanner:
+    """Scan ADO organisation repositories, score risk, and bucket into migration phases."""
+
+    def __init__(
+        self,
+        ado: ADOClient,
+        gh_org: str = "",
+        phase_definitions: list[PhaseDefinition] | list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Bind a scanner to one ADO organisation and the phases its repositories fall into.
+
+        Args:
+            ado: Client used to enumerate projects, repos and pipelines.
+            gh_org: Target GitHub organisation recorded on every risk score.
+            phase_definitions: Phase definitions as ``PhaseDefinition`` objects
+                or in their dict form. The built-in defaults are used when this
+                is omitted or empty.
+        """
+        self.ado = ado
+        self.gh_org = gh_org
+        self.scorer = RiskScorer()
+        if phase_definitions and isinstance(phase_definitions[0], PhaseDefinition):
+            self.phase_defs = sorted(phase_definitions, key=lambda p: p.order)
+        else:
+            self.phase_defs = parse_phase_definitions(phase_definitions)  # type: ignore[arg-type]
+        self.assigner = ConfigurableWaveAssigner(self.phase_defs)
+
+    def scan(self, max_repos: int | None = None) -> dict[str, Any]:
+        """Walk every project in the organisation and risk-score its enabled repositories.
+
+        A project whose repo listing fails is still reported: the failure is
+        recorded on its ``project_details`` row rather than raised.
+
+        Args:
+            max_repos: Stop once this many enabled repos have been scored.
+                ``None`` scans the whole organisation.
+
+        Returns:
+            A scan payload holding the scan timestamp, the project and repo
+            counts, the target GitHub org, the per-phase ``recommendations``
+            buckets, one ``project_details`` row per project (repo, pipeline,
+            service connection, variable group, environment, artifact feed,
+            team, iteration, work item and test plan inventory), an
+            ``org_inventory`` roll-up of those totals, ``inventory_gaps``
+            naming the assets that still need operator input, diagnostic
+            ``warnings``, and a ``status`` of ``ok``, ``empty`` or ``error``.
+        """
+        projects = self.ado.list_projects()
+        all_scores = []
+        repos_scanned = 0
+        projects_scanned = 0
+        project_details: list[dict[str, Any]] = []
+
+        for proj in projects:
+            proj_name = proj.get("name", "")
+            if not proj_name:
+                continue
+            projects_scanned += 1
+            detail: dict[str, Any] = {
+                "project": proj_name,
+                "project_id": proj.get("id", ""),
+                "repo_count": 0,
+                "disabled_count": 0,
+                "pipeline_count": 0,
+                "error": None,
+            }
+
+            try:
+                var_groups = self.ado.list_variable_groups(proj_name)
+            except Exception:
+                var_groups = []
+
+            try:
+                svc_conns = self.ado.list_service_connections(proj_name)
+            except Exception:
+                svc_conns = []
+
+            try:
+                environments = self.ado.list_environments(proj_name)
+            except Exception:
+                environments = []
+
+            try:
+                artifact_feeds = self.ado.list_artifacts(proj_name)
+            except Exception:
+                artifact_feeds = []
+
+            try:
+                teams = self.ado.list_teams(proj_name)
+            except Exception:
+                teams = []
+
+            try:
+                iterations = self.ado.list_iterations(proj_name)
+            except Exception:
+                iterations = []
+
+            try:
+                work_item_types = self.ado.list_work_item_types(proj_name)
+            except Exception:
+                work_item_types = []
+
+            try:
+                work_items = self.ado.list_work_items(proj_name, top=1)
+                work_item_count = len(work_items)
+            except Exception:
+                work_item_count = 0
+
+            try:
+                test_plans = self.ado.list_test_plans(proj_name)
+            except Exception:
+                test_plans = []
+
+            project_pipelines: list[PipelineMetadata] = []
+            try:
+                for stub in self.ado.list_all_pipelines(proj_name):
+                    try:
+                        defn = self.ado.get_build_definition_full(proj_name, stub["id"])
+                        project_pipelines.append(_stub_pipeline(defn, proj_name))
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            detail["pipeline_count"] = len(project_pipelines)
+            detail["service_connection_count"] = len(svc_conns)
+            detail["service_connections"] = _summarize_service_connections(svc_conns)
+            detail["variable_group_count"] = len(var_groups)
+            detail["variable_groups"] = _summarize_variable_groups(var_groups)
+            detail["environment_count"] = len(environments)
+            detail["environments"] = [e.get("name", "") for e in environments if e.get("name")]
+            detail["artifact_feed_count"] = len(artifact_feeds)
+            detail["artifact_feeds"] = [
+                {"name": f.get("name", ""), "id": f.get("id", ""), "is_public": bool(f.get("isPublic"))}
+                for f in artifact_feeds if f.get("name")
+            ]
+            detail["team_count"] = len(teams)
+            detail["teams"] = [t.get("name", "") for t in teams if t.get("name")]
+            detail["iteration_count"] = len(iterations)
+            detail["work_item_types"] = [w.get("name", "") for w in work_item_types if w.get("name")]
+            detail["work_item_type_count"] = len(work_item_types)
+            detail["work_item_count"] = work_item_count
+            detail["test_plan_count"] = len(test_plans)
+            detail["test_plans"] = [
+                {"name": p.get("name", ""), "id": p.get("id", ""), "state": p.get("state", "")}
+                for p in test_plans if p.get("name")
+            ]
+
+            try:
+                repos = self.ado.list_repos(proj_name)
+            except Exception as exc:
+                detail["error"] = str(exc)
+                project_details.append(detail)
+                continue
+
+            detail["repo_count"] = len(repos)
+            disabled = 0
+            for repo in repos:
+                if max_repos is not None and repos_scanned >= max_repos:
+                    break
+                if repo.get("isDisabled"):
+                    disabled += 1
+                    continue
+
+                repo_id = repo.get("id", "")
+                repo_name = repo.get("name", "")
+                repo_pipes = [
+                    p for p in project_pipelines
+                    if p.repo_name == repo_name or p.repo_id == repo_id
+                ]
+
+                score = score_repo(
+                    self.ado, repo_id,
+                    RiskScore(
+                        project=proj_name, repo_name=repo_name, gh_org=self.gh_org,
+                        size_kb=repo.get("size", 0),
+                        variable_group_count=len(var_groups),
+                        service_connection_count=len(svc_conns),
+                    ),
+                    repo_pipes, self.scorer,
+                )
+                all_scores.append(score)
+                repos_scanned += 1
+
+            detail["disabled_count"] = disabled
+            project_details.append(detail)
+
+            if max_repos is not None and repos_scanned >= max_repos:
+                break
+
+        assigned = self.assigner.assign(all_scores, gh_org=self.gh_org)
+        all_assigned = assigned.get("unassigned", [])
+        buckets: dict[str, Any] = {
+            "unassigned": {
+                "phase": "unassigned",
+                "phase_name": "Unassigned",
+                "repo_count": len(all_assigned),
+                "risk_min": round(min((s.total_score for s in all_assigned), default=0), 1),
+                "risk_max": round(max((s.total_score for s in all_assigned), default=0), 1),
+                "risk_band_max": 100,
+                "rationale": f"{len(all_assigned)} repos with risk scores — no automatic phase assignment.",
+                "repos": [s.to_dict() for s in all_assigned],
+            },
+        }
+
+        warnings = build_empty_scan_warnings(projects_scanned, repos_scanned, project_details)
+        scan_status = "ok" if repos_scanned else ("error" if any(p.get("error") for p in project_details) else "empty")
+
+        org_inventory = {
+            "total_service_connections": sum(p.get("service_connection_count", 0) for p in project_details),
+            "total_variable_groups": sum(p.get("variable_group_count", 0) for p in project_details),
+            "total_environments": sum(p.get("environment_count", 0) for p in project_details),
+            "total_pipeline_stubs": sum(p.get("pipeline_count", 0) for p in project_details),
+            "total_artifact_feeds": sum(p.get("artifact_feed_count", 0) for p in project_details),
+            "total_teams": sum(p.get("team_count", 0) for p in project_details),
+            "total_iterations": sum(p.get("iteration_count", 0) for p in project_details),
+            "total_work_items": sum(p.get("work_item_count", 0) for p in project_details),
+            "total_work_item_types": sum(p.get("work_item_type_count", 0) for p in project_details),
+            "total_test_plans": sum(p.get("test_plan_count", 0) for p in project_details),
+        }
+
+        return {
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
+            "projects_scanned": projects_scanned,
+            "repos_scanned": repos_scanned,
+            "total_repos": repos_scanned,
+            "gh_org": self.gh_org,
+            "recommendations": buckets,
+            "project_details": project_details,
+            "org_inventory": org_inventory,
+            "inventory_gaps": build_inventory_gaps(project_details),
+            "warnings": warnings,
+            "status": scan_status,
+        }
+
+
+def scan_with_credentials(
+    ado_org_url: str,
+    ado_pat: str,
+    gh_org: str = "",
+    max_repos: int | None = None,
+    phase_definitions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Scan an ADO organisation with one-off credentials and bucket its repos.
+
+    Args:
+        ado_org_url: Base URL of the Azure DevOps organisation to scan.
+        ado_pat: Credential authorising the scan. It is used for the outbound
+            HTTP calls only and never reaches the payload, the log or the DB.
+        gh_org: Target GitHub organisation recorded on every risk score.
+        max_repos: Stop once this many repos have been scored; ``None`` scans
+            the whole organisation.
+        phase_definitions: Phase definitions in dict form. The built-in
+            defaults are used when omitted.
+
+    Returns:
+        The scan payload described by :meth:`MigrationScanner.scan`. It carries
+        no pipeline inventory — call :func:`attach_pipeline_inventory` on the
+        result when the deep inventory is wanted as well.
+    """
+    ado = _build_ado_client(ado_org_url, ado_pat)
+    return MigrationScanner(ado, gh_org=gh_org, phase_definitions=phase_definitions).scan(
+        max_repos=max_repos,
+    )
+
+
+def attach_pipeline_inventory(
+    raw: dict[str, Any],
+    ado_org_url: str,
+    ado_pat: str,
+    db_path: str,
+    *,
+    pipeline_parallel: int = 12,
+) -> dict[str, Any]:
+    """Run the deep pipeline inventory and record its totals on a scan payload.
+
+    A failed inventory is not fatal to the scan: the reason is appended to the
+    payload's ``warnings`` list and the rest of the payload is left untouched.
+
+    Args:
+        raw: Scan payload from :func:`scan_with_credentials`, updated in place.
+        ado_org_url: Base URL of the Azure DevOps organisation to inventory.
+        ado_pat: Credential authorising the inventory calls.
+        db_path: State database that receives the pipeline inventory rows.
+        pipeline_parallel: Number of worker threads for the inventory scan.
+
+    Returns:
+        The same payload. On success it gains a ``pipeline_inventory`` block
+        plus ``pipeline_inventory_count`` and ``total_pipelines_indexed`` under
+        ``org_inventory``; on failure it gains one ``warnings`` entry instead.
+    """
+    try:
+        inventory = run_pipeline_inventory_scan(
+            ado_org_url,
+            ado_pat,
+            db_path,
+            parallel=pipeline_parallel,
+        )
+    except Exception as exc:
+        raw.setdefault("warnings", []).append(
+            f"Pipeline inventory scan failed: {exc}"
+        )
+        return raw
+    raw["pipeline_inventory"] = inventory
+    org = raw.setdefault("org_inventory", {})
+    org["pipeline_inventory_count"] = inventory.get("inventory_count", 0)
+    org["total_pipelines_indexed"] = inventory.get("total_pipelines", 0)
+    return raw
+
+
+def persist_scan_results(profile_id: str, results: dict[str, Any]) -> Path:
+    """Persist a scan to the state DB, keeping manual phase assignments.
+
+    This is the routine-rescan path: a repo an operator has already moved into
+    a phase by hand keeps that phase.
+
+    Args:
+        profile_id: Migration profile the scan belongs to.
+        results: Scan payload as returned by :func:`scan_with_credentials`.
+
+    Returns:
+        The path of the portable JSON copy written beside the state DB.
+    """
+    from ado2gh.api.state_db import get_state_db
+
+    db = get_state_db()
+    if hasattr(db, "save_profile_scan"):
+        db.save_profile_scan(profile_id, results)
+    return _write_scan_backup(db, profile_id, results)
+
+
+def replace_scan_results(profile_id: str, results: dict[str, Any]) -> Path:
+    """Persist a scan to the state DB, discarding manual phase assignments.
+
+    Use this when the phase definitions themselves changed, so every repo has
+    to be re-bucketed from the new definitions instead of keeping an assignment
+    made against the old ones.
+
+    Args:
+        profile_id: Migration profile the scan belongs to.
+        results: Scan payload as returned by :func:`scan_with_credentials`.
+
+    Returns:
+        The path of the portable JSON copy written beside the state DB.
+    """
+    from ado2gh.api.state_db import get_state_db
+
+    db = get_state_db()
+    if hasattr(db, "replace_profile_scan"):
+        db.replace_profile_scan(profile_id, results)
+    return _write_scan_backup(db, profile_id, results)
+
+
+def _write_scan_backup(
+    db: StateStore,
+    profile_id: str,
+    results: dict[str, Any],
+) -> Path:
+    """Write the portable JSON copy of a profile scan next to the state DB.
+
+    Args:
+        db: State store that already holds the persisted scan. It is asked to
+            rebuild the payload so the file matches what the DB will serve.
+        profile_id: Migration profile the scan belongs to.
+        results: Scan payload, used verbatim when the store cannot rebuild one.
+
+    Returns:
+        The path of the JSON file that was written.
+    """
+    path = _scan_results_path(profile_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = results
+    if hasattr(db, "build_profile_scan_payload"):
+        payload = db.build_profile_scan_payload(profile_id) or results
+    path.write_text(
+        json.dumps({"profile_id": profile_id, **payload}, indent=2),
+        encoding="utf-8",
+    )
+    return path
+
+
+def load_scan_results(profile_id: str) -> dict[str, Any] | None:
+    """Load a profile's stored scan from the state DB and the JSON backup.
+
+    Args:
+        profile_id: Migration profile whose scan should be loaded.
+
+    Returns:
+        The merged scan payload — the state DB copy topped up with any
+        discovery fields that only survive in the on-disk backup — or the
+        backup alone when the DB holds nothing, or ``None`` when neither source
+        has a usable scan.
+    """
+    from ado2gh.api.state_db import get_state_db
+
+    db = get_state_db()
+    payload: dict[str, Any] | None = None
+    if hasattr(db, "build_profile_scan_payload"):
+        payload = db.build_profile_scan_payload(profile_id)
+
+    path = _scan_results_path(profile_id)
+    file_data: dict[str, Any] | None = None
+    if path.exists():
+        try:
+            file_data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            file_data = None
+
+    payload = merge_scan_payload(payload, file_data)
+    if payload:
+        return payload
+
+    if file_data and (file_data.get("recommendations") or file_data.get("repos_scanned", 0) > 0):
+        return file_data
+    return None

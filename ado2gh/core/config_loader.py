@@ -1,15 +1,12 @@
-"""Configuration loader — settings YAML, text repo lists, and CSV repo lists.
+"""Configuration loader — settings YAML, text repository lists, and CSV repository lists.
 
-The config file (migration.yaml) contains ONLY connection settings and tuning.
-Repo lists come from separate input files (text or CSV).
+The configuration file (migration.yaml) contains ONLY connection settings and tuning.
+Repository lists come from separate input files (text or CSV).
 """
 from __future__ import annotations
 
 import csv
-import os
-import re
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -18,14 +15,23 @@ from ado2gh.models import RepoConfig, WaveConfig
 
 
 class ConfigLoader:
+    """Load migration settings and repository lists from YAML, text, and CSV sources."""
 
     @staticmethod
     def load(path: str) -> tuple[dict, list[WaveConfig]]:
-        """Load a YAML config file.
+        """Load a YAML configuration file.
 
-        Returns (global_cfg, waves). waves may be empty if the config
-        only contains connection settings (which is the intended flow —
-        repos come from input files, not the config).
+        Args:
+            path: Path to the migration settings YAML file.
+
+        Returns:
+            A tuple of the global settings mapping and the parsed waves. The
+            wave list may be empty when the configuration only carries connection
+            settings, which is the intended flow — repos come from input files,
+            not from the config.
+
+        Raises:
+            FileNotFoundError: If no file exists at the given path.
         """
         cfg_path = Path(path)
         if not cfg_path.exists():
@@ -34,6 +40,22 @@ class ConfigLoader:
         with open(cfg_path, "r", encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
 
+        return ConfigLoader.parse_config(raw, source_name=cfg_path.name)
+
+    @staticmethod
+    def parse_config(raw: object, *, source_name: str = "config") -> tuple[dict, list[WaveConfig]]:
+        """Parse a loaded YAML mapping into global settings and waves.
+
+        Args:
+            raw: The parsed YAML document. Must be a mapping at the root.
+            source_name: Label for the source, used in log messages only.
+
+        Returns:
+            A tuple of the global settings mapping and the parsed waves.
+
+        Raises:
+            ValueError: If the YAML root is not a mapping.
+        """
         if not isinstance(raw, dict):
             raise ValueError(f"Config root must be a mapping, got {type(raw).__name__}")
 
@@ -59,52 +81,116 @@ class ConfigLoader:
         total_repos = sum(len(w.repos) for w in waves)
         if waves:
             log.info("Loaded config: %d wave(s), %d repos from %s",
-                     len(waves), total_repos, cfg_path.name)
+                     len(waves), total_repos, source_name)
         else:
             log.info("Loaded settings from %s (no waves — use --input for repo list)",
-                     cfg_path.name)
+                     source_name)
 
         return global_cfg, waves
+
+    @staticmethod
+    def load_yaml_text(text: str, *, source_name: str = "upload") -> tuple[dict, list[WaveConfig]]:
+        """Parse YAML configuration text that was pasted or uploaded rather than read from disk.
+
+        Args:
+            text: The raw YAML document text.
+            source_name: Label for the source, used in log messages only.
+
+        Returns:
+            A tuple of the global settings mapping and the parsed waves.
+        """
+        raw = yaml.safe_load(text)
+        return ConfigLoader.parse_config(raw, source_name=source_name)
 
     # ── Text input (project/repo per line) ──────────────────────────────────
 
     @staticmethod
     def load_text_input(path: str, gh_org: str,
-                        scopes: list[str] = None) -> list[RepoConfig]:
+                        scopes: list[str] | None = None) -> list[RepoConfig]:
         """Parse a simple text file into RepoConfig list.
 
         Format (one per line):
             project/repo
             project/repo::gh_org/gh_repo
+
+        Args:
+            path: Path to the text file holding the repo list.
+            gh_org: GitHub organisation used for lines that name no target.
+            scopes: Migration scopes applied to every repo. Defaults to
+                ``["repo"]`` when omitted.
+
+        Returns:
+            One repo configuration per line that parsed cleanly; blank lines,
+            comments, and malformed lines are skipped.
+
+        Raises:
+            FileNotFoundError: If no file exists at the given path.
         """
         scopes = scopes or ["repo"]
         txt_path = Path(path)
         if not txt_path.exists():
             raise FileNotFoundError(f"Input file not found: {path}")
+        content = txt_path.read_text(encoding="utf-8")
+        return ConfigLoader.load_text_content(content, gh_org, scopes, source_name=txt_path.name)
 
+    @staticmethod
+    def load_text_content(
+        content: str,
+        gh_org: str,
+        scopes: list[str] | None = None,
+        *,
+        source_name: str = "upload",
+    ) -> list[RepoConfig]:
+        """Parse repository list text (file upload or paste).
+
+        Args:
+            content: Raw text of the repository list, one entry per line.
+            gh_org: GitHub organisation used for lines that name no target.
+            scopes: Migration scopes applied to every repository. Defaults to
+                ``["repo"]`` when omitted.
+            source_name: Label for the source, used in log messages only.
+
+        Returns:
+            One repo configuration per line that parsed cleanly; blank lines,
+            comments, and malformed lines are skipped and logged.
+        """
+        scopes = scopes or ["repo"]
         repos: list[RepoConfig] = []
-        with open(txt_path, "r", encoding="utf-8") as fh:
-            for lineno, raw_line in enumerate(fh, 1):
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                try:
-                    repo = _parse_text_line(line, gh_org, scopes)
-                    repos.append(repo)
-                except ValueError as exc:
-                    log.warning("line %d skipped: %s", lineno, exc)
+        for lineno, raw_line in enumerate(content.splitlines(), 1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                repo = _parse_text_line(line, gh_org, scopes)
+                repos.append(repo)
+            except ValueError as exc:
+                log.warning("line %d skipped: %s", lineno, exc)
 
-        log.info("Loaded %d repo(s) from %s", len(repos), txt_path.name)
+        log.info("Loaded %d repo(s) from %s", len(repos), source_name)
         return repos
 
-    # ── CSV input (with per-repo scopes) ────────────────────────────────────
+    # ── CSV input (with per-repository scopes) ──────────────────────────────
 
     @staticmethod
     def load_csv_input(path: str, gh_org: str,
-                       default_scopes: list[str] = None) -> list[RepoConfig]:
+                       default_scopes: list[str] | None = None) -> list[RepoConfig]:
         """Parse a CSV file with columns: ado_project,ado_repo,gh_org,gh_repo,scopes
 
         The scopes column uses pipe-separated values: repo|pipelines|work_items
+
+        Args:
+            path: Path to the CSV input file.
+            gh_org: GitHub organisation used for rows that leave gh_org blank.
+            default_scopes: Scopes applied to rows that leave the scopes column
+                blank. Defaults to ``["repo"]`` when omitted.
+
+        Returns:
+            One repo configuration per row that names both a project and a
+            repo. Rows missing either are skipped, and the list is empty when
+            the file holds nothing but comments.
+
+        Raises:
+            FileNotFoundError: If no file exists at the given path.
         """
         default_scopes = default_scopes or ["repo"]
         csv_path = Path(path)
@@ -114,7 +200,7 @@ class ConfigLoader:
         repos: list[RepoConfig] = []
         with open(csv_path, "r", encoding="utf-8") as fh:
             # Skip comment lines at the top
-            lines = [l for l in fh if not l.strip().startswith("#")]
+            lines = [line for line in fh if not line.strip().startswith("#")]
 
         if not lines:
             return repos
@@ -149,8 +235,18 @@ class ConfigLoader:
 
     @staticmethod
     def load_input(path: str, gh_org: str,
-                   default_scopes: list[str] = None) -> list[RepoConfig]:
-        """Auto-detect input format (text or CSV) and load repos."""
+                   default_scopes: list[str] | None = None) -> list[RepoConfig]:
+        """Auto-detect input format (text or CSV) and load repos.
+
+        Args:
+            path: Path to the input file. A ``.csv`` suffix selects the CSV
+                parser; anything else is read as a plain text repo list.
+            gh_org: GitHub organisation used for entries that name no target.
+            default_scopes: Scopes applied to entries that specify none.
+
+        Returns:
+            The repo configurations described by the file.
+        """
         if path.endswith(".csv"):
             return ConfigLoader.load_csv_input(path, gh_org, default_scopes)
         else:
@@ -158,6 +254,17 @@ class ConfigLoader:
 
 
 def _parse_repos(repos_raw: list[dict], global_cfg: dict) -> list[RepoConfig]:
+    """Build repository configurations from the raw repository entries of one wave.
+
+    Args:
+        repos_raw: Raw repo mappings taken from a wave in the YAML config.
+        global_cfg: Global settings block, consulted for the GitHub org,
+            scope, and pipeline parallelism defaults.
+
+    Returns:
+        One repo configuration per raw entry, with any field the entry omits
+        filled in from the global defaults.
+    """
     repos: list[RepoConfig] = []
     default_gh_org = global_cfg.get("gh_org", "")
     default_scopes = global_cfg.get("default_scopes", ["repo"])
@@ -183,6 +290,22 @@ def _parse_repos(repos_raw: list[dict], global_cfg: dict) -> list[RepoConfig]:
 
 
 def _parse_text_line(line: str, default_gh_org: str, scopes: list[str]) -> RepoConfig:
+    """Parse one ``project/repo[::gh_org/gh_repo]`` line into a repository configuration.
+
+    Args:
+        line: A single stripped, non-comment line from a repo list file.
+        default_gh_org: GitHub organisation used when the line omits the
+            ``::gh_org/gh_repo`` target part.
+        scopes: Migration scopes to copy onto the resulting configuration.
+
+    Returns:
+        The repo configuration the line describes. The GitHub repo name falls
+        back to the ADO repo name when no target is given.
+
+    Raises:
+        ValueError: If the line is malformed, or if it names no GitHub
+            organisation and no default was provided.
+    """
     if "::" in line:
         source_part, target_part = line.split("::", 1)
     else:

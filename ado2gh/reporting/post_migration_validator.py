@@ -16,7 +16,7 @@ from ado2gh.clients.ado_client import ADOClient
 from ado2gh.clients.gh_client import GHClient
 from ado2gh.logging_config import console, log
 from ado2gh.models import RepoConfig
-from ado2gh.state.db import StateDB
+from ado2gh.state.base import StateDBBase
 
 PASS = "PASS"
 WARN = "WARN"
@@ -35,21 +35,46 @@ class PostMigrationValidator:
     6. Branch protection rules applied
     """
 
-    def __init__(self, ado: ADOClient, gh: GHClient, db: StateDB):
+    def __init__(self, ado: ADOClient, gh: GHClient, db: StateDBBase) -> None:
+        """Store the clients and state store the validation reads from.
+
+        Args:
+            ado: Client for the Azure DevOps source organisation.
+            gh: Client for the GitHub destination organisation.
+            db: State store holding the recorded migration results.
+        """
         self.ado = ado
         self.gh = gh
         self.db = db
 
     def validate(self, repos: list[RepoConfig],
-                 output_path: str = None,
-                 max_workers: int = 6) -> list[dict]:
+                 output_path: str | None = None,
+                 max_workers: int = 6,
+                 workflow_files: list[dict] | None = None) -> list[dict]:
+        """Validate migrated repos by comparing source and destination content.
+
+        Runs the per-repo checks in a thread pool and sorts the results by
+        project and repo name so successive runs are comparable.
+
+        Args:
+            repos: Repos to validate.
+            output_path: If given, write the CSV and JSON reports there.
+            max_workers: Number of repos to validate at once.
+            workflow_files: Workflow files expected on the destination repo,
+                used by the workflow presence check.
+
+        Returns:
+            One result dict per repo, each with an ``overall`` verdict and a
+            ``checks`` mapping. A repo whose validation raised carries the
+            error text instead of checks.
+        """
         results: list[dict] = []
 
         console.print(f"[bold]Validating {len(repos)} repos...[/bold]")
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(self._validate_one, repo): repo
+                pool.submit(self._validate_one, repo, workflow_files): repo
                 for repo in repos
             }
             for future in as_completed(futures):
@@ -76,7 +101,23 @@ class PostMigrationValidator:
 
         return results
 
-    def _validate_one(self, repo: RepoConfig) -> dict:
+    def _validate_one(self, repo: RepoConfig, workflow_files: list[dict] | None = None) -> dict:
+        """Run every applicable check against one migrated repository.
+
+        The repository-exists check short-circuits: when the GitHub repository is
+        missing, no further check runs. The workflow and branch-protection checks
+        run only when the matching scope was migrated.
+
+        Args:
+            repo: Repository whose ADO source and GitHub target are compared.
+            workflow_files: Workflow files the migration wrote, used for the
+                read-back integrity check; ``None`` skips that read-back.
+
+        Returns:
+            A result dict holding the repository identifiers, ``gh_target``,
+            ``validated_at``, the per-check results under ``checks``, and ``overall``
+            set to the worst verdict among them.
+        """
         result: dict[str, Any] = {
             "ado_project": repo.ado_project,
             "ado_repo": repo.ado_repo,
@@ -106,7 +147,7 @@ class PostMigrationValidator:
 
         # 5. Workflows present (if pipelines scope was migrated)
         if "pipelines" in (repo.scopes or []):
-            checks["workflows"] = self._check_workflows(repo)
+            checks["workflows"] = self._check_workflows(repo, workflow_files)
 
         # 6. Branch protection (if branch_policies scope was migrated)
         if "branch_policies" in (repo.scopes or []):
@@ -122,6 +163,12 @@ class PostMigrationValidator:
         return result
 
     def _check_repo_exists(self, repo: RepoConfig) -> dict:
+        """Check that the GitHub target repository exists.
+
+        Returns:
+            A verdict dict with ``verdict`` and ``detail``: ``PASS`` when the
+            repository is present, ``FAIL`` when it is absent or the lookup raised.
+        """
         try:
             exists = self.gh.repo_exists(repo.gh_org, repo.gh_repo)
             return {
@@ -198,6 +245,14 @@ class PostMigrationValidator:
         }
 
     def _check_branch_count(self, repo: RepoConfig) -> dict:
+        """Compare the branch counts of the ADO source and the GitHub target.
+
+        Returns:
+            A dict with ``verdict``, ``ado_count``, ``gh_count`` and ``detail``.
+            ``PASS`` when GitHub has at least as many branches, ``WARN`` when it has
+            at least 90 % of them or when either count could not be read (reported as
+            ``-1``), and ``FAIL`` otherwise.
+        """
         try:
             ado_repo = self.ado.get_repo(repo.ado_project, repo.ado_repo)
             ado_stats = self.ado.get_repo_stats(
@@ -224,7 +279,25 @@ class PostMigrationValidator:
         return {"verdict": FAIL, "ado_count": ado_count, "gh_count": gh_count,
                 "detail": f"{ado_count - gh_count} branches missing"}
 
-    def _check_workflows(self, repo: RepoConfig) -> dict:
+    def _check_workflows(self, repo: RepoConfig, workflow_files: list[dict] | None = None) -> dict:
+        """Compare inventoried ADO pipelines against workflows at the GitHub target.
+
+        When the counts are satisfied and ``workflow_files`` is given, each file the
+        migration wrote is also read back through the Contents API, because a count
+        alone does not prove the individual files landed.
+
+        Args:
+            repo: Repository being validated.
+            workflow_files: Workflow files the migration wrote; only those whose
+                ``repo`` names this repository are read back.
+
+        Returns:
+            A dict with ``verdict``, ``ado_pipelines``, ``gh_workflows`` and
+            ``detail``, plus ``workflow_integrity`` when the read-back ran. ``PASS``
+            when the repository has no pipelines or every workflow is present,
+            ``FAIL`` when a written file is missing from the target, and ``WARN``
+            when workflows are short or GitHub could not be read.
+        """
         ado_count = self.db.inventory_count_for_repo(repo.ado_project, repo.ado_repo)
         try:
             gh_workflows = self.gh.list_workflows(repo.gh_org, repo.gh_repo)
@@ -239,13 +312,53 @@ class PostMigrationValidator:
             return {"verdict": WARN, "ado_pipelines": ado_count, "gh_workflows": -1,
                     "detail": "Cannot read GH workflows"}
         if gh_count >= ado_count:
-            return {"verdict": PASS, "ado_pipelines": ado_count,
+            # Workflow integrity check: the count comparison above only proves the
+            # target has *some* workflows, so read back each file the migration
+            # produced. A file the Contents API cannot return did not land.
+            integrity_result: dict[str, object] = {
+                "verdict": PASS,
+                "detail": "All pipelines have corresponding workflows",
+            }
+            if workflow_files:
+                repo_key = f"{repo.ado_project}/{repo.ado_repo}"
+                repo_workflows = [wf for wf in workflow_files if repo_key in str(wf.get("repo", ""))]
+                missing_files = []
+                for wf in repo_workflows:
+                    wf_path = wf.get("output_path", "")
+                    if not wf_path:
+                        continue
+                    wf_name = wf_path.rstrip("/").rsplit("/", 1)[-1]
+                    try:
+                        self.gh._get(
+                            f"/repos/{repo.gh_org}/{repo.gh_repo}"
+                            f"/contents/.github/workflows/{wf_name}"
+                        )
+                    except Exception:
+                        missing_files.append(wf_path)
+                if missing_files:
+                    integrity_result = {
+                        "verdict": FAIL,
+                        "detail": f"{len(missing_files)} workflow file(s) missing at GitHub target: "
+                                  + ", ".join(missing_files[:5]),
+                        "missing_files": missing_files[:5],  # First 5
+                    }
+            verdict = integrity_result["verdict"]
+            return {"verdict": verdict, "ado_pipelines": ado_count,
                     "gh_workflows": gh_count,
-                    "detail": "All pipelines have corresponding workflows"}
+                    "detail": ("All pipelines have corresponding workflows"
+                               if verdict == PASS else integrity_result["detail"]),
+                    "workflow_integrity": integrity_result}
         return {"verdict": WARN, "ado_pipelines": ado_count, "gh_workflows": gh_count,
                 "detail": f"{ado_count - gh_count} workflows missing"}
 
     def _check_branch_protection(self, repo: RepoConfig) -> dict:
+        """Check whether the GitHub default branch has protection configured.
+
+        Returns:
+            A verdict dict with ``verdict`` and ``detail``: ``PASS`` when a
+            protection rule can be read, ``WARN`` when none is configured, which may
+            be intentional. This check never fails.
+        """
         try:
             gh_repo = self.gh.get_repo(repo.gh_org, repo.gh_repo)
             default_branch = gh_repo.get("default_branch", "main")
@@ -258,7 +371,14 @@ class PostMigrationValidator:
             return {"verdict": WARN,
                     "detail": "No branch protection on default branch (may be intentional)"}
 
-    def _write_report(self, results: list[dict], output_path: str):
+    def _write_report(self, results: list[dict], output_path: str) -> None:
+        """Write the validation results as a CSV summary plus a JSON detail file.
+
+        Args:
+            results: Result dicts as returned by :meth:`validate`.
+            output_path: Destination path; its suffix is normalised to
+                ``.csv``, and the JSON detail file sits beside it.
+        """
         out = Path(output_path)
         out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -300,9 +420,14 @@ class PostMigrationValidator:
 
         log.info("Validation report: %s + %s", csv_path, json_path)
 
-    def print_summary(self, results: list[dict]):
-        from rich.table import Table
+    def print_summary(self, results: list[dict]) -> None:
+        """Print the validation results as a console table with pass counts.
+
+        Args:
+            results: Result dicts as returned by :meth:`validate`.
+        """
         from rich import box
+        from rich.table import Table
 
         t = Table(title="Post-Migration Validation", box=box.ROUNDED)
         t.add_column("Repo", style="cyan", max_width=35)
@@ -339,4 +464,4 @@ class PostMigrationValidator:
             parts.append(f"[bold yellow]{warned} warn[/bold yellow]")
         if failed:
             parts.append(f"[bold red]{failed} fail[/bold red]")
-        console.print(f"\n[bold]Validation result:[/bold] " + ", ".join(parts) + f" out of {total}")
+        console.print("\n[bold]Validation result:[/bold] " + ", ".join(parts) + f" out of {total}")

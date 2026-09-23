@@ -1,4 +1,4 @@
-"""Discovery scanner — enumerate ADO org and output structured CSV/JSON inventory.
+"""Discovery scanner — enumerate ADO organisation and output structured CSV/JSON inventory.
 
 The discovery output is designed for humans to review and select repos for migration.
 Users copy the repos they want into an input file (in/repos.txt or in/repos.csv).
@@ -13,7 +13,6 @@ from pathlib import Path
 
 from ado2gh.clients import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import PipelineMetadata, PipelineType
 from ado2gh.output_dirs import output_str
 from ado2gh.state.db import StateDB
 
@@ -28,17 +27,28 @@ class DiscoveryScanner:
     - repos_template.txt — pre-formatted input file template with all discovered repos
     """
 
-    def __init__(self, ado: ADOClient, db: StateDB = None):
+    def __init__(self, ado: ADOClient, db: StateDB | None = None) -> None:
+        """Store the ADO client and optional state database used by the scan.
+
+        Args:
+            ado: Client used to enumerate projects, repos, and pipelines.
+            db: Optional state database. Not required for a read-only scan.
+        """
         self.ado = ado
         self.db = db
 
-    def scan(self, output_dir: str = None) -> dict:
-        if output_dir is None:
-            output_dir = output_str("discovery")
+    def scan(self, output_dir: str | None = None) -> dict:
         """Run full discovery scan and write reports.
 
-        Returns summary dict with counts.
+        Args:
+            output_dir: Directory to write reports into. Defaults to the
+                standard discovery output directory when omitted.
+
+        Returns:
+            Summary dict with project, repo, and pipeline counts plus elapsed seconds.
         """
+        if output_dir is None:
+            output_dir = output_str("discovery")
         log.info("Starting ADO discovery scan...")
         start = time.monotonic()
 
@@ -158,20 +168,26 @@ class DiscoveryScanner:
             "elapsed_sec": elapsed,
         }
 
-        console.print(f"\n[bold green]Discovery complete[/bold green]")
+        console.print("\n[bold green]Discovery complete[/bold green]")
         console.print(f"  Projects:  {stats['projects']}")
         console.print(f"  Repos:     {stats['repos']}")
         console.print(f"  Pipelines: {stats['pipelines']}")
         console.print(f"  Duration:  {elapsed}s")
         console.print(f"\n  Output: [bold]{out}[/bold]")
-        console.print(f"    repos.csv           — review and select repos")
-        console.print(f"    pipelines.csv       — pipeline inventory")
-        console.print(f"    repos_template.txt  — copy to in/repos.txt, uncomment repos to migrate")
-        console.print(f"    discovery.json      — full JSON detail")
+        console.print("    repos.csv           — review and select repos")
+        console.print("    pipelines.csv       — pipeline inventory")
+        console.print("    repos_template.txt  — copy to in/repos.txt, uncomment repos to migrate")
+        console.print("    discovery.json      — full JSON detail")
 
         return stats
 
-    def _write_repos_csv(self, repos: list[dict], path: Path):
+    def _write_repos_csv(self, repos: list[dict], path: Path) -> None:
+        """Write the discovered repositories to CSV, sorted by project then repository name.
+
+        Args:
+            repos: Repo records collected during the scan.
+            path: Destination CSV file, overwritten if it already exists.
+        """
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "project", "repo_name", "size_kb", "default_branch",
@@ -181,7 +197,14 @@ class DiscoveryScanner:
             for r in sorted(repos, key=lambda x: (x["project"], x["repo_name"])):
                 writer.writerow({k: r.get(k, "") for k in writer.fieldnames})
 
-    def _write_pipelines_csv(self, pipelines: list[dict], path: Path):
+    def _write_pipelines_csv(self, pipelines: list[dict], path: Path) -> None:
+        """Write the discovered pipelines to CSV, sorted by project then name.
+
+        Args:
+            pipelines: Build and release pipeline records collected during the
+                scan.
+            path: Destination CSV file, overwritten if it already exists.
+        """
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
                 "project", "pipeline_id", "pipeline_name", "pipeline_type",
@@ -191,8 +214,14 @@ class DiscoveryScanner:
             for p in sorted(pipelines, key=lambda x: (x["project"], x["pipeline_name"])):
                 writer.writerow({k: p.get(k, "") for k in writer.fieldnames})
 
-    def _write_input_template(self, repos: list[dict], path: Path):
-        """Write a repos.txt template with all discovered repos commented out."""
+    def _write_input_template(self, repos: list[dict], path: Path) -> None:
+        """Write a repos.txt template with all discovered repositories commented out.
+
+        Args:
+            repos: Repository records collected during the scan. Disabled repositories are
+                marked so reviewers can spot them before uncommenting.
+            path: Destination text file, overwritten if it already exists.
+        """
         lines = [
             "# ado2gh — Repo Input File (generated by discover)",
             "# Uncomment the repos you want to migrate.",

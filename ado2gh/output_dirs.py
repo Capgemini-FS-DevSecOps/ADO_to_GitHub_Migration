@@ -6,7 +6,7 @@ directory. Resolution order (highest priority first):
     1. The ADO2GH_OUTPUT_DIR environment variable.
     2. The literal default "output".
 
-The wrapper script sets ADO2GH_OUTPUT_DIR per phase (e.g. ``output/poc_run``)
+The wrapper script sets ADO2GH_OUTPUT_DIR per phase (for example ``output/poc_run``)
 so a single migration cycle's workflows, secrets, validation reports, and
 audit logs all live under one folder.
 """

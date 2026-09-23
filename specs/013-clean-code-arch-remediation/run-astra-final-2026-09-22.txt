@@ -1,0 +1,21 @@
+1. **High — `services/accelerator_api/routes/migrate_guard.py:110`.** Approval identifiers concatenate values without field names, so supplying only a GitHub organization or only a GitHub repository can produce the same approval for different destinations; work-item type filters are also omitted. **Smallest fix:** derive approvals from named, resolved targets and every scope-changing field.
+
+2. **High — `ado2gh/agents/migration_agent/tools/executor_tools.py:124`.** The guard checks the supplied repository identifier, but execution discards it and writes to an independently supplied endpoint, allowing an approved repository to authorize writes elsewhere. **Smallest fix:** validate the actual endpoint, operation and destination against the approved plan.
+
+3. **High — `services/agent/routes/form_routes.py:138`.** Submissions use the server’s current form rather than identifying the form and plan revision the operator saw, so an old browser submission can approve a replacement plan. **Smallest fix:** require and verify a form-instance identifier and plan fingerprint before applying answers.
+
+4. **High — `ado2gh/agents/migration_agent/hitl/intake.py:55`.** Execution-started or execution-completed flags bypass approval fingerprint checks, while `nodes/orchestrator_tools.py:180` can replace the plan without clearing those flags or its approval. **Smallest fix:** always compare the approved revision before further writes, excluding execution progress from the fingerprint.
+
+5. **High — `ado2gh/audit/redaction.py:29`.** The serialized-JSON masking branch stops at an escaped quotation mark, leaving the remainder of a password visible despite the later escape-aware assignment masking. **Smallest fix:** make this quoted-value branch escape-aware too.
+
+6. **High — `ado2gh/api/live_approval_store.py:217`.** Request reasons and decision reasons are persisted unmasked and returned through `_public_row`, so masking the audit payload does not protect approval state or responses. **Smallest fix:** redact reasons before persistence and when returning existing records.
+
+7. **High — `ado2gh/state/job_store.py:520`.** DynamoDB claim refusals still produce no durable audit event when the factory supplies no writer; the added warning only exposes the missing safeguard. **Smallest fix:** require an independently configured durable audit writer when starting DynamoDB workers.
+
+8. **Medium — `ado2gh/api/contracts.py:571`.** Pipeline requests now inherit deployment execution mode when the flag is omitted, although `plan.md:1113` explicitly excludes this public-contract change from approval. **Smallest fix:** restore the preview default pending an approved contract change.
+
+9. **Medium — `ado2gh/agents/migration_agent/hitl/blockers.py:57`.** Approval fingerprints include the configuration filename but not its resolved contents, although execution can obtain its destination from that configuration. **Smallest fix:** bind approval to the resolved destination and relevant configuration values.
+
+10. **Medium — `ado2gh/audit/writer.py:49`.** Actor and other audit identity fields bypass payload masking, leaving another route for secret-bearing text into audit rows. **Smallest fix:** mask every externally supplied string field before insertion.
+
+11. **Medium — `ado2gh/api/platform_rbac.py:137`.** Live-execution refusals raise authentication or permission errors without writing audit events. **Smallest fix:** record a masked refusal event before each rejection.

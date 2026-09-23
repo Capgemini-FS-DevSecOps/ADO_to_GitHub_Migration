@@ -1,10 +1,24 @@
+"""Dataclasses, enums and job records shared by every layer of the migration platform.
+
+Nothing here talks to ADO, GitHub or the database. These are the plain records
+the CLI, the accelerator API, the state layer and the agent pass between each
+other: repository and wave configuration, phase settings, pipeline metadata,
+risk scores, gate results and the background job record the state layer
+persists and the API layer serves.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
 
 class MigrationStatus(str, Enum):
+    """Lifecycle state of one repository migration, as persisted in ``migrations``."""
+
     PENDING     = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED   = "completed"
@@ -14,6 +28,8 @@ class MigrationStatus(str, Enum):
 
 
 class MigrationScope(str, Enum):
+    """The parts of an ADO project a migration can carry over, chosen per repository."""
+
     REPO             = "repo"
     WORK_ITEMS       = "work_items"
     PIPELINES        = "pipelines"
@@ -23,18 +39,24 @@ class MigrationScope(str, Enum):
 
 
 class PipelineType(str, Enum):
+    """Where an ADO pipeline is defined: YAML in the repository, or a classic build or release definition."""
+
     YAML    = "yaml"
     CLASSIC = "classic"
     RELEASE = "release"
 
 
 class PipelineComplexity(str, Enum):
+    """Conversion-effort bucket the readiness assessment assigns to a pipeline."""
+
     SIMPLE  = "simple"
     MEDIUM  = "medium"
     COMPLEX = "complex"
 
 
 class PhaseType(str, Enum):
+    """The five rollout phases; ``PHASE_ORDER`` gives their execution order."""
+
     POC   = "poc"
     PILOT = "pilot"
     WAVE1 = "wave1"
@@ -42,7 +64,50 @@ class PhaseType(str, Enum):
     WAVE3 = "wave3"
 
 
+class MigrationStrategy(str, Enum):
+    """How repository content is copied: a git mirror push, or GitHub Enterprise Importer."""
+
+    MIRROR = "mirror"
+    GEI = "gei"
+
+
+DEFAULT_MIGRATION_STRATEGY = MigrationStrategy.GEI.value
+
+
+class ExecutionMode(str, Enum):
+    """How a migration action runs: preview only, or against the real targets.
+
+    Replaces the ``dry_run`` boolean in internal signatures. The external shapes
+    keep their boolean form and are converted at the boundary with
+    :meth:`from_dry_run`: the ``--dry-run`` CLI flag, the ``dry_run`` HTTP field
+    and the ``dry_run`` database column are all unchanged. ``DRY_RUN`` stays the
+    default wherever a default existed, so nothing runs live by omission.
+
+    Attributes:
+        DRY_RUN: Plan and report the work without touching ADO or GitHub.
+        LIVE: Execute against the real source and target, requiring approval.
+    """
+
+    DRY_RUN = "dry_run"
+    LIVE = "live"
+
+    @classmethod
+    def from_dry_run(cls, *, dry_run: bool) -> "ExecutionMode":
+        """Convert an external ``dry_run`` boolean into a mode.
+
+        Args:
+            dry_run: The flag as it arrives from a CLI option, an HTTP request
+                body or a persisted column.
+
+        Returns:
+            ``DRY_RUN`` when the flag is true, ``LIVE`` when it is false.
+        """
+        return cls.DRY_RUN if dry_run else cls.LIVE
+
+
 class GateStatus(str, Enum):
+    """Outcome of a phase gate check; ``OVERRIDE`` means an operator waived a failure with a reason."""
+
     PASS     = "pass"
     FAIL     = "fail"
     OVERRIDE = "override"
@@ -50,6 +115,8 @@ class GateStatus(str, Enum):
 
 @dataclass
 class RepoConfig:
+    """One repository to migrate: its ADO source, GitHub target and per-repository options."""
+
     ado_project:       str
     ado_repo:          str
     gh_org:            str
@@ -67,6 +134,8 @@ class RepoConfig:
 
 @dataclass
 class WaveConfig:
+    """A named batch of repositories migrated together under shared concurrency and retry limits."""
+
     wave_id:            int
     name:               str
     description:        str
@@ -80,6 +149,12 @@ class WaveConfig:
 
 @dataclass
 class PhaseConfig:
+    """Caps, batching, parallelism and gate thresholds for one rollout phase.
+
+    The ``gate_*`` fields are the minimum success rates and completed count the
+    phase must reach before the next phase may start.
+    """
+
     phase:                     PhaseType
     repo_cap:                  int
     risk_max:                  float
@@ -113,7 +188,7 @@ DEFAULT_PHASES: dict[PhaseType, PhaseConfig] = {
         gate_repo_success_pct=0.98, gate_pipeline_success_pct=0.97,
         gate_min_completed=980),
     PhaseType.WAVE3: PhaseConfig(
-        phase=PhaseType.WAVE3, repo_cap=999_999, risk_max=100.0, batch_size=500,
+        phase=PhaseType.WAVE3, repo_cap=9999, risk_max=100.0, batch_size=500,
         repo_parallel=8, pipeline_parallel=16,
         gate_repo_success_pct=0.98, gate_pipeline_success_pct=0.97,
         gate_min_completed=1),
@@ -122,13 +197,10 @@ DEFAULT_PHASES: dict[PhaseType, PhaseConfig] = {
 PHASE_ORDER = [PhaseType.POC, PhaseType.PILOT, PhaseType.WAVE1, PhaseType.WAVE2, PhaseType.WAVE3]
 
 
-def next_phase(p: PhaseType) -> Optional[PhaseType]:
-    idx = PHASE_ORDER.index(p)
-    return PHASE_ORDER[idx + 1] if idx + 1 < len(PHASE_ORDER) else None
-
-
 @dataclass
 class PipelineVariable:
+    """A pipeline or variable-group variable as read from ADO."""
+
     name:        str
     value:       str
     is_secret:   bool = False
@@ -138,6 +210,8 @@ class PipelineVariable:
 
 @dataclass
 class PipelineEnvironment:
+    """An ADO deployment environment with its approvers and deployment checks."""
+
     name:                str
     id:                  int       = 0
     required_approvers:  list[str] = field(default_factory=list)
@@ -148,6 +222,8 @@ class PipelineEnvironment:
 
 @dataclass
 class PipelineStage:
+    """One stage of a multi-stage YAML pipeline, with its jobs and deployment environment."""
+
     name:           str
     display_name:   str                            = ""
     depends_on:     list[str]                      = field(default_factory=list)
@@ -193,8 +269,18 @@ class PipelineMetadata:
     complexity:          PipelineComplexity = PipelineComplexity.SIMPLE
     migration_notes:     list[str]        = field(default_factory=list)
     unsupported_tasks:   list[str]        = field(default_factory=list)
+    # Each template reference dict: {ref, repository}. `ref` is the reference
+    # exactly as the pipeline wrote it; `repository` is the alias after the
+    # "@" when the reference names another repository, otherwise empty. Kept
+    # because the stored YAML is template-inlined and loses the references.
+    template_refs:       list[dict]       = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Serialise to the JSON-safe dict stored in the pipeline inventory.
+
+        Enums become their string values and nested records become plain dicts;
+        :meth:`from_dict` reads the same layout back.
+        """
         return {
             "pipeline_id":         self.pipeline_id,
             "pipeline_name":       self.pipeline_name,
@@ -206,6 +292,7 @@ class PipelineMetadata:
             "repo_type":           self.repo_type,
             "repo_branch":         self.repo_branch,
             "yaml_path":           self.yaml_path,
+            "yaml_content":        self.yaml_content,
             "trigger_branches":    self.trigger_branches,
             "trigger_pr_branches": self.trigger_pr_branches,
             "trigger_schedules":   self.trigger_schedules,
@@ -237,10 +324,23 @@ class PipelineMetadata:
             "complexity":         self.complexity.value,
             "migration_notes":    self.migration_notes,
             "unsupported_tasks":  self.unsupported_tasks,
+            "template_refs":      self.template_refs,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> "PipelineMetadata":
+        """Rebuild a record from the layout :meth:`to_dict` writes.
+
+        Only ``pipeline_id`` and ``pipeline_name`` are required; every other key
+        falls back to the dataclass default, so rows written before a field was
+        added still load.
+
+        Args:
+            d: The stored dict.
+
+        Returns:
+            The reconstructed pipeline record.
+        """
         m = cls(
             pipeline_id    = d["pipeline_id"],
             pipeline_name  = d["pipeline_name"],
@@ -252,7 +352,7 @@ class PipelineMetadata:
             repo_type      = d.get("repo_type", "TfsGit"),
             repo_branch    = d.get("repo_branch", "main"),
             yaml_path      = d.get("yaml_path", ""),
-            yaml_content   = "",
+            yaml_content   = d.get("yaml_content", ""),
             trigger_branches     = d.get("trigger_branches", []),
             trigger_pr_branches  = d.get("trigger_pr_branches", []),
             trigger_schedules    = d.get("trigger_schedules", []),
@@ -269,6 +369,7 @@ class PipelineMetadata:
             complexity           = PipelineComplexity(d.get("complexity", "simple")),
             migration_notes      = d.get("migration_notes", []),
             unsupported_tasks    = d.get("unsupported_tasks", []),
+            template_refs        = d.get("template_refs", []),
         )
         m.variables = [PipelineVariable(**v) for v in d.get("variables", [])]
         m.stages = [
@@ -291,6 +392,8 @@ class PipelineMetadata:
 
 @dataclass
 class RiskSignal:
+    """One scored input to a repository's risk score, with the rationale shown in reports."""
+
     name: str
     raw_value: float
     score: float
@@ -300,11 +403,17 @@ class RiskSignal:
 
 @dataclass
 class RiskScore:
+    """Risk assessment for one repository: the total, its signals and the phase it was assigned.
+
+    The ``*_pipeline_pct`` fields describe the share of the repository's
+    pipelines that fall into each category.
+    """
+
     project: str
     repo_name: str
     total_score: float = 0.0
     signals: list = field(default_factory=list)
-    assigned_phase: Optional[PhaseType] = None
+    assigned_phase: Optional[str] = None
     gh_org: str = ""
     gh_repo: str = ""
     size_kb: int = 0
@@ -318,10 +427,16 @@ class RiskScore:
     service_connection_count: int = 0
 
     def to_dict(self) -> dict:
+        """Flatten to the JSON-safe dict used by risk reports.
+
+        Scores are rounded to two decimals, and several keys are shorter than
+        the field names (``complex_pct``, ``variable_groups``,
+        ``service_connections``).
+        """
         return {
             "project": self.project, "repo_name": self.repo_name,
             "total_score": round(self.total_score, 2),
-            "assigned_phase": self.assigned_phase.value if self.assigned_phase else None,
+            "assigned_phase": self.assigned_phase,
             "gh_org": self.gh_org, "gh_repo": self.gh_repo,
             "size_kb": self.size_kb, "pipeline_count": self.pipeline_count,
             "branch_count": self.branch_count, "last_commit_days": self.last_commit_days,
@@ -338,6 +453,8 @@ class RiskScore:
 
 @dataclass
 class PhaseGateResult:
+    """Result of checking one phase against its gate thresholds, with the failures that were counted."""
+
     phase: PhaseType
     status: GateStatus
     repo_success_pct: float
@@ -353,6 +470,8 @@ class PhaseGateResult:
 
 @dataclass
 class BatchCheckpoint:
+    """Progress marker for one batch of a phase run, persisted so an interrupted run can resume."""
+
     phase: PhaseType
     batch_num: int
     total_batches: int
@@ -361,3 +480,45 @@ class BatchCheckpoint:
     status: str
     started_at: str
     completed_at: str = ""
+
+
+class JobTypeEnum(str, Enum):
+    """Name the kind of work a queued job performs, as dispatched by the background worker.
+
+    Migration and workflow-push jobs write to GitHub unless their payload asks for a dry run.
+    """
+
+    DISCOVER = "discover"
+    INVENTORY_PROJECT = "inventory_project"
+    MIGRATE_REPO = "migrate_repo"
+    TRANSFORM_PIPELINE = "transform_pipeline"
+    VALIDATE_REPO = "validate_repo"
+    PUSH_WORKFLOWS = "push_workflows"
+
+
+class JobStatus(str, Enum):
+    """Track a queued job from ``pending`` through ``running`` to a terminal status."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class JobRecord(BaseModel):
+    """Describe a queued job; ``result`` is set only when it completed and ``error`` only when it failed.
+
+    ``created_at`` and ``updated_at`` are UTC and default to now, so every store
+    writes and reads the same two timestamps the ``jobs`` tables already carry.
+    """
+
+    id: str
+    job_type: JobTypeEnum
+    status: JobStatus
+    payload: dict[str, Any] = Field(default_factory=dict)
+    result: Optional[dict[str, Any]] = None
+    error: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

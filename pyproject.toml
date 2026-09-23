@@ -4,15 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ado2gh"
-version = "5.0.0"
+version = "5.1.0"
 description = "Azure DevOps to GitHub Enterprise Migration Accelerator"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+]
 dependencies = [
     "click>=8.1.0",
     "requests>=2.31.0",
     "PyYAML>=6.0",
     "rich>=13.0.0",
     "urllib3>=2.0.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -20,9 +33,112 @@ app-auth = [
     "cryptography>=41.0.7",
     "PyJWT>=2.8.0",
 ]
+api = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+    "PyNaCl>=1.5.0",
+]
+postgres = [
+    "psycopg2-binary>=2.9.9",
+    "langgraph-checkpoint-postgres>=2.0",
+    "psycopg[binary]>=3.1.0",
+]
+redis = [
+    "redis>=5.0.0",
+]
+agent = [
+    "langchain>=0.2",
+    "langchain-core>=0.2",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",
+    "langchain-openai>=0.1",
+    "langchain-anthropic>=0.1",
+    "google-adk>=2.0; python_version>='3.10'",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-timeout>=2.3.0",
+    "langsmith[pytest]>=0.3.1",
+]
 
 [project.scripts]
-ado2gh = "ado2gh.cli:cli"
+ado2gh = "ado2gh.cli.main:cli"
 
 [tool.setuptools.packages.find]
 include = ["ado2gh*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "unit: fast isolated tests with mocked LLM/API",
+    "integration: multi-module workflow tests",
+    "contract: API and schema contract tests",
+    "langsmith: LangSmith eval tests (require LANGCHAIN_API_KEY)",
+]
+# Coverage flags live in CI (`pytest --cov=ado2gh --cov-fail-under=<N>`), not here —
+# hardcoding them in addopts breaks bare `pytest` when pytest-cov isn't installed
+# and conflicts with CI's own --cov invocation. `.github/workflows/ci.yml` is the
+# single source of truth for <N>: the FR-027a ratchet raises it after each
+# increment and never lowers it (62 at the time of writing; the constitutional
+# 85 % target stays outstanding as gap G-seed 4).
+addopts = ""
+
+[tool.coverage.run]
+# FR-027a: no omit list. Coverage is measured over the whole package so the
+# CI ratchet (--cov-fail-under in .github/workflows/ci.yml) is honest.
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Clean-code rule set (feature 013, T002/T071). The second group is the enforced
+# half of the cleanup: missing docstrings (D1), missing annotations (ANN), boolean
+# flag parameters (FBT001/FBT002), > 5 parameters (PLR0913), mutable default
+# arguments (B006), unused arguments (ARG) and inconsistent returns (RET501-503).
+# Exceptions carry a `# noqa` and a row in
+# specs/013-clean-code-arch-remediation/exception-register.md.
+select = [
+    "E", "F", "W", "I",
+    "D1", "ANN", "FBT001", "FBT002", "PLR0913", "B006", "ARG",
+    "RET501", "RET502", "RET503",
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+# The clean-code set was scoped to `ado2gh/ services/` (T002). Test modules use
+# undocumented/unannotated helpers and unused fixture arguments by convention, so
+# the set is not enforced there; everything else (E, F, W, I) still is.
+"tests/**" = [
+    "D1", "ANN", "FBT001", "FBT002", "PLR0913", "B006", "ARG",
+    "RET501", "RET502", "RET503",
+]
+
+[tool.ruff.lint.pylint]
+max-args = 5
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+# numpy's bundled stub uses the PEP 695 `type` statement (3.12+ syntax);
+# skip following into it rather than raising python_version past what CI
+# actually runs (3.11). follow_imports is ignored for .pyi files unless
+# follow_imports_for_stubs is also set (mypy config docs, follow_imports_for_stubs) —
+# numpy ships an inline __init__.pyi, so both are required together.
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true

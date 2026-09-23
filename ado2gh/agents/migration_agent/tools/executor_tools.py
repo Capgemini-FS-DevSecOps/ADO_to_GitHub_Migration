@@ -1,0 +1,221 @@
+"""LangChain tools for the Executor agent.
+
+- call_accelerator: invoke accelerator migration endpoints (GET/POST)
+- github_api: read/write GitHub REST API (GET/POST/PATCH/PUT/DELETE)
+- ado_api_query: read-only Azure DevOps API
+
+Write tools are wrapped with guardrails (plan approval, dry-run, deletion checks).
+"""
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field
+
+from ado2gh.agents.migration_agent.tools.orchestrator_tools import (
+    AdoApiQueryArgs,
+    CallAcceleratorArgs,
+    GitHubApiArgs,
+)
+from ado2gh.agents.migration_agent.tools.shared_tools import (
+    append_shared_tools,
+    join_api_path,
+    tool_error,
+)
+from ado2gh.api.proxy_prefixes import ADO_PROXY_PREFIX, GITHUB_PROXY_PREFIX
+
+
+class GeneratePlanArgs(BaseModel):
+    """Arguments for building a migration plan from the executor."""
+
+    phase: str | None = Field(default=None, description="Optional migration phase (only when operator specified)")
+    repository_id: str = Field(default="", description="Specific repo as Project/RepoName (optional)")
+
+
+def get_executor_tools(
+    deps: dict[str, Any] | None = None,
+    *,
+    session_getter: Callable[[], dict[str, Any]] | None = None,
+    log_decision: Callable[..., Any] | None = None,
+) -> list[StructuredTool]:
+    """Build the tool set for the Executor agent.
+
+    - call_accelerator: generic accelerator API (GET/POST) — wrapped with guardrails
+    - github_api: GitHub REST read/write via accelerator proxy — wrapped with guardrails
+    - ado_api_query: read-only ADO API
+    - generate_plan: only when ``deps`` supplies ``build_plan``
+
+    Args:
+        deps: Per-invocation runtime dependencies in the shape
+            ``runtime.deps.get_runtime_deps()`` returns. ``accel_get``,
+            ``accel_post``, ``session_token`` and ``build_plan`` are read from
+            it; anything else is ignored.
+        session_getter: Returns the live session dict the guardrail inspects.
+        log_decision: Records each guardrail decision.
+
+    Returns:
+        The executor's StructuredTool list, with every write tool already
+        wrapped in the guardrail and the shared tools prepended.
+    """
+    from ado2gh.agents.migration_agent.guardrails import wrap_tool_with_guardrail
+
+    runtime = deps or {}
+    accel_get = runtime.get("accel_get")
+    accel_post = runtime.get("accel_post")
+    session_token = runtime.get("session_token")
+    build_plan = runtime.get("build_plan")
+    accel_request: Callable[..., Any] | None = None
+
+    if accel_get or accel_post:
+        async def _default_accel_request(
+            method: str,
+            path: str,
+            body: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            method_upper = method.upper()
+            if method_upper == "GET":
+                if not accel_get:
+                    return {"error": "accelerator_unavailable"}
+                return await accel_get(path, session_token=session_token)
+            if method_upper == "POST":
+                if not accel_post:
+                    return {"error": "accelerator_unavailable"}
+                return await accel_post(path, body or {}, session_token=session_token)
+            return {"error": f"accelerator_proxy_does_not_support_{method_upper}"}
+
+        accel_request = _default_accel_request
+
+    async def call_accelerator(method: str = "GET", endpoint: str = "", body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Call any accelerator API endpoint. The language model chooses the endpoint and body based on its knowledge of the accelerator API."""
+        body = body or {}
+        method_upper = method.upper()
+        try:
+            path = join_api_path("/", endpoint)
+            if method_upper == "GET":
+                if accel_get:
+                    return await accel_get(path, session_token=session_token)
+                return {"error": "accelerator_unavailable"}
+            elif method_upper == "POST":
+                if accel_post:
+                    return await accel_post(path, body, session_token=session_token)
+                return {"error": "accelerator_unavailable"}
+            else:
+                return {"error": f"unsupported_method: {method}"}
+        except Exception as e:
+            return tool_error(e)
+
+    async def ado_api_query(endpoint: str) -> dict[str, Any]:
+        """Query the Azure DevOps API (read-only). Pass an endpoint path like 'projects/{project}/repos/{repo}'."""
+        if not accel_get:
+            return {"error": "accelerator_unavailable"}
+        try:
+            return await accel_get(join_api_path(ADO_PROXY_PREFIX, endpoint), session_token=session_token)
+        except Exception as e:
+            return tool_error(e)
+
+    async def github_api(
+        endpoint: str,
+        method: str = "GET",
+        body: dict[str, Any] | None = None,
+        repository_id: str = "",
+    ) -> dict[str, Any]:
+        """Call the GitHub REST API (read or write). GET for reads; POST/PATCH/PUT/DELETE for writes."""
+        del repository_id  # read off the call arguments by the guardrail wrapper, not here
+        method_upper = method.upper()
+        body = body or {}
+        request_fn = accel_request
+        if request_fn is None and accel_get and method_upper == "GET":
+            async def request_fn(
+                m: str,
+                p: str,
+                b: dict[str, Any] | None = None,
+            ) -> dict[str, Any]:
+                del m, b  # the GET fallback ignores the method and body
+                return await accel_get(f"/{p.lstrip('/')}", session_token=session_token)
+        if request_fn is None:
+            return {"error": "accelerator_unavailable"}
+        try:
+            return await request_fn(method_upper, join_api_path(GITHUB_PROXY_PREFIX, endpoint), body)
+        except Exception as e:
+            return tool_error(e)
+
+    tools = [
+        StructuredTool.from_function(
+            coroutine=call_accelerator,
+            name="call_accelerator",
+            description=(
+                "Call any accelerator API endpoint (GET or POST). "
+                "Available POST endpoints: /v1/migrate/git-mirror, /v1/migrate/pipeline-convert, "
+                "/v1/migrate/secret-provision, /v1/migrate/service-connection, /v1/migrate/boards, "
+                "/v1/migrate/test-plans, /v1/migrate/artifacts, /v1/migrate/wiki, "
+                "/v1/migrate/branch-policies, /v1/migrate/bicep-transform. "
+                "Available GET endpoints: /v1/runs/{run_id}, /v1/settings/profiles/{profile_id}/discovery."
+            ),
+            args_schema=CallAcceleratorArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=github_api,
+            name="github_api",
+            description=(
+                "Call the GitHub REST API with read or write access. "
+                "Use method GET to read (repos, workflows, secrets metadata, branch protection). "
+                "Use POST/PATCH/PUT to create or update resources (workflow files, secrets, environments, branch protection). "
+                "Use DELETE only when the plan requires removal. "
+                "Pass repository_id (Project/RepoName) on writes for guardrail authorization."
+            ),
+            args_schema=GitHubApiArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=ado_api_query,
+            name="ado_api_query",
+            description="Query the Azure DevOps API (read-only). Pass an endpoint path like 'projects/{project}/repos/{repo}'.",
+            args_schema=AdoApiQueryArgs,
+        ),
+    ]
+
+    # Optional: generate_plan if build_plan is available
+    if build_plan:
+        async def generate_plan(phase: str | None = None, repository_id: str = "") -> dict[str, Any]:
+            """Generate a migration plan. If repository_id is given, builds a single-repository plan; otherwise phase-wide."""
+            try:
+                session: dict[str, Any] = {}
+                if repository_id:
+                    return await build_plan(session, session_token, repository_id=repository_id, phase=phase)
+                return await build_plan(session, session_token, phase=phase)
+            except Exception as e:
+                return tool_error(e)
+
+        tools.append(
+            StructuredTool.from_function(
+                coroutine=generate_plan,
+                name="generate_plan",
+                description="Generate a migration plan. If repository_id is given (Project/RepoName), builds a single-repo plan; otherwise builds a phase-wide plan.",
+                args_schema=GeneratePlanArgs,
+            )
+        )
+
+    read_only = {"ado_api_query", "get_current_profile"}
+    wrapped = []
+    for tool in tools:
+        if tool.name in read_only:
+            wrapped.append(tool)
+        else:
+            original_func = tool.coroutine
+            # Every tool built above is StructuredTool.from_function(coroutine=...),
+            # never the sync func= form, so .coroutine is always set here.
+            assert original_func is not None
+            guarded = wrap_tool_with_guardrail(
+                original_func,
+                agent_role="executor",
+                session_getter=session_getter,
+                log_decision=log_decision,
+            )
+            tool.coroutine = guarded
+            wrapped.append(tool)
+    return append_shared_tools(
+        wrapped,
+        accel_get=accel_get,
+        session_token=session_token,
+        session_getter=session_getter,
+    )

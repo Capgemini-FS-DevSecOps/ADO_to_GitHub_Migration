@@ -1,0 +1,72 @@
+"""Structured inter-agent messages and plan-execute-validate loop (PEV) cycle summaries."""
+from __future__ import annotations
+
+from typing import Any
+
+# ─── Inter-agent messaging ─────────────────────────────────────────────
+
+def _make_inter_agent_message(
+    from_role: str,
+    to_role: str,
+    message_type: str,
+    payload: dict[str, Any],
+    correlation_ids: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Create an inter-agent message for ``AgentState.inter_agent_messages``.
+
+    Args:
+        from_role: Role sending the message.
+        to_role: Role it is addressed to.
+        message_type: One of instruction, clarification_request, feedback or
+            result.
+        payload: Message body.
+        correlation_ids: Ids tying this message to an earlier exchange.
+
+    Returns:
+        The message dict, with a generated ``message_id`` and a UTC
+        ``timestamp``.
+    """
+    from datetime import datetime, timezone
+    return {
+        "message_id": f"{from_role}_{to_role}_{message_type}_{datetime.now(timezone.utc).isoformat()}",
+        "from_role": from_role,
+        "to_role": to_role,
+        "message_type": message_type,
+        "payload": payload,
+        "correlation_ids": correlation_ids or {},
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ─── Plan-execute-validate loop cycle summary ──────────────────────────
+
+def _make_cycle_summary(
+    cycle_number: int,
+    executor_result: dict[str, Any],
+    validation_result: dict[str, Any],
+    next_action: str,
+) -> dict[str, Any]:
+    """Create a plan-execute-validate loop cycle summary after each cycle.
+
+    Args:
+        cycle_number: 1-based index of the cycle just finished.
+        executor_result: Executor output for the cycle.
+        validation_result: Validator verdict for the cycle.
+        next_action: What the graph decided to do next.
+
+    Returns:
+        The summary dict with repo counts derived from the executor and
+        validator output, and the failure list capped at 10 entries to keep the
+        context window bounded.
+    """
+    per_repo = executor_result.get("per_repo_results", [])
+    failures = validation_result.get("failures", [])
+    return {
+        "cycle_number": cycle_number,
+        "repos_processed": len(per_repo),
+        "repos_succeeded": len(per_repo) - len(failures),
+        "repos_failed": len(failures),
+        "failures": failures[:10],  # Cap to prevent overflow
+        "next_action": next_action,
+    }
+

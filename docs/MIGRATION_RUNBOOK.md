@@ -82,7 +82,7 @@ Verifies connectivity, permissions, and config without making changes.
 ### Step 7: Execute POC
 
 ```bash
-ado2gh phase run --phase poc --config migration_phase.yaml
+ado2gh phase run --phase poc --config migration_phase.yaml --live
 ```
 
 Migrates 10 lowest-risk repos with their pipelines.
@@ -121,7 +121,7 @@ Must show `PASS`. If it shows `FAIL`:
 ### Step 11: Execute Pilot
 
 ```bash
-ado2gh phase run --phase pilot --config migration_phase.yaml
+ado2gh phase run --phase pilot --config migration_phase.yaml --live
 ```
 
 100 repos. Monitor with:
@@ -145,16 +145,16 @@ ado2gh phase gate-check --phase pilot --config migration_phase.yaml
 
 ```bash
 # Wave 1: 500 repos
-ado2gh phase run --phase wave1 --config migration_phase.yaml
+ado2gh phase run --phase wave1 --config migration_phase.yaml --live
 ado2gh validate --config migration_phase.yaml
 ado2gh phase gate-check --phase wave1
 
 # Wave 2: 1000 repos
-ado2gh phase run --phase wave2 --config migration_phase.yaml
+ado2gh phase run --phase wave2 --config migration_phase.yaml --live
 ado2gh phase gate-check --phase wave2
 
 # Wave 3: remaining repos
-ado2gh phase run --phase wave3 --config migration_phase.yaml
+ado2gh phase run --phase wave3 --config migration_phase.yaml --live
 ado2gh phase gate-check --phase wave3
 ```
 
@@ -191,10 +191,10 @@ ado2gh report --config migration_phase.yaml --format csv --output output/migrati
 ado2gh ado-cleanup --config migration_phase.yaml --dry-run
 
 # Disable pipelines + add redirect notice
-ado2gh ado-cleanup --config migration_phase.yaml
+ado2gh ado-cleanup --config migration_phase.yaml --live
 
 # Full cleanup including repo archival (makes ADO repo read-only)
-ado2gh ado-cleanup --config migration_phase.yaml --archive
+ado2gh ado-cleanup --config migration_phase.yaml --archive --live
 ```
 
 ### Step 19: Notify Teams
@@ -215,7 +215,7 @@ Developers will see `MIGRATION_NOTICE.md` in ADO repos with:
 ado2gh export-failed --phase wave1 --output failed.txt
 
 # Re-run the phase (only pending/failed repos are processed)
-ado2gh phase run --phase wave1 --config migration_phase.yaml
+ado2gh phase run --phase wave1 --config migration_phase.yaml --live
 ```
 
 ### Rollback specific scopes

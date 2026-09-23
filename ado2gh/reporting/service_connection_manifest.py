@@ -1,25 +1,44 @@
-"""Service connection migration manifest — maps ADO service connections to GitHub equivalents."""
+"""Service connection migration manifest — maps ADO service connections to GitHub equivalents.
+
+**DEPRECATED**: This module is deprecated as of v1.0.0 and will be removed in v2.0.0.
+The functionality has been merged into the `analyze_deps` pipeline step, which now
+provides structured dependency analysis including service connections, variable groups,
+environments, and other dependencies. Use the `analyze_deps` step result data instead.
+
+Migration guide:
+- Replace `ServiceConnectionManifest.generate()` calls with pipeline step execution
+- Use `analyze_deps` step result `dependencies` field for structured dependency data
+- Use `OIDCProvisioner` for automated OpenID Connect (OIDC) credential provisioning (spec 009)
+
+See: specs/009-pipeline-step-decoupling/spec.md
+"""
 from __future__ import annotations
 
 import csv
 import json
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from ado2gh.clients.ado_client import ADOClient
 from ado2gh.logging_config import console, log
-from ado2gh.models import RepoConfig
+
+warnings.warn(
+    "ServiceConnectionManifest is deprecated and will be removed in v2.0.0. "
+    "Use the analyze_deps pipeline step instead. See specs/009-pipeline-step-decoupling/spec.md",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class ServiceConnectionManifest:
-    """Generate a detailed manifest mapping ADO service connections to GitHub secrets/OIDC.
+    """Generate a detailed manifest mapping ADO service connections to GitHub secrets or OpenID Connect (OIDC) setup.
 
     ADO service connections CANNOT be programmatically migrated (values are not
     readable via API). This manifest provides ops teams with:
     - What connections exist per project
     - Suggested GitHub secret names
-    - OIDC setup instructions for Azure/AWS
+    - OpenID Connect (OIDC) setup instructions for Azure/AWS
     - Which pipelines depend on each connection
     """
 
@@ -77,15 +96,35 @@ class ServiceConnectionManifest:
         },
     }
 
-    def __init__(self, ado: ADOClient):
+    def __init__(self, ado: ADOClient) -> None:
+        """Store the client the service connections are read from.
+
+        Args:
+            ado: Client for the Azure DevOps source organisation.
+        """
         self.ado = ado
 
     def generate(self, projects: list[str],
-                 output_path: str = None) -> dict:
+                 output_path: str | None = None) -> dict:
+        """Scan the given projects for service connections and write a manifest.
+
+        Service connection secrets cannot be read back from Azure DevOps, so
+        the manifest carries names and setup guidance only — never values
+        (CA-003).
+
+        Args:
+            projects: Azure DevOps project names to scan. A project that
+                cannot be read is logged and skipped.
+            output_path: Destination JSON path; defaults to
+                ``service_connection_manifest.json`` in the output directory.
+
+        Returns:
+            The manifest dict: generation time, summary counts, connections
+            grouped by project, and the flat connection list.
+        """
         if output_path is None:
             from ado2gh.output_dirs import output_str
             output_path = output_str("service_connection_manifest.json")
-        """Scan all projects for service connections and generate migration manifest."""
         all_connections: list[dict] = []
         by_project: dict[str, list] = {}
 
@@ -155,6 +194,18 @@ class ServiceConnectionManifest:
         }
 
     def _build_summary(self, connections: list[dict]) -> dict:
+        """Aggregate mapped service connections into the manifest's headline figures.
+
+        Args:
+            connections: Mapped connection dicts carrying ``type``,
+                ``recommendation`` and ``gh_secret_names``.
+
+        Returns:
+            ``total_connections``; a ``by_type`` count map; ``oidc_eligible``, the
+            connections whose recommendation mentions OIDC; ``manual_setup_required``,
+            which is every connection because none can be migrated automatically; and
+            ``unique_secret_names``, the number of distinct GitHub secret names.
+        """
         by_type: dict[str, int] = {}
         for c in connections:
             t = c["type"]
@@ -174,7 +225,13 @@ class ServiceConnectionManifest:
             }),
         }
 
-    def _write_csv(self, connections: list[dict], output_path: str):
+    def _write_csv(self, connections: list[dict], output_path: str) -> None:
+        """Write one CSV row per service connection beside the JSON manifest.
+
+        Args:
+            connections: Mapped connection dicts.
+            output_path: Destination CSV path; parent directories are created.
+        """
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=[
@@ -187,9 +244,15 @@ class ServiceConnectionManifest:
                 row["gh_secret_names"] = ", ".join(row.get("gh_secret_names", []))
                 writer.writerow({k: row.get(k, "") for k in writer.fieldnames})
 
-    def print_summary(self, summary: dict):
-        from rich.table import Table
+    def print_summary(self, summary: dict) -> None:
+        """Print the manifest summary as a console table.
+
+        Args:
+            summary: Summary dict from the manifest returned by
+                :meth:`generate`.
+        """
         from rich import box
+        from rich.table import Table
 
         t = Table(title="Service Connection Migration Manifest", box=box.ROUNDED)
         t.add_column("Metric", style="bold")

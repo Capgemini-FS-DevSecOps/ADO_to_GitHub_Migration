@@ -1,0 +1,34 @@
+# Local agent runtime profiles (specs/003-local-agent-ide)
+profiles:
+  lightweight:
+    accelerator_url: http://localhost:8080
+    agent_url: http://localhost:8090
+    storage_backend: sqlite
+    sqlite_path: ./migration_state.db
+    auth_enabled: false
+    llm_provider: stub
+    lightweight_mode: true
+    dry_run_default: true
+    redis_url: ""
+
+  full:
+    accelerator_url: http://localhost:8080
+    agent_url: http://localhost:8090
+    storage_backend: sqlite
+    sqlite_path: ./migration_state.db
+    auth_enabled: false
+    llm_provider: stub
+    lightweight_mode: false
+    dry_run_default: true
+    redis_url: redis://localhost:6379/0
+
+  prod-like:
+    accelerator_url: http://localhost:8080
+    agent_url: http://localhost:8090
+    storage_backend: postgres
+    sqlite_path: ./migration_state.db
+    auth_enabled: true
+    llm_provider: stub
+    lightweight_mode: false
+    dry_run_default: true
+    redis_url: redis://localhost:6379/0

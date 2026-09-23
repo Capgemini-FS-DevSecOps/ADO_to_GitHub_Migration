@@ -1,0 +1,435 @@
+#!/usr/bin/env node
+/**
+ * Generate the web-console half of the 013 function inventory (research R2, FR-001a).
+ *
+ * Walks `apps/migration-ui/src` with the TypeScript compiler API already in the
+ * console's devDependencies (no new dependency, FR-008/SC-003) and merges rows with
+ * `language: "ts"` into the same `inventory.json` the Python generator writes, leaving
+ * every `py` row untouched.
+ *
+ * Usage (contracts/artifact-schemas.md):
+ *
+ *     node specs/013-clean-code-arch-remediation/scripts/function_inventory_ts.mjs \
+ *          [--src apps/migration-ui/src] [--out specs/013-clean-code-arch-remediation] \
+ *          [--no-tsc]
+ *
+ * `walkExports(sourceRoot)` is exported so `apps/migration-ui/src/__tests__/
+ * exports-documented.test.ts` guards the same walker the inventory uses.
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..', '..');
+const UI_ROOT = path.join(REPO_ROOT, 'apps', 'migration-ui');
+const PACKAGE_KEY = 'apps/migration-ui';
+
+/** Next.js App Router files whose exports are reached by the framework, not by an import. */
+const ROUTE_FILES = new Set([
+  'page.tsx', 'page.ts', 'layout.tsx', 'layout.ts', 'template.tsx',
+  'route.ts', 'route.tsx', 'error.tsx', 'loading.tsx', 'not-found.tsx', 'default.tsx',
+]);
+const ROUTE_EXPORT_NAMES = new Set(['generateMetadata', 'generateStaticParams', 'generateViewport']);
+const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
+
+/**
+ * Resolve the console's own `typescript` install (never a hoisted or global copy).
+ * @param {string} sourceRoot walked source root, used as a fallback anchor
+ */
+function loadTypeScript(sourceRoot) {
+  const anchors = [UI_ROOT];
+  let cursor = path.resolve(sourceRoot);
+  for (let i = 0; i < 8; i += 1) {
+    anchors.push(cursor);
+    const parent = path.dirname(cursor);
+    if (parent === cursor) break;
+    cursor = parent;
+  }
+  for (const anchor of anchors) {
+    const entry = path.join(anchor, 'node_modules', 'typescript', 'package.json');
+    if (fs.existsSync(entry)) {
+      return createRequire(path.join(anchor, 'package.json'))('typescript');
+    }
+  }
+  throw new Error(`could not resolve typescript from ${UI_ROOT} or above ${sourceRoot}`);
+}
+
+/** Gitignore-ish match; a slash-less pattern matches the basename at any depth. */
+function matchesPattern(target, pattern) {
+  const toRegExp = (glob) =>
+    new RegExp(`^${glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^\u0000]*').replace(/\?/g, '.')}$`);
+  if (!pattern.includes('/')) return toRegExp(pattern).test(path.posix.basename(target));
+  return toRegExp(pattern).test(target) || toRegExp(pattern.replace('/**/', '/')).test(target);
+}
+
+/** Read a `#`-commented, one-entry-per-line file. */
+function readPatterns(file) {
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#'));
+}
+
+/** Every TypeScript source file under `root`, sorted for determinism (FR-004). */
+function sourceFiles(root) {
+  const out = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.next') continue;
+        walk(full);
+      } else if (SOURCE_EXTENSIONS.has(path.extname(entry.name))) {
+        out.push(full);
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/** Repo-relative posix path when the file is under the CWD, else relative to `root`. */
+function relativePath(file, root) {
+  const fromCwd = path.relative(process.cwd(), file);
+  if (!fromCwd.startsWith('..')) return fromCwd.split(path.sep).join('/');
+  return path.relative(path.resolve(root), file).split(path.sep).join('/');
+}
+
+/** sha1 of the normalised signature plus the JSDoc text (data-model § state_hash). */
+function stateHash(signature, doc) {
+  const normalised = signature.replace(/\s+/g, ' ').trim();
+  const body = doc.replace(/[ \t]+/g, ' ').trim();
+  return crypto.createHash('sha1').update(`${normalised}\n${body}`, 'utf8').digest('hex');
+}
+
+/** Leading `/** … *\/` block attached to `node`, or `''`. */
+function leadingJsDoc(ts, sourceFile, node) {
+  const text = sourceFile.getFullText();
+  const ranges = ts.getLeadingCommentRanges(text, node.getFullStart()) || [];
+  const blocks = ranges
+    .filter((r) => r.kind === ts.SyntaxKind.MultiLineCommentTrivia && text.slice(r.pos, r.pos + 3) === '/**')
+    .map((r) => text.slice(r.pos, r.end));
+  return blocks.length ? blocks[blocks.length - 1] : '';
+}
+
+/** Header source text of a declaration: everything before its body, on one line. */
+function headerText(ts, sourceFile, decl, fn) {
+  const start = decl.getStart(sourceFile);
+  const body = fn && fn.body ? fn.body.getStart(sourceFile) : decl.getEnd();
+  return sourceFile.getFullText().slice(start, body).replace(/=>\s*$/, '=>').replace(/\s+/g, ' ').trim();
+}
+
+/** `@param` names documented in a JSDoc block. */
+function documentedParams(doc) {
+  return [...doc.matchAll(/@param\s+(?:\{[^}]*\}\s*)?\[?([A-Za-z_$][\w$]*)/g)].map((m) => m[1]);
+}
+
+/**
+ * Rows for every exported function, hook, and component under `sourceRoot`.
+ *
+ * Nested arrow callbacks and inline handlers get no row (FR-001a); a `default` export is
+ * recorded with the qualname `default` (data-model § FunctionInventoryEntry).
+ *
+ * @param {string} sourceRoot directory to walk (usually `apps/migration-ui/src`)
+ * @param {{exclusions?: string[]}} [options] exclusion patterns from `excluded-paths.txt`
+ * @returns {object[]} inventory rows, each carrying `documented` and `next_route_export`
+ */
+export function walkExports(sourceRoot, options = {}) {
+  const ts = loadTypeScript(sourceRoot);
+  const exclusions = options.exclusions || [];
+  const rows = [];
+
+  for (const file of sourceFiles(sourceRoot)) {
+    const rel = relativePath(file, sourceRoot);
+    if (exclusions.some((pattern) => matchesPattern(rel, pattern))) continue;
+
+    const text = fs.readFileSync(file, 'utf8');
+    const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const base = path.posix.basename(rel);
+    const inAppDir = rel.split('/').includes('app');
+    const routeFile = inAppDir && ROUTE_FILES.has(base);
+
+    const push = (statement, decl, fn, qualname) => {
+      const doc = leadingJsDoc(ts, sourceFile, statement);
+      const signature = headerText(ts, sourceFile, decl, fn);
+      const params = fn && fn.parameters ? [...fn.parameters] : [];
+      const names = params.map((p) => (ts.isIdentifier(p.name) ? p.name.text : p.name.getText(sourceFile)));
+      const line = sourceFile.getLineAndCharacterOfPosition(decl.getStart(sourceFile)).line + 1;
+      const endLine = sourceFile.getLineAndCharacterOfPosition(decl.getEnd()).line + 1;
+
+      const tags = new Set();
+      const proposed = new Set();
+      if (!doc) tags.add('missing_docstring');
+      if (params.length > 5) tags.add('gt5_params');
+      for (const param of params) {
+        const type = param.type ? param.type.getText(sourceFile) : '';
+        if (!param.type || /\bany\b/.test(type)) tags.add('untyped');
+        if (/\bboolean\b/.test(type)) proposed.add('bool_flag');
+        else if (param.initializer && /^(true|false)$/.test(param.initializer.getText(sourceFile))) {
+          proposed.add('bool_flag');
+        }
+      }
+      if (doc) {
+        const listed = documentedParams(doc);
+        if (listed.length && listed.sort().join(',') !== [...names].sort().join(',')) {
+          proposed.add('stale_docstring');
+        }
+      }
+
+      const nextRouteExport = routeFile || ROUTE_EXPORT_NAMES.has(qualname);
+      rows.push({
+        id: `${rel}::${qualname}`,
+        language: 'ts',
+        path: rel,
+        line,
+        package: PACKAGE_KEY,
+        qualname,
+        signature,
+        is_export: true,
+        param_count: params.length,
+        tags: [...tags].sort(),
+        proposed_tags: [...proposed].sort(),
+        state_hash: stateHash(signature, doc),
+        reference_count: 0,
+        vulture_confidence: null,
+        protected: nextRouteExport,
+        disposition: 'pending',
+        note: '',
+        documented: Boolean(doc),
+        next_route_export: nextRouteExport,
+        _end_line: endLine,
+      });
+    };
+
+    const exported = (node) =>
+      (ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Export) !== 0 ||
+      (node.modifiers || []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    const isDefault = (node) =>
+      (node.modifiers || []).some((m) => m.kind === ts.SyntaxKind.DefaultKeyword);
+
+    for (const statement of sourceFile.statements) {
+      if (ts.isFunctionDeclaration(statement) && exported(statement)) {
+        const name = isDefault(statement) ? 'default' : statement.name ? statement.name.text : 'default';
+        push(statement, statement, statement, name);
+      } else if (ts.isVariableStatement(statement) && exported(statement)) {
+        for (const decl of statement.declarationList.declarations) {
+          const init = decl.initializer;
+          if (!init || !(ts.isArrowFunction(init) || ts.isFunctionExpression(init))) continue;
+          push(statement, decl, init, ts.isIdentifier(decl.name) ? decl.name.text : 'default');
+        }
+      } else if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
+        const expr = statement.expression;
+        if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) {
+          push(statement, statement, expr, 'default');
+        }
+      }
+    }
+  }
+
+  rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return rows;
+}
+
+/** Occurrences of every identifier under `sourceRoot`, minus its declaration sites. */
+function referenceCounts(sourceRoot, rows) {
+  const totals = new Map();
+  for (const file of sourceFiles(sourceRoot)) {
+    const text = fs.readFileSync(file, 'utf8');
+    for (const token of text.match(/[A-Za-z_$][\w$]*/g) || []) {
+      totals.set(token, (totals.get(token) || 0) + 1);
+    }
+  }
+  const declared = new Map();
+  for (const row of rows) declared.set(row.qualname, (declared.get(row.qualname) || 0) + 1);
+  const out = new Map();
+  for (const [name, count] of totals) out.set(name, Math.max(0, count - (declared.get(name) || 0)));
+  return out;
+}
+
+/** `{ "src/x.tsx": Set<line> }` of TS6133 unused-parameter positions. */
+function unusedParameterLines() {
+  let output = '';
+  try {
+    execFileSync('npx', ['tsc', '--noEmit', '--noUnusedParameters'], {
+      cwd: UI_ROOT,
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    });
+  } catch (error) {
+    output = `${error.stdout || ''}${error.stderr || ''}`;
+    if (!output.trim()) {
+      console.warn('tsc --noUnusedParameters could not run; unused_param tags are omitted');
+      return new Map();
+    }
+  }
+  const found = new Map();
+  for (const match of output.matchAll(/^(.+?)\((\d+),\d+\): error TS6133:/gm)) {
+    const rel = path
+      .relative(process.cwd(), path.resolve(UI_ROOT, match[1].trim()))
+      .split(path.sep)
+      .join('/');
+    if (!found.has(rel)) found.set(rel, new Set());
+    found.get(rel).add(Number(match[2]));
+  }
+  return found;
+}
+
+/** Apply matching `tag-decisions.json` entries; stale hashes leave the proposal standing. */
+function applyDecisions(rows, decisionsFile) {
+  if (!fs.existsSync(decisionsFile)) return;
+  let decisions = [];
+  try {
+    decisions = JSON.parse(fs.readFileSync(decisionsFile, 'utf8'));
+  } catch {
+    return;
+  }
+  const index = new Map(decisions.map((d) => [`${d.id}\u0000${d.tag}`, d]));
+  for (const row of rows) {
+    for (const tag of [...row.proposed_tags]) {
+      const decision = index.get(`${row.id}\u0000${tag}`);
+      if (!decision || decision.state_hash !== row.state_hash || decision.decision === 'escalate') continue;
+      row.proposed_tags = row.proposed_tags.filter((other) => other !== tag);
+      if (decision.decision === 'confirm') addTag(row, tag);
+      else if (tag === 'bool_flag') addTag(row, 'bool_data');
+    }
+  }
+}
+
+/** Add a mechanical tag to a row, keeping the array sorted and unique. */
+function addTag(row, tag) {
+  if (!row.tags.includes(tag)) row.tags = [...row.tags, tag].sort();
+}
+
+/** Replace the `<!-- ts:begin -->…<!-- ts:end -->` section of `inventory-summary.md`. */
+function writeSummaryBlock(outDir, rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    for (const tag of row.tags) counts.set(tag, (counts.get(tag) || 0) + 1);
+    for (const tag of row.proposed_tags) counts.set(`proposed_${tag}`, (counts.get(`proposed_${tag}`) || 0) + 1);
+  }
+  const clean = rows.filter((r) => r.tags.length === 0 && r.proposed_tags.length === 0).length;
+  const lines = [
+    '<!-- ts:begin -->',
+    '## Web console (TypeScript)',
+    '',
+    `- exports: ${rows.length}`,
+    `- clean (no tags, no proposals): ${clean}`,
+    `- protected (\`next_route_export\`): ${rows.filter((r) => r.protected).length}`,
+    '',
+    '| Tag | Count |',
+    '|---|---:|',
+    ...[...counts.keys()].sort().map((tag) => `| \`${tag}\` | ${counts.get(tag)} |`),
+    '<!-- ts:end -->',
+  ];
+  const block = lines.join('\n');
+  const summary = path.join(outDir, 'inventory-summary.md');
+  if (!fs.existsSync(summary)) {
+    fs.writeFileSync(summary, `# Function Inventory Summary\n\n${block}\n`, 'utf8');
+    return;
+  }
+  const current = fs.readFileSync(summary, 'utf8');
+  const replaced = /<!-- ts:begin -->[\s\S]*?<!-- ts:end -->/.test(current)
+    ? current.replace(/<!-- ts:begin -->[\s\S]*?<!-- ts:end -->/, block)
+    : `${current.trimEnd()}\n\n${block}\n`;
+  fs.writeFileSync(summary, replaced, 'utf8');
+}
+
+function parseArgs(argv) {
+  const args = {
+    src: path.join('apps', 'migration-ui', 'src'),
+    out: path.resolve(SCRIPT_DIR, '..'),
+    tsc: true,
+  };
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--src') args.src = argv[++i];
+    else if (argv[i] === '--out') args.out = argv[++i];
+    else if (argv[i] === '--no-tsc') args.tsc = false;
+    else {
+      // Unknown flags must not fall through to a full run against the default --out.
+      process.stderr.write(`usage: function_inventory_ts.mjs [--src <dir>] [--out <dir>] [--no-tsc]\nunknown argument: ${argv[i]}\n`);
+      process.exit(2);
+    }
+  }
+  return args;
+}
+
+function main(argv) {
+  const args = parseArgs(argv);
+  const outDir = path.resolve(args.out);
+  const exclusions = readPatterns(path.join(outDir, 'excluded-paths.txt'));
+  const rows = walkExports(args.src, { exclusions });
+
+  const references = referenceCounts(args.src, rows);
+  const unused = args.tsc ? unusedParameterLines() : new Map();
+  for (const row of rows) {
+    row.reference_count = row.qualname === 'default' ? 1 : references.get(row.qualname) || 0;
+    if (row.reference_count === 0 && !row.protected) addTag(row, 'dead');
+    const lines = unused.get(row.path);
+    if (lines && [...lines].some((line) => line >= row.line && line <= row._end_line)) {
+      addTag(row, 'unused_param');
+    }
+  }
+
+  applyDecisions(rows, path.join(outDir, 'tag-decisions.json'));
+
+  const inventoryFile = path.join(outDir, 'inventory.json');
+  let existing = [];
+  if (fs.existsSync(inventoryFile)) {
+    try {
+      existing = JSON.parse(fs.readFileSync(inventoryFile, 'utf8'));
+    } catch {
+      existing = [];
+    }
+  }
+
+  const carry = new Map(existing.map((r) => [r.id, r]));
+  const finalRows = rows.map((row) => {
+    const previous = carry.get(row.id);
+    const { documented, next_route_export, _end_line, ...rest } = row;
+    return {
+      ...rest,
+      tags: [...row.tags].sort(),
+      proposed_tags: [...row.proposed_tags].sort(),
+      disposition: previous ? previous.disposition || 'pending' : 'pending',
+      note: previous ? previous.note || '' : '',
+    };
+  });
+
+  const merged = [...existing.filter((r) => r.language !== 'ts'), ...finalRows];
+  merged.sort((a, b) => {
+    if (a.language !== b.language) return a.language < b.language ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  fs.writeFileSync(inventoryFile, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+
+  const protectedFile = path.join(outDir, 'protected-entry-points.json');
+  let protectedEntries = [];
+  if (fs.existsSync(protectedFile)) {
+    try {
+      protectedEntries = JSON.parse(fs.readFileSync(protectedFile, 'utf8'));
+    } catch {
+      protectedEntries = [];
+    }
+  }
+  protectedEntries = protectedEntries.filter((entry) => entry.reason !== 'next_route_export');
+  for (const row of rows) {
+    if (row.next_route_export) protectedEntries.push({ id: row.id, reason: 'next_route_export' });
+  }
+  protectedEntries.sort((a, b) => (a.id === b.id ? (a.reason < b.reason ? -1 : 1) : a.id < b.id ? -1 : 1));
+  fs.writeFileSync(protectedFile, `${JSON.stringify(protectedEntries, null, 2)}\n`, 'utf8');
+
+  writeSummaryBlock(outDir, finalRows);
+  console.log(`${finalRows.length} TypeScript rows merged into ${path.relative(process.cwd(), inventoryFile)}`);
+  return 0;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  process.exit(main(process.argv.slice(2)));
+}

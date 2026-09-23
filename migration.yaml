@@ -4,17 +4,12 @@
 
 global:
   ado_org_url: "https://dev.azure.com/cloud-sre"
-  gh_org: "destination-org-test"
-  migration_strategy: mirror    # "mirror" or "gei"
+  gh_org: "ado-to-gh-migration"
+  migration_strategy: gei    # "mirror" or "gei" (default: gei via gh gei migrate-repo)
   parallel: 4
   pipeline_parallel: 12
   default_scopes:
     - repo
-    - pipelines
-    - work_items
-    - wiki
-    - secrets
-    - branch_policies
 
 phases:
   poc:

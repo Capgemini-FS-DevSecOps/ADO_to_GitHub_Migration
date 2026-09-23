@@ -1,0 +1,81 @@
+# Production — PostgreSQL backend.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ado2gh
+      # No default on purpose — a shipped one is a publicly known production
+      # password. Set the same value in ADO2GH_DATABASE_URL's interpolation below.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a strong value}
+      POSTGRES_DB: ado2gh
+    # Deliberately not published to the host: accelerator, agent and worker reach
+    # the database as postgres:5432 over the compose network.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ado2gh"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  accelerator:
+    environment:
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a strong value}@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      ADO2GH_AUTH_ENABLED: "true"
+      # No SESSION_SECRET: nothing under ado2gh/ or services/ reads one (sessions are
+      # random tokens held in the state DB), so the old change-me-in-production
+      # fallback was a shipped placeholder standing in for a secret nobody consumed.
+      # Shared secret for the agent's /v1/internal/ live-approval routes. Mandatory
+      # because auth is on here: the accelerator sends it as x-ado2gh-internal-token
+      # and the agent compares against its own copy, so both services below must get
+      # the identical value or resume-live/deny-live returns 401. No default on
+      # purpose — a shipped default would be a publicly known shared secret.
+      ADO2GH_INTERNAL_TOKEN: ${ADO2GH_INTERNAL_TOKEN:?set ADO2GH_INTERNAL_TOKEN to a random secret shared by the accelerator and the agent}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    environment:
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a strong value}@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    depends_on:
+      - postgres
+
+  agent:
+    environment:
+      ADO2GH_AUTH_ENABLED: "true"
+      # Must be the same value the accelerator sends (see above).
+      ADO2GH_INTERNAL_TOKEN: ${ADO2GH_INTERNAL_TOKEN:?set ADO2GH_INTERNAL_TOKEN to a random secret shared by the accelerator and the agent}
+      ADO2GH_STORAGE_BACKEND: postgres
+      ADO2GH_DATABASE_URL: postgresql://ado2gh:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD to a strong value}@postgres:5432/ado2gh
+      ADO2GH_DATA_DIR: /app/data
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/migration-ui
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
+        NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+        NEXT_PUBLIC_REQUIRE_AUTH: "true"
+    environment:
+      NEXT_PUBLIC_ACCELERATOR_URL: http://localhost:8080
+      NEXT_PUBLIC_AGENT_URL: http://localhost:8090
+      NEXT_PUBLIC_REQUIRE_AUTH: "true"
+      ACCELERATOR_INTERNAL_URL: http://accelerator:8080
+
+volumes:
+  pgdata:
