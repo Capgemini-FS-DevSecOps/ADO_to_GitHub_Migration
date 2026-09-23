@@ -2,8 +2,9 @@
 
 Owns the schema for migrations, wave runs, pipeline inventory and
 migrations, risk scores, phase gates, batch checkpoints, profile scans,
-audit events, platform users, sessions and live execution approvals. The
-agentic, user, profile-scan and risk-gate methods come from the mixins.
+audit events, platform users, sessions, live execution approvals and the
+knowledge base. The agentic, user, profile-scan, risk-gate and knowledge
+methods come from the mixins.
 """
 from __future__ import annotations
 
@@ -19,12 +20,16 @@ from ado2gh.models import (
 )
 from ado2gh.state.base import StateDBBase
 from ado2gh.state.sqlite_agentic_mixin import AgenticPlatformMixin
+from ado2gh.state.sqlite_knowledge_mixin import KnowledgeBaseMixin
 from ado2gh.state.sqlite_profile_scan_mixin import ProfileScanMixin
 from ado2gh.state.sqlite_risk_gates_mixin import RiskGatesMixin
 from ado2gh.state.sqlite_users_mixin import PlatformUsersMixin
 
 
-class SQLiteStateDB(AgenticPlatformMixin, PlatformUsersMixin, ProfileScanMixin, RiskGatesMixin, StateDBBase):
+class SQLiteStateDB(
+    AgenticPlatformMixin, KnowledgeBaseMixin, PlatformUsersMixin, ProfileScanMixin,
+    RiskGatesMixin, StateDBBase,
+):
     """State store backed by one SQLite file (or ``:memory:``)."""
 
     SCHEMA = """
@@ -211,6 +216,63 @@ class SQLiteStateDB(AgenticPlatformMixin, PlatformUsersMixin, ProfileScanMixin, 
 
     CREATE INDEX IF NOT EXISTS idx_live_approval_scope
         ON live_execution_approvals(scope_type, scope_id, status);
+
+    CREATE TABLE IF NOT EXISTS knowledge_nodes (
+        id               TEXT PRIMARY KEY,
+        profile_id       TEXT NOT NULL,
+        system           TEXT NOT NULL DEFAULT '',
+        organization     TEXT NOT NULL DEFAULT '',
+        project          TEXT NOT NULL DEFAULT '',
+        kind             TEXT NOT NULL DEFAULT 'unknown',
+        identity_key     TEXT NOT NULL DEFAULT '',
+        external_id      TEXT NOT NULL DEFAULT '',
+        name             TEXT NOT NULL DEFAULT '',
+        url              TEXT NOT NULL DEFAULT '',
+        source_locator   TEXT NOT NULL DEFAULT '',
+        first_seen_at    TEXT NOT NULL DEFAULT '',
+        last_seen_at     TEXT NOT NULL DEFAULT '',
+        last_scan_id     TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_knowledge_nodes_identity
+        ON knowledge_nodes(profile_id, kind, identity_key);
+
+    CREATE TABLE IF NOT EXISTS knowledge_edges (
+        id                TEXT PRIMARY KEY,
+        profile_id        TEXT NOT NULL,
+        source_node_id    TEXT NOT NULL,
+        target_node_id    TEXT NOT NULL,
+        kind              TEXT NOT NULL DEFAULT '',
+        confidence        TEXT NOT NULL DEFAULT 'declared',
+        extraction_method TEXT NOT NULL DEFAULT '',
+        source_locator    TEXT NOT NULL DEFAULT '',
+        source_revision   TEXT NOT NULL DEFAULT '',
+        evidence_json     TEXT NOT NULL DEFAULT '{}',
+        status            TEXT NOT NULL DEFAULT 'active',
+        first_seen_at     TEXT NOT NULL DEFAULT '',
+        last_seen_at      TEXT NOT NULL DEFAULT '',
+        last_scan_id      TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_knowledge_edges_source
+        ON knowledge_edges(profile_id, source_node_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_edges_target
+        ON knowledge_edges(profile_id, target_node_id);
+
+    CREATE TABLE IF NOT EXISTS knowledge_scans (
+        id                TEXT PRIMARY KEY,
+        profile_id        TEXT NOT NULL,
+        source_scope      TEXT NOT NULL DEFAULT '',
+        extractor_version TEXT NOT NULL DEFAULT '',
+        started_at        TEXT NOT NULL DEFAULT '',
+        completed_at      TEXT NOT NULL DEFAULT '',
+        status            TEXT NOT NULL DEFAULT 'running',
+        coverage_json     TEXT NOT NULL DEFAULT '{}',
+        error_summary     TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_knowledge_scans_profile
+        ON knowledge_scans(profile_id, completed_at);
 
     """
 

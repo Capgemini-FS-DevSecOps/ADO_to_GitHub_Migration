@@ -25,6 +25,29 @@ from ado2gh.state.audit_query import AuditEventFilters
 if TYPE_CHECKING:
     from ado2gh.auth.models import PlatformUser
 
+KNOWLEDGE_NODE_COLUMNS = (
+    "id", "profile_id", "system", "organization", "project", "kind",
+    "identity_key", "external_id", "name", "url", "source_locator",
+    "first_seen_at", "last_seen_at", "last_scan_id",
+)
+"""Column order of ``knowledge_nodes``, shared by every backend."""
+
+KNOWLEDGE_EDGE_COLUMNS = (
+    "id", "profile_id", "source_node_id", "target_node_id", "kind",
+    "confidence", "extraction_method", "source_locator", "source_revision",
+    "evidence_json", "status", "first_seen_at", "last_seen_at", "last_scan_id",
+)
+"""Column order of ``knowledge_edges``, shared by every backend."""
+
+KNOWLEDGE_SCAN_COLUMNS = (
+    "id", "profile_id", "source_scope", "extractor_version", "started_at",
+    "completed_at", "status", "coverage_json", "error_summary",
+)
+"""Column order of ``knowledge_scans``, shared by every backend."""
+
+KNOWLEDGE_SCAN_UPDATABLE = ("completed_at", "status", "coverage_json", "error_summary")
+"""The only scan columns a later write may change; the rest describe the start."""
+
 
 class StateDBBase(ABC):
     """Abstract base for all state store backends.
@@ -534,3 +557,122 @@ class StateDBBase(ABC):
         Returns:
             The row after the decision, or ``None`` when the id is unknown.
         """
+
+    # ── Knowledge base ───────────────────────────────────────────────────────
+
+    @abstractmethod
+    def upsert_knowledge_node(self, row: dict[str, Any]) -> None:
+        """Insert or replace one ``knowledge_nodes`` row.
+
+        Args:
+            row: Values keyed by :data:`KNOWLEDGE_NODE_COLUMNS`; a row already
+                held under the same ``id`` is overwritten. Every value is
+                stored as text.
+        """
+
+    @abstractmethod
+    def upsert_knowledge_edge(self, row: dict[str, Any]) -> None:
+        """Insert or replace one ``knowledge_edges`` row.
+
+        Args:
+            row: Values keyed by :data:`KNOWLEDGE_EDGE_COLUMNS`; a row already
+                held under the same ``id`` is overwritten.
+        """
+
+    @abstractmethod
+    def insert_knowledge_scan(self, row: dict[str, Any]) -> None:
+        """Record that a scan has started.
+
+        Args:
+            row: Values keyed by :data:`KNOWLEDGE_SCAN_COLUMNS`.
+        """
+
+    @abstractmethod
+    def update_knowledge_scan(self, scan_id: str, row: dict[str, Any]) -> None:
+        """Record how a scan ended.
+
+        Args:
+            scan_id: The scan to update.
+            row: New values; only the columns in
+                :data:`KNOWLEDGE_SCAN_UPDATABLE` are written.
+        """
+
+    @abstractmethod
+    def get_knowledge_nodes(
+        self,
+        profile_id: str,
+        *,
+        node_ids: list[str] | None = None,
+        kind: str = "",
+        identity_key: str = "",
+    ) -> list[dict]:
+        """Return a profile's node rows matching every filter given.
+
+        Args:
+            profile_id: The profile whose rows to read.
+            node_ids: Restrict to these identifiers; an empty list matches
+                nothing and ``None`` means no restriction.
+            kind: Restrict to this kind of thing when not empty.
+            identity_key: Restrict to this identity key when not empty.
+
+        Returns:
+            The matching rows, ordered by identity key.
+        """
+
+    @abstractmethod
+    def search_knowledge_nodes(
+        self,
+        profile_id: str,
+        text: str,
+        *,
+        kinds: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """Return node rows whose identity key or name contains ``text``.
+
+        Args:
+            profile_id: The profile whose rows to read.
+            text: What to look for; upper and lower case are treated alike.
+            kinds: Restrict to these kinds of thing when given.
+            limit: Most rows to return.
+
+        Returns:
+            The matching rows, ordered by identity key.
+        """
+
+    @abstractmethod
+    def get_knowledge_edges(
+        self,
+        profile_id: str,
+        *,
+        source_ids: list[str] | None = None,
+        target_ids: list[str] | None = None,
+        status: str = "",
+    ) -> list[dict]:
+        """Return a profile's edge rows attached to the identifiers given.
+
+        Args:
+            profile_id: The profile whose rows to read.
+            source_ids: Match rows whose consumer end is one of these.
+            target_ids: Match rows whose dependency end is one of these.
+            status: Restrict to this status when not empty.
+
+        Returns:
+            The rows matching either end, empty when neither end is named.
+        """
+
+    @abstractmethod
+    def mark_knowledge_edges_disappeared(self, profile_id: str, scan_id: str) -> int:
+        """Mark every active dependency a scan did not confirm as disappeared.
+
+        Args:
+            profile_id: The profile the scan covered.
+            scan_id: The scan that has just finished.
+
+        Returns:
+            The number of rows changed.
+        """
+
+    @abstractmethod
+    def latest_knowledge_scan(self, profile_id: str) -> dict | None:
+        """Return a profile's most recently finished scan row, or ``None``."""

@@ -1,8 +1,8 @@
 """PostgreSQL state store (production backend).
 
 Same tables and method contract as the SQLite store, with ``psycopg2``
-placeholders and ``RETURNING``. The agentic, user, profile-scan and
-risk-gate methods come from the mixins.
+placeholders and ``RETURNING``. The agentic, user, profile-scan, risk-gate
+and knowledge methods come from the mixins.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any, Iterator
 from ado2gh.models import ExecutionMode, MigrationStatus, PhaseType, PipelineMetadata, RepoConfig
 from ado2gh.state.base import StateDBBase
 from ado2gh.state.postgres_agentic_users_mixin import PostgresAgenticUsersMixin
+from ado2gh.state.postgres_knowledge_mixin import PostgresKnowledgeBaseMixin
 from ado2gh.state.postgres_risk_gates_scan_mixin import PostgresRiskGatesScanMixin
 
 
@@ -22,7 +23,10 @@ def _phase_value(phase: PhaseType | str) -> str:
     return phase.value if hasattr(phase, "value") else str(phase)
 
 
-class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, StateDBBase):
+class PostgresStateDB(
+    PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin,
+    PostgresKnowledgeBaseMixin, StateDBBase,
+):
     """State store backed by a PostgreSQL database."""
 
     SCHEMA = """
@@ -192,6 +196,57 @@ class PostgresStateDB(PostgresRiskGatesScanMixin, PostgresAgenticUsersMixin, Sta
     );
     CREATE INDEX IF NOT EXISTS idx_live_approval_scope
         ON live_execution_approvals(scope_type, scope_id, status);
+    CREATE TABLE IF NOT EXISTS knowledge_nodes (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        system TEXT NOT NULL DEFAULT '',
+        organization TEXT NOT NULL DEFAULT '',
+        project TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'unknown',
+        identity_key TEXT NOT NULL DEFAULT '',
+        external_id TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL DEFAULT '',
+        source_locator TEXT NOT NULL DEFAULT '',
+        first_seen_at TEXT NOT NULL DEFAULT '',
+        last_seen_at TEXT NOT NULL DEFAULT '',
+        last_scan_id TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_nodes_identity
+        ON knowledge_nodes(profile_id, kind, identity_key);
+    CREATE TABLE IF NOT EXISTS knowledge_edges (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        source_node_id TEXT NOT NULL,
+        target_node_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT '',
+        confidence TEXT NOT NULL DEFAULT 'declared',
+        extraction_method TEXT NOT NULL DEFAULT '',
+        source_locator TEXT NOT NULL DEFAULT '',
+        source_revision TEXT NOT NULL DEFAULT '',
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'active',
+        first_seen_at TEXT NOT NULL DEFAULT '',
+        last_seen_at TEXT NOT NULL DEFAULT '',
+        last_scan_id TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_edges_source
+        ON knowledge_edges(profile_id, source_node_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_edges_target
+        ON knowledge_edges(profile_id, target_node_id);
+    CREATE TABLE IF NOT EXISTS knowledge_scans (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        source_scope TEXT NOT NULL DEFAULT '',
+        extractor_version TEXT NOT NULL DEFAULT '',
+        started_at TEXT NOT NULL DEFAULT '',
+        completed_at TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'running',
+        coverage_json TEXT NOT NULL DEFAULT '{}',
+        error_summary TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_scans_profile
+        ON knowledge_scans(profile_id, completed_at);
 
     """
 
