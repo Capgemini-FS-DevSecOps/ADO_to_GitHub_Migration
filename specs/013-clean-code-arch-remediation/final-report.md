@@ -274,14 +274,15 @@ independently verified via `git show <hash>` before being recorded.
   five LangGraph builder constants (checkpointer timeouts, retry policy)
   that remain candidates for settings fields. The audit-event-name registry
   item that was open when this pass began is now closed (commit `4a8b05c`).
-- The full test suite has not been re-run since this pass's fix commits
-  landed; run it before merge (`.venv\Scripts\python.exe -m pytest`,
-  redirected to a file per the repo's own testing guidance) to confirm the
-  coverage ratchet still clears 69% with all sixteen new gaps' regression
-  tests included.
-- This branch has not been pushed since the commits covering GAP-128
-  through GAP-143 landed; push is still needed, and a CI run against the
-  pushed head has not yet been triggered or observed for this pass.
+- The full test suite was re-run after this pass's commits landed:
+  2355 passed, 26 skipped, with `ruff check ado2gh/ services/` clean and
+  `mypy ado2gh/ --ignore-missing-imports` reporting no issues across 209
+  source files (2026-09-23, 01:31 local time).
+- The branch was pushed at commit `e95a7f0`. The continuous integration run
+  against the preceding pushed head, `9cc09f7`, finished green on every job
+  (lint, test and the console permission check); the run against `e95a7f0`,
+  which adds documentation and spec files only, was still finishing when
+  this paragraph was written.
 - PR #7's ready-for-review status: verified in an earlier pass via
   `gh pr view 7` — `isDraft: false`, `state: OPEN`, `mergeable: MERGEABLE`,
   `mergeStateStatus: CLEAN`. Not re-verified against the commits this pass
@@ -290,9 +291,10 @@ independently verified via `git show <hash>` before being recorded.
 
 ### ⏭️ Next Steps
 
-1. Run the full test suite locally and confirm the coverage ratchet still
-   clears 69% with the sixteen new gaps' regression tests included.
-2. Push the branch (including this pass's five documentation-only files)
-   and confirm a green CI run against the pushed head.
-3. Merge PR #7 into `main` once the above are confirmed; nothing else is
-   known to block it.
+1. Confirm the continuous integration run against `e95a7f0` is green; the
+   run against the preceding head was.
+2. Merge PR #7 into `main`; nothing else is known to block it.
+3. Optional, at the operator's discretion: the 27 open medium and low
+   register items, and the knowledge base follow-ups recorded under
+   GAP-144 (the four dependency kinds not yet derived, a command-line way
+   to run a scan, and the node kinds nothing produces yet).
