@@ -185,6 +185,20 @@ critical-or-high set is unchanged: one entry, GAP-069, `deferred`. Detail:
 `gap-register.md` § Summary and `plan.md` § Approved contract changes
 entries 18-19, both dated 2026-09-22 (fifth/final scribe pass).
 
+**Sixth pass (2026-09-23).** Two pieces of work, both on this branch. First, GAP-069's
+DynamoDB claim-conflict finding — open since 2026-09-13 pending a configuration decision —
+closed as remediated: commit `41a0e99` adds `ADO2GH_AUDIT_DESTINATION`, letting a DynamoDB
+job-store deployment point its audit trail at a database of its own instead of only logging a
+refused claim. Second, a new migration knowledge base: five commits (`d4d07bf`, `7eaebf9`,
+`671802f`, `9e03f87`, `feac2c7`) add a store of what depends on what, derived from pipeline
+inventory already collected, with four honestly-disclosed coverage limits recorded on its own
+register entry, GAP-144. `gap-register.md` now totals 143 gaps, open 27 / deferred 2 /
+remediated 114, with GAP-144 recorded separately as new work rather than a defect. `plan.md`
+§ Approved contract changes gained entries 21 (the three new tables) and 22 (the five new
+routes), both approved by operator instruction on 2026-09-23. None of this pass's work has been
+test-run as a full suite, pushed, or built by CI yet — that remains the same three steps the
+fifth pass already named under Next Steps, still outstanding. PR #7 remains open.
+
 ### 📄 Generated Files Summary
 
 - `tests/auth/test_gap_123_escaped_quote_secret_value_leak.py` — new, 3 tests
@@ -243,10 +257,11 @@ independently verified via `git show <hash>` before being recorded.
   repository; an earlier attempt to drop `stash@{1}` was blocked by the
   auto-mode destructive-action classifier. An operator with stash-drop
   permission can clear both once confirmed disposable.
-- The open DynamoDB claim-conflict finding (GAP-069/GAP-STATE-06) stays
-  `deferred` — its resolution turns on where a DynamoDB deployment's audit
-  database should live, a configuration decision for the operator, not a
-  code defect.
+- The DynamoDB claim-conflict finding (GAP-069/GAP-STATE-06) is now
+  `remediated` (commit `41a0e99`, 2026-09-23): the audit destination is a
+  setting of its own, `ADO2GH_AUDIT_DESTINATION`, so a DynamoDB job-store
+  deployment can point its audit trail at a database that survives, instead
+  of only logging a refused claim.
 - 27 open medium/low follow-ups remain in `gap-register.md` (readability,
   naming and non-safety-impact items, e.g. GAP-035 through GAP-050,
   GAP-062, GAP-080, GAP-097, GAP-112 through GAP-119) — none blocks merge;

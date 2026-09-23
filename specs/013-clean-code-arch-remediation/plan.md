@@ -1216,6 +1216,43 @@ knowledge-base batch regenerated the snapshot in the shared working tree while t
 progress and swept the name into commit `7eaebf9`. Verified against a clean checkout carrying only
 this change: regenerating reproduces exactly that one added line and nothing else, and
 `tests/contract/test_public_surface_snapshot.py` passes with it recorded.
+
+**21. Three new tables, `knowledge_nodes`, `knowledge_edges`, `knowledge_scans` (GAP-144).
+Decision (operator, 2026-09-23): approved.** The migration knowledge base records two kinds of
+fact: a node (a thing a migration touches — a repository, a pipeline, a service connection and
+eleven others) and an edge (a dependency between two nodes, always written from the consumer to
+the thing it depends on). A third table, `knowledge_scans`, records each pass that filled the
+other two: what it was asked to look at, what it managed to cover, and what it could not look at
+at all, so a reader can tell "nothing depends on this" apart from "nothing this scan could see
+depends on this." All three tables are additive; no existing table's columns changed.
+
+*Migration note.* No action for any deployment. The tables are created the same way every other
+table in this platform is, through the backend's own schema setup, and start empty until an
+inventory run or an on-demand scan fills them.
+
+*Snapshot impact: yes — three names added to `db_tables`.* `knowledge_nodes`, `knowledge_edges`
+and `knowledge_scans` join the frozen list, committed in `7eaebf9`. `tests/unit/test_gap_029_backend_parity.py`
+raised `EXPECTED_TABLE_COUNT` from 13 to 16 in the same batch (commit `9cc09f7`) so the SQLite
+and Postgres backends stay proven to declare the same table count and columns with the three new
+tables included.
+
+**22. Five new accelerator routes under `/v1/knowledge/` (GAP-144). Decision (operator,
+2026-09-23): approved.** Four reads — search by name, a node's dependencies, a node's consumers,
+and the full impact answer for a node (what would notice if it changed) — plus one write that
+starts a scan on request rather than waiting for the next inventory run. All five are new paths;
+no existing route's method, path or behaviour changed.
+
+*Migration note.* No action for any deployment. The four reads return empty results against an
+empty knowledge base rather than failing, so calling them before any inventory has run is safe.
+The scan route runs the same derivation an inventory run already triggers in live mode; calling
+it does not reach Azure DevOps again.
+
+*Snapshot impact: yes — five rows added to `http_routes`.* `accelerator GET /v1/knowledge/search`,
+`accelerator GET /v1/knowledge/nodes/{node_id}/dependencies`,
+`accelerator GET /v1/knowledge/nodes/{node_id}/consumers`,
+`accelerator GET /v1/knowledge/nodes/{node_id}/impact` and `accelerator POST /v1/knowledge/scan`
+join the frozen list, committed in `9e03f87` and `feac2c7`.
+
 **Contract changes still awaiting sign-off.** None. The four that were — GAP-007, GAP-008,
 GAP-003 and GAP-017 — were signed off by operator instruction on 2026-09-13 and are entries
 5–8 above. Entries 16 and 17, added 2026-09-22 by the register scribe (pass two), were both
@@ -1224,7 +1261,9 @@ them; they were merged into this register two passes later from `register-pendin
 files. Entries 18 and 19, added 2026-09-22 by the register scribe (final pass), were both
 approved by operator instruction on 2026-09-22 (remediate all findings), contemporaneous with
 the commits that produced them. Entry 20 was approved by the operator on 2026-09-23, the same
-instruction that unblocked GAP-069, deferred since 2026-09-13.
+instruction that unblocked GAP-069, deferred since 2026-09-13. Entries 21 and 22, added
+2026-09-23 by the register scribe (sixth pass) for the migration knowledge base's three tables
+and five routes, were approved under that same 2026-09-23 instruction.
 
 ## Coverage measurement
 
