@@ -357,8 +357,10 @@ class DynamoDBJobStore(JobStore):
             region: AWS region of the table.
             endpoint_url: Override for a local DynamoDB endpoint.
             audit_writer: Where claim conflicts are audited. ``JobStoreFactory``
-                injects the writer over the configured state store; without one
-                a conflict is logged as ``job.audit_unavailable`` instead.
+                always injects one, over the configured audit destination, and
+                refuses to build the store when there is none. A store built
+                directly without a writer logs each conflict it cannot audit as
+                ``job.audit_unavailable`` instead.
         """
         import boto3
 
@@ -511,8 +513,9 @@ class DynamoDBJobStore(JobStore):
         """Log and audit a job another worker claimed first (CA-004).
 
         The audit payload names the job only — never its payload or any
-        credential inside it (CA-003). Without a writer the conflict is still
-        logged, under ``job.audit_unavailable`` so the missing row is visible.
+        credential inside it (CA-003). A store built through ``JobStoreFactory``
+        always has a writer; one built directly without a writer still logs the
+        conflict, under ``job.audit_unavailable`` so the missing row is visible.
         """
         logger.warning(
             "DynamoDB job claim conflict: job %s was already claimed by another worker",
@@ -520,8 +523,9 @@ class DynamoDBJobStore(JobStore):
         )
         if self._audit_writer is None:
             logger.warning(
-                "job.audit_unavailable: no audit writer was injected into the dynamodb job "
-                "store, so the claim conflict for job %s is logged and not audited",
+                "job.audit_unavailable: this dynamodb job store was built without an audit "
+                "writer, so the claim conflict for job %s is logged and not audited. A store "
+                "built through JobStoreFactory always has one",
                 record.id,
             )
             return
@@ -560,31 +564,35 @@ class DynamoDBJobStore(JobStore):
         self._save(rec)
 
 
-def _configured_audit_writer() -> AuditWriter | None:
-    """Return an audit writer over the configured state store, or ``None``.
+def _configured_audit_writer() -> AuditWriter:
+    """Return an audit writer over the configured audit destination.
 
-    ``ADO2GH_STORAGE_BACKEND`` picks the job store and the state store together,
-    so the deployment that reaches here has asked for a DynamoDB state store,
-    which does not exist: the factory refuses it and there is nowhere to audit.
-    That refusal is reported once, at construction, rather than swallowed per
-    conflict — the job store then logs each conflict it cannot audit.
+    Only the DynamoDB branch of the factory calls this, and a DynamoDB
+    deployment has no state store to fall back on: ``ADO2GH_STORAGE_BACKEND``
+    picks the job store and the state store together, and the state factory
+    refuses ``dynamodb`` by design. So the deployment must say where audit
+    events go, with ``ADO2GH_AUDIT_DESTINATION``. Without that the job store
+    refuses to start rather than running with no durable record of a refused
+    claim (GAP-069).
 
     Returns:
-        An ``AuditWriter`` over the configured state store, or ``None`` when the
-        configured backend has no state store to write to.
+        An ``AuditWriter`` over the configured audit destination.
+
+    Raises:
+        ValueError: No audit destination is configured, or the configured one
+            cannot be built. The message names the variable to set.
     """
     from ado2gh.audit import AuditWriter as _AuditWriter
-    from ado2gh.state.factory import create_state_db
+    from ado2gh.audit.destinations import AUDIT_DESTINATION_ENV_VAR, create_audit_destination
 
     try:
-        return _AuditWriter(create_state_db())
+        return _AuditWriter(create_audit_destination())
     except ValueError as exc:
-        logger.warning(
-            "job.audit_unavailable: the configured storage backend has no state store "
-            "(%s), so dynamodb job claim conflicts will be logged and not audited",
-            exc,
-        )
-        return None
+        raise ValueError(
+            f"The dynamodb job store has nowhere to record a refused claim: {exc} "
+            f"Set {AUDIT_DESTINATION_ENV_VAR} to where audit events should go, for "
+            f"example dynamodb://ado2gh-audit."
+        ) from exc
 
 
 class JobStoreFactory:

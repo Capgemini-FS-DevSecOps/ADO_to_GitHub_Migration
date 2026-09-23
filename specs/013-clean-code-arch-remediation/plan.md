@@ -1187,6 +1187,35 @@ by path and method only, not request-body fields or response status codes, so ne
 optional field nor the new 409 case needed a snapshot edit — the same reasoning already applied
 to entry 17/GAP-079.
 
+**20. New environment variable `ADO2GH_AUDIT_DESTINATION` (GAP-069). Decision (operator,
+2026-09-23): approved.** GAP-069 sat `deferred` since 2026-09-13 because closing it needed a
+configuration decision, not a code one: where a DynamoDB deployment's audit database lives.
+`ADO2GH_STORAGE_BACKEND` picked the job store and the state store together, so a DynamoDB job
+store implied a DynamoDB state store, which `ado2gh/state/factory.py` refuses by design — leaving
+a refused job claim (CA-004) logged but never durably audited. The audit destination is now chosen
+on its own. `ADO2GH_AUDIT_DESTINATION` accepts `state` (or nothing at all) for today's behaviour,
+the configured state database; `dynamodb://<table-name>` for an audit table of its own;
+`sqlite://<file-path>`; and a `postgres://` or `postgresql://` connection string. Any other value
+is refused at startup with the accepted forms named, as is `sqlite://:memory:`, which would lose
+every event on exit. The DynamoDB table is never created and never given an expiry; the AWS region
+is read exactly as `StorageConfig.from_env()` reads it and the existing `ADO2GH_DYNAMODB_ENDPOINT`
+is honoured, so no region, credential or endpoint variable is added. All secret masking stays in
+`AuditWriter`, so every destination receives masked values only (CA-003). Recorded in
+`tests/contract/public_surface_snapshot.json` `env_vars` and `.env.example`.
+
+*Migration note.* A deployment on the default `sqlite` state backend, or on `postgres`, needs no
+action: leaving the variable unset keeps the exact behaviour it had. A deployment running
+`ADO2GH_STORAGE_BACKEND=dynamodb` must set `ADO2GH_AUDIT_DESTINATION` before upgrading and create
+the audit table first (partition key `id`) if it points at DynamoDB. Its job worker now refuses
+to start without one, where before it started and logged `job.audit_unavailable` on every claim
+conflict — that refusal is the point of the change, and it is the only breaking half of it.
+
+*Snapshot impact: yes — one name added to `env_vars`.* `ADO2GH_AUDIT_DESTINATION` joins the frozen
+list; no route, CLI command or table changes. The line is already committed: a concurrent
+knowledge-base batch regenerated the snapshot in the shared working tree while this change was in
+progress and swept the name into commit `7eaebf9`. Verified against a clean checkout carrying only
+this change: regenerating reproduces exactly that one added line and nothing else, and
+`tests/contract/test_public_surface_snapshot.py` passes with it recorded.
 **Contract changes still awaiting sign-off.** None. The four that were — GAP-007, GAP-008,
 GAP-003 and GAP-017 — were signed off by operator instruction on 2026-09-13 and are entries
 5–8 above. Entries 16 and 17, added 2026-09-22 by the register scribe (pass two), were both
@@ -1194,7 +1223,8 @@ approved by operator instruction on 2026-09-13, contemporaneous with the batch t
 them; they were merged into this register two passes later from `register-pending/` hand-off
 files. Entries 18 and 19, added 2026-09-22 by the register scribe (final pass), were both
 approved by operator instruction on 2026-09-22 (remediate all findings), contemporaneous with
-the commits that produced them.
+the commits that produced them. Entry 20 was approved by the operator on 2026-09-23, the same
+instruction that unblocked GAP-069, deferred since 2026-09-13.
 
 ## Coverage measurement
 

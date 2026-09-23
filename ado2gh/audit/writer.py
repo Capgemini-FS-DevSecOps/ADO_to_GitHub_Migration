@@ -12,14 +12,20 @@ from uuid import uuid4
 from ado2gh.audit.redaction import redact_payload, redact_text
 
 if TYPE_CHECKING:
-    from ado2gh.state.base import StateDBBase
+    from ado2gh.audit.destinations import AuditDestination
 
 
 class AuditWriter:
-    """Append-only audit events to StateDB."""
+    """Append-only audit events to the destination it was given."""
 
-    def __init__(self, db: StateDBBase) -> None:
-        """Bind the writer to the state database that stores audit events."""
+    def __init__(self, db: AuditDestination) -> None:
+        """Bind the writer to the destination that stores audit events.
+
+        Args:
+            db: Where events are appended. A state store satisfies this as it
+                stands; ``ado2gh.audit.destinations.create_audit_destination``
+                returns whichever destination the deployment configured.
+        """
         self.db = db
 
     def write(

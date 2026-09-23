@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from ado2gh.audit import redact_payload
 
-if TYPE_CHECKING:  # AuditWriter is imported lazily so the state DB is not opened on import
+if TYPE_CHECKING:  # AuditWriter is imported lazily so no audit destination opens on import
     from ado2gh.audit import AuditWriter
 
 
@@ -420,14 +420,15 @@ class IdeAuditBridge:
         """Open the audit writer on first use.
 
         Returns:
-            The process-wide :class:`~ado2gh.audit.AuditWriter`, created against the
-            configured state database the first time an event is recorded.
+            The process-wide :class:`~ado2gh.audit.AuditWriter`, created against
+            the configured audit destination the first time an event is
+            recorded, so the agent honours ``ADO2GH_AUDIT_DESTINATION`` like
+            every other writer.
         """
         if self._writer is None:
-            from ado2gh.audit import AuditWriter
-            from ado2gh.state.factory import create_state_db
+            from ado2gh.audit import AuditWriter, create_audit_destination
 
-            self._writer = AuditWriter(create_state_db())
+            self._writer = AuditWriter(create_audit_destination())
         return self._writer
 
     def record(  # noqa: PLR0913 - exception-register.md: the audit event's own columns

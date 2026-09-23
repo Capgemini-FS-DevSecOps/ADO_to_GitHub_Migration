@@ -160,16 +160,20 @@ def test_claim_conflict_without_a_writer_warns_and_does_not_raise(make_store, ca
     )
 
 
-def test_configured_audit_writer_reports_a_backend_with_no_state_store(monkeypatch, caplog):
-    """Under ``dynamodb`` the factory cannot serve a state store — say so, once."""
+def test_configured_audit_writer_refuses_a_backend_with_no_state_store(monkeypatch):
+    """Under ``dynamodb`` there is no state store, so refuse and name the variable.
+
+    This replaced the earlier "log a warning and return ``None``" behaviour when
+    the audit destination became configurable: a deployment that cannot record a
+    refused claim now fails at construction instead of running unaudited.
+    """
     from ado2gh.state.job_store import _configured_audit_writer
 
     monkeypatch.setenv("ADO2GH_STORAGE_BACKEND", "dynamodb")
-    with caplog.at_level("WARNING", logger="ado2gh.state.job_store"):
-        writer = _configured_audit_writer()
+    monkeypatch.delenv("ADO2GH_AUDIT_DESTINATION", raising=False)
 
-    assert writer is None
-    assert "job.audit_unavailable" in " ".join(r.getMessage() for r in caplog.records)
+    with pytest.raises(ValueError, match="ADO2GH_AUDIT_DESTINATION"):
+        _configured_audit_writer()
 
 
 def test_configured_audit_writer_uses_the_state_store_when_there_is_one(monkeypatch):
@@ -177,6 +181,7 @@ def test_configured_audit_writer_uses_the_state_store_when_there_is_one(monkeypa
     from ado2gh.state.job_store import _configured_audit_writer
 
     monkeypatch.setenv("ADO2GH_STORAGE_BACKEND", "sqlite")  # ADO2GH_SQLITE_PATH is per-test
+    monkeypatch.delenv("ADO2GH_AUDIT_DESTINATION", raising=False)
     writer = _configured_audit_writer()
 
     assert isinstance(writer, AuditWriter)
