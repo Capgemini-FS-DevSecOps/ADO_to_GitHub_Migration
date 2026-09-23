@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 # Obviously-fake DSN; no server is ever contacted (CA-003).
 FAKE_DSN = "postgresql://stub:stub@postgres.invalid:5432/stub"
 TABLE_DDL = re.compile(r"CREATE TABLE IF NOT EXISTS\s+(\w+)", re.IGNORECASE)
-EXPECTED_TABLE_COUNT = 13
+EXPECTED_TABLE_COUNT = 16
 
 
 @pytest.fixture(autouse=True)
