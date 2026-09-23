@@ -5,6 +5,9 @@ Three generic read-only tools:
 - github_api_query: read-only GitHub API
 - call_accelerator: read-only accelerator API access (GET only)
 
+Plus the knowledge-base reads from ``knowledge_tools``: the planner is the role
+that has to know what else a change would touch before it writes a plan.
+
 The planner has no write access — it loads discovery data and queries APIs.
 Plan building is done by the planner node code directly, not via call_accelerator.
 """
@@ -15,6 +18,7 @@ from typing import Any, Callable
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from ado2gh.agents.migration_agent.tools.knowledge_tools import get_knowledge_tools
 from ado2gh.agents.migration_agent.tools.orchestrator_tools import (
     AdoApiQueryArgs,
     GitHubApiQueryArgs,
@@ -49,6 +53,7 @@ def get_planner_tools(
     - ado_api_query: generic read-only ADO API access
     - github_api_query: generic read-only GitHub API access
     - call_accelerator: read-only accelerator API access (GET only)
+    - knowledge_search / knowledge_impact: read-only knowledge-base queries
 
     Returns:
         The planner's StructuredTool list with the shared tools prepended.
@@ -107,6 +112,7 @@ def get_planner_tools(
             args_schema=PlannerCallAcceleratorArgs,
         ),
     ]
+    tools.extend(get_knowledge_tools(accel_get=accel_get, session_token=session_token))
     return append_shared_tools(
         tools,
         accel_get=accel_get,

@@ -120,6 +120,9 @@ _READ_OPERATIONS = frozenset({
     "ado_api_query", "github_api_query",
     "generate_plan", "validate_workflow_conversion", "validate_workflow_syntax",
     "fetch_github_workflow", "list_ado_pipelines", "list_github_workflows",
+    # Knowledge-base reads: both answer from facts an earlier scan recorded and
+    # reach no external system of their own.
+    "knowledge_search", "knowledge_impact",
     # Session-local control tools: they hand the turn to another agent or to the
     # operator and reach no external system themselves. They do start work whose
     # later steps write, but those steps are the executor's tools, each evaluated

@@ -69,6 +69,7 @@ from ado2gh.reporting.pipeline_readiness import PipelineReadinessReport
 from ado2gh.state.factory import create_state_db
 from ado2gh.state.job_store import JobStoreFactory
 from services.accelerator_api.routes.history_routes import router as history_router
+from services.accelerator_api.routes.knowledge_routes import router as knowledge_router
 
 try:
     from services.accelerator_api.auth_routes import SESSION_COOKIE
@@ -98,6 +99,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, keeps these off the runtime
 
 app = FastAPI(title="ADO2GH Accelerator API", version=__version__)
 app.include_router(history_router)
+app.include_router(knowledge_router)
 app.include_router(auth_router)
 app.include_router(settings_router)
 app.include_router(profile_router)
