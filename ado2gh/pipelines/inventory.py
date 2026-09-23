@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import difflib
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Optional
+from typing import Any, Optional
 
 from rich.panel import Panel
 from rich.progress import (
@@ -34,6 +34,16 @@ An Azure DevOps template reference reads ``path/to/file.yml@alias``; without
 the separator the template lives in the pipeline's own repository.
 """
 
+RESERVED_SUMMARY_PREFIX = "_"
+"""Marks a summary entry this module added rather than a project it scanned.
+
+An Azure DevOps project name may not begin with an underscore, so a key that
+does can never be mistaken for a project, and the totals skip it.
+"""
+
+KNOWLEDGE_SUMMARY_KEY = "_knowledge"
+"""Summary entry saying what became of the knowledge base build after the scan."""
+
 
 def _template_ref_records(refs: list[str]) -> list[dict]:
     """Turn raw template references into the records kept on the metadata.
@@ -58,6 +68,9 @@ def _template_ref_records(refs: list[str]) -> list[dict]:
 def summarize_project_inventory(summary: dict[str, dict]) -> dict[str, int]:
     """Aggregate per-project inventory counts into organisation-level totals.
 
+    Entries this module added about its own run, such as the knowledge base
+    build, are left out: they are not projects and must not be counted as one.
+
     Args:
         summary: Per-project counts as returned by
             :meth:`PipelineInventoryBuilder.build_for_projects`.
@@ -65,14 +78,18 @@ def summarize_project_inventory(summary: dict[str, dict]) -> dict[str, int]:
     Returns:
         Totals keyed ``pipelines``, ``build``, ``release`` and ``projects``.
     """
-    total = sum(int(v.get("total", 0)) for v in summary.values())
-    build = sum(int(v.get("build", 0)) for v in summary.values())
-    release = sum(int(v.get("release", 0)) for v in summary.values())
+    projects = {
+        name: counts for name, counts in summary.items()
+        if not str(name).startswith(RESERVED_SUMMARY_PREFIX)
+    }
+    total = sum(int(v.get("total", 0)) for v in projects.values())
+    build = sum(int(v.get("build", 0)) for v in projects.values())
+    release = sum(int(v.get("release", 0)) for v in projects.values())
     return {
         "pipelines": total,
         "build": build,
         "release": release,
-        "projects": len(summary),
+        "projects": len(projects),
     }
 
 
@@ -203,7 +220,58 @@ class PipelineInventoryBuilder:
             f"Stored in migration_state.db > pipeline_inventory",
             border_style="green",
         ))
+        if self.mode is ExecutionMode.LIVE:
+            # A preview wrote no rows, so there is nothing new to read back and
+            # nothing it may leave behind — the same rule the rest of this
+            # platform follows.
+            summary[KNOWLEDGE_SUMMARY_KEY] = self._record_knowledge()
         return summary
+
+    def _record_knowledge(self) -> dict[str, Any]:
+        """Record what the rows just written say about how things depend on each other.
+
+        Reads the inventory rows back out of the state store and derives the
+        dependencies from them, without another call to Azure DevOps. Nothing
+        here may cost the caller the scan that produced those rows, so every
+        failure — no active profile, an unreadable store, a derivation that
+        broke — comes back as a plain-words entry on the scan's own result
+        instead of an exception.
+
+        Returns:
+            What happened, keyed ``status`` with ``scan_id`` and ``coverage``
+            when a scan ran, or ``detail`` saying in plain words why none did.
+        """
+        try:
+            from ado2gh.api.settings_store import SettingsStore
+            from ado2gh.knowledge.builder import build_knowledge_base
+            from ado2gh.knowledge.store import KnowledgeStore
+
+            profile = SettingsStore().get_active_profile()
+            if not profile:
+                return {
+                    "status": "skipped",
+                    "detail": "No migration profile is active, so there is "
+                              "nothing to record these facts against.",
+                }
+            # The organisation a thing is recorded under has to read the same
+            # here as it does when an operator asks for a rebuild, or the same
+            # pipeline is recorded twice under two identifiers.
+            scope = (getattr(profile, "ado_org_url", "") or self.ado.org_url).rstrip("/")
+            scan = build_knowledge_base(
+                KnowledgeStore(self.db),
+                self.db,
+                profile_id=str(profile.id),
+                source_scope=scope,
+            )
+        except Exception as exc:
+            detail = f"The knowledge base was not updated after this scan: {exc}"
+            log.warning("  %s", detail)
+            return {"status": "failed", "detail": detail}
+        return {
+            "status": scan.status,
+            "scan_id": scan.scan_id,
+            "coverage": scan.coverage,
+        }
 
     def _scan_build_pipelines(
         self,

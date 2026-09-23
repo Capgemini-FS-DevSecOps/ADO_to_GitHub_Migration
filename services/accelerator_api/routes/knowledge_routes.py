@@ -1,9 +1,10 @@
-"""Read-only endpoints for the migration knowledge base under ``/v1/knowledge``.
+"""Endpoints for the migration knowledge base under ``/v1/knowledge``.
 
 Four questions, all answered from scans already on disk and none of them
 touching Azure DevOps or GitHub: find a thing by name, list what one hop of a
 thing's dependencies or consumers looks like, and ask what a change to it would
-affect.
+affect. One more endpoint fills the knowledge base on request, reading the
+pipeline inventory this platform already collected and no outside system.
 
 Every response repeats the scan coverage and the caveats exactly as the store
 reports them. That is the whole point of the endpoints: an empty answer from a
@@ -20,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from ado2gh.api.platform_rbac import require_operate
+from ado2gh.knowledge.builder import build_knowledge_base
 from ado2gh.knowledge.models import (
     NO_RECORDED_DEPENDENCY_CAVEAT,
     EdgeKind,
@@ -130,6 +132,17 @@ class ImpactResponse(BaseModel):
     coverage: dict[str, Any] = Field(default_factory=dict, description="What the underlying scans covered")
     caveats: list[str] = Field(default_factory=list, description="What this answer cannot know")
     truncated: bool = Field(default=False, description="Whether the walk stopped at its limit")
+
+
+class KnowledgeScanResponse(BaseModel):
+    """Answer to ``POST /v1/knowledge/scan``."""
+
+    scan_id: str = Field(description="Identifier of the scan that just ran")
+    status: str = Field(description="How it ended, such as completed or failed")
+    source_scope: str = Field(description="What the scan read, recorded on the scan itself")
+    coverage: dict[str, Any] = Field(default_factory=dict, description="What this scan covered")
+    caveats: list[str] = Field(default_factory=list, description="What answers built on it cannot know")
+    error_summary: str = Field(default="", description="What went wrong, empty when nothing did")
 
 
 def _knowledge_store() -> KnowledgeStore:
@@ -481,4 +494,49 @@ def node_impact(
         coverage=report.coverage or {},
         caveats=_caveats(report.caveats),
         truncated=report.truncated,
+    )
+
+
+@router.post("/v1/knowledge/scan", response_model=KnowledgeScanResponse)
+def scan_knowledge(request: Request) -> KnowledgeScanResponse:
+    """Rebuild the knowledge base for the active profile from the inventory already collected.
+
+    Reads the pipeline inventory rows this platform stored earlier and records
+    what they say about how things depend on each other. No call is made to
+    Azure DevOps or GitHub, so the facts are only ever as fresh as the last
+    inventory scan, which is why the answer carries the coverage.
+
+    Running it again over unchanged rows rewrites the same rows under the same
+    identifiers, so an operator who is unsure whether it ran may simply run it.
+
+    Args:
+        request: The incoming request, carrying the caller's identity.
+
+    Returns:
+        The scan identifier, how it ended, what it covered and the caveats.
+
+    Raises:
+        HTTPException: 401 without an identity, 403 without ``can_operate``,
+            400 with no active profile.
+    """
+    require_operate(request)
+    profile_id = _active_profile_id()
+    profile = _settings.get_active_profile()
+    # The organisation a thing is recorded under has to read the same here as
+    # it does when the inventory scan builds this, or the same pipeline is
+    # recorded twice under two identifiers.
+    source_scope = str(getattr(profile, "ado_org_url", "") or "").rstrip("/")
+    scan = build_knowledge_base(
+        _knowledge_store(),
+        create_state_db(_settings.load().advanced.db_path),
+        profile_id=profile_id,
+        source_scope=source_scope,
+    )
+    return KnowledgeScanResponse(
+        scan_id=scan.scan_id,
+        status=scan.status,
+        source_scope=scan.source_scope,
+        coverage=scan.coverage or {},
+        caveats=_caveats(),
+        error_summary=scan.error_summary,
     )

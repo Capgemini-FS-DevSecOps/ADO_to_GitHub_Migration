@@ -31,12 +31,15 @@ from ado2gh.knowledge.models import (
     ImpactReport,
     KnowledgeEdge,
     KnowledgeNode,
+    KnowledgeScan,
     NodeKind,
 )
 from services.accelerator_api.routes import knowledge_routes
 
 FAKE_PROFILE_ID = "profile-fake-0001"
 FAKE_COVERAGE = {"projects_scanned": 2, "pipeline_definitions_read": 7, "unparsed_definitions": 1}
+FAKE_SCAN_ID = "scan-fake-0001"
+FAKE_ORG_URL = "https://dev.azure.com/fake-org"
 
 
 def _node(node_id: str, kind: NodeKind, name: str) -> KnowledgeNode:
@@ -77,6 +80,21 @@ class _Store:
     def __init__(self) -> None:
         self.depths: list[int] = []
         self.edge_kinds: list[Optional[list[EdgeKind]]] = []
+        self.scans: list[tuple[str, str]] = []
+
+    def build(self, store: Any, db: Any, *, profile_id: str, source_scope: str) -> KnowledgeScan:
+        """Stand in for the builder, recording what it was asked to read."""
+        self.scans.append((profile_id, source_scope))
+        return KnowledgeScan(
+            scan_id=FAKE_SCAN_ID,
+            profile_id=profile_id,
+            source_scope=source_scope,
+            extractor_version="fake-extractor-1",
+            started_at="2026-09-23T00:00:00+00:00",
+            completed_at="2026-09-23T00:00:01+00:00",
+            status="completed",
+            coverage=dict(FAKE_COVERAGE),
+        )
 
     def search_nodes(
         self, *, profile_id: str, text: str, kinds: Optional[list[NodeKind]] = None, limit: int = 20,
@@ -132,17 +150,25 @@ def store() -> _Store:
     return _Store()
 
 
-@pytest.fixture
-def client(monkeypatch, store) -> TestClient:
-    """Client for the knowledge router alone, signed in and with a fake store."""
+def _client(monkeypatch, store: _Store, user: PlatformUser) -> TestClient:
+    """Client for the knowledge router alone, signed in as one user, with a fake store.
+
+    Every door to a real database or a real settings file is closed: the store,
+    the builder, the state database and the settings load are all doubles.
+    """
     monkeypatch.setattr(knowledge_routes, "_knowledge_store", lambda: store)
+    monkeypatch.setattr(knowledge_routes, "build_knowledge_base", store.build)
+    monkeypatch.setattr(knowledge_routes, "create_state_db", lambda *_a, **_k: SimpleNamespace())
+    monkeypatch.setattr(
+        knowledge_routes._settings, "load",
+        lambda: SimpleNamespace(advanced=SimpleNamespace(db_path="fake-not-a-real-path.db")),
+    )
     monkeypatch.setattr(
         knowledge_routes._settings, "get_active_profile",
-        lambda: SimpleNamespace(id=FAKE_PROFILE_ID),
+        lambda: SimpleNamespace(id=FAKE_PROFILE_ID, ado_org_url=FAKE_ORG_URL + "/"),
     )
 
     app = FastAPI()
-    user = PlatformUser("u1", "operator1", PlatformRole.ADMIN, "Operator One")
 
     @app.middleware("http")
     async def inject_user(request, call_next):
@@ -152,6 +178,15 @@ def client(monkeypatch, store) -> TestClient:
 
     app.include_router(knowledge_routes.router)
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def client(monkeypatch, store) -> TestClient:
+    """Client signed in as a user who may operate."""
+    return _client(
+        monkeypatch, store,
+        PlatformUser("u1", "operator1", PlatformRole.ADMIN, "Operator One"),
+    )
 
 
 def _assert_carries_its_limits(body: dict) -> None:
@@ -304,3 +339,45 @@ def test_no_active_profile_is_refused_rather_than_mixed(client, monkeypatch):
     response = client.get("/v1/knowledge/search", params={"text": "x"})
     assert response.status_code == 400
     assert "profile" in response.json()["detail"].lower()
+
+
+def test_scan_answers_with_the_scan_identifier_and_the_coverage_it_recorded(client, store):
+    """A rebuild says which scan ran and what that scan managed to cover."""
+    body = client.post("/v1/knowledge/scan").json()
+    assert body["scan_id"] == FAKE_SCAN_ID
+    assert body["status"] == "completed"
+    assert body["coverage"] == FAKE_COVERAGE
+    assert body["caveats"]
+    # The organisation must read the same as it does when the inventory scan
+    # builds this, trailing slash and all, or one thing is recorded twice.
+    assert store.scans == [(FAKE_PROFILE_ID, FAKE_ORG_URL)]
+
+
+def test_scanning_twice_is_harmless(client, store):
+    """An operator unsure whether it ran may simply run it again."""
+    first = client.post("/v1/knowledge/scan")
+    second = client.post("/v1/knowledge/scan")
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    assert len(store.scans) == 2
+
+
+def test_scan_refuses_without_an_active_profile(client, monkeypatch, store):
+    """Facts from two profiles must never mix, so no profile means no scan."""
+    monkeypatch.setattr(knowledge_routes._settings, "get_active_profile", lambda: None)
+    response = client.post("/v1/knowledge/scan")
+    assert response.status_code == 400
+    assert store.scans == []
+
+
+def test_scan_refuses_a_caller_without_the_capability_the_reads_require(monkeypatch, store):
+    """Filling the knowledge base is gated exactly like reading it."""
+    monkeypatch.setenv("ADO2GH_AUTH_ENABLED", "true")
+    approver = _client(
+        monkeypatch, store,
+        PlatformUser("u2", "approver1", PlatformRole.APPROVER, "Approver One"),
+    )
+    assert approver.post("/v1/knowledge/scan").status_code == 403
+    assert approver.get("/v1/knowledge/search", params={"text": "x"}).status_code == 403
+    assert store.scans == []

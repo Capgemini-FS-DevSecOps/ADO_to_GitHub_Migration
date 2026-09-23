@@ -264,6 +264,7 @@
     "accelerator POST /v1/discover",
     "accelerator POST /v1/github/{path:path}",
     "accelerator POST /v1/jobs",
+    "accelerator POST /v1/knowledge/scan",
     "accelerator POST /v1/migrate",
     "accelerator POST /v1/migrate/artifacts",
     "accelerator POST /v1/migrate/boards",
