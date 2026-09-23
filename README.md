@@ -52,6 +52,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 | [**Execution manual**](docs/EXECUTION_MANUAL.md) | Full operational walkthrough |
 | [**Migration runbook**](docs/MIGRATION_RUNBOOK.md) | Day-by-day phased rollout |
 | [**Command reference**](docs/COMMAND_REFERENCE.md) | CLI commands and flags |
+| [**Knowledge base**](docs/KNOWLEDGE_BASE.md) | What a migration touches, dependencies, confidence, agent tools |
 | [**Pipeline transformation**](docs/PIPELINE_TRANSFORMATION_GUIDE.md) | ADO → GitHub Actions mapping |
 | [**Troubleshooting**](docs/TROUBLESHOOTING.md) | Auth, git, gates, retries |
 | [**Contributing**](CONTRIBUTING.md) | Dev setup and conventions |
@@ -85,6 +86,7 @@ tests/                  pytest + contract tests
 - **Profile-based ops** — deployment profiles, discovery scan, risk-based phase assignment in UI
 - **PEV agent** — tool-driven planner/executor/validator; migration-only scope guardrails
 - **Validation** — commit SHA verification between ADO and GitHub
+- **Knowledge base** — tracks dependencies between repositories, pipelines and what they need; agent tool answers what a change would affect
 - **RBAC** — admin / operator / approver; live-run approval queue
 - **LLM onboarding** — catalog picker, validate-before-enable, Ollama + cloud providers
 

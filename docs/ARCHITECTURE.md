@@ -315,9 +315,69 @@ that persists them rather than in the API layer that happens to call it.
 
 **Core tables:** `migrations`, `wave_runs`, `pipeline_inventory`, `pipeline_migrations`, `repo_risk_scores`, `phase_gates`, `batch_checkpoints`
 
-**Platform tables:** `profile_scans`, `profile_scan_repos`, `audit_events`, `platform_users`, `auth_sessions`, `live_execution_approvals` — created by both backends, not Postgres only (`ado2gh/state/sqlite_db.py`, `ado2gh/state/postgres_db.py` create the same 13 tables).
+**Platform tables:** `profile_scans`, `profile_scan_repos`, `audit_events`, `platform_users`, `auth_sessions`, `live_execution_approvals`
+
+**Knowledge base tables:** `knowledge_nodes`, `knowledge_edges`, `knowledge_scans` — see [Migration knowledge base](#migration-knowledge-base) below.
+
+All sixteen tables above are created by both backends, not Postgres only (`ado2gh/state/sqlite_db.py`, `ado2gh/state/postgres_db.py`).
 
 Phase lookups accept `PhaseType` enum **or** plain string phase ids (e.g. `"poc"`).
+
+---
+
+## Migration knowledge base
+
+```
+knowledge_nodes · knowledge_edges · knowledge_scans     (StateDB)
+```
+
+`ado2gh/knowledge/builder.py` records what a migration touches and how those
+things depend on one another, reading nothing but the `pipeline_inventory`
+rows the platform already collected — no additional call to Azure DevOps. For
+every stored pipeline it records the repository it builds, the service
+connections and variable groups it references, the environments it deploys
+to, the agent pools it runs on, and, from the pipeline text already stored on
+the row, the artifact feeds and other pipelines it consumes. A dependency
+written through a runtime or compile-time variable expression is skipped
+rather than guessed, and a template's own repository is only known once
+`pipelines inventory` has been re-run, because the field that carries it is
+filled in while that command extracts the pipeline's YAML.
+
+Everything is stored across three tables, all created by both the SQLite and
+PostgreSQL backends: `knowledge_nodes` (one row per repository, pipeline,
+service connection, or other thing a migration touches), `knowledge_edges`
+(one row per dependency, always pointing from the consumer to what it needs),
+and `knowledge_scans` (one row per pass over the inventory, holding what it
+covered and what it could not attempt). `ado2gh/knowledge/store.py` derives
+each row's identifier from what makes the thing or the dependency itself, so
+re-running a scan refreshes the same rows instead of duplicating them, and it
+marks a dependency the latest scan did not see again as disappeared rather
+than deleting it.
+
+Every dependency carries a confidence: `declared` when the source named it
+outright, `resolved` when a name matched something this same scan read, and
+`inferred` when only a heuristic matched a name in free text. An answer never
+presents an inferred dependency as though it were declared, and every answer
+— for an operator or for the agent — repeats the coverage of the scan behind
+it, so an empty result reads as "nothing recorded within this coverage"
+rather than "nothing depends on this."
+
+**Reaching it.** `services/accelerator_api/routes/knowledge_routes.py` exposes
+four read-only routes under `/v1/knowledge` — `search`, one-hop
+`nodes/{id}/dependencies` and `nodes/{id}/consumers`, and `nodes/{id}/impact`
+— gated by the same `can_operate` capability as the rest of the inventory
+reads, and scoped to the caller's active migration profile. The planner's
+`knowledge_search` and `knowledge_impact` tools
+(`ado2gh/agents/migration_agent/tools/knowledge_tools.py`) are the agent's
+only path to this data: they call those routes rather than opening a
+database themselves, and mask secret shapes in the response before capping
+its size, in that order, so a cap can never cut a masked value in half. As of
+this writing nothing yet starts a scan from a command or a route —
+`build_knowledge_base` is exercised only by
+`tests/unit/test_knowledge_builder.py`.
+
+Full reference, including every node and dependency kind and the current
+limits: [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md).
 
 ---
 
@@ -417,6 +477,7 @@ Multi-token env: `GH_TOKEN_1`, `GH_TOKEN_2`, …
 | [EXECUTION_MANUAL.md](EXECUTION_MANUAL.md) | End-to-end operational guide |
 | [MIGRATION_RUNBOOK.md](MIGRATION_RUNBOOK.md) | Phased rollout runbook |
 | [COMMAND_REFERENCE.md](COMMAND_REFERENCE.md) | CLI reference |
+| [KNOWLEDGE_BASE.md](KNOWLEDGE_BASE.md) | Migration knowledge base — node and dependency kinds, confidence, agent tools |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common failures |
 | [../specs/](../specs/) | Feature specs (001–013) |
 | [STRUCTURAL_CHANGELOG.md](STRUCTURAL_CHANGELOG.md) | Append-only ledger of file moves and deletions |
